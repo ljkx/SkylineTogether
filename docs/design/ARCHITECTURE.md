@@ -718,7 +718,7 @@ All encodings live in Core: little-endian, LEB128 varints, zig-zag for signed de
 
 #### 4.6.1 Envelope
 
-Every message: `u8 kind`, `u8 flags` (bit 0 compressed, bit 1 fragment, bit 2 has-uncompressed-size), optional `varint uncompressedSize`, body. Kinds: `Control`, `Hello`, `Welcome`, `Refuse`, `Epoch`, `Motion`, `MotionControl`, `Clock`, `View`, `Presence`, `Proposal`, `Ack`, `HashDetail`, `RepairRequest`, `BlobManifest`, `BlobChunk`, `BlobHave`, `Chat`, `Ping`. The full catalogue is Appendix C.
+Every message: `u8 kind`, `u8 flags` (bit 0 compressed, bit 1 fragment, bit 2 has-uncompressed-size), optional `varint uncompressedSize`, body. A compressed body (flags = compressed | has-uncompressed-size) is `varint uncompressedSize | u8 compressionKind | compressed bytes`: the kind byte names the codec (`CompressionKind`), so a receiver decodes each message by what it names (wave 1 integration; pinned by the `EnvelopeCodec` golden vectors). Kinds: `Control`, `Hello`, `Welcome`, `Refuse`, `Epoch`, `Motion`, `MotionControl`, `Clock`, `View`, `Presence`, `Proposal`, `Ack`, `HashDetail`, `RepairRequest`, `BlobManifest`, `BlobChunk`, `BlobHave`, `Chat`, `Ping`. The full catalogue is Appendix C.
 
 #### 4.6.2 Epoch message
 
@@ -753,16 +753,18 @@ VALUE     = varint slot, varint typeRank, u8 hdr {bit0 enabled-bit present, bit1
 TOUCH     = varint slot, u8 tags {Updated, BatchesUpdated, PathfindUpdated}
 BIND      = u8 origin (peer id), varint localId, varint slot, u8 gen    (proposal results; precede the spawns they bind;
                                                                           only the origin peer acts on it)
-POSE      = varint slot, Transform (quantised), u8 flags         (out-of-interest mover re-pin, §4.9.5)
+POSE      = varint slot, varint length, payload {Transform (quantised), u8 flags}   (out-of-interest mover re-pin, §4.9.5)
 KEYED     = u8 family, key, varint typeRank, varint length, bytes;   KEYED_DEL = u8 family, key
-ZONE      = block key, varint revision, RLE(zone prefab rank per cell)
-ICON      = u8 op {Add, Remove, RemoveAll, Event}, NetRef owner, varint prefabRank, u8 priority, u8 layer, u16 flags, [NetRef target], [float3 location]
+ZONE      = block key, varint revision, varint length, RLE(zone prefab rank per cell)
+ICON      = u8 op {bits 0-5: Add, Remove, RemoveAll, Event; bit 6: target present; bit 7: location present}, NetRef owner,
+            varint prefabRank+1 (0 = none), u8 priority, u8 layer, u16 flags, [NetRef target], [float3 location]
 NAME      = NetRef target, varint utf8Length, utf8 (empty = clear)
-PFB       = bitset diff over prefab ranks {unlocked, relocked}, signature-placed list, (prefabRank, progress)*
+PFB       = varint length, payload: bitset diff over prefab ranks {unlocked, relocked}, signature-placed list, (prefabRank, progress)*
 SYS       = u32 entryId (stable hash of the entry's string id), varint length, blob (the system's own Serialize output)
-RESULT    = u8 origin (peer id), varint proposalSeq, u8 status, varint reasonCode, [varint conflictSlot]
+RESULT    = u8 origin (peer id), varint proposalSeq, u8 status {bit0 rejected, bit1 conflict slot present}, varint reasonCode,
+            [varint conflictSlot]
 HASH      = u8 class, varint bucket, u64 sum, varint count
-TSETKEY   = varint count, repeat { varint typeSetId, varint n, typeRank... }   (TSET section only)
+TSETKEY   = varint length, payload: varint count, repeat { varint typeSetId, varint n, typeRank... }   (TSET section only)
 ```
 
 Payload bytes are canonical (§4.3.4). Entity references inside them are `NetRef`s. A `RESULT` or `BIND` whose origin is not the local peer is skipped by the client (it is still part of the shared section, so the epoch log and replays stay identical for everyone). Test: two clients that use the same proposal sequence numbers and `LocalId` values never act on each other's results.
@@ -775,7 +777,7 @@ Payload bytes are canonical (§4.3.4). Entity references inside them are `NetRef
 
 #### 4.6.5 Compression
 
-Message bodies of 256 bytes or more are compressed. The baseline codec is ZSTD level 1 through the game's native `CompressionUtils`/`NativeCompression` (R06 §5.4), behind Core's `ICompressor`. LZ4 is used only if a startup probe proves that the native LZ4 path works (R08 notes that no liblz4 may ship; J3). A pure C# LZ4-block implementation in Core (no native dependency) serves the unit tests and is the last-resort fallback. The codec is negotiated in the handshake. Saves are already ZSTD-compressed and are never recompressed. A decoder rejects any message whose declared uncompressed size exceeds 8 MiB (one epoch part; bulk chunks: 256 KiB) before decompressing it. Because the host encoder splits larger transactions into parts, a message above the cap can only come from a broken or hostile peer.
+Message bodies of 256 bytes or more are compressed. The baseline codec is ZSTD level 1 through the game's native `CompressionUtils`/`NativeCompression` (R06 §5.4), behind Core's `ICompressor`. LZ4 is used only if a startup probe proves that the native LZ4 path works (R08 notes that no liblz4 may ship; J3). A pure C# LZ4-block implementation in Core (no native dependency) serves the unit tests and is the last-resort fallback. The codec is negotiated in the handshake (`HelloMessage.CompressionMask`, `WelcomeMessage.Compression`, `CompressionNegotiation`). **Handshake rule:** `Hello`, `Welcome`, `Refuse` and every control message sent before the session codec is known are compressed with LZ4 (`CompressionNegotiation.Handshake`), which every peer and every protocol version can decode, so a host can always refuse readably. Each peer decodes the whole connection with a codec built on its best local compressor (every envelope names its codec, and LZ4 blocks always decode through the managed fallback); only the *encoding* codec switches, once `Welcome` is sent or processed. The decoder therefore never changes under the network thread. Saves are already ZSTD-compressed and are never recompressed. A decoder rejects any message whose declared uncompressed size exceeds 8 MiB (one epoch part; bulk chunks: 256 KiB) before decompressing it. Because the host encoder splits larger transactions into parts, a message above the cap can only come from a broken or hostile peer.
 
 #### 4.6.6 Typical sizes (before compression) [E]
 
@@ -858,9 +860,9 @@ Records are grouped by `(type, chunk)`. Resolution follows §3.3: `EntityManager
 ```csharp
 T* target = (T*)((byte*)columnBase + indexInChunk * sizeof(T));
 T temp = *target;                              // keeps non-serialised runtime fields (R01 §11.2)
-reader.Open(record.Payload, record.Length);    // bounded to exactly the record's bytes
+reader.Open(record.Payload, record.Offset, record.Length);   // bounded to exactly the record's bytes
 temp.Deserialize(netReader);                   // merge-policy types: Merge(ref temp, incoming)
-if (reader.Position != record.Length) throw new DecodeException(...);
+if (!reader.IsRecordConsumed) throw new DecodeException(...);   // all bytes read and no block left open
 *target = temp;                                // only a complete, length-exact value reaches the chunk
 ```
 
