@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Unit tests of SkylineTogether.Core (IMPLEMENTATION-PLAN §2.5, adapted by docs/decisions/0001-build-without-nuget.md):
+    a net8.0 console application without any package. It compiles the Core sources directly, plus its own small test
+    framework (Framework/). Tests live in <Area>/*Tests.cs. Run: dotnet run -c Release [name filters...];
+    the exit code is the number of failed tests (capped at 125).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>SkylineTogether.Core.Tests</AssemblyName>
+    <RootNamespace>SkylineTogether.Core.Tests</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- the Core sources themselves (same compilation, so internal members are testable) -->
+    <Compile Include="..\..\src\SkylineTogether.Core\**\*.cs"
+             Exclude="..\..\src\SkylineTogether.Core\obj\**;..\..\src\SkylineTogether.Core\bin\**"
+             Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <!-- Optional cross-check of the hash implementations against Microsoft's System.IO.Hashing, which the game ships in
+       its Managed folder (a plain file reference, not a package). Tests that need it are compiled only when present. -->
+  <PropertyGroup Condition="Exists('$(GameManagedPath)\System.IO.Hashing.dll')">
+    <DefineConstants>$(DefineConstants);HAVE_SYSTEM_IO_HASHING</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(GameManagedPath)\System.IO.Hashing.dll')">
+    <Reference Include="System.IO.Hashing">
+      <HintPath>$(GameManagedPath)\System.IO.Hashing.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

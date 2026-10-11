@@ -1,0 +1,11 @@
+# Normalise text files to LF in the repository; check-out follows the platform (core.autocrlf).
+* text=auto
+
+# Shell scripts must keep LF on every platform, or bash fails on the carriage returns.
+*.sh text eol=lf
+
+# Binary content
+*.dll binary
+*.pdb binary
+*.zip binary
+*.png binary

@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Skyline Together build script (IMPLEMENTATION-PLAN §2.7; the plan's build.ps1 is this POSIX shell script).
+#
+#   tools/build.sh [--deploy] [--package] [--game-dir <path>] [--deploy-dir <path>] [--skip-ui-checks]
+#
+# Order: Release build -> ApiCheck (when tools/ApiCheck exists) -> UI checks (when node is installed) -> Core tests
+# -> deploy (--deploy) -> package (--package). Any failure stops the script before anything is deployed or packaged.
+#
+#   --deploy        copy the mod into the local Mods folder (default:
+#                   %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether)
+#   --package       write dist/SkylineTogether-<version>.zip (a SkylineTogether folder with the DLLs, PDBs,
+#                   the UI module and README.txt; extract it into the Mods folder)
+#   --game-dir      the game's install folder (default: the Steam path of Directory.Build.props; env GameDir)
+#   --deploy-dir    deploy target (env ModDeployDir)
+#
+# Works in Git Bash on Windows (and with any shell that has the .NET SDK on the PATH). No NuGet package is used.
+set -euo pipefail
+
+SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+DEPLOY=0
+PACKAGE=0
+UI_CHECKS=1
+GAME_DIR="${GameDir:-}"
+DEPLOY_DIR="${ModDeployDir:-}"
+
+usage() { sed -n '2,16p' "$SCRIPT" | sed 's/^# \{0,1\}//'; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --deploy) DEPLOY=1 ;;
+    --package) PACKAGE=1 ;;
+    --skip-ui-checks) UI_CHECKS=0 ;;
+    --game-dir) shift; GAME_DIR="${1:?--game-dir needs a path}" ;;
+    --deploy-dir) shift; DEPLOY_DIR="${1:?--deploy-dir needs a path}" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+step() { printf '\n== %s\n' "$*"; }
+fail() { printf '\nBUILD FAILED: %s\n' "$*" >&2; exit 1; }
+to_unix() { if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+to_native() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
+
+# copies the shipped files (both DLLs, their PDBs, the UI module) into $1
+copy_mod_files() {
+  local target="$1" f
+  for f in SkylineTogether.dll SkylineTogether.pdb SkylineTogether.Core.dll SkylineTogether.Core.pdb; do
+    if [ -f "$OUT/$f" ]; then cp -f "$OUT/$f" "$target/"; fi
+  done
+  if [ -f ui/SkylineTogether.mjs ]; then cp -f ui/SkylineTogether.mjs "$target/"; fi
+}
+
+# ---------- tools ----------
+# the first dotnet host that has an SDK 8 or newer (a dotnet on the PATH may have runtimes only)
+has_sdk8() {
+  local major
+  for major in $("$1" --list-sdks 2>/dev/null | sed -n 's/^\([0-9][0-9]*\)\..*/\1/p'); do
+    if [ "$major" -ge 8 ]; then return 0; fi
+  done
+  return 1
+}
+DOTNET_CANDIDATES=()
+if [ -n "${DOTNET:-}" ]; then DOTNET_CANDIDATES+=("$DOTNET"); fi
+if command -v dotnet >/dev/null 2>&1; then DOTNET_CANDIDATES+=("$(command -v dotnet)"); fi
+if [ -n "${DOTNET_ROOT:-}" ]; then DOTNET_CANDIDATES+=("$(to_unix "$DOTNET_ROOT")/dotnet.exe" "$(to_unix "$DOTNET_ROOT")/dotnet"); fi
+if [ -n "${LOCALAPPDATA:-}" ]; then DOTNET_CANDIDATES+=("$(to_unix "$LOCALAPPDATA")/Microsoft/dotnet/dotnet.exe"); fi
+DOTNET_CANDIDATES+=("$HOME/.dotnet/dotnet" "/c/Program Files/dotnet/dotnet.exe")
+DOTNET=""
+for candidate in "${DOTNET_CANDIDATES[@]}"; do
+  if [ -x "$candidate" ] && has_sdk8 "$candidate"; then DOTNET="$candidate"; break; fi
+done
+[ -n "$DOTNET" ] || fail "no .NET SDK 8 or newer found; install it, or set DOTNET to a dotnet executable that has one"
+# a private (per-user) install needs DOTNET_ROOT so built apphosts (tools run with dotnet run) find their runtime
+export DOTNET_ROOT="$(to_native "$(dirname "$DOTNET")")"
+export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+
+VERSION="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
+[ -n "$VERSION" ] || VERSION="0.0.0"
+
+PROPS=(-c Release -p:DeployMod=false -nologo)
+if [ -n "$GAME_DIR" ]; then PROPS+=("-p:GameDir=$(to_native "$GAME_DIR")"); fi
+
+OUT="src/SkylineTogether/bin/Release/net472"
+
+# ---------- build ----------
+step "Release build (SkylineTogether $VERSION)"
+"$DOTNET" build SkylineTogether.sln "${PROPS[@]}" || fail "dotnet build"
+for f in SkylineTogether.dll SkylineTogether.Core.dll; do
+  [ -f "$OUT/$f" ] || fail "missing build output $OUT/$f"
+done
+
+# ---------- ApiCheck (metadata-only member and data-file name resolution; tools/ApiCheck, when present) ----------
+if [ -f tools/ApiCheck/ApiCheck.csproj ]; then
+  step "ApiCheck"
+  "$DOTNET" run --project tools/ApiCheck/ApiCheck.csproj -c Release -- --repo "$(to_native "$ROOT")" --configuration Release \
+    || fail "ApiCheck"
+else
+  step "ApiCheck skipped (tools/ApiCheck does not exist yet)"
+fi
+
+# ---------- UI checks (optional Node) ----------
+if [ "$UI_CHECKS" = 1 ] && [ -f ui/SkylineTogether.mjs ]; then
+  if command -v node >/dev/null 2>&1; then
+    step "UI module checks"
+    node --check ui/SkylineTogether.mjs || fail "node --check ui/SkylineTogether.mjs"
+    if [ -f tools/UiSmoke/smoke.mjs ]; then
+      node tools/UiSmoke/smoke.mjs || fail "UI smoke check"
+    fi
+  else
+    step "UI checks skipped: node is not on the PATH (warning)"
+  fi
+fi
+
+# ---------- tests ----------
+# run the test assembly through the dotnet host (not the apphost): works with per-user SDK installs and long paths
+step "Core tests"
+TEST_DLL="tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll"
+[ -f "$TEST_DLL" ] || fail "missing test build output $TEST_DLL"
+"$DOTNET" "$TEST_DLL" || fail "Core tests (exit code = number of failed tests)"
+
+# ---------- deploy ----------
+if [ "$DEPLOY" = 1 ]; then
+  if [ -z "$DEPLOY_DIR" ]; then
+    [ -n "${USERPROFILE:-}" ] || fail "USERPROFILE is not set; pass --deploy-dir"
+    DEPLOY_DIR="$(to_unix "$USERPROFILE")/AppData/LocalLow/Colossal Order/Cities Skylines II/Mods/SkylineTogether"
+  fi
+  DEPLOY_DIR="$(to_unix "$DEPLOY_DIR")"
+  step "Deploy to $DEPLOY_DIR"
+  mkdir -p "$DEPLOY_DIR"
+  copy_mod_files "$DEPLOY_DIR"
+  echo "deployed: $(ls "$DEPLOY_DIR" | tr '\n' ' ')"
+fi
+
+# ---------- package ----------
+if [ "$PACKAGE" = 1 ]; then
+  NAME="SkylineTogether-$VERSION"
+  STAGE_ROOT="dist/stage"
+  STAGE="$STAGE_ROOT/SkylineTogether"
+  ZIP="dist/$NAME.zip"
+  step "Package $ZIP"
+  rm -rf "$STAGE_ROOT" "$ZIP"
+  mkdir -p "$STAGE"
+  copy_mod_files "$STAGE"
+  for f in LICENSE LICENSE.txt THIRD-PARTY-NOTICES.txt; do
+    if [ -f "$f" ]; then cp -f "$f" "$STAGE/"; fi
+  done
+  cat > "$STAGE/README.txt" <<EOF
+Skyline Together $VERSION - co-op multiplayer for Cities: Skylines II
+
+Install: extract this archive into
+  %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Mods
+so that the files end up in Mods\\SkylineTogether, then start the game. Local mods take precedence over
+Paradox Mods subscriptions of the same name.
+
+Every player of a session needs the same build of the mod, the same game version and the same mods.
+After a test, use "Write diagnostics dump" in Options > Skyline Together and send the zip.
+EOF
+  # zip, else the bsdtar that ships with Windows 10+, else PowerShell (which writes backslashes into entry names)
+  if command -v zip >/dev/null 2>&1; then
+    (cd "$STAGE_ROOT" && zip -qr "../$NAME.zip" SkylineTogether) || fail "zip"
+  elif [ -x /c/Windows/System32/tar.exe ]; then
+    (cd "$STAGE_ROOT" && /c/Windows/System32/tar.exe -a -c -f "../$NAME.zip" SkylineTogether) || fail "tar -a"
+  elif command -v powershell.exe >/dev/null 2>&1 || command -v pwsh >/dev/null 2>&1; then
+    PS="$(command -v powershell.exe || command -v pwsh)"
+    "$PS" -NoProfile -NonInteractive -Command \
+      "Compress-Archive -Path '$(to_native "$ROOT/$STAGE")' -DestinationPath '$(to_native "$ROOT/$ZIP")' -Force" \
+      || fail "Compress-Archive"
+  else
+    fail "no zip tool found (zip, PowerShell or Windows tar)"
+  fi
+  [ -f "$ZIP" ] || fail "the archive was not created"
+  rm -rf "$STAGE_ROOT"
+  echo "packaged: $ZIP"
+fi
+
+step "Done"

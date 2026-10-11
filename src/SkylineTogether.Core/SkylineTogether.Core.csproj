@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    SkylineTogether.Core: pure .NET, no Unity, Game or Colossal reference (IMPLEMENTATION-PLAN §2.3, ARCH K16).
+    Built against the game's own runtime assemblies exactly like the game project, because no NuGet download is
+    allowed (docs/decisions/0001-build-without-nuget.md). Only the framework assemblies below are referenced, and the
+    code uses only APIs that exist in netstandard2.0, so the same sources also compile on .NET 8 (the test project
+    compiles them directly).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>SkylineTogether.Core</AssemblyName>
+    <RootNamespace>SkylineTogether.Core</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- compile against the game's own corlib, not a reference pack -->
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+    <FrameworkPathOverride>$(GameManagedPath)</FrameworkPathOverride>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- the game's framework assemblies only; never copied, never shipped (R05 §1.2) -->
+    <Reference Include="mscorlib"><HintPath>$(GameManagedPath)\mscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System"><HintPath>$(GameManagedPath)\System.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Core"><HintPath>$(GameManagedPath)\System.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="netstandard"><HintPath>$(GameManagedPath)\netstandard.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Memory"><HintPath>$(GameManagedPath)\System.Memory.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe"><HintPath>$(GameManagedPath)\System.Runtime.CompilerServices.Unsafe.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.IO.Compression"><HintPath>$(GameManagedPath)\System.IO.Compression.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="SkylineTogether.Core.Tests" />
+  </ItemGroup>
+</Project>

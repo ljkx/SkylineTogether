@@ -1,0 +1,27 @@
+<Project>
+  <!--
+    Shared properties for every project of the solution (IMPLEMENTATION-PLAN §2.2).
+    GameDir, GameManagedPath, CS2UserDataPath and ModDeployDir can be overridden on the command line
+    (dotnet build /p:GameDir=D:\Games\CS2) or by environment variables of the same name.
+    No NuGet package is ever restored (docs/decisions/0001-build-without-nuget.md).
+  -->
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Cities Skylines II</GameDir>
+    <GameManagedPath Condition="'$(GameManagedPath)' == ''">$(GameDir)\Cities2_Data\Managed</GameManagedPath>
+    <CS2UserDataPath Condition="'$(CS2UserDataPath)' == ''">$(USERPROFILE)\AppData\LocalLow\Colossal Order\Cities Skylines II</CS2UserDataPath>
+    <ModDeployDir Condition="'$(ModDeployDir)' == ''">$(CS2UserDataPath)\Mods\SkylineTogether</ModDeployDir>
+    <LangVersion>10.0</LangVersion>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- CS1591 (missing XML comment) would turn every undocumented public member into an error together with
+         GenerateDocumentationFile; contracts are documented in the plan, not necessarily in XML -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Version>0.1.0</Version>
+    <Company>Skyline Together</Company>
+    <Product>Skyline Together</Product>
+    <!-- never restore or reference NuGet packages implicitly -->
+    <DisableImplicitNuGetFallbackFolder>true</DisableImplicitNuGetFallbackFolder>
+  </PropertyGroup>
+</Project>

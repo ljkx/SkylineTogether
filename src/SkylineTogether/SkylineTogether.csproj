@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    SkylineTogether: the game layer (the only IMod), compiled against the game's own Managed assemblies
+    (IMPLEMENTATION-PLAN §2.4). Nothing from the game is copied or shipped (R05 §1.2).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>SkylineTogether</AssemblyName>
+    <RootNamespace>SkylineTogether</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- pinned: NetIdSystem is saved by assembly-qualified name (ARCH §3.4) -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+    <!-- compile against the game's own corlib, not a reference pack -->
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+    <FrameworkPathOverride>$(GameManagedPath)</FrameworkPathOverride>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- every assembly of the game's Managed folder (incl. mscorlib, netstandard, cohtml.Net, Colossal.UI,
+         System.IO.Compression, UnityEngine.IMGUIModule), never copied; a short denylist keeps test-only
+         assemblies out. A hand-maintained list was incomplete (review finding 39). -->
+    <Reference Include="$(GameManagedPath)\*.dll"
+               Exclude="$(GameManagedPath)\*TestScenarios*.dll;$(GameManagedPath)\Colossal.TestFramework.dll">
+      <Private>false</Private>
+    </Reference>
+    <ProjectReference Include="..\SkylineTogether.Core\SkylineTogether.Core.csproj" />
+    <EmbeddedResource Include="Data\*.json" LogicalName="SkylineTogether.Data.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <!-- Local deployment into the game's Mods folder after every build; disable with /p:DeployMod=false
+       (the agent snapshot checker and tools/build.sh do, build.sh deploys only after the tests passed). -->
+  <Target Name="DeployMod" AfterTargets="Build" Condition="'$(DeployMod)' != 'false'">
+    <ItemGroup>
+      <DeployFile Include="$(TargetDir)SkylineTogether.dll;$(TargetDir)SkylineTogether.pdb;$(TargetDir)SkylineTogether.Core.dll;$(TargetDir)SkylineTogether.Core.pdb" />
+      <DeployFile Include="$(MSBuildThisFileDirectory)..\..\ui\SkylineTogether.mjs" Condition="Exists('$(MSBuildThisFileDirectory)..\..\ui\SkylineTogether.mjs')" />
+    </ItemGroup>
+    <MakeDir Directories="$(ModDeployDir)" />
+    <Copy SourceFiles="@(DeployFile)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="SkylineTogether deployed to $(ModDeployDir)" />
+  </Target>
+</Project>
