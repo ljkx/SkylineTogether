@@ -9,8 +9,8 @@ namespace SkylineTogether.Settings
     /// edits the same values; the Options page is the fallback with Host/Join/Leave buttons.
     /// </summary>
     [FileLocation("ModsSettings/SkylineTogether/SkylineTogether")]
-    [SettingsUIGroupOrder(PlayerGroup, HostGroup, JoinGroup, SessionGroup)]
-    [SettingsUIShowGroupName(PlayerGroup, HostGroup, JoinGroup, SessionGroup)]
+    [SettingsUIGroupOrder(PlayerGroup, HostGroup, JoinGroup, SessionGroup, DiagnosticsGroup)]
+    [SettingsUIShowGroupName(PlayerGroup, HostGroup, JoinGroup, SessionGroup, DiagnosticsGroup)]
     public sealed class SkylineTogetherSettings : ModSetting
     {
         public const string MainSection = "Main";
@@ -18,6 +18,7 @@ namespace SkylineTogether.Settings
         public const string HostGroup = "Host";
         public const string JoinGroup = "Join";
         public const string SessionGroup = "Session";
+        public const string DiagnosticsGroup = "Diagnostics";
 
         public SkylineTogetherSettings(IMod mod)
             : base(mod)
@@ -84,6 +85,24 @@ namespace SkylineTogether.Settings
             set => Mod.Sessions?.Leave();
         }
 
+        /// <summary>Shows the network line (ping, KB/s in and out) in the Skyline Together panel.</summary>
+        [SettingsUISection(MainSection, DiagnosticsGroup)]
+        public bool ShowNetworkHud { get; set; }
+
+        [SettingsUISection(MainSection, DiagnosticsGroup)]
+        [SettingsUIButton]
+        public bool WriteDiagnosticsButton
+        {
+            set => WriteDiagnostics();
+        }
+
+        /// <summary>Writes the diagnostics text file next to the log and tells the player where it is.</summary>
+        public static void WriteDiagnostics()
+        {
+            string path = Diagnostics.DiagnosticsDump.Write();
+            SkylineTogether.Session.SessionManager.Notify(path != null ? "Diagnostics written to " + path : "Could not write the diagnostics (see the log).");
+        }
+
         public bool CannotHost() => Mod.Sessions == null || !Mod.Sessions.CanHost;
 
         public bool CannotJoin() => Mod.Sessions == null || !Mod.Sessions.CanJoin;
@@ -101,6 +120,7 @@ namespace SkylineTogether.Settings
             DirectPort = 27015;
             JoinTarget = "";
             JoinPassword = "";
+            ShowNetworkHud = false;
         }
     }
 }

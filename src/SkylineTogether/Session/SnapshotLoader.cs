@@ -73,7 +73,12 @@ namespace SkylineTogether.Session
                 return;
             }
             GameManager game = GameManager.instance;
-            var missing = new List<string>();
+            if (game.isGameLoading)
+            {
+                // review fix: a second load on top of a running one would fail obscurely (or not at all)
+                onDone(new LoadOutcome { Success = false, FailureKey = "busy", FailureDetail = "your game is still loading another city. Wait until it has finished, then join again" });
+                return;
+            }
             if (manifest.ReferencedContent != null && manifest.ReferencedContent.Length > 0 && !game.ArePrerequisitesMet(manifest.ReferencedContent))
             {
                 onDone(new LoadOutcome { Success = false, FailureKey = "content", FailureDetail = "the host's city uses DLC or content packs you do not have (" + string.Join(", ", manifest.ReferencedContent) + ")" });
@@ -124,9 +129,18 @@ namespace SkylineTogether.Session
             }, 1);
         }
 
-        /// <summary>Releases the transient database and deletes its folder.</summary>
+        /// <summary>
+        /// Releases the transient database and deletes its folder. While the game is still loading from it (the
+        /// session ended mid-load), this waits for the load to finish: pulling the asset away under a running
+        /// <c>GameManager.Load</c> could break it.
+        /// </summary>
         public void Dispose()
         {
+            if (IsLoading)
+            {
+                // the load's completion callback disposes
+                return;
+            }
             try
             {
                 _db?.Dispose();

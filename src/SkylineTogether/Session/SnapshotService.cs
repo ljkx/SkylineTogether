@@ -75,12 +75,23 @@ namespace SkylineTogether.Session
                         RenderPrefabIds = new string[0],
                         ReferencedContent = content.ToArray(),
                     };
-                    _main.Post(() => onReady(new SnapshotReady { Manifest = manifest, FilePath = path }));
+                    _main.Post(() =>
+                    {
+                        // hosting stopped while the city was being saved: ReleaseAll could not delete the open file
+                        if (!_files.ContainsKey(id)) TryDelete(path);
+                        onReady(new SnapshotReady { Manifest = manifest, FilePath = path });
+                    });
                 }
                 catch (Exception ex)
                 {
                     _log.Error(LogCategory.Join, "taking the snapshot failed", ex);
-                    _main.Post(() => onFailed(ex.Message));
+                    _main.Post(() =>
+                    {
+                        // review fix: the half-written temp file was never released (the host only releases ids it got)
+                        _files.Remove(id);
+                        TryDelete(path);
+                        onFailed(ex.Message);
+                    });
                 }
             }, 1);
         }
@@ -91,6 +102,18 @@ namespace SkylineTogether.Session
             _files.Remove(snapshotId);
             TryDelete(path);
         }
+
+        /// <summary>
+        /// Deletes every snapshot file of this game session (called when hosting stops; a snapshot still being written
+        /// is deleted when its release arrives, or at the next start).
+        /// </summary>
+        public void ReleaseAll()
+        {
+            foreach (uint id in new List<uint>(_files.Keys)) Release(id);
+        }
+
+        /// <summary>Snapshot files currently kept (diagnostics).</summary>
+        public int FileCount => _files.Count;
 
         /// <summary>Removes leftovers of earlier sessions (called at startup).</summary>
         public void CleanUp()

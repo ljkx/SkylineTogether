@@ -10,9 +10,14 @@
 // Hand-written ES module (no build step). The game provides React and its binding API as globals.
 const React = window.React;
 const api = window["cs2/api"];
-const h = React.createElement;
+// Review fix: the module used to throw at import when a global was missing; now it registers nothing (ARCH §11.2).
+const ready = !!(React && React.createElement && api && api.bindValue && api.useValue && api.trigger);
+const h = ready ? React.createElement : function () { return null; };
 const GROUP = "skylineTogether";
-const stateBinding = api.bindValue(GROUP, "state", "{}");
+const stateBinding = ready ? api.bindValue(GROUP, "state", "{}") : null;
+// presence branch: network HUD line ({show, text}) and remote players ({tags: [{id, name, color, x, y, on, activity}]})
+const netBinding = ready ? api.bindValue(GROUP, "net", "{}") : null;
+const presenceBinding = ready ? api.bindValue(GROUP, "presence", "{\"tags\":[]}") : null;
 
 function parse(json) {
   try {
@@ -166,9 +171,75 @@ function stateText(p) {
   }
 }
 
+// presence branch: what each remote player is doing, by player id
+function activities() {
+  const map = {};
+  const tags = parse(api.useValue(presenceBinding)).tags || [];
+  tags.forEach(function (t) {
+    map[t.id] = t;
+  });
+  return map;
+}
+
+function NetLine() {
+  const n = parse(api.useValue(netBinding));
+  return h(
+    "div",
+    { style: { display: "flex", alignItems: "center", marginTop: "4px" } },
+    n.show && n.text ? h("div", { style: merge(S.mono, { flex: 1, color: C.dim, fontSize: "12px" }) }, n.text) : h("div", { style: { flex: 1 } }),
+    h(
+      "div",
+      { style: { color: C.accent, fontSize: "12px", cursor: "pointer", marginLeft: "8px" }, onClick: function () { api.trigger(GROUP, "toggleNetHud"); } },
+      n.show ? "hide network" : "show network"
+    ),
+    h(
+      "div",
+      { style: { color: C.accent, fontSize: "12px", cursor: "pointer", marginLeft: "8px" }, onClick: function () { api.trigger(GROUP, "writeDiagnostics"); } },
+      "write diagnostics"
+    )
+  );
+}
+
+// Remote players' name tags over their cursors (positions are fractions of the screen, from C#).
+function NameTags() {
+  const tags = parse(api.useValue(presenceBinding)).tags || [];
+  return h(
+    "div",
+    { style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%", pointerEvents: "none" } },
+    tags
+      .filter(function (t) {
+        return t.on;
+      })
+      .map(function (t) {
+        return h(
+          "div",
+          {
+            key: t.id,
+            style: {
+              position: "absolute",
+              left: (t.x * 100).toFixed(2) + "%",
+              top: (t.y * 100).toFixed(2) + "%",
+              transform: "translate(-50%, -130%)",
+              padding: "2px 8px",
+              borderRadius: "10px",
+              background: "rgba(24, 30, 40, 0.82)",
+              border: "2px solid " + (t.color || C.accent),
+              color: C.text,
+              fontSize: "13px",
+              whiteSpace: "nowrap",
+            },
+          },
+          h("b", { style: { color: t.color || C.text } }, t.name),
+          t.activity ? h("span", { style: { color: C.dim } }, " · " + t.activity) : null
+        );
+      })
+  );
+}
+
 function Players(props) {
   const s = props.state;
   const players = s.players || [];
+  const doing = activities();
   return h(
     "div",
     { style: S.section },
@@ -177,8 +248,13 @@ function Players(props) {
       return h(
         "div",
         { key: p.id, style: S.row },
-        h("div", { style: merge(S.dot, { background: stateColor(p.state) }) }),
-        h("div", { style: { flex: 1 } }, p.name + (p.you ? " (you)" : "")),
+        h("div", { style: merge(S.dot, { background: doing[p.id] && doing[p.id].color ? doing[p.id].color : stateColor(p.state) }) }),
+        h(
+          "div",
+          { style: { flex: 1 } },
+          p.name + (p.you ? " (you)" : ""),
+          doing[p.id] && doing[p.id].activity ? h("div", { style: { color: C.dim, fontSize: "12px" } }, doing[p.id].activity) : null
+        ),
         h("div", { style: { color: C.dim, fontSize: "12px", marginRight: "8px" } }, stateText(p)),
         s.mode === "Hosting" && !p.host
           ? h(Button, { kind: "secondary", style: { height: "22px", padding: "0 8px", marginTop: 0 }, onClick: function () { api.trigger(GROUP, "kick", p.id); } }, "Kick")
@@ -226,8 +302,12 @@ function Lobby(props) {
   const [hostPassword, setHostPassword] = React.useState("");
   const [target, setTarget] = React.useState(s.joinTarget || "");
   const [joinPassword, setJoinPassword] = React.useState("");
+  // review fix: an untouched (empty) password field keeps the stored host password instead of wiping it
+  const passwordToSave = function () {
+    return hostPassword.length > 0 ? hostPassword : s.keepPassword || "";
+  };
   const saveHost = function () {
-    api.trigger(GROUP, "saveHostSettings", name, sessionName, hostPassword);
+    api.trigger(GROUP, "saveHostSettings", name, sessionName, passwordToSave());
   };
   if (!s.steam) {
     return h("div", { style: S.error }, "Steam is not available. Skyline Together needs the Steam version of the game, with Steam running and logged in.");
@@ -272,7 +352,7 @@ function Lobby(props) {
         {
           disabled: !s.canJoin || target.trim().length === 0,
           onClick: function () {
-            api.trigger(GROUP, "saveHostSettings", name, sessionName, hostPassword);
+            saveHost();
             api.trigger(GROUP, "join", target, joinPassword);
           },
         },
@@ -297,7 +377,8 @@ function Hosting(props) {
       s.sync ? h("div", { style: merge(S.label, { marginTop: "4px" }) }, s.sync) : null,
       h("div", { style: merge(S.label, { marginTop: "8px" }) }, "Friends join with your Steam ID"),
       h("div", { style: S.mono }, s.steamId),
-      s.directPort > 0 ? h("div", { style: merge(S.label, { marginTop: "6px" }) }, "or your public IP address and port " + s.directPort) : null
+      s.directPort > 0 ? h("div", { style: merge(S.label, { marginTop: "6px" }) }, "or your public IP address and port " + s.directPort) : null,
+      h(NetLine, null)
     ),
     h(Players, { state: s }),
     h(Chat, { state: s, canSend: true }),
@@ -328,7 +409,8 @@ function Client(props) {
       h("div", null, s.sessionName),
       h("div", { style: { color: C.good, marginTop: "4px" } }, s.status),
       h("div", { style: merge(S.label, { marginTop: "4px" }) }, "Game speed (set by the host): " + (s.speed || "")),
-      s.sync ? h("div", { style: S.label }, s.sync) : null
+      s.sync ? h("div", { style: S.label }, s.sync) : null,
+      h(NetLine, null)
     ),
     h(Players, { state: s }),
     h(Chat, { state: s, canSend: true }),
@@ -351,6 +433,7 @@ function makeRoot(inGame) {
     return h(
       "div",
       null,
+      inGame && (mode === "Hosting" || mode === "Client") ? h(NameTags, null) : null, // presence branch: under the panel
       h(
         "div",
         { style: S.toggle, onClick: function () { setOpen(!open); } },
@@ -378,6 +461,10 @@ const GameRoot = makeRoot(true);
 const MenuRoot = makeRoot(false);
 
 export default function register(moduleRegistry) {
+  if (!ready) {
+    console.warn("SkylineTogether: UI globals missing; the panel is unavailable (use the Options page)");
+    return;
+  }
   moduleRegistry.append("Game", GameRoot);
   moduleRegistry.append("Menu", MenuRoot);
 }

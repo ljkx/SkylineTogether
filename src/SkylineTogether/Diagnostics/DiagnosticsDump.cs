@@ -1,0 +1,204 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+using Colossal.Logging;
+using SkylineTogether.Core;
+using SkylineTogether.Core.Protocol;
+using SkylineTogether.Core.Session;
+using SkylineTogether.Session;
+
+namespace SkylineTogether.Diagnostics
+{
+    /// <summary>
+    /// "Write diagnostics" (ARCH §13.6, plain-text subset): session state, players, link numbers, replication counters,
+    /// versions, the mod list and the recent log lines, written as a text file next to the mod's log. Passwords and
+    /// chat messages are never included. Main thread only.
+    /// </summary>
+    public static class DiagnosticsDump
+    {
+        /// <summary>Writes the dump and returns its path; null (and a logged error) when writing failed.</summary>
+        public static string Write()
+        {
+            string text;
+            try
+            {
+                text = Build();
+            }
+            catch (Exception ex)
+            {
+                text = "building the diagnostics failed: " + ex + Environment.NewLine;
+            }
+            try
+            {
+                string folder = Folder();
+                Directory.CreateDirectory(folder);
+                string path = Path.Combine(folder, "SkylineTogether-diagnostics-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".txt");
+                File.WriteAllText(path, text, new UTF8Encoding(false));
+                Mod.Log?.Info(LogCategory.Diagnostics, "diagnostics written to " + path);
+                return path;
+            }
+            catch (Exception ex)
+            {
+                Mod.Log?.Error(LogCategory.Diagnostics, "writing the diagnostics failed", ex);
+                return null;
+            }
+        }
+
+        private static string Folder()
+        {
+            string log = (Mod.Log as GameLog)?.LogPath;
+            if (!string.IsNullOrEmpty(log))
+            {
+                string dir = Path.GetDirectoryName(log);
+                if (!string.IsNullOrEmpty(dir)) return dir;
+            }
+            return LogManager.kDefaultLogPath;
+        }
+
+        private static string Build()
+        {
+            var sb = new StringBuilder(16 * 1024);
+            SessionManager s = Mod.Sessions;
+            Line(sb, "Skyline Together diagnostics, " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture));
+            Line(sb, "");
+            Section(sb, "Versions");
+            Line(sb, "mod assembly: " + typeof(Mod).Assembly.GetName().Version + ", protocol " + ProtocolVersion.Current);
+            Safe(sb, () =>
+            {
+                var info = new GameInfoProvider();
+                HandshakeDigests d = info.GetDigests();
+                Line(sb, "mod build: " + d.ModBuild.ToString("x16", CultureInfo.InvariantCulture));
+                Line(sb, "game: " + d.GameVersion + " (" + d.GameFullVersion + "), locale " + d.Locale);
+            });
+            Line(sb, "unity: " + UnityEngine.Application.unityVersion + ", os: " + Environment.OSVersion);
+
+            Section(sb, "Session");
+            if (s == null)
+            {
+                Line(sb, "the session manager is not running");
+            }
+            else
+            {
+                Line(sb, "mode: " + s.Mode + ", steam available: " + SessionManager.SteamAvailable + ", can host: " + s.CanHost + ", can join: " + s.CanJoin);
+                Line(sb, "last end reason: " + (s.LastEndReason ?? "-"));
+                Safe(sb, () => Line(sb, "game mode: " + Game.SceneFlow.GameManager.instance?.gameMode + ", loading: " + Game.SceneFlow.GameManager.instance?.isGameLoading));
+                if (s.Host != null)
+                {
+                    SessionHost h = s.Host;
+                    Line(sb, "hosting \"" + h.Options.SessionName + "\", max " + h.Options.MaxPlayers + " players, password " + (string.IsNullOrEmpty(h.Options.Password) ? "no" : "yes")
+                             + ", same mods required " + h.Options.RequireSameMods + ", direct port " + (h.Options.Listen.AllowIp ? h.Options.Listen.IpPort.ToString(CultureInfo.InvariantCulture) : "off"));
+                    Line(sb, "speed: " + h.Speed + ", holding the simulation: " + h.HoldSimulation + ", live peers: " + h.LivePeerCount);
+                    NetLine(sb, h.GetNetStats());
+                    Line(sb, "connections:");
+                    foreach (string p in h.DescribePeers()) Line(sb, "  " + p);
+                }
+                if (s.Client != null)
+                {
+                    SessionClient c = s.Client;
+                    Line(sb, "client state: " + c.State + ", join progress " + c.JoinProgress.ToString("0.00", CultureInfo.InvariantCulture) + ", local peer " + c.LocalPeer
+                             + ", session \"" + (c.Session?.SessionName ?? "?") + "\" hosted by " + (c.Session?.HostName ?? "?"));
+                    Line(sb, "speed: " + c.Speed + (c.EndReason != null ? ", end reason: " + c.EndReason : ""));
+                    NetLine(sb, c.GetNetStats());
+                }
+                IReadOnlyList<PlayerInfo> players = s.Host != null ? s.Host.GetPlayers() : s.Client?.Players;
+                if (players != null)
+                {
+                    Line(sb, "players (" + players.Count + "):");
+                    foreach (PlayerInfo p in players)
+                    {
+                        Line(sb, "  " + p.Id + " \"" + p.Name + "\" " + p.Role + " " + p.State + " ping " + p.PingMs + " ms, progress " + p.Progress.ToString("0.00", CultureInfo.InvariantCulture));
+                    }
+                }
+                Line(sb, "system messages (last 20):");
+                int skip = 0;
+                var system = new List<ChatEntry>();
+                foreach (ChatEntry e in s.Chat)
+                {
+                    if (e.IsSystem) system.Add(e);
+                }
+                if (system.Count > 20) skip = system.Count - 20;
+                for (int i = skip; i < system.Count; i++) Line(sb, "  " + system[i].Text);
+            }
+
+            Section(sb, "Replication");
+            Safe(sb, () =>
+            {
+                var sync = Mod.Sync;
+                if (sync == null)
+                {
+                    Line(sb, "not running");
+                    return;
+                }
+                Line(sb, "host: " + sync.IsHost + ", live client: " + sync.IsLiveClient + ", bound entities: " + sync.BoundCount);
+                Line(sb, "status: " + sync.Status);
+                Line(sb, "last apply: " + sync.LastApply);
+            });
+
+            Section(sb, "Presence");
+            Safe(sb, () =>
+            {
+                var presence = Mod.Presence;
+                if (presence == null)
+                {
+                    Line(sb, "not running");
+                    return;
+                }
+                Line(sb, "active: " + presence.Active + ", remote players shown: " + presence.Table.Entries.Count);
+                foreach (var t in presence.Tags) Line(sb, "  peer " + t.Peer + " \"" + t.Name + "\" " + (t.OnScreen ? "on screen" : "off screen") + (string.IsNullOrEmpty(t.Activity) ? "" : ", " + t.Activity));
+            });
+
+            Section(sb, "Settings (passwords omitted)");
+            Safe(sb, () =>
+            {
+                var st = Mod.Settings;
+                if (st == null) return;
+                Line(sb, "player name: \"" + st.PlayerName + "\", session name: \"" + st.SessionName + "\", max players " + st.MaxPlayers + ", same mods " + st.RequireSameMods);
+                Line(sb, "direct connections: " + st.AllowDirectConnections + " on port " + st.DirectPort + ", join target set: " + !string.IsNullOrWhiteSpace(st.JoinTarget)
+                         + ", network HUD: " + st.ShowNetworkHud);
+            });
+
+            Section(sb, "Mods");
+            Safe(sb, () =>
+            {
+                IReadOnlyList<ModEntry> mods = new GameInfoProvider().Mods();
+                Line(sb, mods.Count + " other code mods loaded:");
+                foreach (ModEntry m in mods) Line(sb, "  " + m.Name + " " + m.Version);
+            });
+
+            Section(sb, "Recent log lines");
+            string[] lines = (Mod.Log as GameLog)?.RecentLines() ?? new string[0];
+            foreach (string l in lines) Line(sb, l);
+            return sb.ToString();
+        }
+
+        private static void NetLine(StringBuilder sb, SessionNetStats n)
+        {
+            Line(sb, "link: ping " + (n.PingMs >= 0 ? n.PingMs + " ms" : "?") + ", in " + Kb(n.InBytesPerSecond) + " KB/s, out " + Kb(n.OutBytesPerSecond) + " KB/s, queued " + n.QueuedBytes
+                     + " bytes, connections " + n.Connections);
+        }
+
+        private static string Kb(float bytesPerSecond) => (bytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture);
+
+        private static void Section(StringBuilder sb, string title)
+        {
+            sb.AppendLine();
+            sb.Append("== ").AppendLine(title);
+        }
+
+        private static void Line(StringBuilder sb, string text) => sb.AppendLine(text);
+
+        private static void Safe(StringBuilder sb, Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                Line(sb, "(failed: " + ex.GetType().Name + ": " + ex.Message + ")");
+            }
+        }
+    }
+}

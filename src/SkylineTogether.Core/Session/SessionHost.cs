@@ -20,6 +20,14 @@ namespace SkylineTogether.Core.Session
         public bool RequireSameMods = true;
         public ListenOptions Listen = new ListenOptions();
         public double HandshakeTimeoutSeconds = 30;
+        /// <summary>
+        /// An admitted joiner that sends nothing at all (not even ping replies) for this long is dropped, so a joiner whose
+        /// game hung does not hold the host's simulation forever. Generous, because the joiner's main thread stalls
+        /// while the game deserializes the city.
+        /// </summary>
+        public double JoinStallTimeoutSeconds = 180;
+        /// <summary>Presence updates of a peer that arrive faster than this are dropped instead of relayed.</summary>
+        public double PresenceMinIntervalSeconds = 0.04;
     }
 
     /// <summary>A chat line as the UI shows it.</summary>
@@ -57,11 +65,19 @@ namespace SkylineTogether.Core.Session
             public SnapshotReady Snapshot;
             public long SnapshotSize;
             public float LoadProgress;
+            /// <summary>The joiner's own download fraction (from its LoadProgress reports), -1 until it reported one.</summary>
+            public float DownloadProgress = -1f;
+            /// <summary>Last time anything arrived from this peer.</summary>
+            public double LastHeard;
+            public double LastPresence = double.NegativeInfinity;
+            public double LiveSince;
             public int PingMs;
             public double LastPingSent;
             public uint PingSequence;
             public bool Admitted;
         }
+
+        private static readonly long JoinerQueueLimitBytes = new OutboxConfig().DisconnectQueuedBytes;
 
         private readonly ITransport _transport;
         private readonly IGameInfoProvider _info;
@@ -125,6 +141,12 @@ namespace SkylineTogether.Core.Session
         /// <summary>A peer was admitted and will receive a snapshot; the replication layer starts queueing for it.</summary>
         public event Action<PeerId> PeerJoining;
 
+        /// <summary>
+        /// A live peer's presence (cursor, tool) arrived; <see cref="PresenceMessage.From"/> is set by the host. It has
+        /// already been relayed to the other live peers. The instance is new for every call.
+        /// </summary>
+        public event Action<PresenceMessage> PresenceReceived;
+
         /// <summary>True while a joiner is between admission and the end of its load: the game holds the simulation.</summary>
         public bool HoldSimulation
         {
@@ -183,12 +205,20 @@ namespace SkylineTogether.Core.Session
             if (_disposed) return;
             _transport.Poll(this);
             double now = _clock.Seconds;
-            var drop = new List<Peer>();
+            List<(Peer Peer, string Reason)> drop = null;
             foreach (Peer p in _peers.Values)
             {
                 if (!p.Admitted && now - p.Since > _options.HandshakeTimeoutSeconds)
                 {
-                    drop.Add(p);
+                    (drop ?? (drop = new List<(Peer, string)>())).Add((p, "handshake timed out"));
+                    continue;
+                }
+                if (p.Admitted && p.State != PlayerState.Live && now - p.LastHeard > _options.JoinStallTimeoutSeconds)
+                {
+                    // a hung joiner would otherwise hold the host's simulation forever
+                    _log.Warn(LogCategory.Join, p.Name + ": nothing received for " + (int)(now - p.LastHeard) + " s while joining (" + p.State + "); dropping it");
+                    SystemMessage(p.Name + " stopped responding while joining.");
+                    (drop ?? (drop = new List<(Peer, string)>())).Add((p, "stopped responding while joining"));
                     continue;
                 }
                 if (p.Sender != null)
@@ -197,7 +227,7 @@ namespace SkylineTogether.Core.Session
                     if (p.Sender.IsFailed)
                     {
                         _log.Warn(LogCategory.Join, p.Name + ": snapshot transfer failed: " + p.Sender.FailureReason);
-                        drop.Add(p);
+                        (drop ?? (drop = new List<(Peer, string)>())).Add((p, "snapshot transfer failed"));
                         continue;
                     }
                 }
@@ -208,15 +238,26 @@ namespace SkylineTogether.Core.Session
                     PingMessage.Write(_body, new PingMessage { Sequence = ++p.PingSequence, SentSeconds = now });
                     p.Channel.Send(MessageKind.Ping, _body);
                 }
-                if (p.Channel.Outbox.OverLimit)
+                // a joiner's game may not read for a long time while it loads the city: only the size limit applies
+                // then, not the 60 s age limit (which would drop a joiner whose load stalls its main thread)
+                PeerOutbox outbox = p.Channel.Outbox;
+                // (and for a minute after it went live, while it drains what queued up during its load)
+                bool ageApplies = !p.Admitted || (p.State == PlayerState.Live && now - p.LiveSince > 60.0);
+                bool tooSlow = ageApplies
+                    ? outbox.OverLimit
+                    : outbox.IsFaulted || outbox.QueuedBytes > JoinerQueueLimitBytes;
+                if (tooSlow)
                 {
                     _log.Warn(LogCategory.Net, p.Name + ": the connection is too slow to keep up; disconnecting");
-                    drop.Add(p);
+                    (drop ?? (drop = new List<(Peer, string)>())).Add((p, "connection too slow"));
                     continue;
                 }
                 p.Channel.Pump();
             }
-            foreach (Peer p in drop) Remove(p, TransportCloseReason.Timeout, p.Admitted ? "connection too slow" : "handshake timed out", true);
+            if (drop != null)
+            {
+                foreach ((Peer p, string reason) in drop) Remove(p, TransportCloseReason.Timeout, reason, true);
+            }
 
             if (!_speed.Equals(_sentSpeed))
             {
@@ -252,6 +293,54 @@ namespace SkylineTogether.Core.Session
             {
                 if (p.Admitted && p.Id == peer) p.Channel.Send(kind, body, offset, count);
             }
+        }
+
+        /// <summary>Sends the host player's own presence to every live peer (unreliable; dropped when the link is busy).</summary>
+        public void SendPresence(PresenceMessage presence)
+        {
+            if (_disposed || presence == null) return;
+            presence.From = PeerId.Host;
+            _body.Reset();
+            PresenceMessage.Write(_body, presence);
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.State == PlayerState.Live) p.Channel.SendUnreliable(MessageKind.Presence, _body);
+            }
+        }
+
+        /// <summary>Link numbers summed over the admitted peers (ping: the worst live peer).</summary>
+        public SessionNetStats GetNetStats()
+        {
+            var s = new SessionNetStats { PingMs = -1 };
+            foreach (Peer p in _peers.Values)
+            {
+                if (!p.Admitted) continue;
+                ConnectionStats c = p.Channel.Connection.GetStats();
+                s.Connections++;
+                s.InBytesPerSecond += Math.Max(0f, c.InBytesPerSecond);
+                s.OutBytesPerSecond += Math.Max(0f, c.OutBytesPerSecond);
+                s.QueuedBytes += p.Channel.Outbox.QueuedBytes;
+                if (p.State == PlayerState.Live) s.PingMs = Math.Max(s.PingMs, p.PingMs);
+            }
+            return s;
+        }
+
+        /// <summary>One line per connection (admitted or not) for the diagnostics dump.</summary>
+        public IReadOnlyList<string> DescribePeers()
+        {
+            var lines = new List<string>();
+            double now = _clock.Seconds;
+            foreach (Peer p in _peers.Values)
+            {
+                ConnectionStats c = p.Channel.Connection.GetStats();
+                lines.Add((p.Admitted ? p.Id.ToString() : "unadmitted") + " \"" + p.Name + "\" steam=" + p.SteamId + " state=" + p.State
+                          + " progress=" + Progress(p).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                          + " ping=" + p.PingMs + "ms steamPing=" + c.PingMs + "ms quality=" + c.Quality.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                          + " in=" + (int)c.InBytesPerSecond + "B/s out=" + (int)c.OutBytesPerSecond + "B/s pendingReliable=" + c.PendingReliableBytes
+                          + " outboxQueued=" + p.Channel.Outbox.QueuedBytes + " lastHeard=" + (now - p.LastHeard).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s ago"
+                          + (p.Sender != null ? " snapshotSent=" + p.Sender.TotalBytesSent + "/" + p.SnapshotSize : ""));
+            }
+            return lines;
         }
 
         public void SendChat(string text)
@@ -318,6 +407,7 @@ namespace SkylineTogether.Core.Session
                 Channel = new PeerChannel(connection, PeerId.Host, _clock, _log),
                 State = PlayerState.Handshaking,
                 Since = _clock.Seconds,
+                LastHeard = _clock.Seconds,
                 Name = connection.Peer.DisplayName ?? connection.Peer.ToString(),
                 SteamId = connection.Peer.SteamId,
             };
@@ -329,12 +419,15 @@ namespace SkylineTogether.Core.Session
         {
             if (!_peers.TryGetValue(connection, out Peer p)) return;
             _log.Info(LogCategory.Session, p.Name + " disconnected (" + reason + ": " + text + ")");
+            bool wasJoining = p.Admitted && p.State != PlayerState.Live;
             Remove(p, reason, text, false);
+            if (wasJoining) SystemMessage(p.Name + " lost the connection while joining.");
         }
 
         void ITransportEventSink.OnMessage(IConnection connection, Lane lane, byte[] buffer, int offset, int count)
         {
-            if (!_peers.TryGetValue(connection, out Peer p)) return;
+            if (_disposed || !_peers.TryGetValue(connection, out Peer p)) return;
+            p.LastHeard = _clock.Seconds;
             try
             {
                 if (!p.Channel.TryDecode(buffer, offset, count, out Envelope e)) return;
@@ -367,7 +460,11 @@ namespace SkylineTogether.Core.Session
                     p.Hello = HelloMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
                     if (!string.IsNullOrEmpty(p.Hello.DisplayName)) p.Name = p.Hello.DisplayName;
                     if (p.Hello.SteamId != 0) p.SteamId = p.Hello.SteamId;
+                    if (!ResolveDuplicate(p)) return;
                     TryAdmit(p);
+                    return;
+                case MessageKind.Presence:
+                    if (p.State == PlayerState.Live) RelayPresence(p, e);
                     return;
                 case MessageKind.Control:
                     HandleControl(p, ControlMessage.Decode(e.Body, e.BodyOffset, e.BodyCount));
@@ -414,6 +511,48 @@ namespace SkylineTogether.Core.Session
             }
         }
 
+        /// <summary>
+        /// A Steam user who is already in the session connects again (their game crashed or the old connection is
+        /// dying): the stale peer is replaced, unless it is evidently still loading the city, in which case the new
+        /// attempt is refused with an explanation. Returns false when <paramref name="p"/> was refused.
+        /// </summary>
+        private bool ResolveDuplicate(Peer p)
+        {
+            if (p.SteamId == 0) return true;
+            Peer old = null;
+            foreach (Peer o in _peers.Values)
+            {
+                if (o != p && o.Admitted && o.SteamId == p.SteamId) old = o;
+            }
+            if (old == null) return true;
+            bool stillJoining = old.State != PlayerState.Live && _clock.Seconds - old.LastHeard < 15;
+            if (stillJoining)
+            {
+                Refuse(p, RefuseReason.HostPreparing, "You are still joining this session from an earlier attempt (" + old.State.ToString().ToLowerInvariant()
+                                                      + "). Wait for it to finish, or restart the game and join again.");
+                return false;
+            }
+            _log.Info(LogCategory.Session, p.Name + " connected again; dropping the old connection (" + old.State + ")");
+            Remove(old, 0, "replaced by a new connection", true);
+            return true;
+        }
+
+        private void RelayPresence(Peer p, Envelope e)
+        {
+            double now = _clock.Seconds;
+            if (now - p.LastPresence < _options.PresenceMinIntervalSeconds) return; // flood guard
+            p.LastPresence = now;
+            PresenceMessage m = PresenceMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
+            m.From = p.Id; // never trust the sender's own claim
+            _body.Reset();
+            PresenceMessage.Write(_body, m);
+            foreach (Peer o in _peers.Values)
+            {
+                if (o != p && o.State == PlayerState.Live) o.Channel.SendUnreliable(MessageKind.Presence, _body);
+            }
+            PresenceReceived?.Invoke(m);
+        }
+
         private void HandleControl(Peer p, ControlMessage c)
         {
             byte[] payload = c.Payload ?? Array.Empty<byte>();
@@ -456,6 +595,8 @@ namespace SkylineTogether.Core.Session
                     }
                     CloseSender(p);
                     p.State = PlayerState.Live;
+                    p.LiveSince = _clock.Seconds;
+                    ConnectionTimeouts.Apply(p.Channel.Connection, joining: false, _log);
                     _playersDirty = true;
                     _log.Info(LogCategory.Join, p.Name + " is live");
                     _payload.Reset();
@@ -469,17 +610,31 @@ namespace SkylineTogether.Core.Session
                 }
                 case ControlKind.LoadProgress:
                 {
-                    if (payload.Length < 4 || (p.State != PlayerState.Downloading && p.State != PlayerState.Loading)) return;
+                    // the joiner reports its phase: while it still downloads the host keeps showing "downloading"
+                    // (before, any report switched the player to "loading" at once)
+                    if (p.State != PlayerState.Downloading && p.State != PlayerState.Loading) return;
                     _reader.Reset(payload, 0, payload.Length);
-                    float value = _reader.ReadSingle();
-                    p.LoadProgress = float.IsNaN(value) ? 0f : Math.Max(0f, Math.Min(1f, value));
-                    p.State = PlayerState.Loading;
+                    JoinPhase phase = SessionPayloads.ReadLoadProgress(_reader, out float fraction);
+                    if (phase == JoinPhase.Downloading)
+                    {
+                        if (p.State == PlayerState.Downloading) p.DownloadProgress = fraction;
+                    }
+                    else
+                    {
+                        p.LoadProgress = fraction;
+                        if (p.State != PlayerState.Loading) _log.Info(LogCategory.Join, p.Name + " downloaded the city and is loading it");
+                        p.State = PlayerState.Loading;
+                    }
                     _playersDirty = true;
                     return;
                 }
                 case ControlKind.Disconnecting:
+                {
+                    bool wasJoining = p.Admitted && p.State != PlayerState.Live;
                     Remove(p, 0, "left", false);
+                    if (wasJoining) SystemMessage(p.Name + " cancelled joining.");
                     return;
+                }
                 case ControlKind.SpeedRequest:
                     if (p.State != PlayerState.Live) return;
                     _reader.Reset(payload, 0, payload.Length);
@@ -543,6 +698,8 @@ namespace SkylineTogether.Core.Session
             }
             p.Admitted = true;
             p.State = PlayerState.WaitingForSnapshot;
+            // the joiner's main thread will stall while its game loads the city (ARCH §9.7)
+            ConnectionTimeouts.Apply(p.Channel.Connection, joining: true, _log);
             _payload.Reset();
             SessionPayloads.WriteSessionInfo(_payload, new SessionInfo { SessionName = _options.SessionName, HostName = _options.HostName });
             _body.Reset();
@@ -602,7 +759,8 @@ namespace SkylineTogether.Core.Session
             }
             _snapshot = ready;
             _log.Info(LogCategory.Join, "snapshot ready: " + new FileInfo(ready.FilePath).Length + " bytes");
-            foreach (Peer p in _peers.Values)
+            // a copy: StartTransfer removes the peer when the transfer cannot start
+            foreach (Peer p in new List<Peer>(_peers.Values))
             {
                 if (p.Admitted && p.State == PlayerState.WaitingForSnapshot) StartTransfer(p);
             }
@@ -692,6 +850,7 @@ namespace SkylineTogether.Core.Session
             switch (p.State)
             {
                 case PlayerState.Downloading:
+                    if (p.DownloadProgress >= 0f) return p.DownloadProgress; // what the joiner actually received
                     return p.Sender != null && p.SnapshotSize > 0 ? (float)Math.Min(1.0, p.Sender.TotalBytesSent / (double)p.SnapshotSize) : 0f;
                 case PlayerState.Loading:
                     return p.LoadProgress;

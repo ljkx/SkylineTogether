@@ -42,7 +42,7 @@ namespace SkylineTogether.Core.Protocol
         LineRowsRequest,
         /// <summary>The host's line rows at one sample tick.</summary>
         LineRows,
-        /// <summary>Client → host: join progress while loading (payload: float32 0..1).</summary>
+        /// <summary>Client → host: join progress while downloading and loading (payload: f32 fraction of the phase 0..1, u8 phase 0 = download, 1 = load).</summary>
         LoadProgress
     }
 }

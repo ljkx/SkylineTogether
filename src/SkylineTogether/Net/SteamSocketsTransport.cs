@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Transport;
 using Steamworks;
 using ILog = SkylineTogether.Core.ILog;
 
@@ -19,6 +20,10 @@ namespace SkylineTogether.Net
     {
         private const int AppCloseReason = 1000; // k_ESteamNetConnectionEnd_App_Generic
         private const int MaxMessagesPerPoll = 256;
+        private const double ListenLingerSeconds = 3.0;
+
+        private static readonly List<(HSteamListenSocket Socket, double CloseAt)> DeferredSockets = new List<(HSteamListenSocket, double)>();
+        private static readonly System.Diagnostics.Stopwatch DeferredClock = System.Diagnostics.Stopwatch.StartNew();
 
         private readonly ILog _log;
         private readonly Dictionary<uint, SteamConnection> _connections = new Dictionary<uint, SteamConnection>();
@@ -48,6 +53,7 @@ namespace SkylineTogether.Net
         public void Listen(ListenOptions options)
         {
             _listen = options ?? new ListenOptions();
+            PumpDeferredCloses(force: true); // a previous session's socket would hold the port
             SteamNetworkingConfigValue_t[] config = ConnectionOptions();
             _p2pSocket = SteamNetworkingSockets.CreateListenSocketP2P(_listen.VirtualPort, config.Length, config);
             if (_p2pSocket == HSteamListenSocket.Invalid) throw new InvalidOperationException("Steam refused to open the P2P listen socket. Is Steam running and are you logged in?");
@@ -96,21 +102,42 @@ namespace SkylineTogether.Net
         public void Poll(ITransportEventSink sink)
         {
             if (_disposed) return;
-            while (_statusEvents.Count > 0) HandleStatus(_statusEvents.Dequeue(), sink);
-            while (true)
+            while (_statusEvents.Count > 0 && !_disposed)
+            {
+                try
+                {
+                    HandleStatus(_statusEvents.Dequeue(), sink);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(LogCategory.Net, "connection event handler failed", ex);
+                }
+            }
+            while (!_disposed)
             {
                 int n = SteamNetworkingSockets.ReceiveMessagesOnPollGroup(_pollGroup, _messages, _messages.Length);
                 if (n <= 0) break;
                 for (int i = 0; i < n; i++)
                 {
                     IntPtr ptr = _messages[i];
+                    if (_disposed)
+                    {
+                        // a handler ended the session: free the rest without delivering it
+                        SteamNetworkingMessage_t.Release(ptr);
+                        continue;
+                    }
                     SteamNetworkingMessage_t msg = SteamNetworkingMessage_t.FromIntPtr(ptr);
                     int size = msg.m_cbSize;
                     if (_receiveBuffer.Length < size) _receiveBuffer = new byte[Math.Max(size, _receiveBuffer.Length * 2)];
                     if (size > 0) Marshal.Copy(msg.m_pData, _receiveBuffer, 0, size);
                     uint handle = msg.m_conn.m_HSteamNetConnection;
                     SteamNetworkingMessage_t.Release(ptr);
-                    if (!_connections.TryGetValue(handle, out SteamConnection connection) || !connection.Reported || connection.Closed) continue;
+                    if (!_connections.TryGetValue(handle, out SteamConnection connection) || connection.Closed) continue;
+                    // Review fix: the "connected" status callback is dispatched by the game's SteamAPI.RunCallbacks,
+                    // which may run after this poll in the same frame, while the peer's first messages (its hello) are
+                    // already in the poll group. They used to be dropped, leaving the handshake to time out. A message
+                    // can only arrive on a connected connection, so report it now.
+                    if (!connection.Reported && !TryReportConnected(connection, sink)) continue;
                     try
                     {
                         sink.OnMessage(connection, Lane.Reliable, _receiveBuffer, 0, size);
@@ -134,13 +161,45 @@ namespace SkylineTogether.Net
                 c.Closed = true;
             }
             _connections.Clear();
-            if (_p2pSocket != HSteamListenSocket.Invalid) SteamNetworkingSockets.CloseListenSocket(_p2pSocket);
-            if (_ipSocket != HSteamListenSocket.Invalid) SteamNetworkingSockets.CloseListenSocket(_ipSocket);
+            // Review fix: CloseListenSocket closes every connection accepted on it ungracefully, including lingering
+            // ones, so the last reliable messages (SessionEnd, Kick) were lost and clients only saw "lost the
+            // connection". The listen sockets now stay open a few seconds longer (see PumpDeferredCloses).
+            DeferClose(_p2pSocket);
+            DeferClose(_ipSocket);
             _p2pSocket = _ipSocket = HSteamListenSocket.Invalid;
             if (_pollGroup != HSteamNetPollGroup.Invalid) SteamNetworkingSockets.DestroyPollGroup(_pollGroup);
             _pollGroup = HSteamNetPollGroup.Invalid;
             _statusCallback?.Dispose();
             _statusCallback = null;
+        }
+
+        /// <summary>
+        /// Closes listen sockets of disposed transports once their lingering connections had time to flush (call once
+        /// per frame); <paramref name="force"/> closes them all now (before a new listen socket is opened).
+        /// </summary>
+        public static void PumpDeferredCloses(bool force = false)
+        {
+            if (DeferredSockets.Count == 0) return;
+            double now = DeferredClock.Elapsed.TotalSeconds;
+            for (int i = DeferredSockets.Count - 1; i >= 0; i--)
+            {
+                if (!force && DeferredSockets[i].CloseAt > now) continue;
+                try
+                {
+                    SteamNetworkingSockets.CloseListenSocket(DeferredSockets[i].Socket);
+                }
+                catch (Exception)
+                {
+                    // Steam may be shutting down
+                }
+                DeferredSockets.RemoveAt(i);
+            }
+        }
+
+        private static void DeferClose(HSteamListenSocket socket)
+        {
+            if (socket == HSteamListenSocket.Invalid) return;
+            DeferredSockets.Add((socket, DeferredClock.Elapsed.TotalSeconds + ListenLingerSeconds));
         }
 
         // ---------------------------------------------------------------- internals
@@ -182,10 +241,7 @@ namespace SkylineTogether.Net
                     return;
                 case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_Connected:
                     if (connection == null || connection.Reported || connection.Closed) return;
-                    connection.Peer = IdentityOf(e.m_info);
-                    connection.Reported = true;
-                    _log.Info(LogCategory.Net, "connected: " + connection.Peer + " (" + e.m_info.m_szConnectionDescription + ")");
-                    sink.OnConnected(connection);
+                    ReportConnected(connection, e.m_info, sink);
                     return;
                 case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ClosedByPeer:
                 case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
@@ -204,6 +260,30 @@ namespace SkylineTogether.Net
                 default:
                     return;
             }
+        }
+
+        private void ReportConnected(SteamConnection connection, SteamNetConnectionInfo_t info, ITransportEventSink sink)
+        {
+            connection.Peer = IdentityOf(info);
+            connection.Reported = true;
+            _log.Info(LogCategory.Net, "connected: " + connection.Peer + " (" + info.m_szConnectionDescription + ")");
+            sink.OnConnected(connection);
+        }
+
+        /// <summary>Reports a connection whose "connected" callback has not been dispatched yet, if Steam says it is connected.</summary>
+        private bool TryReportConnected(SteamConnection connection, ITransportEventSink sink)
+        {
+            if (!SteamNetworkingSockets.GetConnectionInfo(connection.Handle, out SteamNetConnectionInfo_t info)) return false;
+            if (info.m_eState != ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_Connected) return false;
+            try
+            {
+                ReportConnected(connection, info, sink);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(LogCategory.Net, "connection event handler failed", ex);
+            }
+            return connection.Reported && !connection.Closed;
         }
 
         private static string Describe(int reason)
@@ -342,6 +422,22 @@ namespace SkylineTogether.Net
             };
         }
 
+        /// <summary>Sets <c>k_ESteamNetworkingConfig_TimeoutConnected</c> on one open connection (connection scope).</summary>
+        internal unsafe bool SetConnectedTimeout(SteamConnection connection, int milliseconds)
+        {
+            if (connection.Closed || _disposed) return false;
+            int value = milliseconds;
+            bool ok = SteamNetworkingUtils.SetConfigValue(
+                ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutConnected,
+                ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Connection,
+                new IntPtr(connection.Handle.m_HSteamNetConnection),
+                ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32,
+                new IntPtr(&value));
+            if (ok) _log.Debug(LogCategory.Net, connection + ": keepalive timeout " + milliseconds + " ms");
+            else _log.Warn(LogCategory.Net, connection + ": Steam refused the keepalive timeout of " + milliseconds + " ms");
+            return ok;
+        }
+
         internal void Close(SteamConnection connection, string text, bool linger)
         {
             if (connection.Closed) return;
@@ -351,7 +447,7 @@ namespace SkylineTogether.Net
         }
     }
 
-    internal sealed class SteamConnection : IConnection
+    internal sealed class SteamConnection : IConnection, IConnectionTimeouts
     {
         private static int _nextId;
         private readonly SteamSocketsTransport _transport;
@@ -377,6 +473,13 @@ namespace SkylineTogether.Net
         public ConnectionStats GetStats() => _transport.Stats(this);
 
         public void Close(int reason, string text, bool linger) => _transport.Close(this, text, linger);
+
+        public int ConnectedTimeoutMilliseconds { get; private set; }
+
+        public void SetConnectedTimeout(int milliseconds)
+        {
+            if (_transport.SetConnectedTimeout(this, milliseconds)) ConnectedTimeoutMilliseconds = milliseconds;
+        }
 
         public override string ToString() => "steam connection " + Id + " (" + Peer + ")";
     }
