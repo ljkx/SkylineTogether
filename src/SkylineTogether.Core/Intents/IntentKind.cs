@@ -4,8 +4,8 @@ namespace SkylineTogether.Core.Intents
     /// Semantic intents (ARCH §5.3): effects that have a public vanilla executor on the host. The value travels in the
     /// INTENT item (<see cref="ProposalFormat"/>); never reorder. Every member names the <see cref="SemanticIntent"/>
     /// fields it uses; the <see cref="SemanticIntent"/> factories build exactly that shape and
-    /// <see cref="ProposalValidator"/> checks it (unused fields are ignored). Targets are checked for liveness and, when
-    /// <see cref="ValidationFacts.FamilyOf"/> is supplied, for their family. Permissions: <see cref="IntentPermissions"/>.
+    /// <c>ProposalValidator</c> checks it (unused fields are ignored). Targets are checked for liveness and, when
+    /// <c>ValidationFacts.FamilyOf</c> is supplied, for their family. Permissions: <c>IntentPermissions</c>.
     /// </summary>
     public enum IntentKind : ushort
     {

@@ -7,7 +7,7 @@ namespace SkylineTogether.Core.Intents
     /// <summary>
     /// A UI action the host executes through the same public vanilla API the client's prediction used (ARCH §5.1 item 3,
     /// §5.3). The meaning of the fields depends on <see cref="Kind"/> (documented per <see cref="IntentKind"/> member);
-    /// the static factories build exactly the documented shape. Also used by <see cref="RollbackPlan.ManagedRestores"/>
+    /// the static factories build exactly the documented shape. Also used by <c>RollbackPlan.ManagedRestores</c>
     /// to describe the managed state a rollback restores.
     /// </summary>
     public sealed class SemanticIntent

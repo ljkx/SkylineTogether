@@ -4,7 +4,7 @@ namespace SkylineTogether.Core.Scheduling
     /// Tunables of budgets and attention (ARCH §4.8, Appendix D). The first block is the contract of
     /// IMPLEMENTATION-PLAN §7.7; the fields after it are additive tunables of this implementation, each with the default
     /// that the design implies. Consumers (<see cref="LinkEstimator"/>, <see cref="AttentionSets"/>,
-    /// <see cref="PeerScheduler"/>, <see cref="DegradationController"/>) copy and sanitise the values when they are
+    /// <c>PeerScheduler</c>, <see cref="DegradationController"/>) copy and sanitise the values when they are
     /// constructed, so changing a field afterwards has no effect on an existing instance, and invalid values (NaN,
     /// negative shares, an unsorted quanta list) fall back to the defaults instead of failing at run time.
     /// </summary>
@@ -63,7 +63,7 @@ namespace SkylineTogether.Core.Scheduling
         public double ChannelReserveFractionP3 = 0.2;
 
         /// <summary>Weights of the rolling refresh per replication class ("V before A before A-low", ARCH §4.8.4); used only
-        /// when <see cref="PeerScheduler.SlotClass"/> is set. "Other" covers movers' discrete state and unknown classes.</summary>
+        /// when <c>PeerScheduler.SlotClass</c> is set. "Other" covers movers' discrete state and unknown classes.</summary>
         public double RollingWeightV = 0.5, RollingWeightA = 0.3, RollingWeightALow = 0.1, RollingWeightOther = 0.1;
 
         /// <summary>Upper bound of slots the scheduler inspects per peer and frame (CPU bound on the worker).</summary>

@@ -6,7 +6,7 @@ namespace SkylineTogether.Core.Intents
     /// The wire format of a proposal (the body of a <see cref="MessageKind.Proposal"/> message on the reliable lane,
     /// ARCH §5.3, Appendix C) and its limits (ARCH §5.4.1 rule 1, §5.6, §14.3). A proposal travels as one part or, when
     /// it is larger than <see cref="Limits.MaxProposalBytes"/>, as several parts split at item boundaries, like epoch
-    /// parts (ARCH §4.6.2); the host assembles them with <see cref="ProposalAssembler"/> and validates only the complete
+    /// parts (ARCH §4.6.2); the host assembles them with <c>ProposalAssembler</c> and validates only the complete
     /// proposal.
     /// <code>
     /// part       = u8 version (1) | u8 flags {bit 0: more parts follow} | varint seq (≥ 1) | varint partIndex

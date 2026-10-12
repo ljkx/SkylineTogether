@@ -6,7 +6,7 @@ namespace SkylineTogether.Core.Scheduling
     /// <summary>
     /// A byte token bucket (ARCH §4.8.4: <c>budget = tokenBucket.Take(frameDt)</c>). <see cref="Take"/> refills
     /// <see cref="RateBytesPerSecond"/> × elapsed seconds, up to <see cref="BurstBytes"/>, and returns what may be spent
-    /// now without removing it; <see cref="Consume"/> spends. Spending may drive the balance negative: P0 is accounted,
+    /// now without removing it; <c>Consume</c> spends. Spending may drive the balance negative: P0 is accounted,
     /// never refused, and the debt then delays the lower priorities until the link has carried it. Tokens are kept as a
     /// double, so no fraction of a byte is lost at high frame rates (48 000 B/s at 144 fps is 333.3 bytes per frame).
     /// Not thread-safe: one owner (the peer's scheduler state).
@@ -63,7 +63,7 @@ namespace SkylineTogether.Core.Scheduling
 
         /// <summary>
         /// Refills for <paramref name="deltaSeconds"/> (non-finite or negative values add nothing) and returns the bytes
-        /// that may be spent now: the balance floored at 0. Nothing is removed; spend with <see cref="Consume"/>.
+        /// that may be spent now: the balance floored at 0. Nothing is removed; spend with <c>Consume</c>.
         /// </summary>
         public int Take(double deltaSeconds)
         {

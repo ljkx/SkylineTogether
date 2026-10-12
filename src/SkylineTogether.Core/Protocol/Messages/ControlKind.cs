@@ -41,6 +41,8 @@ namespace SkylineTogether.Core.Protocol
         /// <summary><c>/st lines compare</c>: request of the host's line rows (ARCH §4.11.6).</summary>
         LineRowsRequest,
         /// <summary>The host's line rows at one sample tick.</summary>
-        LineRows
+        LineRows,
+        /// <summary>Client → host: join progress while loading (payload: float32 0..1).</summary>
+        LoadProgress
     }
 }

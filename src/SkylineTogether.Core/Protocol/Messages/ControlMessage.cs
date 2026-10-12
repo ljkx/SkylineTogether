@@ -20,7 +20,7 @@ namespace SkylineTogether.Core.Protocol
         public byte[] Payload;
 
         /// <summary>True for the kinds of <see cref="ControlKind"/>.</summary>
-        public static bool IsKnownKind(ControlKind kind) => kind <= ControlKind.LineRows;
+        public static bool IsKnownKind(ControlKind kind) => kind <= ControlKind.LoadProgress;
 
         public static void Write(ByteWriter w, ControlMessage m)
         {

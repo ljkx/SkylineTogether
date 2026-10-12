@@ -2,7 +2,7 @@ namespace SkylineTogether.Core.Intents
 {
     /// <summary>
     /// The running totals of one proposal while its parts are decoded (shared by <c>Proposal.Read</c> and
-    /// <see cref="ProposalAssembler"/>): the target proposal the items are appended to, the last item tag (tags never
+    /// <c>ProposalAssembler</c>): the target proposal the items are appended to, the last item tag (tags never
     /// decrease across parts), bytes, components and zone cells so far, and the first cap violation.
     /// </summary>
     internal sealed class ProposalDecodeState

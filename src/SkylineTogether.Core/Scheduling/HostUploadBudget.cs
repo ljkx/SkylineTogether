@@ -10,7 +10,7 @@ namespace SkylineTogether.Core.Scheduling
     /// demand is met is spread evenly on top, so the shares always add up to the total (work-conserving: an unused share
     /// flows to the others). The order of peers with equal demand is by peer id, so the result is deterministic.
     /// <para>
-    /// <see cref="SetDemand"/> records demands; <see cref="Recompute"/> (once per frame, <see cref="PeerScheduler.BeginFrame"/>)
+    /// <see cref="SetDemand"/> records demands; <see cref="Recompute"/> (once per frame, <c>PeerScheduler.BeginFrame</c>)
     /// turns them into shares; <see cref="ShareOf"/> reads them. A peer added since the last recompute is estimated at an
     /// equal share until the next one. A total of 0 or less means "no host cap" (every share is <see cref="int.MaxValue"/>).
     /// Thread-safe: demands are set from the per-peer scheduler workers.

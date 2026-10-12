@@ -3,7 +3,7 @@ namespace SkylineTogether.Core.Intents
     /// <summary>
     /// The category of a client proposal (ARCH §5.2, §5.3). The value travels in the proposal header (<c>u8</c>, see
     /// <see cref="ProposalFormat"/>); never reorder. Which lists a proposal of each kind may fill is a validation rule
-    /// (<see cref="ProposalValidator"/>), not a format rule.
+    /// (<c>ProposalValidator</c>), not a format rule.
     /// </summary>
     public enum ProposalKind : byte
     {

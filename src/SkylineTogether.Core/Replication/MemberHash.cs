@@ -5,7 +5,7 @@ namespace SkylineTogether.Core.Replication
 {
     /// <summary>
     /// Member hashes of the convergence proof (ARCH §4.3.4, §8.1-8.2). The host's <see cref="HashShadow"/> and the
-    /// client's ledger bookkeeping in <see cref="ClientReplicationEngine"/> both use these functions, so the bucket sums of
+    /// client's ledger bookkeeping in <c>ClientReplicationEngine</c> both use these functions, so the bucket sums of
     /// the two sides agree by construction; the game layer uses them for the client's initial ledger pass and rolling
     /// verification. The definitions are part of the wire contract (beacons compare sums) and must never change:
     /// <list type="bullet">

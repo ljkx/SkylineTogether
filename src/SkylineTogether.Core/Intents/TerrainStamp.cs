@@ -20,7 +20,7 @@ namespace SkylineTogether.Core.Intents
     /// | varint toolPrefab+1 | varint brushPrefab+1 | f32 areaMinX areaMinZ areaMaxX areaMaxZ | f32 clampedDeltaTime
     /// </code>
     /// Floats are raw IEEE-754 bits, so non-finite values survive the codec and are rejected by
-    /// <see cref="ProposalValidator"/> (a protocol decoder rejects only malformed bytes).
+    /// <c>ProposalValidator</c> (a protocol decoder rejects only malformed bytes).
     /// </para>
     /// </summary>
     public sealed class TerrainStamp

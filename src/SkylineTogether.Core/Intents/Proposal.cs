@@ -8,14 +8,14 @@ namespace SkylineTogether.Core.Intents
 {
     /// <summary>
     /// A client proposal (ARCH §5.1-5.3): the effects of one tool apply, local edit, terrain stroke or batch of UI actions,
-    /// sent to the host, which validates it atomically (<see cref="ProposalValidator"/>) and commits or rejects it as a
-    /// whole. <see cref="Seq"/> numbers the proposals of one client from 1 (<see cref="ProposalTracker.NextSeq"/>); on the
+    /// sent to the host, which validates it atomically (<c>ProposalValidator</c>) and commits or rejects it as a
+    /// whole. <see cref="Seq"/> numbers the proposals of one client from 1 (<c>ProposalTracker.NextSeq</c>); on the
     /// wire it is always qualified by the origin peer (RESULT records, ARCH §4.6.3). <see cref="BaseEpoch"/> is the last
     /// epoch the client had applied when it captured the effects (diagnostics; conflicts are decided by revisions).
     /// <para>
-    /// Codec (<see cref="ProposalFormat"/>): <see cref="Write"/> and <see cref="Read"/> handle a proposal that fits into one
-    /// part; <see cref="WriteParts"/> splits any proposal into parts of at most <see cref="Limits.MaxProposalBytes"/>,
-    /// which the host joins with <see cref="ProposalAssembler"/>. A single-part proposal is byte-identical in both forms.
+    /// Codec (<see cref="ProposalFormat"/>): <c>Write</c> and <c>Read</c> handle a proposal that fits into one
+    /// part; <c>WriteParts</c> splits any proposal into parts of at most <see cref="Limits.MaxProposalBytes"/>,
+    /// which the host joins with <c>ProposalAssembler</c>. A single-part proposal is byte-identical in both forms.
     /// Lists may be null when written (treated as empty); decoders always return non-null lists.
     /// </para>
     /// </summary>
@@ -52,7 +52,7 @@ namespace SkylineTogether.Core.Intents
 
         /// <summary>
         /// Set by the decoders when a well-formed proposal exceeded a per-proposal cap (<see cref="ProposalFormat"/>): the
-        /// proposal is then an empty shell (header only) and <see cref="ProposalValidator"/> rejects it with
+        /// proposal is then an empty shell (header only) and <c>ProposalValidator</c> rejects it with
         /// <see cref="RejectReason.Invalid"/>. Null for every proposal within the limits and for proposals built in memory.
         /// </summary>
         public string LimitViolation { get; internal set; }
@@ -60,7 +60,7 @@ namespace SkylineTogether.Core.Intents
         /// <summary>
         /// True when the proposal fits the per-proposal caps the host enforces (entities, touches, stamps, intents,
         /// components, zone cells); otherwise <paramref name="violation"/> names the first cap exceeded. The byte total
-        /// (<see cref="Limits.MaxProposalTotalBytes"/>) is checked by <see cref="WriteParts"/>, which measures it.
+        /// (<see cref="Limits.MaxProposalTotalBytes"/>) is checked by <c>WriteParts</c>, which measures it.
         /// A sender checks this before tracking a proposal, so an oversized action is rolled back locally.
         /// </summary>
         public bool IsWithinLimits(out string violation)
@@ -72,7 +72,7 @@ namespace SkylineTogether.Core.Intents
         /// <summary>
         /// Appends the proposal as one part (a complete message body). Throws <see cref="ArgumentException"/> when a value
         /// cannot be encoded, a per-proposal cap is exceeded, or the encoding exceeds <see cref="Limits.MaxProposalBytes"/>
-        /// (use <see cref="WriteParts"/>); the writer is then left as it was.
+        /// (use <c>WriteParts</c>); the writer is then left as it was.
         /// </summary>
         public void Write(ByteWriter w) => Write(w, ProposalLimits.Default);
 
@@ -109,12 +109,12 @@ namespace SkylineTogether.Core.Intents
         /// Reads one complete single-part proposal: everything from the reader's position to the end of its window (the
         /// message body). Throws <see cref="DecodeException"/> for malformed input, a body above
         /// <see cref="Limits.MaxProposalBytes"/>, or a part of a multi-part proposal (those go through
-        /// <see cref="ProposalAssembler"/>). A well-formed proposal above a per-proposal cap is returned as a shell with
+        /// <c>ProposalAssembler</c>). A well-formed proposal above a per-proposal cap is returned as a shell with
         /// <see cref="LimitViolation"/> set.
         /// </summary>
         public static Proposal Read(ByteReader r) => Read(r, ProposalLimits.Default);
 
-        /// <summary>Reads a whole message body with <see cref="Read"/>.</summary>
+        /// <summary>Reads a whole message body with <c>Read</c>.</summary>
         public static Proposal Decode(byte[] buffer, int offset, int count) => Read(new ByteReader(buffer, offset, count), ProposalLimits.Default);
 
         internal static Proposal Read(ByteReader r, ProposalLimits limits)
@@ -142,7 +142,7 @@ namespace SkylineTogether.Core.Intents
         /// Encodes the proposal into <paramref name="scratch"/> (reset first) as parts of at most
         /// <see cref="Limits.MaxProposalBytes"/>, split at item boundaries, and hands each part to
         /// <paramref name="emitPart"/> in order (the array is valid only during the call: the outbox copies it). A proposal
-        /// that fits into one part is emitted as exactly the bytes of <see cref="Write"/>. Nothing is emitted when the
+        /// that fits into one part is emitted as exactly the bytes of <c>Write</c>. Nothing is emitted when the
         /// proposal cannot be encoded: <see cref="ArgumentException"/> for unencodable values, an exceeded per-proposal cap
         /// (<see cref="IsWithinLimits"/>), a total above <see cref="Limits.MaxProposalTotalBytes"/>, or a single item larger
         /// than one part.
