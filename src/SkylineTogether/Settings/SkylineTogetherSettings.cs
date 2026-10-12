@@ -20,10 +20,27 @@ namespace SkylineTogether.Settings
         public const string SessionGroup = "Session";
         public const string DiagnosticsGroup = "Diagnostics";
 
+        /// <summary>Every option shown on the Options page (texts: <c>st.options.&lt;name&gt;.label/.desc</c>).</summary>
+        public static readonly string[] OptionNames =
+        {
+            nameof(PlayerName), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(AllowDirectConnections),
+            nameof(DirectPort), nameof(JoinTarget), nameof(JoinPassword), nameof(HostButton), nameof(JoinButton), nameof(LeaveButton), nameof(ShowNetworkHud),
+            nameof(WriteDiagnosticsButton),
+        };
+
         public SkylineTogetherSettings(IMod mod)
             : base(mod)
         {
             SetDefaults();
+        }
+
+        /// <summary>Changes whenever settings are applied (the UI state binding rebuilds only then).</summary>
+        public static int Version { get; private set; }
+
+        public override void Apply()
+        {
+            base.Apply();
+            Version++;
         }
 
         [SettingsUISection(MainSection, PlayerGroup)]
@@ -100,7 +117,7 @@ namespace SkylineTogether.Settings
         public static void WriteDiagnostics()
         {
             string path = Diagnostics.DiagnosticsDump.Write();
-            SkylineTogether.Session.SessionManager.Notify(path != null ? "Diagnostics written to " + path : "Could not write the diagnostics (see the log).");
+            SkylineTogether.Session.SessionManager.Notify(path != null ? LocaleSource.Resolve("st.toast.diagnostics", "PATH", path) : LocaleSource.Resolve("st.toast.diagnosticsFailed"));
         }
 
         public bool CannotHost() => Mod.Sessions == null || !Mod.Sessions.CanHost;

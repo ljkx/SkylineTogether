@@ -113,7 +113,7 @@ namespace SkylineTogether.Diagnostics
             Run(_cityProbed ? "city loaded, UI checked" : "startup, UI checked", log, world: _cityProbed);
             if (_uiResult.Length > 0)
             {
-                Session.SessionManager.Notify("The Skyline Together panel did not load. Host, join and leave from Options → Skyline Together instead, and please send us the diagnostics file.");
+                Session.SessionManager.Notify(Settings.LocaleSource.Resolve("st.toast.uiMissing"), Colossal.PSI.Common.ProgressState.Warning);
             }
         }
 
@@ -129,6 +129,18 @@ namespace SkylineTogether.Diagnostics
             Safe("P-BARRIER", Features.Clock, "TimeUISystem.m_SimulationPausedBarrierBinding", ProbeBarrierField, warningOnly: true);
             Safe("P-ICONQUEUES", Features.Icons, "IconCommandSystem.m_Queues/m_Dependencies", ProbeIconQueues);
             Safe("P-NAMES", Features.GlobalState, "NameSystem.m_Names", ProbeNameTable, warningOnly: true);
+            // gameplay branch: ViewerGateSystem clears a viewer's tool apply through this protected setter
+            Safe("P-APPLYMODE", Features.Gate, "ToolBaseSystem.applyMode setter", () => typeof(Game.Tools.ToolBaseSystem).GetProperty("applyMode", AnyInstance)?.GetSetMethod(true) != null
+                ? null : "not found: viewers' tool applies are refused by the host instead", warningOnly: true);
+            // w2/simvals: the chart sample counter is written on clients (StatisticsSync)
+            Safe("P-STATS", Features.SimValues, "CityStatisticsSystem.m_SampleCount/m_LastSampleFrameIndex", () =>
+                typeof(Game.Simulation.CityStatisticsSystem).GetField("m_SampleCount", AnyInstance)?.FieldType == typeof(int)
+                && typeof(Game.Simulation.CityStatisticsSystem).GetField("m_LastSampleFrameIndex", AnyInstance)?.FieldType == typeof(uint)
+                    ? null : "not found: client charts may be dated by their own counter", warningOnly: true);
+            // gameplay branch: the host's pause menu is told apart from a session pause (SpeedAuthoritySystem)
+            Safe("P-PAUSEMENU", Features.Speed, "TimeUISystem.m_UnpausedBeforeForcedPause/m_SpeedBeforePause", () =>
+                typeof(TimeUISystem).GetField("m_UnpausedBeforeForcedPause", Private) != null && typeof(TimeUISystem).GetField("m_SpeedBeforePause", Private) != null
+                    ? null : "not found: the host's pause menu pauses the session", warningOnly: true);
             ProbeDemandHandles();
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.GatedSystemNames, systems: true);
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.RouteSystemNames, systems: true);

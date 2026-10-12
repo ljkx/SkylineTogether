@@ -800,6 +800,7 @@ namespace SkylineTogether.Sync
             _view.CamX = Finite(position.x);
             _view.CamY = Finite(position.y);
             _view.CamZ = Finite(position.z);
+            AttentionValues.Instance?.FillViewReport(_view); // w2/simvals: selected entity and infoview topics
             _report.Reset();
             ViewReport.Write(_report, _view);
             client.SendToHost(MessageKind.View, _report.Buffer, 0, _report.Length);

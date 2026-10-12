@@ -342,7 +342,7 @@ namespace SkylineTogether.Core.Tests.Session
             {
                 Assert.Equal(RejoinPhase.Idle, p.Rejoin.Phase);
                 Assert.Equal(0, p.Gaps, p.Name + ": every session's stream is gapless");
-                foreach (string end in p.Ends) Assert.True(end.StartsWith("Lost") || end.StartsWith("RefusedTemporarily") || end.StartsWith("Unreachable"), p.Name + ": unexpected end " + end);
+                foreach (string end in p.Ends) Assert.True(end.StartsWith("ConnectionLost") || end.StartsWith("Timeout") || end.StartsWith("RefusedTemporarily") || end.StartsWith("Unreachable"), p.Name + ": unexpected end " + end);
             }
             Assert.True(rig.Snapshots.Requests >= 6, "each rejoin took a fresh snapshot: " + rig.Snapshots.Requests);
             rig.Run(2);
@@ -400,7 +400,7 @@ namespace SkylineTogether.Core.Tests.Session
                 Assert.Null(p.Client);
                 Assert.Equal(RejoinPhase.NeedsChoice, p.Rejoin.Phase, rig.Describe());
                 Assert.False(p.Rejoin.CanReconnect);
-                Assert.Equal(ClientEndKind.HostEnded, p.Rejoin.StartKind);
+                Assert.Equal(ClientEndKind.SessionEnded, p.Rejoin.StartKind);
                 Assert.Contains("left the city", p.Rejoin.Reason);
                 Assert.Equal(1, p.Attempts, "no automatic attempt against an ended session");
             }

@@ -7,8 +7,8 @@ namespace SkylineTogether.Session
 {
     /// <summary>
     /// Ticks the session once per rendered frame, independent of the game's state: in the main menu, while a city
-    /// loads (the joiner keeps downloading and answering pings) and in game. Also watches the UI probe. Nothing it
-    /// calls may throw into Unity (failures are counted by <see cref="Guard"/>).
+    /// loads (the joiner keeps downloading and answering pings) and in game. Also drives the toasts, Steam invites and
+    /// the UI probe. Nothing it calls may throw into Unity (failures are counted by <see cref="Guard"/>).
     /// </summary>
     public sealed class SessionDriver : MonoBehaviour
     {
@@ -21,6 +21,15 @@ namespace SkylineTogether.Session
             catch (Exception ex)
             {
                 Guard.Report(Features.Session, "session driver", ex);
+            }
+            try
+            {
+                Mod.Toasts?.Tick();
+                Mod.Invites?.Tick();
+            }
+            catch (Exception ex)
+            {
+                Guard.Report(Features.Ui, "toasts or Steam invites", ex);
             }
             try
             {

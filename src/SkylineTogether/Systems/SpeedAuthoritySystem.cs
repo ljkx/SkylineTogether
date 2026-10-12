@@ -1,6 +1,7 @@
 using System;
 using Game;
 using Game.Simulation;
+using SkylineTogether.Core;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Session;
 
@@ -17,11 +18,22 @@ namespace SkylineTogether.Systems
         private bool _holding;
         private float _speedBeforeHold;
         private float _lastNonZero = 1f;
+        // gameplay branch: TimeUISystem forces speed 0 while the window has no focus or a pause menu is open
+        // (TimeUISystem.cs:115-137, R10 T2); with players in the session the host's menu must not pause everyone
+        private Game.UI.InGame.TimeUISystem _timeUi;
+        private System.Reflection.FieldInfo _forcedPause;
+        private System.Reflection.FieldInfo _speedBeforePause;
+        private bool _pauseRequested;
 
         protected override void OnCreate()
         {
             base.OnCreate();
             _simulation = World.GetOrCreateSystemManaged<SimulationSystem>();
+            _timeUi = World.GetExistingSystemManaged<Game.UI.InGame.TimeUISystem>();
+            const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            _forcedPause = typeof(Game.UI.InGame.TimeUISystem).GetField("m_UnpausedBeforeForcedPause", Private);
+            _speedBeforePause = typeof(Game.UI.InGame.TimeUISystem).GetField("m_SpeedBeforePause", Private);
+            if (_forcedPause == null || _speedBeforePause == null) Mod.Log?.Warn(SkylineTogether.Core.LogCategory.Session, "TimeUISystem fields not found: the host's pause menu pauses the session");
         }
 
         protected override void OnUpdate()
@@ -59,9 +71,12 @@ namespace SkylineTogether.Systems
             if (sessions.TakeSpeedRequest(out SpeedState request))
             {
                 float speed = request.Paused ? 0f : MultiplierToSpeed(request.Speed);
+                _pauseRequested = request.Paused; // gameplay branch: a player's pause is never undone below
                 if (_holding) _speedBeforeHold = speed;
                 else _simulation.selectedSpeed = speed;
             }
+            if (_simulation.selectedSpeed > 0f) _pauseRequested = false;
+            if (sessions.Host.LivePeerCount > 0 && !_holding && !_pauseRequested) KeepRunningThroughForcedPause();
             bool hold = sessions.Host.HoldSimulation;
             if (hold && !_holding)
             {
@@ -82,6 +97,27 @@ namespace SkylineTogether.Systems
             float intended = _holding ? _speedBeforeHold : _simulation.selectedSpeed;
             if (intended > 0f) _lastNonZero = intended;
             sessions.Host.Speed = new SpeedState { Speed = SpeedToMultiplier(_lastNonZero), Paused = intended <= 0f, Held = _holding };
+        }
+
+        /// <summary>
+        /// gameplay branch: undoes TimeUISystem's forced pause (focus loss, pause menu) on a host with live players, but
+        /// never a pause the host chose (the field is only set when the game ran before the forced pause).
+        /// </summary>
+        private void KeepRunningThroughForcedPause()
+        {
+            try
+            {
+                if (_timeUi == null) _timeUi = World.GetExistingSystemManaged<Game.UI.InGame.TimeUISystem>();
+                if (_timeUi == null || _forcedPause == null || _speedBeforePause == null) return;
+                if (_simulation.selectedSpeed > 0f || !(bool)_forcedPause.GetValue(_timeUi)) return;
+                float before = (float)_speedBeforePause.GetValue(_timeUi);
+                _simulation.selectedSpeed = before > 0f ? before : _lastNonZero;
+            }
+            catch (System.Exception ex)
+            {
+                _forcedPause = null;
+                Mod.Log?.Warn(SkylineTogether.Core.LogCategory.Session, "keeping the session running through the pause menu failed", ex);
+            }
         }
 
         private void Release()

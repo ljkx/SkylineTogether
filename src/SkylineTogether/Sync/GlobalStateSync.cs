@@ -133,6 +133,55 @@ namespace SkylineTogether.Sync
             _log = log;
         }
 
+        // ---- gameplay branch ----
+
+        /// <summary>Semantic intents and the unlock set (their channels are routed there).</summary>
+        public ActionSync Actions;
+
+        /// <summary>Host: whether a peer's role allows a permission (ARCH §5.6).</summary>
+        public Func<PeerId, Permission, bool> Allows;
+
+        /// <summary>Host: a refused edit; the controller tells the peer and re-sends the listed entities.</summary>
+        public Action<PeerId, RejectReason, IReadOnlyList<uint>> Reject;
+
+        /// <summary>
+        /// Work that creates <c>EndFrameBarrier</c> command buffers (<c>NameSystem.SetCustomName</c>,
+        /// <c>CityServiceBudgetSystem.SetServiceBudget</c>): the barrier refuses them between its playback (frame start,
+        /// where proposals are applied) and <c>AllowBarrier&lt;EndFrameBarrier&gt;</c> (SafeCommandBufferSystem.cs:15-22,
+        /// R10 §0.4), so they run in <see cref="RunLate"/> at the end-of-frame capture.
+        /// </summary>
+        private readonly List<Action> _late = new List<Action>();
+
+        private void RunLate()
+        {
+            if (_late.Count == 0) return;
+            Action[] work = _late.ToArray();
+            _late.Clear();
+            foreach (Action a in work)
+            {
+                try
+                {
+                    a();
+                }
+                catch (Exception ex)
+                {
+                    Once("late", "global state: a deferred change failed", ex);
+                }
+            }
+        }
+
+        /// <summary>Host: permission check of one channel proposal; refuses it (and re-sends the state) when not allowed.</summary>
+        private bool Permitted(PeerId peer, uint channel, Permission needed)
+        {
+            if (Allows == null || Allows(peer, needed)) return true;
+            _log.Info(LogCategory.Replication, "global state: " + peer + " may not change " + ChannelName(channel));
+            // the channel's state goes out again, so the refused prediction is corrected (fees, loan and policies
+            // live on entities the host scans anyway)
+            if (channel == GlobalChannel.Tax || channel == GlobalChannel.Budget || channel == GlobalChannel.Name || channel == GlobalChannel.CityName) _send.MarkDirty(channel);
+            Reject?.Invoke(peer, RejectReason.NoPermission, Array.Empty<uint>());
+            return false;
+        }
+
         private static double Now => UnityEngine.Time.realtimeSinceStartupAsDouble;
 
         private bool Attached => _codec != null;
@@ -202,6 +251,7 @@ namespace SkylineTogether.Sync
         public void Reset()
         {
             _send.Clear();
+            _late.Clear(); // gameplay branch
             _hold.Clear();
             _primed = false;
             _lastHost = double.NegativeInfinity;
@@ -225,6 +275,7 @@ namespace SkylineTogether.Sync
         public void HostCapture(SyncBatch.Writer w)
         {
             if (!Attached) return;
+            RunLate(); // gameplay branch: proposals that need EndFrameBarrier (names, budgets)
             double now = Now;
             bool due = now - _lastHost >= HostInterval;
             if (!due && !_send.AnyDirty) return;
@@ -310,6 +361,13 @@ namespace SkylineTogether.Sync
         private void ApplyProposal(PeerId peer, uint channel, byte[] payload)
         {
             EntityManager em = _world.EntityManager;
+            // gameplay branch: semantic intents (dev tree, map tiles, historical, vehicles, districts, colours)
+            if (channel == GlobalChannel.Action)
+            {
+                Actions?.ApplyProposal(peer, payload);
+                return;
+            }
+            if (!Permitted(peer, channel, RequiredPermission(channel))) return;
             if (channel == GlobalChannel.Tax)
             {
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
@@ -325,13 +383,19 @@ namespace SkylineTogether.Sync
             else if (channel == GlobalChannel.Budget)
             {
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
-                foreach (KeyValuePair<uint, int> e in _intList)
+                var budgets = new List<KeyValuePair<uint, int>>(_intList);
+                // gameplay branch: SetServiceBudget tags the budget entity through EndFrameBarrier: late phase
+                _late.Add(() =>
                 {
-                    Entity service = _ids.GetEntity(e.Key);
-                    if (service == Entity.Null || !em.Exists(service) || !em.HasComponent<ServiceData>(service)) continue;
-                    _budgets.SetServiceBudget(service, Math.Max(0, Math.Min(MaxBudget, e.Value)));
-                }
-                _send.MarkDirty(channel);
+                    EntityManager lem = _world.EntityManager;
+                    foreach (KeyValuePair<uint, int> e in budgets)
+                    {
+                        Entity service = _ids.GetEntity(e.Key);
+                        if (service == Entity.Null || !lem.Exists(service) || !lem.HasComponent<ServiceData>(service)) continue;
+                        _budgets.SetServiceBudget(service, Math.Max(0, Math.Min(MaxBudget, e.Value)));
+                    }
+                    _send.MarkDirty(GlobalChannel.Budget);
+                });
             }
             else if (channel == GlobalChannel.Fee)
             {
@@ -357,18 +421,32 @@ namespace SkylineTogether.Sync
             {
                 _policyList.Clear();
                 if (!ReadDelta(GlobalPayload.ReadPolicies(payload, 0, payload.Length, _policyList), peer, channel)) return;
-                foreach (PolicyChange c in _policyList) CreateModifyEvent(em, c);
+                foreach (PolicyChange c in _policyList)
+                {
+                    // gameplay branch: a target deleted meanwhile is a conflict (rollback of the client's prediction)
+                    if (!CreateModifyEvent(em, c)) Reject?.Invoke(peer, RejectReason.Conflict, new[] { c.Target });
+                }
             }
             else if (channel == GlobalChannel.Name)
             {
                 if (!ReadDelta(GlobalPayload.ReadStrings(payload, 0, payload.Length, Cleared(_stringList)), peer, channel)) return;
-                foreach (KeyValuePair<uint, string> e in _stringList)
+                var names = new List<KeyValuePair<uint, string>>(_stringList);
+                // gameplay branch: NameSystem.SetCustomName uses EndFrameBarrier (NameSystem.cs:214-241): late phase
+                _late.Add(() =>
                 {
-                    Entity target = _ids.GetEntity(e.Key);
-                    if (!Live(em, target)) continue;
-                    _names.SetCustomName(target, e.Value ?? "");
-                }
-                _send.MarkDirty(channel);
+                    EntityManager lem = _world.EntityManager;
+                    foreach (KeyValuePair<uint, string> e in names)
+                    {
+                        Entity target = _ids.GetEntity(e.Key);
+                        if (!Live(lem, target))
+                        {
+                            Reject?.Invoke(peer, RejectReason.Conflict, new[] { e.Key });
+                            continue;
+                        }
+                        _names.SetCustomName(target, e.Value ?? "");
+                    }
+                    _send.MarkDirty(GlobalChannel.Name);
+                });
             }
             else if (channel == GlobalChannel.CityName)
             {
@@ -385,6 +463,15 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>gameplay branch: the permission a channel proposal needs (ARCH §5.6).</summary>
+        private static Permission RequiredPermission(uint channel)
+        {
+            if (channel == GlobalChannel.Tax || channel == GlobalChannel.Budget || channel == GlobalChannel.Fee || channel == GlobalChannel.Loan) return Permission.Economy;
+            if (channel == GlobalChannel.Policy) return Permission.Policies;
+            if (channel == GlobalChannel.Name || channel == GlobalChannel.CityName) return Permission.Names;
+            return Permission.None;
+        }
+
         private bool ReadDelta(GlobalPayloadMode mode, PeerId peer, uint channel)
         {
             if (mode == GlobalPayloadMode.Delta) return true;
@@ -392,17 +479,22 @@ namespace SkylineTogether.Sync
             return false;
         }
 
-        /// <summary>The event the vanilla policy panel creates; <c>Policies.ModifiedSystem</c> applies it this frame.</summary>
-        private void CreateModifyEvent(EntityManager em, PolicyChange c)
+        /// <summary>
+        /// The event the vanilla policy panel creates; <c>Policies.ModifiedSystem</c> applies it this frame. False when
+        /// the target no longer exists (a conflict); malformed changes are dropped and count as handled.
+        /// </summary>
+        private bool CreateModifyEvent(EntityManager em, PolicyChange c)
         {
             Entity target = _ids.GetEntity(c.Target);
             Entity policy = _ids.GetEntity(c.Policy);
-            if (!Live(em, target) || policy == Entity.Null || !em.Exists(policy)) return;
-            if (!em.HasComponent<PolicyData>(policy)) return;
-            if (!em.HasBuffer<Policy>(target) && !em.HasComponent<Game.Buildings.Extension>(target)) return;
-            if (float.IsNaN(c.Adjustment) || float.IsInfinity(c.Adjustment)) return;
+            if (!Live(em, target)) return false;
+            if (policy == Entity.Null || !em.Exists(policy)) return true;
+            if (!em.HasComponent<PolicyData>(policy)) return true;
+            if (!em.HasBuffer<Policy>(target) && !em.HasComponent<Game.Buildings.Extension>(target)) return true;
+            if (float.IsNaN(c.Adjustment) || float.IsInfinity(c.Adjustment)) return true;
             Entity ev = em.CreateEntity(_modifyArchetype);
             em.SetComponentData(ev, new Modify(target, policy, (c.Flags & (byte)PolicyFlags.Active) != 0, c.Adjustment));
+            return true;
         }
 
         // ================================================================== records (both roles)
@@ -441,6 +533,8 @@ namespace SkylineTogether.Sync
         private void ApplyFull(uint channel, byte[] payload)
         {
             EntityManager em = _world.EntityManager;
+            // gameplay branch: the unlock set and the host's sub-element deletions
+            if (Actions != null && Actions.ApplyFromHost(channel, payload)) return;
             if (channel == GlobalChannel.Tax)
             {
                 if (GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)) != GlobalPayloadMode.Full) return;
@@ -469,7 +563,14 @@ namespace SkylineTogether.Sync
             else if (channel == GlobalChannel.Name)
             {
                 if (GlobalPayload.ReadStrings(payload, 0, payload.Length, Cleared(_stringList)) != GlobalPayloadMode.Full) return;
-                ApplyNames(em);
+                // gameplay branch: SetCustomName uses EndFrameBarrier, refused at frame start: applied in the late phase
+                var names = new List<KeyValuePair<uint, string>>(_stringList);
+                _late.Add(() =>
+                {
+                    _stringList.Clear();
+                    _stringList.AddRange(names);
+                    ApplyNames(_world.EntityManager);
+                });
             }
             else if (channel == GlobalChannel.CityName)
             {
@@ -570,12 +671,20 @@ namespace SkylineTogether.Sync
             if (!Attached) return;
             if (!_primed)
             {
+                RunLate();
                 Rebaseline();
                 _primed = true;
                 return;
             }
             DetectLocal(Now);
             CapturePolicies();
+            // gameplay branch: host state deferred to this point (names) is applied after the local edits were taken,
+            // and becomes the new baseline, so it is never proposed back
+            if (_late.Count > 0)
+            {
+                RunLate();
+                Rebaseline();
+            }
             Flush(w);
         }
 
@@ -864,6 +973,8 @@ namespace SkylineTogether.Sync
             if (channel == GlobalChannel.Policy) return "policies";
             if (channel == GlobalChannel.Name) return "names";
             if (channel == GlobalChannel.CityName) return "city name";
+            if (channel == GlobalChannel.Action) return "actions";
+            if (channel == GlobalChannel.Unlocks) return "unlocks";
             foreach (BlobChannel b in _blobs)
             {
                 if (b.Id == channel) return b.Name;

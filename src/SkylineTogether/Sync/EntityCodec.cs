@@ -24,6 +24,8 @@ namespace SkylineTogether.Sync
         public readonly List<(uint Start, uint Count)> IdRanges = new List<(uint, uint)>();
         /// <summary>Entities written or tagged by this apply (the client excludes them from its own capture).</summary>
         public readonly HashSet<Entity> Touched = new HashSet<Entity>();
+        /// <summary>gameplay branch: the entities this apply created (host: build-order re-base of committed edges).</summary>
+        public readonly List<Entity> SpawnedEntities = new List<Entity>();
         public readonly List<string> Problems = new List<string>();
 
         public override string ToString() => "+" + Spawned + " ~" + Upserted + " v" + Values + " -" + Despawned + (Skipped > 0 ? " skipped " + Skipped : "") + (ZoneBlocks > 0 ? " zones " + ZoneBlocks : "");
@@ -37,7 +39,7 @@ namespace SkylineTogether.Sync
     /// own archetype, reconciles the replicated component set, writes the values, then tags the result so the
     /// game's own Modification pipeline rebuilds everything derived (geometry, lanes, zone blocks, sub-objects).
     /// </summary>
-    public sealed class EntityCodec : IDisposable
+    public sealed partial class EntityCodec : IDisposable
     {
         private readonly ILog _log;
         private readonly NetIdSystem _ids;
@@ -55,6 +57,7 @@ namespace SkylineTogether.Sync
         private NativeReference<int> _position;
         private byte[] _managedScratch = new byte[4096];
         private EntityArchetype _pathEventArchetype;
+        private EntityArchetype _colorEventArchetype;
         private bool _disposed;
 
         public EntityCodec(World world, NetIdSystem ids, ILog log)
@@ -70,6 +73,7 @@ namespace SkylineTogether.Sync
             _position = new NativeReference<int>(Allocator.Persistent);
             _ws.Keys = BuildKey;
             _pathEventArchetype = EntityManager.CreateArchetype(ComponentType.ReadWrite<Game.Common.Event>(), ComponentType.ReadWrite<Game.Pathfind.PathUpdated>());
+            _colorEventArchetype = EntityManager.CreateArchetype(ComponentType.ReadWrite<Game.Common.Event>(), ComponentType.ReadWrite<Game.Routes.ColorUpdated>());
         }
 
         public World World { get; }
@@ -542,6 +546,7 @@ namespace SkylineTogether.Sync
                     }
                     _ids.Bind(e, r.NetId, r.Family);
                     spawned.Add(e);
+                    result.SpawnedEntities.Add(e);
                     result.Spawned++;
                 }
                 else if (proposal && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)))
@@ -568,12 +573,15 @@ namespace SkylineTogether.Sync
                 SyncRecord r = pair.Key;
                 if (r.Kind == SyncRecordKind.Values) continue;
                 Entity e = pair.Value;
+                // gameplay branch: a client's edit of an existing entity never touches host-owned state (ARCH §5.2)
+                bool keepHostOwned = proposal && !spawned.Contains(e);
                 recordTypes.Clear();
                 foreach (SyncComponent c in r.Components)
                 {
                     TypeHandler h = TypeHandlers.GetByHash(c.TypeHash);
                     if (h == null) continue;
                     recordTypes.Add(h.Index.Value);
+                    if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
                     if (!em.HasComponent(e, h.Type)) em.AddComponent(e, h.Type);
                 }
                 if (r.CompleteSet)
@@ -584,7 +592,9 @@ namespace SkylineTogether.Sync
                         foreach (ComponentType t in types)
                         {
                             TypeHandler h = TypeHandlers.Get(t);
-                            if (h != null && !recordTypes.Contains(t.TypeIndex.Value)) em.RemoveComponent(e, t);
+                            if (h == null || recordTypes.Contains(t.TypeIndex.Value)) continue;
+                            if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
+                            em.RemoveComponent(e, t);
                         }
                     }
                     finally
@@ -601,12 +611,29 @@ namespace SkylineTogether.Sync
                 SyncRecord r = pair.Key;
                 Entity e = pair.Value;
                 bool path = false;
+                bool keepHostOwned = proposal && !spawned.Contains(e);
                 foreach (SyncComponent c in r.Components)
                 {
                     if (c.Kind == SyncComponentKind.Presence) continue;
                     TypeHandler h = TypeHandlers.GetByHash(c.TypeHash);
                     if (h == null || h.Kind == SyncComponentKind.Presence || !em.HasComponent(e, h.Type)) continue;
+                    if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
+                    // gameplay branch: state vanilla keeps beside some values (mesh colour enable bit, line colour events)
+                    Type fixup = FixupType(h);
+                    Game.Routes.Color oldColor = fixup == typeof(Game.Routes.Color) ? em.GetComponentData<Game.Routes.Color>(e) : default;
                     ReadComponent(h, e, c, offset, data, result);
+                    if (fixup != null)
+                    {
+                        bool changed = fixup != typeof(Game.Routes.Color) || !SameColor(oldColor, em.GetComponentData<Game.Routes.Color>(e));
+                        try
+                        {
+                            ActionSync.AfterWrite(em, e, fixup, changed, _colorEventArchetype);
+                        }
+                        catch (Exception ex)
+                        {
+                            result.Problems.Add("fix-up of " + h.Name + ": " + ex.Message);
+                        }
+                    }
                     if (r.Family == Family.Segment && (h.Name == "Game.Pathfind.PathElement" || h.Name == "Game.Pathfind.PathInformation")) path = true;
                 }
                 result.Touched.Add(e);
@@ -657,6 +684,57 @@ namespace SkylineTogether.Sync
             foreach (Entity segment in pathUpdated) SynthesizePathUpdated(segment);
             return result;
         }
+
+        /// <summary>
+        /// gameplay branch: types a client's proposal never writes on an existing entity (ARCH §5.2: host-only types).
+        /// Line state and initializer outputs are the host's (§4.11.3, §5.4.3: RouteNumber, VehicleModel); values the
+        /// player edits through the UI travel as intents (<see cref="ActionSync"/>: line colour, vehicle models, service
+        /// districts, mesh colour), so a tool edit of the same entity in the same round trip cannot revert them; the
+        /// simulation buffers of buildings belong to the host's simulation. New entities keep everything (the host's
+        /// initializers overwrite RouteNumber and VehicleModel of created lines themselves).
+        /// </summary>
+        private static readonly HashSet<string> HostOwnedTypes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Game.Routes.RouteNumber",
+            "Game.Routes.VehicleModel",
+            "Game.Routes.Color",
+            "Game.Routes.RouteLane",
+            "Game.Routes.AccessLane",
+            "Game.Routes.PathTargets",
+            "Game.Routes.ConnectedRoute",
+            "Game.Routes.RouteVehicle",
+            "Game.Pathfind.PathInformation",
+            "Game.Pathfind.PathElement",
+            "Game.Areas.ServiceDistrict",
+            "Game.Rendering.CustomMeshColor",
+            "Game.Buildings.Renter",
+            "Game.Buildings.Efficiency",
+            "Game.Economy.Resources",
+            "Game.Buildings.Patient",
+            "Game.Buildings.Student",
+            "Game.Buildings.Occupant",
+            "Game.Companies.Employee",
+            "Game.Vehicles.OwnedVehicle",
+            "Game.Simulation.ServiceDispatch",
+            "Game.Buildings.BuildingCondition",
+            "Game.Buildings.CrimeProducer",
+            "Game.Buildings.MailProducer",
+            "Game.Buildings.GarbageProducer",
+            "Game.Buildings.WaterConsumer",
+            "Game.Buildings.ElectricityConsumer",
+        };
+
+        /// <summary>True when a client proposal may not write <paramref name="typeName"/> on an existing entity.</summary>
+        public static bool IsHostOwned(string typeName) => typeName != null && HostOwnedTypes.Contains(typeName);
+
+        private static Type FixupType(TypeHandler h)
+        {
+            if (h.Name == "Game.Rendering.CustomMeshColor") return typeof(Game.Rendering.CustomMeshColor);
+            if (h.Name == "Game.Routes.Color") return typeof(Game.Routes.Color);
+            return null;
+        }
+
+        private static bool SameColor(Game.Routes.Color a, Game.Routes.Color b) => a.m_Color.r == b.m_Color.r && a.m_Color.g == b.m_Color.g && a.m_Color.b == b.m_Color.b && a.m_Color.a == b.m_Color.a;
 
         private void ReadComponent(TypeHandler h, Entity e, in SyncComponent c, int batchOffset, byte[] data, ApplyResult result)
         {

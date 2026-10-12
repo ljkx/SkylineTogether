@@ -152,8 +152,7 @@ namespace SkylineTogether.Diagnostics
             }
             else
             {
-                SkylineTogether.Session.SessionManager.Notify("Skyline Together: " + feature.Title + " hit repeated errors and is off for this session. "
-                                              + "Please use \"write diagnostics\" and send us the file.");
+                SkylineTogether.Session.SessionManager.Notify(Settings.LocaleSource.Resolve("st.toast.featureOff", "FEATURE", feature.Title), Colossal.PSI.Common.ProgressState.Warning);
             }
         }
     }

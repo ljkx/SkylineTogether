@@ -24,7 +24,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void ALostConnectionRetriesWithBackoffThenAsks()
         {
             RejoinController r = Make();
-            Assert.True(r.OnClientEnded(ClientEndKind.Lost, "lost", enteredCity: true, now: 100));
+            Assert.True(r.OnClientEnded(ClientEndKind.ConnectionLost, "lost", enteredCity: true, now: 100));
             Assert.Equal(RejoinPhase.Waiting, r.Phase);
             Assert.True(r.CanReconnect);
             Assert.False(r.Tick(101.9));
@@ -41,7 +41,7 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.True(r.Tick(120));
             Assert.Equal(3, r.Attempt);
             // the last attempt fails: ask, but allow a manual reconnect
-            Assert.True(r.OnClientEnded(ClientEndKind.Lost, "lost again", enteredCity: true, now: 121));
+            Assert.True(r.OnClientEnded(ClientEndKind.ConnectionLost, "lost again", enteredCity: true, now: 121));
             Assert.Equal(RejoinPhase.NeedsChoice, r.Phase);
             Assert.True(r.CanReconnect);
             Assert.Equal("lost again", r.Reason);
@@ -58,7 +58,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void TheHostEndingTheSessionOrAKickAsksAtOnce()
         {
             RejoinController r = Make();
-            Assert.True(r.OnClientEnded(ClientEndKind.HostEnded, "The host left the city.", enteredCity: true, now: 5));
+            Assert.True(r.OnClientEnded(ClientEndKind.SessionEnded, "The host left the city.", enteredCity: true, now: 5));
             Assert.Equal(RejoinPhase.NeedsChoice, r.Phase);
             Assert.False(r.CanReconnect);
             r.Reset();
@@ -68,7 +68,7 @@ namespace SkylineTogether.Core.Tests.Session
             // a rejoin attempt that ends because the host stopped hosting meanwhile: asked, no more retries
             r.ReconnectNow(6);
             Assert.True(r.Tick(6));
-            Assert.True(r.OnClientEnded(ClientEndKind.HostEnded, "ended", enteredCity: false, now: 7));
+            Assert.True(r.OnClientEnded(ClientEndKind.SessionEnded, "ended", enteredCity: false, now: 7));
             Assert.Equal(RejoinPhase.NeedsChoice, r.Phase);
             Assert.False(r.CanReconnect);
         }
@@ -77,7 +77,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void ARefusalStopsRetryingButATemporaryOneDoesNot()
         {
             RejoinController r = Make();
-            r.OnClientEnded(ClientEndKind.Lost, "lost", enteredCity: true, now: 0);
+            r.OnClientEnded(ClientEndKind.ConnectionLost, "lost", enteredCity: true, now: 0);
             Assert.True(r.Tick(2));
             Assert.True(r.OnClientEnded(ClientEndKind.RefusedTemporarily, "still joining", enteredCity: false, now: 2.5));
             Assert.Equal(RejoinPhase.Waiting, r.Phase);
@@ -91,7 +91,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void LeavingDuringRecoveryEndsIt()
         {
             RejoinController r = Make();
-            r.OnClientEnded(ClientEndKind.Lost, "lost", enteredCity: true, now: 0);
+            r.OnClientEnded(ClientEndKind.ConnectionLost, "lost", enteredCity: true, now: 0);
             Assert.True(r.Tick(2));
             Assert.False(r.OnClientEnded(ClientEndKind.Left, "You left the session.", enteredCity: false, now: 3));
             Assert.Equal(RejoinPhase.Idle, r.Phase);
@@ -101,7 +101,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void ADueAttemptWaitsWhileItCannotStart()
         {
             RejoinController r = Make();
-            r.OnClientEnded(ClientEndKind.Lost, "lost", enteredCity: true, now: 0);
+            r.OnClientEnded(ClientEndKind.ConnectionLost, "lost", enteredCity: true, now: 0);
             Assert.False(r.Tick(3, canStart: false));
             Assert.Equal(RejoinPhase.Waiting, r.Phase);
             Assert.Equal(0, r.Attempt, "a postponed attempt is not spent");
@@ -112,12 +112,14 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void EndKindsThatARetryCanFix()
         {
-            Assert.True(SessionClient.IsRetryable(ClientEndKind.Lost));
+            Assert.True(SessionClient.IsRetryable(ClientEndKind.ConnectionLost));
             Assert.True(SessionClient.IsRetryable(ClientEndKind.Unreachable));
+            Assert.True(SessionClient.IsRetryable(ClientEndKind.Timeout));
+            Assert.False(SessionClient.IsRetryable(ClientEndKind.PasswordRequired));
             Assert.True(SessionClient.IsRetryable(ClientEndKind.JoinFailed));
             Assert.True(SessionClient.IsRetryable(ClientEndKind.RefusedTemporarily));
             Assert.False(SessionClient.IsRetryable(ClientEndKind.Refused));
-            Assert.False(SessionClient.IsRetryable(ClientEndKind.HostEnded));
+            Assert.False(SessionClient.IsRetryable(ClientEndKind.SessionEnded));
             Assert.False(SessionClient.IsRetryable(ClientEndKind.Kicked));
             Assert.False(SessionClient.IsRetryable(ClientEndKind.Left));
             Assert.False(SessionClient.IsRetryable(ClientEndKind.LoadFailed));
@@ -151,7 +153,7 @@ namespace SkylineTogether.Core.Tests.Session
             var (none, _, _) = rig.AddClient("Ben");
             rig.Run(100);
             Assert.Equal(ClientEndKind.Refused, wrong.EndKind, wrong.EndReason);
-            Assert.Equal(ClientEndKind.Refused, none.EndKind, none.EndReason);
+            Assert.Equal(ClientEndKind.PasswordRequired, none.EndKind, none.EndReason);
             Assert.False(wrong.EnteredCity);
             var (right, _, _) = rig.AddClient("Cleo", password: "secret");
             rig.Run(200);

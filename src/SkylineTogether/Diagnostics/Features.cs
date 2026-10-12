@@ -46,6 +46,12 @@ namespace SkylineTogether.Diagnostics
         /// <summary>Divergence detection and repair, host icons, line check.</summary>
         public static readonly FeatureHealth Integrity = Registry.Add("integrity", "divergence checks", false);
 
+        /// <summary>w2/simvals: attention values, inspection samples, resource/pollution cell maps, city statistics.</summary>
+        public static readonly FeatureHealth SimValues = Registry.Add("simvals", "city statistics and maps", false);
+
+        /// <summary>Gameplay branch: player actions outside the tools (dev tree, map tiles, milestones, UI writes).</summary>
+        public static readonly FeatureHealth Actions = Registry.Add("actions", "player actions sync", false);
+
         /// <summary>Remote cursors and name tags.</summary>
         public static readonly FeatureHealth Presence = Registry.Add("presence", "player cursors", false);
 

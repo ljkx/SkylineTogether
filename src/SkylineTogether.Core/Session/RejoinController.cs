@@ -94,7 +94,7 @@ namespace SkylineTogether.Core.Session
                 }
                 else
                 {
-                    CanReconnect = kind == ClientEndKind.ProtocolError || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault;
+                    CanReconnect = kind == ClientEndKind.ProtocolError || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault || kind == ClientEndKind.Failed;
                     Phase = RejoinPhase.NeedsChoice;
                 }
                 return true;
@@ -107,7 +107,7 @@ namespace SkylineTogether.Core.Session
                 return false;
             }
             Reason = reason;
-            if (kind == ClientEndKind.HostEnded || kind == ClientEndKind.Kicked)
+            if (kind == ClientEndKind.SessionEnded || kind == ClientEndKind.Kicked)
             {
                 StartKind = kind;
                 CanReconnect = false;
@@ -119,7 +119,7 @@ namespace SkylineTogether.Core.Session
                 Schedule(now);
                 return true;
             }
-            CanReconnect = retryable || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault;
+            CanReconnect = retryable || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault || kind == ClientEndKind.Failed;
             Phase = RejoinPhase.NeedsChoice;
             return true;
         }
