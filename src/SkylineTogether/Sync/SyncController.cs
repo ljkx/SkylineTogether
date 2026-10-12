@@ -451,6 +451,7 @@ namespace SkylineTogether.Sync
             _holds.Clear();
             _dependencies.Clear();
             _missingNotified = false;
+            _codec?.ResetSession(); // final review: the missing-asset list is per session
             _wasClient = false; // (the id tables are cleared below for host and client alike)
             FamilyClassifier.AgentsReplicated = false; // w3/agents
             if (_ids != null)

@@ -56,7 +56,12 @@ namespace SkylineTogether.Sync
     {
         protected override void OnUpdate()
         {
-            if (!SyncController.SessionActive || !Diagnostics.Features.Movers.IsAvailable) return;
+            if (!SyncController.SessionActive) return;
+            if (!Diagnostics.Features.Movers.IsAvailable)
+            {
+                MoverSync.Instance?.Client.DropHeld(); // final review: never keep apply acks waiting on a feature that is off
+                return;
+            }
             try
             {
                 MoverSync.Instance?.Client.Apply();

@@ -171,7 +171,9 @@ namespace SkylineTogether.Sync
             {
                 case MessageKind.Epoch:
                     // only the movers' own batches (their first record is a mover record); SyncController skips them
-                    if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount))
+                    // final review: with the movers feature off nothing applies (or releases) these batches; holding
+                    // them froze the apply acks, so the host never reused a released net id again
+                    if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount) && Diagnostics.Features.Movers.IsAvailable)
                     {
                         // w2/ids: held until applied, so the host reuses a despawned mover's id only after this batch
                         long seq = 0;
@@ -188,6 +190,18 @@ namespace SkylineTogether.Sync
                 case MessageKind.MotionControl:
                     _motion.Enqueue((e.Kind, Copy(e)));
                     break;
+            }
+        }
+
+        /// <summary>The movers feature switched itself off: releases the held batches so the apply acks move on.</summary>
+        public void DropHeld()
+        {
+            if (_batches.Count == 0) return;
+            SessionClient client = _sessions.Client;
+            while (_batches.Count > 0)
+            {
+                (byte[] _, long seq) = _batches.Dequeue();
+                if (seq != 0) client?.ApplyAcks.Release(seq);
             }
         }
 

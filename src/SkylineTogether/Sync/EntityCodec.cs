@@ -131,6 +131,19 @@ namespace SkylineTogether.Sync
         /// </summary>
         public IReadOnlyDictionary<string, int> MissingAssets => _missingAssets;
 
+        /// <summary>
+        /// final review: session end. The missing-asset report and the unresolved prefab ids belong to one host's
+        /// session; kept, they showed (and toasted) the previous session's assets, and an unresolved id could bind a
+        /// later session's record to the old host's prefab name.
+        /// </summary>
+        public void ResetSession()
+        {
+            _missingPrefabs.Clear();
+            _missingAssets.Clear();
+            _unresolvedPrefabs.Clear();
+            _unresolvedPrefabNames.Clear();
+        }
+
         public void Dispose()
         {
             if (_disposed) return;

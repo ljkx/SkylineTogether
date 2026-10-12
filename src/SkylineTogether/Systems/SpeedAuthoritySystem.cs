@@ -36,6 +36,18 @@ namespace SkylineTogether.Systems
             if (_forcedPause == null || _speedBeforePause == null) Mod.Log?.Warn(SkylineTogether.Core.LogCategory.Session, "TimeUISystem fields not found: the host's pause menu pauses the session");
         }
 
+        /// <summary>
+        /// final review: a join hold must not survive the city it was made in. The host leaving the city mid-join stops
+        /// the session, but the next LateUpdate (in the newly loaded city) released the hold and restored the old city's
+        /// speed, so the new city started running against "paused after loading".
+        /// </summary>
+        protected override void OnGamePreload(Colossal.Serialization.Entities.Purpose purpose, GameMode mode)
+        {
+            base.OnGamePreload(purpose, mode);
+            _holding = false;
+            _pauseRequested = false;
+        }
+
         protected override void OnUpdate()
         {
             SessionManager sessions = Mod.Sessions;
