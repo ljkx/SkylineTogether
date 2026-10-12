@@ -37,7 +37,7 @@ namespace SkylineTogether.Sync
     /// own archetype, reconciles the replicated component set, writes the values, then tags the result so the
     /// game's own Modification pipeline rebuilds everything derived (geometry, lanes, zone blocks, sub-objects).
     /// </summary>
-    public sealed class EntityCodec : IDisposable
+    public sealed partial class EntityCodec : IDisposable
     {
         private readonly ILog _log;
         private readonly NetIdSystem _ids;

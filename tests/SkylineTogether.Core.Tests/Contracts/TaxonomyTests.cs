@@ -45,9 +45,19 @@ namespace SkylineTogether.Core.Tests.Contracts
         [Test]
         public void MessageKindsStartAtOne()
         {
-            SequentialFrom<MessageKind>(1, "Hello", "Welcome", "Refuse", "Control", "Epoch", "Ack", "Proposal", "Motion", "MotionControl", "Clock",
-                                        "View", "Presence", "HashDetail", "RepairRequest", "BlobManifest", "BlobChunk", "BlobHave", "Ping", "Chat",
-                                        "Terrain", "Water"); // feat/terrain
+            string[] sequential =
+            {
+                "Hello", "Welcome", "Refuse", "Control", "Epoch", "Ack", "Proposal", "Motion", "MotionControl", "Clock",
+                "View", "Presence", "HashDetail", "RepairRequest", "BlobManifest", "BlobChunk", "BlobHave", "Ping", "Chat",
+                "Terrain", "Water", // feat/terrain
+            };
+            for (int i = 0; i < sequential.Length; i++)
+            {
+                Assert.Equal(1 + i, Convert.ToInt32((MessageKind)Enum.Parse(typeof(MessageKind), sequential[i])), "MessageKind." + sequential[i]);
+            }
+            // branch-owned ranges (merge coordination): w2/simvals owns 65-69
+            Pin((MessageKind.SimValues, 65), (MessageKind.CellMaps, 66), (MessageKind.Statistics, 67));
+            Assert.Equal(sequential.Length + 3, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
         }
 
         [Test]
