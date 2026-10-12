@@ -259,6 +259,16 @@ namespace SkylineTogether.Sync
             // feat/integrity: maintained by IconCommandSystem on every peer (icons come from the host through IconSync);
             // reconciling its presence would strip a client owner's buffer and orphan its icon entities
             "Game.Notifications.IconElement",
+            // w4/flow: the flow-graph connections on net nodes, edges and buildings point at derived flow nodes and edges
+            // that every peer builds itself (graph systems in Modification phases). As presence-only components a spawn
+            // would add them with null references, which the edge graph system then takes for an existing flow node.
+            // Flow values travel by flow key instead (FlowStatusSync, ARCH 4.11.5).
+            "Game.Simulation.ElectricityNodeConnection",
+            "Game.Simulation.ElectricityValveConnection",
+            "Game.Simulation.ElectricityBuildingConnection",
+            "Game.Simulation.WaterPipeNodeConnection",
+            "Game.Simulation.WaterPipeValveConnection",
+            "Game.Simulation.WaterPipeBuildingConnection",
         };
 
         /// <summary>The excluded type names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>
