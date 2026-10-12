@@ -208,6 +208,40 @@ namespace SkylineTogether.Sync
 
         private static ulong Mix(ulong h, ulong v) => (h ^ v) * 1099511628211UL + (h >> 29);
 
+        // ------------------------------------------------------------------ integrity and icon channels (feat/integrity)
+
+        /// <summary>
+        /// Hash of one component's replicated value as both peers can compute it (IntegritySync): the game bytes with net
+        /// ids, and each derived key reduced to its kind, owner and prefab (index and position depend on each peer's own
+        /// regeneration). False when the value is not replicated (it references something that cannot be named) or fails
+        /// to serialize; the caller then hashes presence only, exactly as the record carried it.
+        /// </summary>
+        public bool TryHashValue(TypeHandler h, Entity e, out ulong hash)
+        {
+            hash = 0;
+            if (h == null || h.Kind == SyncComponentKind.Presence || !TrySerialize(h, e, out int length)) return false;
+            int head = _payload.Length;
+            hash = Core.Hashing.XxHash64.Hash(_managedScratch, head, length - head);
+            foreach (DerivedKey k in _ws.UsedKeys)
+            {
+                hash = Mix(hash, ((ulong)k.Kind << 32) | k.OwnerNetId);
+                hash = Mix(hash, k.PrefabNetId);
+            }
+            return true;
+        }
+
+        /// <summary>A portable name of an entity: its net id, else a derived key (lanes, prefab sub-objects); false when neither exists.</summary>
+        public bool TryGetPortableRef(Entity e, out uint netId, out DerivedKey key)
+        {
+            key = default;
+            netId = _ids.GetNetId(e);
+            if (netId != 0) return true;
+            return e != Entity.Null && BuildKey(e, out key);
+        }
+
+        /// <summary>The local entity a derived key names, or <c>Entity.Null</c>.</summary>
+        public Entity ResolveDerivedKey(in DerivedKey key) => ResolveKey(key);
+
         /// <summary>Derived key of an unbound lane or prefab sub-object whose owner is bound.</summary>
         private bool BuildKey(Entity e, out DerivedKey key)
         {
