@@ -572,7 +572,10 @@ namespace SkylineTogether.Sync
                 uint id = _ids.GetNetId(e);
                 if (id != 0) _shadow[id] = _codec.HashEntity(e, false);
             }
-            bool localTool = _tools.activeTool != null && !(_tools.activeTool is DefaultToolSystem);
+            // vanilla tools always go through ApplyTool (captured via _toolApplied); only tools from other mods may
+            // write the world directly (Move It), so only those make un-applied changes count as the player's edits
+            bool localTool = _tools.activeTool != null && !(_tools.activeTool is DefaultToolSystem)
+                             && _tools.activeTool.GetType().Assembly != typeof(DefaultToolSystem).Assembly;
             if (!_toolApplied && !localTool) return;
             _batch.Reset();
             NativeArray<Entity> changed = _changed.ToEntityArray(Allocator.Temp);
