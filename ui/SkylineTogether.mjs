@@ -419,7 +419,10 @@ function withTooltip(node, tooltip) {
 // ------------------------------------------------------------------------------------------------ shared state
 
 // Shared by separately appended components (main menu entry, top-left button, roots).
-const store = { open: false, menuOpen: false, tab: null, typing: 0, topLeftMounted: false, dismissedEnd: -1, listeners: new Set() };
+const store = { open: false, menuOpen: false, tab: null, typing: 0, topLeftMounted: false, menuEntryMounted: false, dismissedEnd: -1, listeners: new Set() };
+// SessionUISystem.KeepPassword: "leave the stored password unchanged" (also before the first state arrived, when
+// s.keepPassword is still missing: an empty string there used to erase the saved host password)
+const KEEP_PASSWORD = "keep";
 let menuButtonInstalled = false;
 let topLeftRegistered = false;
 
@@ -586,6 +589,17 @@ function Btn(p) {
 // never triggers game or mod hotkeys; vk-* attributes give the on-screen keyboard (gamepad) a title and type.
 function Field(p) {
   const [focus, setFocus] = React.useState(false);
+  // final review: an input unmounted while focused (Enter on Join, a session ending while typing) never gets its blur;
+  // the typing count then stayed above zero and Enter never opened the chat again
+  const focusedRef = React.useRef(false);
+  React.useEffect(function () {
+    return function () {
+      if (focusedRef.current) {
+        focusedRef.current = false;
+        store.typing = Math.max(0, store.typing - 1);
+      }
+    };
+  }, []);
   return h("input", {
     ref: p.inputRef,
     type: p.password ? "password" : "text",
@@ -598,12 +612,18 @@ function Field(p) {
     style: merge(S.input, focus ? S.inputFocus : null, p.mono ? S.mono : null, p.style),
     onFocus: function () {
       setFocus(true);
-      store.typing++;
+      if (!focusedRef.current) {
+        focusedRef.current = true;
+        store.typing++;
+      }
       if (p.onFocus) p.onFocus();
     },
     onBlur: function () {
       setFocus(false);
-      store.typing = Math.max(0, store.typing - 1);
+      if (focusedRef.current) {
+        focusedRef.current = false;
+        store.typing = Math.max(0, store.typing - 1);
+      }
       if (p.onBlur) p.onBlur();
     },
     onChange: function (e) {
@@ -762,7 +782,7 @@ function Lobby(p) {
   const [name, setName] = React.useState(s.playerName || "");
   const tab = st.tab || (p.inGame ? "host" : "join");
   const saveName = function () {
-    send("saveHostSettings", name, s.sessionNameSetting || "", s.keepPassword || "");
+    send("saveHostSettings", name, s.sessionNameSetting || "", s.keepPassword || KEEP_PASSWORD);
   };
   return h(
     "div",
@@ -820,7 +840,7 @@ function HostTab(p) {
   const [password, setPassword] = React.useState("");
   // review fix: an untouched (empty) password field keeps the stored host password instead of wiping it
   const save = function (pw) {
-    send("saveHostSettings", p.name, session, pw !== undefined ? pw : password.length > 0 ? password : s.keepPassword || "");
+    send("saveHostSettings", p.name, session, pw !== undefined ? pw : password.length > 0 ? password : s.keepPassword || KEEP_PASSWORD);
   };
   const reason = !p.inGame ? t("st.ui.host.needCity") : !s.canHost ? t("st.ui.host.unavailable") : "";
   return h(
@@ -847,7 +867,7 @@ function JoinTab(p) {
   const canJoin = !!s.canJoin && target.trim().length > 0;
   const join = function () {
     if (!canJoin) return;
-    send("saveHostSettings", p.name, s.sessionNameSetting || "", s.keepPassword || "");
+    send("saveHostSettings", p.name, s.sessionNameSetting || "", s.keepPassword || KEEP_PASSWORD);
     send("join", target.trim(), password);
   };
   return h(
@@ -917,7 +937,7 @@ function PlayerRow(p) {
           ? h("div", { style: { color: T.dim, fontSize: FS.s, marginTop: "2rem" } }, doing.activity)
           : null
     ),
-    !pl.host && !joining ? h("div", { style: { display: "flex", alignItems: "center", marginLeft: "8rem" } }, h(PingBars, { ping: pl.ping }), h("div", { style: { color: T.dim, fontSize: FS.xs, marginLeft: "5rem", width: "44rem" } }, t("st.ui.players.ping", { N: pl.ping }))) : null,
+    !pl.host && !joining ? h("div", { style: { display: "flex", alignItems: "center", marginLeft: "8rem" } }, h(PingBars, { ping: pl.ping }), h("div", { style: { color: T.dim, fontSize: FS.xs, marginLeft: "5rem", width: "44rem" } }, pl.ping >= 0 ? t("st.ui.players.ping", { N: pl.ping }) : "")) : null,
     s.mode === "Hosting" && !pl.host && !joining // gameplay branch: viewers watch, builders build
       ? h(Btn, { small: true, kind: "flat", style: { marginLeft: "8rem" }, onClick: function () { send("toggleRole", pl.id); } }, pl.role === "viewer" ? t("st.ui.players.makeBuilder") : t("st.ui.players.makeViewer"))
       : null,
@@ -1278,7 +1298,7 @@ function EndOverlay(p) {
   const retry = function () {
     if (needsPassword && password.length === 0) return;
     setStore({ dismissedEnd: e.seq });
-    send("retryJoin", needsPassword ? password : s.keepPassword || "");
+    send("retryJoin", needsPassword ? password : s.keepPassword || KEEP_PASSWORD);
   };
   const isMods = copy === "mods" && (list(e.missing).length + list(e.extra).length + list(e.versions).length > 0);
   return h(
@@ -1591,13 +1611,26 @@ function MenuRoot() {
   useI18n();
   const s = useJson(stateBinding);
   const st = useStore();
+  const [noMenuEntry, setNoMenuEntry] = React.useState(false);
+  React.useEffect(function () {
+    // final review: extend() succeeding does not prove the vanilla navigation renders our entry; without it there was
+    // no way into multiplayer from the title screen, so the corner toggle appears when the entry never mounted
+    const timer = setTimeout(function () {
+      if (!store.menuEntryMounted) setNoMenuEntry(true);
+    }, 2500);
+    return function () {
+      clearTimeout(timer);
+      // the menu panel must not pop up again by itself the next time the title screen is shown (after a join)
+      store.menuOpen = false;
+    };
+  }, []);
   const close = function () {
     setStore({ menuOpen: false });
   };
   return h(
     "div",
     { style: S.layer },
-    menuButtonInstalled ? null : h(FallbackToggle, { state: s, menu: true, onClick: function () { setStore({ menuOpen: !store.menuOpen }); } }),
+    menuButtonInstalled && !(noMenuEntry && !st.menuEntryMounted) ? null : h(FallbackToggle, { state: s, menu: true, onClick: function () { setStore({ menuOpen: !store.menuOpen }); } }),
     st.menuOpen ? h("div", { style: S.screenBackdrop, onClick: close }) : null,
     st.menuOpen ? h("div", { style: S.screenPos }, h(PanelShell, { title: panelTitle(s), onClose: close, width: "600rem", maxHeight: "82vh" }, h(PanelContent, { state: s, inGame: false }))) : null,
     h(JoinOverlay, { state: s }),
@@ -1609,6 +1642,12 @@ function MenuRoot() {
 
 function MenuEntry() {
   useI18n();
+  React.useEffect(function () {
+    store.menuEntryMounted = true;
+    return function () {
+      store.menuEntryMounted = false;
+    };
+  }, []);
   const label = t("st.ui.menu.multiplayer");
   // never break the vanilla menu: a failing game button falls back to a plain entry in the same place
   return Safe(h(V.LabeledIconButton, { tinted: true, src: ICON_GLYPH, theme: V.menuTheme, onSelect: openPanel }, label), function () {

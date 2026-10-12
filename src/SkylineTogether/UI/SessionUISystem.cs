@@ -339,7 +339,8 @@ namespace SkylineTogether.UI
         private string BuildState()
         {
             SessionManager s = Mod.Sessions;
-            if (s == null) return "{}";
+            // final review: an empty state disabled both buttons without a word; say why (the session layer did not start)
+            if (s == null) return "{\"blocked\":\"the session layer did not start (see the log)\"}";
             SessionClient client = s.Client;
             // review fix: since movers are bound, the bound count in the sync line changes nearly every frame, which
             // re-serialized the whole state (players, 100 chat lines) and re-rendered the panel every frame; the line
@@ -555,7 +556,8 @@ namespace SkylineTogether.UI
             sb.Append('{');
             Prop(sb, "seq", end.Seq).Append(',');
             Prop(sb, "kind", KindOf(end.Kind)).Append(',');
-            Prop(sb, "refuse", end.Kind == ClientEndKind.Refused ? end.Refuse.ToString() : "").Append(',');
+            // final review: a host that is still preparing refuses temporarily; the panel's "notReady" text needs the reason too
+            Prop(sb, "refuse", end.Kind == ClientEndKind.Refused || end.Kind == ClientEndKind.RefusedTemporarily ? end.Refuse.ToString() : "").Append(',');
             Prop(sb, "text", end.Text ?? "").Append(',');
             Prop(sb, "target", end.Target ?? "").Append(',');
             MismatchReport r = end.Report;
@@ -621,7 +623,7 @@ namespace SkylineTogether.UI
                 case ClientEndKind.ConnectionLost: return "connectionLost";
                 case ClientEndKind.Failed: return "failed";
                 // robust branch: the finer kinds map onto the error screen's categories
-                case ClientEndKind.Unreachable: return "connectionLost";
+                case ClientEndKind.Unreachable: return "timeout"; // final review: never connected ("check the Steam ID or address")
                 case ClientEndKind.RefusedTemporarily: return "refused";
                 case ClientEndKind.JoinFailed:
                 case ClientEndKind.LoadFailed:
