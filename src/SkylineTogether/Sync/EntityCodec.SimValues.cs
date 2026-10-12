@@ -176,7 +176,13 @@ namespace SkylineTogether.Sync
         /// Appends the entity's simulation values to a <see cref="SimValueMessage"/>. Returns the number of components
         /// written; with 0 nothing was appended (the entity has no simulation value that can travel).
         /// </summary>
-        public int WriteSimValues(ByteWriter w, uint netId, Family family, Entity e)
+        public int WriteSimValues(ByteWriter w, uint netId, Family family, Entity e) => WriteSimValues(w, netId, family, e, null);
+
+        /// <summary>
+        /// <see cref="WriteSimValues(ByteWriter, uint, Family, Entity)"/> without the component of <paramref name="skip"/>
+        /// (w3/audit: a node's traffic lights are hashed by phase, not by their tick timer).
+        /// </summary>
+        public int WriteSimValues(ByteWriter w, uint netId, Family family, Entity e, TypeHandler skip)
         {
             TypeHandler[] handlers = SimHandlers(e, family == Family.Mover);
             if (handlers.Length == 0) return 0;
@@ -186,6 +192,7 @@ namespace SkylineTogether.Sync
             foreach (TypeHandler h in handlers)
             {
                 if (n >= SimValueMessage.MaxComponents) break;
+                if (h == skip) continue;
                 if (!TrySerializeSim(h, e, out int length)) continue;
                 SimValueMessage.AddComponent(w, h.Hash, h.Kind, _managedScratch, 0, length);
                 n++;
@@ -200,10 +207,13 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>A 64-bit hash of what <see cref="WriteSimValues"/> would send (0: nothing travels).</summary>
-        public ulong HashSimValues(Entity e, Family family)
+        public ulong HashSimValues(Entity e, Family family) => HashSimValues(e, family, null);
+
+        /// <summary>The hash of <see cref="WriteSimValues(ByteWriter, uint, Family, Entity, TypeHandler)"/> without <paramref name="skip"/>.</summary>
+        public ulong HashSimValues(Entity e, Family family, TypeHandler skip)
         {
             _simHashWriter.Reset();
-            if (WriteSimValues(_simHashWriter, 0, family, e) == 0) return 0;
+            if (WriteSimValues(_simHashWriter, 0, family, e, skip) == 0) return 0;
             return Core.Hashing.XxHash64.Hash(_simHashWriter.Buffer, 0, _simHashWriter.Length) | 1UL;
         }
 

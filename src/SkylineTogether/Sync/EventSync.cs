@@ -70,6 +70,9 @@ namespace SkylineTogether.Sync
         private readonly PresenceTracker _sent = new PresenceTracker();
         private readonly RollingIdPass _pass = new RollingIdPass();
         private readonly Dictionary<EntityArchetype, ulong> _signatures = new Dictionary<EntityArchetype, ulong>();
+        private readonly Dictionary<EntityArchetype, bool> _trees = new Dictionary<EntityArchetype, bool>();
+        private ComponentType _treeType;
+        private ComponentType _buildingType;
         private readonly HashSet<uint> _watchedLast = new HashSet<uint>();
         private readonly HashSet<uint> _watchedNow = new HashSet<uint>();
         private readonly HashSet<uint> _liked = new HashSet<uint>();
@@ -107,6 +110,8 @@ namespace SkylineTogether.Sync
                 _world = world;
                 EntityManager em = world.EntityManager;
                 _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
+                _treeType = ComponentType.ReadOnly<Game.Objects.Tree>();
+                _buildingType = ComponentType.ReadOnly<Game.Buildings.Building>();
                 _createChirps = world.GetOrCreateSystemManaged<Game.Triggers.CreateChirpSystem>();
                 var watched = new List<ComponentType>();
                 foreach (string name in WatchedTypeNames)
@@ -150,6 +155,7 @@ namespace SkylineTogether.Sync
             _watchedNow.Clear();
             _liked.Clear();
             _signatures.Clear();
+            _trees.Clear();
             _lastWatch = double.NegativeInfinity;
             _lastRefill = double.NegativeInfinity;
             PresenceResends = 0;
@@ -181,19 +187,20 @@ namespace SkylineTogether.Sync
         /// Host, after the tagged capture of the frame: adds to <paramref name="into"/> every bound structure entity
         /// whose replicated component set differs from the one last sent.
         /// </summary>
-        public void HostCollect(double now, HashSet<Entity> into)
+        public void HostCollect(double now, HashSet<Entity> into, List<uint> values)
         {
             if (!Attached || !Features.Events.IsAvailable) return;
             EntityManager em = _world.EntityManager;
             int found = 0;
-            // 1: entities whose batches changed this frame (fire, damage, destruction add BatchesUpdated)
-            if (!_batchesQuery.IsEmptyIgnoreFilter) found += Sweep(em, _batchesQuery, into, null);
+            // 1: entities whose batches changed this frame (fire, damage, destruction add BatchesUpdated); a tree whose
+            // set is unchanged changed its growth stage (TreeGrowthSystem): its values are re-sent
+            if (!_batchesQuery.IsEmptyIgnoreFilter) found += Sweep(em, _batchesQuery, into, null, values);
             // 2: the watched types every 0.25 s, plus the entities that had one of them at the previous sweep
             if (_hasWatchQuery && now - _lastWatch >= WatchInterval)
             {
                 _lastWatch = now;
                 _watchedNow.Clear();
-                if (!_watchQuery.IsEmptyIgnoreFilter) found += Sweep(em, _watchQuery, into, _watchedNow);
+                if (!_watchQuery.IsEmptyIgnoreFilter) found += Sweep(em, _watchQuery, into, _watchedNow, null);
                 foreach (uint id in _watchedLast)
                 {
                     if (_watchedNow.Contains(id)) continue;
@@ -223,7 +230,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        private int Sweep(EntityManager em, EntityQuery query, HashSet<Entity> into, HashSet<uint> seen)
+        private int Sweep(EntityManager em, EntityQuery query, HashSet<Entity> into, HashSet<uint> seen, List<uint> treeValues)
         {
             int found = 0;
             NativeArray<ArchetypeChunk> chunks = query.ToArchetypeChunkArray(Allocator.Temp);
@@ -233,13 +240,19 @@ namespace SkylineTogether.Sync
                 foreach (ArchetypeChunk chunk in chunks)
                 {
                     ulong signature = SignatureOf(chunk.Archetype);
+                    bool trees = treeValues != null && IsTree(chunk.Archetype);
                     NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
                     for (int i = 0; i < entities.Length; i++)
                     {
                         uint id = _ids.GetNetId(entities[i]);
                         if (id == 0 || !FamilyClassifier.IsPresenceWatched(_ids.GetFamily(id))) continue;
                         seen?.Add(id);
-                        if (!_sent.Changed(id, signature) || into.Count >= MaxPerFrame) continue;
+                        if (!_sent.Changed(id, signature))
+                        {
+                            if (trees) treeValues.Add(id);
+                            continue;
+                        }
+                        if (into.Count >= MaxPerFrame) continue;
                         if (into.Add(entities[i])) found++;
                     }
                 }
@@ -249,6 +262,30 @@ namespace SkylineTogether.Sync
                 chunks.Dispose();
             }
             return found;
+        }
+
+        /// <summary>Trees (not buildings): their growth stage is not part of any value stream but the tree's own record.</summary>
+        private bool IsTree(EntityArchetype archetype)
+        {
+            if (_trees.TryGetValue(archetype, out bool yes)) return yes;
+            yes = false;
+            NativeArray<ComponentType> types = archetype.GetComponentTypes(Allocator.Temp);
+            try
+            {
+                bool tree = false, building = false;
+                foreach (ComponentType t in types)
+                {
+                    if (t.TypeIndex == _treeType.TypeIndex) tree = true;
+                    else if (t.TypeIndex == _buildingType.TypeIndex) building = true;
+                }
+                yes = tree && !building;
+            }
+            finally
+            {
+                types.Dispose();
+            }
+            _trees[archetype] = yes;
+            return yes;
         }
 
         private bool Check(EntityManager em, uint id, HashSet<Entity> into)
@@ -300,6 +337,12 @@ namespace SkylineTogether.Sync
                         if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
                         if (em.HasBuffer<Game.Events.TargetElement>(e)) DropNullTargets(em.GetBuffer<Game.Events.TargetElement>(e));
                         if (em.HasComponent<Game.Triggers.Chirp>(e)) RestoreLike(em, e);
+                        // a tree's growth stage arrived as values (no tag): its mesh is chosen again, as on the host
+                        if (em.HasComponent<Game.Objects.Tree>(e) && !em.HasComponent<Game.Buildings.Building>(e) && !em.HasComponent<Game.Common.BatchesUpdated>(e)
+                            && !em.HasComponent<Game.Common.Updated>(e) && !em.HasComponent<Game.Common.Created>(e))
+                        {
+                            em.AddComponent<Game.Common.BatchesUpdated>(e);
+                        }
                     }
                 });
             }

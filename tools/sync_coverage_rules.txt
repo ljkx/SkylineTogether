@@ -1,0 +1,379 @@
+# Sync coverage rules (tools/sync_coverage.py -> docs/design/SYNC-COVERAGE.md)
+#
+# pattern | status | mechanism | note
+#   pattern: a full type name (exact), optionally qualified "system:" or "component:", or a prefix ending in "*".
+#            First match wins: qualified exact, exact, then the longest prefix.
+#   status:  structure, presence, scan, values, keyed, global, actions, statistics, cellmap, terrain, water, movers,
+#            icons, clock, derived, snapshot, local, transient, other-work, excluded, gap (see the script).
+# Families (FamilyClassifier/FamilyRules): which entities a component lives on decides its path. Structure entities
+# (nets, objects, areas, routes, water sources, mod entities, and since w3/audit events) send every serializable
+# component in their structure records; values of non-structure types also travel on the attention values stream.
+
+# =====================================================================================================================
+# Systems (IDefaultSerializable / IJobSerializable): global state
+# =====================================================================================================================
+system:Game.Achievements.AchievementTriggerSystem | excluded | - | achievements are inert for any modded city (usedMods gate)
+system:Game.Areas.MapTileSystem | snapshot | join snapshot | start tiles of the map; tile purchases travel as intents (ActionSync) and map tiles as structure
+system:Game.Audio.AudioManager | local | - | per-player audio state
+system:Game.City.CityConfigurationSystem | global | GlobalChannel.CityName + join snapshot | city name both ways; theme, traffic side, options come with the snapshot and are invariant
+system:Game.Effects.EffectFlagSystem | clock | cosmetic allow-list (FollowerClock) | season and night flags are pure functions of the replicated date and time
+system:Game.Net.AirwaySystem | derived | rebuilt at load on every peer | airway graph from the map
+system:Game.Prefabs.Modes.GameModeSystem | snapshot | join snapshot (GameModeSystem.overrideMode) | the host's game mode
+system:Game.Prefabs.PrefabSystem | snapshot | handshake: same mods, same versions | prefab set; prefabs travel as ranks
+system:Game.Rendering.MarkerIconSystem | local | - | marker icons are presentation
+system:Game.Rendering.TerrainMaterialSystem | terrain | TerrainSync (splatmap tiles) | terrain paint
+system:Game.Rendering.WaterRenderSystem | local | - | render state
+system:Game.Routes.RoutePathSystem | derived | gated except in the route-tool preview window | lazy update set; line paths are host data (line state, ARCH 4.11)
+system:Game.Simulation.AirPollutionSystem | cellmap | CellMapSync | air pollution map
+system:Game.Simulation.AvailabilityInfoToGridSystem | cellmap | CellMapSync | availability map
+system:Game.Simulation.CitizenHappinessSystem | global | blob "Happiness" (5 s) | w3/audit fix: happiness factors of the city info panel
+system:Game.Simulation.CityProductionCapacityCalculationSystem | global | blob "Production.Capacity" (5 s) | w3/audit fix: production panel capacity
+system:Game.Simulation.CityProductionStatisticSystem | global | custom channel "Production.Statistic" (2 s) | w3/audit fix: consumption, usage and production chains (the full blob would grow a queue on clients)
+system:Game.Simulation.CityStatisticsSystem | statistics | StatisticsSync (sample count, last sample frame, CityStatistic buffers) | charts and every statistic the panels read
+system:Game.Simulation.CitySystem | snapshot | join snapshot | the City entity reference; the City's components are scanned (structure value scan)
+system:Game.Simulation.ClimateSystem | clock | cosmetic allow-list; hail and rainbow via custom channel "Runtime" | climate and weather selection are deterministic functions of the replicated date (no randomness); w3/audit fix: hail and rainbow come from the host's weather phenomena
+system:Game.Simulation.CommercialDemandSystem | global | blob "Demand.Commercial" | demand bars
+system:Game.Simulation.CountCityStoredResourceSystem | global | blob "Count.StoredResources" (2 s) | w3/audit fix: stored resources
+system:Game.Simulation.CountCompanyDataSystem | global | blob "Count.Companies" (2 s) | w3/audit fix: company, worker and production counters
+system:Game.Simulation.CountConsumptionSystem | global | blob "Count.Consumption" (2 s) | w3/audit fix: consumption counters
+system:Game.Simulation.CountHouseholdDataSystem | global | blob "Count.Household" | household counters
+system:Game.Simulation.CountResidentialPropertySystem | global | blob "Count.ResidentialProperties" (2 s) | w3/audit fix: free and total properties, shelters
+system:Game.Simulation.CountStudyPositionsSystem | global | blob "Count.StudyPositions" (2 s) | w3/audit fix: education panel study positions
+system:Game.Simulation.CountVehicleDataSystem | global | blob "Count.Vehicles" (2 s) | w3/audit fix: bicycle and parking counters
+system:Game.Simulation.CountWorkplacesSystem | global | blob "Count.Workplaces" | workplace counters
+system:Game.Simulation.DeathCheckSystem | snapshot | join snapshot | death-rate curve flag, set once per save
+system:Game.Simulation.ElectricityFlowSystem | derived | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph; flow values: see the runtime table
+system:Game.Simulation.ElectricityStatisticsSystem | global | blob "Electricity.Statistics" (1 s) | w3/audit fix: electricity panel production and consumption
+system:Game.Simulation.ElectricityTradeSystem | global | blob "Electricity.Trade" (1 s) | w3/audit fix: electricity import and export
+system:Game.Simulation.FireHazardSystem | global | blob "FireHazard" (5 s) | w3/audit fix: dry days of the fire hazard view
+system:Game.Simulation.GarbageAccumulationSystem | global | blob "Garbage.Accumulation" (2 s) | w3/audit fix: garbage panel
+system:Game.Simulation.GroundHeightSystem | derived | runs on every peer (Modification2) | derived from terrain (TerrainSync)
+system:Game.Simulation.GroundPollutionSystem | cellmap | CellMapSync | ground pollution map
+system:Game.Simulation.GroundWaterSystem | cellmap | CellMapSync | groundwater map
+system:Game.Simulation.IndustrialDemandSystem | global | blob "Demand.Industrial" | demand bars
+system:Game.Simulation.LandValueSystem | cellmap | CellMapSync | land value map
+system:Game.Simulation.NaturalResourceSystem | cellmap | CellMapSync | natural resources map
+system:Game.Simulation.NoisePollutionSystem | cellmap | CellMapSync | noise map
+system:Game.Simulation.PlanetarySystem | clock | runs on every peer (PreCulling) | sun and moon from the replicated date and time
+system:Game.Simulation.PopulationToGridSystem | cellmap | CellMapSync | population map
+system:Game.Simulation.ProcessingCompanySystem | snapshot | host-only input | produced-resource totals feed only unlock requirements, which the host evaluates (unlock channel)
+system:Game.Simulation.ProductionChainDataSystem | snapshot | - | serializes nothing
+system:Game.Simulation.ProductionSpecializationSystem | values | City SpecializationBonus (structure value scan) | its queue is host-internal input; Serialize drains the queue, so it must never be mirrored as a blob
+system:Game.Simulation.ResidentialDemandSystem | global | blob "Demand.Residential" | demand bars
+system:Game.Simulation.ResourceAvailabilitySystem | snapshot | host-only cursor | round-robin cursor of the host's availability update; results travel as net values
+system:Game.Simulation.ServiceFeeSystem | global | custom channel "Fees.Collected" (1 s) | w3/audit fix: the fee cache the budget panel's fee income is computed from (CollectedCityServiceFeeData on service prefabs, which do not replicate); the fee queue is host-internal
+system:Game.Simulation.SimulationSystem | clock | follower clock (frame index, speed) | ARCH 6.1
+system:Game.Simulation.SnowSystem | local | cosmetic allow-list | snow cover is simulated locally for visuals (ARCH 2.4)
+system:Game.Simulation.SoilWaterSystem | cellmap | CellMapSync | soil water map
+system:Game.Simulation.TaxSystem | global | GlobalChannel.Tax (both ways) | tax rates
+system:Game.Simulation.TelecomCoverageSystem | cellmap | CellMapSync | telecom map
+system:Game.Simulation.TerrainAttractivenessSystem | cellmap | CellMapSync | terrain attractiveness map
+system:Game.Simulation.TerrainSystem | terrain | TerrainSync (heightmap tiles, stamps) | terrain
+system:Game.Simulation.TradeSystem | snapshot | host-only input | trade balances feed company trade costs on the host only; companies are agents
+system:Game.Simulation.TrafficAmbienceSystem | cellmap | CellMapSync | traffic ambience map
+system:Game.Simulation.TransportLineSystem | snapshot | host-only input | maximum transport speeds used by the host's vehicle AIs
+system:Game.Simulation.TransportUsageTrackSystem | snapshot | host-only input | transport usage feeds unlock requirements (host); results travel on the unlock channel
+system:Game.Simulation.WaterPipeFlowSystem | derived | flow graph topology rebuilt on every peer | flow values: see the runtime table
+system:Game.Simulation.WaterStatisticsSystem | global | blob "Water.Statistics" (1 s) | w3/audit fix: water panel
+system:Game.Simulation.WaterSystem | water | WaterSync | water surface, sources, sea level
+system:Game.Simulation.WaterTradeSystem | global | blob "Water.Trade" (1 s) | w3/audit fix: water import and export
+system:Game.Simulation.WindSimulationSystem | local | cosmetic allow-list | wind cells for visuals
+system:Game.Simulation.WindSystem | local | cosmetic allow-list | wind for visuals
+system:Game.Simulation.ZoneAmbienceSystem | derived | cosmetic allow-list | from replicated buildings
+system:Game.Triggers.TriggerSystem | local | runs locally; chirp creation gated (EventSync drains the queue) | trigger cooldowns drive tutorials and radio (local); chirps come from the host
+system:Game.UI.InGame.ChirpLinkSystem | global | custom channel "Chirp.Links" (2 s) | w3/audit fix: sender and link names of chirps (citizens do not replicate as entities yet)
+system:Game.UI.InGame.CityInfoUISystem | derived | runs on every peer (UIUpdate) | smoothed demand and happiness from the replicated demand blobs and City values
+system:Game.UI.InGame.MilestoneUISystem | local | - | whether this player saw the victory pop-up
+system:Game.UI.NameSystem | global | GlobalChannel.Name (both ways) | custom names
+
+# =====================================================================================================================
+# Components and buffers
+# =====================================================================================================================
+
+# ---- prefab entities: identical on every peer (same mods), identity by rank -----------------------------------------
+Game.Prefabs.* | snapshot | prefab entities (handshake: same mods, versions, settings) | prefab data is invariant during a session
+Game.Prefabs.PrefabRef | structure | structure codec (prefab rank) | on every replicated entity
+Game.Prefabs.Locked | actions | GlobalChannel.Unlocks (replayed as Unlock events) | milestones, dev tree, mods
+Game.Prefabs.PlacedSignatureBuildingData | global | custom channel "Signatures" (1 s) | w3/audit fix: written by the gated XPBuiltSystem; without it a placed signature building stayed in the clients' toolbars
+Game.Prefabs.UIHighlight | local | - | per-player UI highlight of a new asset
+Game.Prefabs.ServiceBudget | snapshot | prefab data | default budget of a service prefab; current budgets travel on GlobalChannel.Budget
+
+# ---- simulation namespace ---------------------------------------------------------------------------------------------
+Game.Simulation.* | derived | - | (refined below)
+Game.Simulation.CollectedCityServiceFeeData | global | custom channel "Fees.Collected" | w3/audit fix: lives on service prefabs; clients get the host's cache
+Game.Simulation.CollectedCityServiceBudgetData | derived | CityServiceBudgetSystem runs on clients (ModificationEnd) | from replicated buildings and budgets; worker counts depend on agent replication
+Game.Simulation.CollectedCityServiceUpkeepData | derived | CityServiceBudgetSystem runs on clients | as above
+Game.Simulation.CollectedServiceBuildingBudgetData | derived | CityServiceBudgetSystem runs on clients | as above
+Game.Simulation.Creditworthiness | scan | City entity value scan (1 s) | loan panel
+Game.Simulation.Loan | scan | City entity value scan + GlobalChannel.Loan (both ways) | loan
+Game.Simulation.ServiceBudgetData | global | GlobalChannel.Budget (both ways) | service budgets
+Game.Simulation.FloodCounterData | snapshot | host-only counter | flood bookkeeping of the host's water danger systems; floods arrive as events
+Game.Simulation.WaterSourceData | water | WaterSource family (structure) | water sources
+Game.Simulation.UpdateFrame | movers | spawn bundle (host UpdateFrame) / prefab archetype | shared component; set on spawn
+Game.Simulation.MaintenanceConsumer | values | attention values | on buildings and nets
+Game.Simulation.ElectricityBuildingConnection | derived | flow graph | derived topology
+Game.Simulation.ElectricityFlowEdge | derived | flow graph topology; flow values host-only (see the runtime table) | infoview flow colours of power lines are a documented exception
+Game.Simulation.ElectricityFlowNode | derived | flow graph | derived topology
+Game.Simulation.ElectricityNodeConnection | derived | flow graph | derived topology
+Game.Simulation.ElectricityValveConnection | derived | flow graph | derived topology
+Game.Simulation.WaterPipeBuildingConnection | derived | flow graph | derived topology
+Game.Simulation.WaterPipeEdge | derived | flow graph topology; flow values host-only (see the runtime table) | infoview flow colours of pipes are a documented exception
+Game.Simulation.WaterPipeNode | derived | flow graph | derived topology
+Game.Simulation.WaterPipeNodeConnection | derived | flow graph | derived topology
+Game.Simulation.WaterPipeValveConnection | derived | flow graph | derived topology
+Game.Simulation.BatteryChargeNode | derived | flow graph | derived topology
+Game.Simulation.BatteryDischargeNode | derived | flow graph | derived topology
+Game.Simulation.ConnectedFlowEdge | derived | flow graph | derived topology
+Game.Simulation.TradeNode | derived | flow graph | derived topology
+Game.Simulation.Dispatched | other-work | service requests (TransientAgent family) | requests and dispatch are host simulation
+Game.Simulation.ServiceDispatch | other-work | service requests (TransientAgent family) | host simulation; vehicles' targets travel with the movers
+Game.Simulation.ServiceRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.EvacuationRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.FireRescueRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.GarbageCollectionRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.GarbageTransferRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.GoodsDeliveryRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.HealthcareRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.MailTransferRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.MaintenanceRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.PoliceEmergencyRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.PolicePatrolRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.PostVanRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.PrisonerTransportRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.RandomTrafficRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.TaxiRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.TransportVehicleRequest | other-work | TransientAgent family | host simulation
+
+# ---- city singleton (City entity, scanned every second) ---------------------------------------------------------------
+Game.City.* | scan | City entity value scan (1 s, change-driven) | money, loan, XP, milestone, population, tourism, danger level, modifiers
+Game.City.ServiceFee | scan | City entity value scan + GlobalChannel.Fee (both ways) | fees
+Game.City.CityStatistic | statistics | StatisticsSync | statistic entities
+Game.City.StatisticParameter | statistics | StatisticsSync (statistic entities) | statistic keys
+Game.City.CityServiceUpkeep | snapshot | marker on service prefabs | prefab data
+Game.City.ServiceFeeCollector | structure | structure codec | marker on fee-collecting buildings
+Game.City.DangerLevel | scan | City entity value scan | disaster danger level of the city
+
+# ---- common -----------------------------------------------------------------------------------------------------------
+Game.Common.Owner | structure | structure codec (net id or derived key) | owner of replicated and derived entities
+Game.Common.PseudoRandomSeed | structure | structure codec | seeds of replicated entities
+Game.Common.RandomLocalizationIndex | structure | structure codec | generated names and chirp variants
+Game.Common.Native | structure | structure codec | map tiles not owned
+Game.Common.Overridden | structure | structure codec | overridden objects and cells
+Game.Common.Destroyed | presence | structure codec (Updated) + presence watch | destroyed buildings and trees (tree regrowth removes it without a tag)
+Game.Common.PointOfInterest | structure | structure codec | points of interest of objects
+Game.Common.Target | movers | mover state | vehicle targets
+Game.Common.TimeData | snapshot | join snapshot | start date of the city; time runs with the follower clock
+
+# ---- buildings --------------------------------------------------------------------------------------------------------
+Game.Buildings.* | values | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records
+Game.Buildings.Building | structure | structure codec (deferred road fields) | ARCH 4.2.5
+Game.Buildings.Extension | structure | structure codec | building extensions
+Game.Buildings.ServiceUpgrade | structure | structure codec | service upgrades
+Game.Buildings.InstalledUpgrade | derived | reference systems on every peer | from replicated upgrades
+Game.Buildings.ConnectedBuilding | derived | RoadConnectionSystem on every peer | road choice reconciled to the host's
+Game.Buildings.SpawnLocationElement | derived | on every peer | from sub-objects
+Game.Buildings.Lot | structure | structure codec | lot marker
+Game.Buildings.BuildingModifier | structure | structure codec | policies of buildings (GlobalChannel.Policy)
+Game.Buildings.Abandoned | presence | structure codec + presence watch | abandoned buildings
+Game.Buildings.Condemned | presence | structure codec + presence watch | condemned buildings (ZoneCheckSystem is host-only)
+Game.Buildings.RescueTarget | presence | structure codec + presence watch | targets of disaster rescue
+Game.Buildings.PropertyOnMarket | presence | structure codec + presence watch, values by attention | property market
+Game.Buildings.PropertyToBeOnMarket | presence | structure codec + presence watch | property market
+Game.Buildings.PropertyRenter | other-work | agent replication (households, companies) | renters are agents
+Game.Buildings.Renter | other-work | data on buildings; renters are agents | ARCH 4.2.4
+Game.Buildings.Occupant | other-work | data on buildings; occupants are citizens | ARCH 4.2.4
+Game.Buildings.Patient | other-work | data on buildings; patients are citizens | ARCH 4.2.4
+Game.Buildings.Student | other-work | data on buildings; students are citizens | ARCH 4.2.4
+Game.Buildings.StudentsRemoved | other-work | marker of student removal (citizens) | host simulation
+Game.Buildings.Signature | structure | structure codec | signature marker
+Game.Buildings.CityEffectProvider | structure | structure codec | marker
+Game.Buildings.LocalEffectProvider | structure | structure codec | marker
+
+# ---- objects ----------------------------------------------------------------------------------------------------------
+Game.Objects.* | structure | structure codec | objects: buildings, props, trees, decals, stops
+Game.Objects.Damaged | presence | structure codec + presence watch | w3/audit fix: added by DamageSystem with BatchesUpdated only
+Game.Objects.UnderConstruction | presence | structure codec + presence watch, values by attention | construction progress
+Game.Objects.Plant | values | attention values | plant growth
+Game.Objects.Tree | values | attention values + structure codec | tree growth state
+Game.Objects.Quantity | values | attention values | stored quantities
+Game.Objects.Surface | local | excluded (cosmetic: WetnessSystem, DirtynessSystem) | documented fidelity exception (ARCH 2.4)
+Game.Objects.StreetLight | derived | StreetLightDerive from replicated owner flags | ARCH 6.4
+Game.Objects.TrafficLight | derived | from replicated node TrafficLights | ARCH 4.9.9
+Game.Objects.Secondary | derived | SecondaryObjectSystem on every peer | derived objects
+Game.Objects.SubObject | derived | SubObjectSystem on every peer | derived children
+Game.Objects.Moving | movers | MoverClient | motion
+Game.Objects.TransformFrame | movers | motion channel | interpolation frames
+Game.Objects.Stopped | movers | mover discrete state | movers
+Game.Objects.Unspawned | movers | spawn bundle | movers
+Game.Objects.TripSource | movers | spawn bundle | movers
+Game.Objects.BlockedLane | derived | lane blocking derived on every peer | from objects on lanes
+Game.Objects.Marker | structure | structure codec | marker objects
+Game.Objects.Color | structure | structure codec | colour marker
+
+# ---- nets -------------------------------------------------------------------------------------------------------------
+Game.Net.* | structure | structure codec | net nodes and edges (ARCH 2.1)
+Game.Net.NetCondition | values | attention values | wear
+Game.Net.Pollution | values | attention values | net pollution
+Game.Net.LandValue | values | attention values | land value of edges
+Game.Net.Density | values | attention values | density
+Game.Net.ServiceCoverage | values | attention values | coverage buffers
+Game.Net.ResourceAvailability | values | attention values | availability buffers
+Game.Net.TrafficLights | values | attention values (fast path for junctions in view) | node signal state
+Game.Net.Road | structure | structure codec; traffic flow and LightsOff by attention values | ARCH 3.8
+Game.Net.SecondaryFlow | values | attention values | secondary flow of edges
+Game.Net.Bottleneck | icons | traffic bottleneck marker; the notification travels on IconSync | host simulation (TrafficBottleneckSystem)
+Game.Net.Lane | derived | lanes regenerated on every peer (LaneSystem) | portable lane keys when referenced
+Game.Net.CarLane | derived | lanes | derived
+Game.Net.ParkingLane | derived | lanes | derived
+Game.Net.PedestrianLane | derived | lanes | derived
+Game.Net.TrackLane | derived | lanes | derived
+Game.Net.UtilityLane | derived | lanes | derived
+Game.Net.ConnectionLane | derived | lanes | derived
+Game.Net.GarageLane | derived | lanes | derived
+Game.Net.HangingLane | derived | lanes | derived
+Game.Net.AreaLane | derived | lanes | derived
+Game.Net.EdgeLane | derived | lanes | derived
+Game.Net.NodeLane | derived | lanes | derived
+Game.Net.MasterLane | derived | lanes | derived
+Game.Net.SlaveLane | derived | lanes | derived
+Game.Net.SecondaryLane | derived | lanes | derived
+Game.Net.LaneCondition | derived | lanes (wear shown from edges) | derived
+Game.Net.LaneFlow | derived | lanes | traffic flow shown from the replicated Road flow vectors
+Game.Net.LaneReservation | movers | reservations follow the movers | client-side reference systems
+Game.Net.LaneSignal | derived | from node TrafficLights | ARCH 4.9.9
+Game.Net.LaneConnection | derived | lanes | derived
+Game.Net.LaneObject | derived | reference systems rebuild it from movers | derived
+Game.Net.LaneOverlap | derived | lanes | derived
+Game.Net.LaneColor | derived | rendering | derived
+Game.Net.LaneGeometry | derived | lanes | derived
+Game.Net.SubLane | derived | lanes | derived
+Game.Net.SubNet | derived | reference systems | derived
+Game.Net.SubFlow | derived | flow | derived
+Game.Net.ConnectedEdge | derived | reference systems | derived
+Game.Net.Composition | derived | CompositionSelect on every peer | derived
+Game.Net.EdgeGeometry | derived | Net.GeometrySystem | derived
+Game.Net.NodeGeometry | derived | Net.GeometrySystem | derived
+Game.Net.StartNodeGeometry | derived | Net.GeometrySystem | derived
+Game.Net.EndNodeGeometry | derived | Net.GeometrySystem | derived
+Game.Net.EdgeColor | derived | rendering (infoview colours from replicated values) | derived
+Game.Net.NodeColor | derived | rendering | derived
+Game.Net.EdgeMapping | derived | rendering | derived
+Game.Net.LabelExtents | derived | labels | derived
+Game.Net.LabelMaterial | derived | labels | derived
+Game.Net.LabelPosition | derived | labels | derived
+Game.Net.LabelVertex | derived | labels | derived
+Game.Net.ArrowMaterial | derived | arrows | derived
+Game.Net.ArrowPosition | derived | arrows | derived
+Game.Net.Aggregated | derived | AggregateSystem, reconciled to the host's AggregateElement list | ARCH 4.7.8
+Game.Net.CoverageServiceType | derived | coverage | shared component of coverage data
+Game.Net.ElectricityConnection | derived | flow graph | derived
+Game.Net.WaterPipeConnection | derived | flow graph | derived
+Game.Net.ResourceConnection | derived | flow graph | derived
+
+# ---- areas ------------------------------------------------------------------------------------------------------------
+Game.Areas.* | structure | structure codec | lots, districts, surfaces, spaces, map tiles
+Game.Areas.Extractor | values | attention values | extractor amounts
+Game.Areas.Storage | values | attention values | storage amounts
+Game.Areas.WoodResource | values | attention values | forest amounts
+Game.Areas.MapFeatureElement | values | attention values | map feature amounts
+Game.Areas.Geometry | derived | Areas.GeometrySystem | derived
+Game.Areas.Triangle | derived | Areas.GeometrySystem | derived
+Game.Areas.Expand | derived | Areas.GeometrySystem | derived
+Game.Areas.SubArea | derived | reference systems | derived
+Game.Areas.LabelExtents | derived | labels | derived
+Game.Areas.LabelVertex | derived | labels | derived
+Game.Areas.Batch | derived | rendering | derived
+Game.Areas.CurrentDistrict | derived | district systems on every peer | ARCH 2.1
+Game.Areas.BorderDistrict | derived | district systems on every peer | ARCH 2.1
+Game.Areas.ChangedDistrict | transient | one-frame marker | -
+Game.Areas.DistrictModifier | derived | from replicated district policies | -
+
+# ---- zones ------------------------------------------------------------------------------------------------------------
+Game.Zones.* | derived | BlockSystem on every peer | zone blocks are derived
+Game.Zones.Cell | keyed | zone cells by block key (ZoneCells records) | cell zone types; state and height derived
+Game.Zones.VacantLot | derived | CellCheckSystem | derived
+
+# ---- routes and transport lines (ARCH 4.11) ---------------------------------------------------------------------------
+Game.Routes.* | structure | structure codec + route value scan | lines, waypoints, segments, stops
+Game.Routes.TransportLine | scan | route value scan | line state
+Game.Routes.RouteInfo | scan | route value scan | line state
+Game.Routes.VehicleTiming | scan | route value scan | line state
+Game.Routes.WaitingPassengers | keyed | stop state by key + route value scan | station stops are sub-objects
+Game.Routes.BoardingVehicle | keyed | stop state by key | station stops are sub-objects
+Game.Routes.TransportStop | keyed | stop state by key / structure codec | stops
+Game.Routes.TaxiStand | keyed | stop state by key | stops
+Game.Routes.ConnectedRoute | keyed | data on stops (ARCH 4.2.4) | stop links
+Game.Routes.RouteVehicle | scan | data on routes (ARCH 4.2.4) | vehicles of a line
+Game.Routes.CurrentRoute | movers | mover forward reference | vehicles
+Game.Routes.DispatchedRequest | other-work | service requests | host simulation
+Game.Routes.CurveElement | derived | SegmentCurveSystem from host path state | derived
+Game.Routes.SubRoute | derived | on every peer | derived
+Game.Routes.HiddenRoute | local | per-player overlay | masked out of replication
+Game.Routes.VerifiedPath | derived | marker of the path systems | derived
+Game.Routes.MailBox | values | attention values | mail boxes
+Game.Routes.TakeoffLocation | structure | structure codec | airports
+
+# ---- pathfinding ------------------------------------------------------------------------------------------------------
+Game.Pathfind.PathElement | scan | route segments: host path state (lanes as keys); movers: on demand | ARCH 4.11.3
+Game.Pathfind.PathInformation | scan | route segments: host path state | ARCH 4.11.3
+Game.Pathfind.PathInformations | other-work | pathfinding of agents | host simulation
+Game.Pathfind.PathOwner | movers | mover state | vehicles and creatures
+Game.Pathfind.CoverageElement | derived | coverage pathfinding | derived
+
+# ---- events, journal, chirps (w3/audit) -------------------------------------------------------------------------------
+Game.Events.* | scan | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events
+Game.Events.OnFire | presence | structure codec + presence watch, values by attention | w3/audit fix: IgniteSystem adds it with BatchesUpdated only
+Game.Events.Flooded | presence | structure codec + presence watch | w3/audit fix: removed without a tag
+Game.Events.InDanger | presence | structure codec + presence watch | w3/audit fix: removed with EffectsUpdated only
+Game.Events.AccidentSite | presence | structure codec + presence watch | w3/audit fix: added and removed without a tag
+Game.Events.FacingWeather | presence | structure codec + presence watch | w3/audit fix
+Game.Events.SpectatorSite | presence | structure codec + presence watch | w3/audit fix
+Game.Events.InvolvedInAccident | movers | mover discrete state | vehicles and creatures in an accident
+Game.Events.AttendingEvent | other-work | citizens | agent state
+Game.Events.HotspotFrame | derived | EventSync writes the frames from the replicated hotspot | w3/audit fix: never saved; EventInterpolateSystem indexes it unchecked
+Game.Events.EventJournalEntry | scan | host-only Event family | w3/audit fix: the event journal; EventJournalSystem keeps the list and callbacks on clients
+Game.Events.EventJournalData | scan | host-only Event family | w3/audit fix
+Game.Events.EventJournalCityEffect | scan | host-only Event family | w3/audit fix
+Game.Events.EventJournalPending | scan | host-only Event family | w3/audit fix
+Game.Events.EventJournalCompleted | scan | host-only Event family | w3/audit fix
+Game.Events.FindingEventParticipants | other-work | meetings of citizens | agent state
+Game.Triggers.* | scan | host-only Event family: structure codec + value scan | w3/audit fix: chirps and life-path events; CreateChirpSystem gated on clients
+Game.Triggers.ChirpLink | structure | structure codec (buffer on linked entities) | chirp references of buildings
+Game.Triggers.LifePathEntry | other-work | on followed citizens | agent state
+Game.Triggers.RadioEvent | local | radio is per player | -
+
+# ---- agents (another branch) ------------------------------------------------------------------------------------------
+Game.Citizens.* | other-work | agent replication | citizens, households, pets, meetings
+Game.Companies.* | other-work | agent replication | companies
+Game.Companies.WorkProvider | values | attention values (service buildings) | worker capacity of service buildings
+Game.Companies.Employee | other-work | data on buildings; employees are citizens | ARCH 4.2.4
+Game.Agents.* | other-work | agent replication | seekers, tax payers, moving away
+
+# ---- movers -----------------------------------------------------------------------------------------------------------
+Game.Vehicles.* | movers | mover channel | vehicles (ARCH 2.3)
+Game.Vehicles.OwnedVehicle | derived | reference systems rebuild it from replicated vehicles | -
+Game.Creatures.* | movers | mover channel | residents, pets, wildlife
+Game.Creatures.OwnedCreature | derived | reference systems | -
+Game.Creatures.CreatureSpawner | structure | structure codec | spawner marker on objects
+Game.Creatures.AmbienceEmitter | structure | structure codec | marker on objects
+Game.Creatures.Domesticated | other-work | pets of households | agent state
+
+# ---- notifications ----------------------------------------------------------------------------------------------------
+Game.Notifications.* | icons | IconSync (per-owner icon sets) | every warning and problem indicator
+
+# ---- rendering --------------------------------------------------------------------------------------------------------
+Game.Rendering.* | derived | rendering state on every peer | from replicated entities
+Game.Rendering.CustomMeshColor | structure | structure codec + intent SetMeshColor | building colours
+Game.Rendering.MeshColorPalette | local | per-player palette (ACTION-COVERAGE row 26) | colours applied to buildings sync
+Game.Rendering.InterpolatedTransform | derived | rendering; EventSync sets it for weather phenomena | -
+
+# ---- remaining namespaces ---------------------------------------------------------------------------------------------
+Game.Economy.Resources | values | attention values (buildings); agents: other work; movers: mover allow-list | stored resources
+Game.Economy.ResourceInfo | snapshot | resource prefabs | prefab data
+Game.Policies.Policy | global | GlobalChannel.Policy (Modify events) + structure codec | policies of the city, districts, buildings, lines
+Game.Effects.EnabledEffect | derived | EffectControlSystem on every peer | from replicated state
+Game.Achievements.EventAchievementTrackingData | excluded | - | achievements
+Game.Tools.EditorContainer | excluded | editor only | -
+Game.Tools.LocalTransformCache | transient | tool-time cache | -
+Game.Tools.Recent | structure | structure codec (refund bookkeeping) | ARCH 2.1
+Game.UI.CustomName | global | GlobalChannel.Name | custom name marker

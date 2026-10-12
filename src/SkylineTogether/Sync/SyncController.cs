@@ -97,6 +97,7 @@ namespace SkylineTogether.Sync
         private readonly GlobalStateSync _global;
         // w3/audit: events, disasters, chirps: presence watch (host) and client fix-ups
         private readonly EventSync _events;
+        private readonly SignalFollower _signals; // w3/audit: clients derive lane signals and signal heads
         private readonly SyncBatch.Writer _globalBatch = new SyncBatch.Writer();
         private readonly ClientGate _gate;
         // feat/terrain: terrain and water sync (self-contained; they follow the session events themselves)
@@ -129,6 +130,7 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<byte, PeerOut> _out = new Dictionary<byte, PeerOut>();
         private readonly List<PeerOut> _outList = new List<PeerOut>();
         private readonly List<(uint Start, uint Count)> _grantRuns = new List<(uint, uint)>();
+        private readonly List<uint> _scratchValues = new List<uint>(); // w3/audit
         private readonly List<uint> _scratchIds = new List<uint>();
         private readonly LinkBudgetConfig _linkConfig = new LinkBudgetConfig();
         private readonly FrameBudget _applyBudget = new FrameBudget(ApplyBudgetMs);
@@ -196,6 +198,7 @@ namespace SkylineTogether.Sync
             _gate = new ClientGate(log);
             _global = new GlobalStateSync(log);
             _events = new EventSync(log); // w3/audit
+            _signals = new SignalFollower(log);
             // gameplay branch: semantic intents beside the global channels; both report refusals here (rollback)
             _actions = new ActionSync(log)
             {
@@ -361,6 +364,7 @@ namespace SkylineTogether.Sync
             });
             _global.Attach(world, _codec, _ids);
             _events.Attach(world, _codec, _ids); // w3/audit
+            _signals.Attach(world);
             _actions.Attach(world, _codec, _ids); // gameplay branch
             _generateEdges = world.GetOrCreateSystemManaged<Game.Tools.GenerateEdgesSystem>();
             return true;
@@ -476,6 +480,7 @@ namespace SkylineTogether.Sync
         {
             _actions.Reset();
             _events.Reset(); // w3/audit
+            _signals.Reset();
             _ledger.Clear();
             _rate.Clear();
             _violations.Clear();
@@ -765,7 +770,7 @@ namespace SkylineTogether.Sync
             RetryZones();
             // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
             if (!IsHost) _simValues.ApplyIncoming();
-            // w3/audit (client): per-player chirp likes, event target lists, weather phenomenon hotspot frames
+            // w3/audit (client): per-player chirp likes, event target lists, weather phenomenon hotspot frames, tree growth
             if (!IsHost && Features.Events.IsAvailable)
             {
                 try
@@ -775,6 +780,18 @@ namespace SkylineTogether.Sync
                 catch (Exception ex)
                 {
                     Guard.Report(Features.Events, "events (after apply)", ex);
+                }
+            }
+            // w3/audit (client): lane signals and signal heads from the host's junction phases
+            if (!IsHost && Features.SimValues.IsAvailable)
+            {
+                try
+                {
+                    _signals.Update();
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.SimValues, "traffic lights", ex);
                 }
             }
             // client: what the appliers wrote becomes the baseline, so it is never proposed back
@@ -1569,7 +1586,9 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    _events.HostCollect(now, _forceCapture);
+                    _events.HostCollect(now, _forceCapture, _scratchValues);
+                    foreach (uint id in _scratchValues) MarkDeferred(id, DeferredClass.Values, now); // tree growth stages
+                    _scratchValues.Clear();
                 }
                 catch (Exception ex)
                 {

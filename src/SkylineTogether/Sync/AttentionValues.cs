@@ -72,6 +72,7 @@ namespace SkylineTogether.Sync
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
+        private TypeHandler _trafficLightsHandler; // w3/audit
         private EntityCodec _codec;
         private NetIdSystem _ids;
         private SimulationSystem _simulation;
@@ -291,7 +292,8 @@ namespace SkylineTogether.Sync
             {
                 if (table[id] == Entity.Null) continue;
                 Family f = _ids.GetFamily((uint)id);
-                if (f == Family.Object || f == Family.NetEdge || f == Family.Area) _scanIds.Add((uint)id);
+                // w3/audit: nodes as well (traffic light phases, node wear)
+                if (f == Family.Object || f == Family.NetEdge || f == Family.Area || f == Family.NetNode) _scanIds.Add((uint)id);
             }
             // entities unbound since the last pass
             if (_hashes.Count > _scanIds.Count + 1024)
@@ -338,7 +340,7 @@ namespace SkylineTogether.Sync
             Family family = _ids.GetFamily(id);
             if (!IsCandidate(em, e, family)) return;
             UpdatePosition(em, e, id, family);
-            ulong hash = _codec.HashSimValues(e, family);
+            ulong hash = family == Family.NetNode ? NodeHash(em, e) : _codec.HashSimValues(e, family);
             if (_hashes.TryGetValue(id, out ulong old))
             {
                 if (old == hash) return;
@@ -356,7 +358,7 @@ namespace SkylineTogether.Sync
         /// <summary>Buildings, extensions and upgrades among objects (not trees, props, decals), every edge and area.</summary>
         private bool IsCandidate(EntityManager em, Entity e, Family family)
         {
-            if (family == Family.NetEdge || family == Family.Area) return true;
+            if (family == Family.NetEdge || family == Family.Area || family == Family.NetNode) return true;
             if (family != Family.Object) return false;
             EntityArchetype archetype = em.GetChunk(e).Archetype;
             if (_candidate.TryGetValue(archetype, out bool yes)) return yes;
@@ -394,6 +396,26 @@ namespace SkylineTogether.Sync
                 float3 p = MathUtils.Position(em.GetComponentData<Game.Net.Curve>(e).m_Bezier, 0.5f);
                 _grid.Set(id, p.x, p.z);
             }
+            else if (family == Family.NetNode && em.HasComponent<Game.Net.Node>(e))
+            {
+                float3 p = em.GetComponentData<Game.Net.Node>(e).m_Position;
+                _grid.Set(id, p.x, p.z);
+            }
+        }
+
+        /// <summary>
+        /// w3/audit: a node's value hash. Traffic lights count by their phase (state, flags, signal groups), not by the
+        /// timer that ticks every update, so a junction is sent when its lights change; clients derive lane signals and
+        /// signal heads from the phase (<see cref="SignalFollower"/>).
+        /// </summary>
+        private ulong NodeHash(EntityManager em, Entity e)
+        {
+            if (_trafficLightsHandler == null) _trafficLightsHandler = TypeHandlers.Get<Game.Net.TrafficLights>();
+            if (_trafficLightsHandler == null || !em.HasComponent<Game.Net.TrafficLights>(e)) return _codec.HashSimValues(e, Family.NetNode);
+            ulong hash = _codec.HashSimValues(e, Family.NetNode, _trafficLightsHandler);
+            Game.Net.TrafficLights t = em.GetComponentData<Game.Net.TrafficLights>(e);
+            ulong phase = (ulong)(byte)t.m_State | ((ulong)(byte)t.m_Flags << 8) | ((ulong)t.m_SignalGroupCount << 16) | ((ulong)t.m_CurrentSignalGroup << 24) | ((ulong)t.m_NextSignalGroup << 32);
+            return (hash ^ (phase * 0x9E3779B97F4A7C15UL + 0x632BE59BD9B4E019UL)) | 1UL;
         }
 
         private void UpdateViews(double now)

@@ -166,10 +166,14 @@ def load_rules(path):
     return exact, prefix
 
 
+USED = set()
+
+
 def match(full, kind, exact, prefix):
     """kind is 'component' or 'system'; a pattern may be qualified as 'system:Game.X' or 'component:Game.X'."""
     for key in ((kind + ":" + full), full):
         if key in exact:
+            USED.add(key)
             return exact[key]
     for p, rule in prefix:
         if (kind + ":" + full).startswith(p) or full.startswith(p):
@@ -299,13 +303,16 @@ def main():
             doc = doc.rstrip("\n") + "\n\n" + text + "\n"
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(doc)
-    print("%d components/buffers, %d systems; %d without a rule, %d gaps" % (len(comps), len(systems), len(missing), len(gaps)))
+    stale = sorted(k for k in exact if k not in USED)
+    print("%d components/buffers, %d systems; %d without a rule, %d gaps, %d stale exact rules" % (len(comps), len(systems), len(missing), len(gaps), len(stale)))
+    for k in stale:
+        print("  stale rule (matches nothing): " + k)
     for m in missing:
         print("  no rule: " + m)
     for g in gaps:
         if g not in missing:
             print("  gap: " + g)
-    return 1 if a.check and (missing or gaps) else 0
+    return 1 if a.check and (missing or gaps or stale) else 0
 
 
 if __name__ == "__main__":
