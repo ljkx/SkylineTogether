@@ -14,6 +14,8 @@ namespace SkylineTogether.Core
         /// <summary>Network simulator wrapper (Core tests).</summary>
         NetSim,
         /// <summary>LAN UDP without Steam (milestone M9).</summary>
-        Udp
+        Udp,
+        /// <summary>Solo testing: a recorded session played back into a client (no network, ARCH §13.5).</summary>
+        Playback
     }
 }
