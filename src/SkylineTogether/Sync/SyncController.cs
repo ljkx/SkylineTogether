@@ -115,6 +115,10 @@ namespace SkylineTogether.Sync
         private readonly AuthoredLedger _ledger = new AuthoredLedger();
         // direct-write tools may propose every frame; the limit only stops floods (violations kick, ARCH §5.6)
         private readonly ProposalRateLimiter _rate = new ProposalRateLimiter(120, 240);
+
+        /// <summary>polish: limits of request records (more ids, full re-sends), which request-only batches carry past
+        /// <see cref="_rate"/>.</summary>
+        private readonly RequestThrottle _requests = new RequestThrottle();
         private readonly ViolationTracker _violations = new ViolationTracker();
         private BuildOrderAllocator _buildOrders = new BuildOrderAllocator();
         /// <summary>Host: entities a proposal or intent wrote this frame, with their author (ledger, capture).</summary>
@@ -503,6 +507,7 @@ namespace SkylineTogether.Sync
             _signals.Reset();
             _ledger.Clear();
             _rate.Clear();
+            _requests.Clear();
             _violations.Clear();
             _authoredThisFrame.Clear();
             _forceCapture.Clear();
@@ -629,6 +634,7 @@ namespace SkylineTogether.Sync
             _proposalHealth.Remove(peer.Value);
             // gameplay branch
             _rate.Forget(peer.Value);
+            _requests.Forget(peer.Value);
             _violations.Forget(peer.Value);
             // w2/ids
             _acks.RemovePeer(peer.Value);
@@ -1028,15 +1034,27 @@ namespace SkylineTogether.Sync
                     }
                 }
                 if (rec.Kind != SyncRecordKind.Request) continue;
+                double now = _sessions.Clock.Seconds;
                 if (rec.Request == SyncRequest.MoreIds)
                 {
+                    // polish: request-only batches skip the proposal rate limit, so grants have their own (and a cap on
+                    // the ids a peer holds unused); a refused request is dropped and the client asks again with backoff
+                    if (!_requests.TryGrantIds(peer.Value, now, _grants.UnusedCount(peer.Value)))
+                    {
+                        _log.Debug(LogCategory.Replication, peer + ": id request over the limit; dropped");
+                        CountViolation(peer, RejectReason.RateLimited);
+                        continue;
+                    }
                     var w = new SyncBatch.Writer();
                     Grant(peer, w);
                     if (!w.IsEmpty) Send(peer, w, Perf.StructureBytes);
                 }
                 else if (rec.Request == SyncRequest.ResendRoutes || rec.Request == SyncRequest.ResendAll)
                 {
-                    Resend(peer, rec.Request == SyncRequest.ResendRoutes);
+                    bool routesOnly = rec.Request == SyncRequest.ResendRoutes;
+                    // polish: a re-send scans the whole id table; over the limit it is deferred (FlushDeferred serves it)
+                    if (_requests.TryResend(peer.Value, routesOnly, now)) Resend(peer, routesOnly);
+                    else _log.Debug(LogCategory.Replication, peer + ": re-send request over the limit; deferred");
                 }
             }
         }
@@ -1853,6 +1871,8 @@ namespace SkylineTogether.Sync
             {
                 PeerOut o = _outList[p];
                 if (!host.TryGetLink(o.Peer, out PeerSendState link) || !link.Live) continue;
+                // polish: a re-send the request limit deferred is served once its bucket refilled
+                if (_requests.HasDeferred(o.Peer.Value) && _requests.TakeDeferred(o.Peer.Value, _sessions.Clock.Seconds, out bool routesOnly)) Resend(o.Peer, routesOnly);
                 if (o.Queue.Count > 0 && Stopwatch.GetTimestamp() - start <= cpuBudget)
                 {
                     int bytes = LinkBudget.DeferredBytes(link.QueuedReliableBytes, link.PendingReliableBytes, link.SendRateBytesPerSecond, dt, _linkConfig);
@@ -2052,7 +2072,7 @@ namespace SkylineTogether.Sync
             if (_toolCost != 0) _batch.Cost(_toolCost);
             // gameplay branch: sequence, base ledger epoch and kind of the proposal (host validation, rollback)
             if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
-            if (_pool.ShouldRequestMore()) _batch.Request(SyncRequest.MoreIds);
+            if (_pool.ShouldRequestMore(_sessions.Clock.Seconds)) _batch.Request(SyncRequest.MoreIds); // polish: retried with backoff
             if (!_batch.IsEmpty)
             {
                 ArraySegment<byte> bytes = _batch.Finish();
