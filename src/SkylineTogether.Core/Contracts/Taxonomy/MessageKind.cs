@@ -54,6 +54,11 @@ namespace SkylineTogether.Core
         AgentValues = 90,
         /// <summary>Client → host: agents whose values referenced something not yet known here; the host re-sends them
         /// (<see cref="Sync.AgentRefreshMessage"/>).</summary>
-        AgentRefresh = 91
+        AgentRefresh = 91,
+
+        // w4/flow (merge coordination: this branch owns 100-104)
+        /// <summary>Flow status of the electricity and water graphs by flow key, to peers with the Electricity or Water
+        /// infoview topic active (ARCH §4.11.5; <see cref="Sync.FlowStatusMessage"/>), host → client.</summary>
+        FlowStatus = 100
     }
 }

@@ -30,8 +30,10 @@ namespace SkylineTogether.Sync
             ("Game.Simulation.ElectricityFlowEdge", FamilyMarker.FlowGraph),
             ("Game.Simulation.WaterPipeNode", FamilyMarker.FlowGraph),
             ("Game.Simulation.WaterPipeEdge", FamilyMarker.FlowGraph),
-            ("Game.Simulation.ElectricityNodeConnection", FamilyMarker.FlowGraph),
-            ("Game.Simulation.WaterPipeNodeConnection", FamilyMarker.FlowGraph),
+            // w4/flow: ElectricityNodeConnection/WaterPipeNodeConnection are NOT markers: the graph systems add them to the
+            // net nodes and edges themselves (ElectricityEdgeGraphSystem.GetOrCreateNetNodeConnection), so as markers they
+            // made every road, power line and pipe a derived FlowGraph entity (rule 8 precedes the net rules). The
+            // connection components are excluded from replication instead (TypeHandlers.Excluded).
             ("Game.Routes.Route", FamilyMarker.Route),
             ("Game.Net.Node", FamilyMarker.NetNode),
             ("Game.Net.Edge", FamilyMarker.NetEdge),

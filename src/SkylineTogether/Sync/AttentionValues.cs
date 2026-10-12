@@ -141,6 +141,12 @@ namespace SkylineTogether.Sync
         /// <summary>Host: the attention topics of a peer's active infoview and panels (none before its first view report).</summary>
         public AttentionTopic PeerTopics(PeerId peer) => _peers.TryGetValue(peer.Value, out HostPeer p) ? p.Topics : AttentionTopic.None;
 
+        /// <summary>w4/flow: host, true when the entity is in the peer's current attention view (camera ring).</summary>
+        public bool InView(PeerId peer, uint netId) => netId != 0 && _peers.TryGetValue(peer.Value, out HostPeer p) && p.View.Contains(netId);
+
+        /// <summary>w4/flow: client, the attention topics of this player's active infoview (none without one).</summary>
+        public AttentionTopic LocalTopics => _infoview != null ? (AttentionTopic)_infomodeMask & TopicMap.AllTopics : AttentionTopic.None;
+
         /// <summary>Called by <see cref="SyncController"/> once its codec exists.</summary>
         public void Attach(EntityCodec codec, NetIdSystem ids)
         {

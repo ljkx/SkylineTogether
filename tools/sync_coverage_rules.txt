@@ -42,7 +42,7 @@ system:Game.Simulation.CountStudyPositionsSystem | global | blob "Count.StudyPos
 system:Game.Simulation.CountVehicleDataSystem | global | blob "Count.Vehicles" (2 s) | w3/audit fix: bicycle and parking counters
 system:Game.Simulation.CountWorkplacesSystem | global | blob "Count.Workplaces" | workplace counters
 system:Game.Simulation.DeathCheckSystem | snapshot | join snapshot | death-rate curve flag, set once per save
-system:Game.Simulation.ElectricityFlowSystem | derived | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph; flow values: see the runtime table
+system:Game.Simulation.ElectricityFlowSystem | derived | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync, w4/flow)
 system:Game.Simulation.ElectricityStatisticsSystem | global | blob "Electricity.Statistics" (1 s) | w3/audit fix: electricity panel production and consumption
 system:Game.Simulation.ElectricityTradeSystem | global | blob "Electricity.Trade" (1 s) | w3/audit fix: electricity import and export
 system:Game.Simulation.FireHazardSystem | global | blob "FireHazard" (5 s) | w3/audit fix: dry days of the fire hazard view
@@ -73,7 +73,7 @@ system:Game.Simulation.TradeSystem | hostonly | host-only input | trade balances
 system:Game.Simulation.TrafficAmbienceSystem | cellmap | CellMapSync | traffic ambience map
 system:Game.Simulation.TransportLineSystem | hostonly | host-only input | maximum transport speeds used by the host's vehicle AIs
 system:Game.Simulation.TransportUsageTrackSystem | hostonly | host-only input | transport usage feeds unlock requirements (host); results travel on the unlock channel
-system:Game.Simulation.WaterPipeFlowSystem | derived | flow graph topology rebuilt on every peer | flow values: see the runtime table
+system:Game.Simulation.WaterPipeFlowSystem | derived | flow graph topology rebuilt on every peer | source and sink node (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync, w4/flow)
 system:Game.Simulation.WaterStatisticsSystem | global | blob "Water.Statistics" (1 s) | w3/audit fix: water panel
 system:Game.Simulation.WaterSystem | water | WaterSync | water surface, sources, sea level
 system:Game.Simulation.WaterTradeSystem | global | blob "Water.Trade" (1 s) | w3/audit fix: water import and export
@@ -111,16 +111,16 @@ Game.Simulation.FloodCounterData | hostonly | host-only counter | flood bookkeep
 Game.Simulation.WaterSourceData | water | WaterSource family (structure) | water sources
 Game.Simulation.UpdateFrame | movers | spawn bundle (host UpdateFrame) / prefab archetype | shared component; set on spawn
 Game.Simulation.MaintenanceConsumer | values | attention values | on buildings and nets
-Game.Simulation.ElectricityBuildingConnection | derived | flow graph | derived topology
-Game.Simulation.ElectricityFlowEdge | derived | flow graph topology; flow values host-only (see the runtime table) | infoview flow colours of power lines are a documented exception
+Game.Simulation.ElectricityBuildingConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (transformer, producer, consumer, charge, discharge)
+Game.Simulation.ElectricityFlowEdge | keyed | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | w4/flow fix: infoview colours of power lines and transformers (ARCH 4.11.5)
 Game.Simulation.ElectricityFlowNode | derived | flow graph | derived topology
-Game.Simulation.ElectricityNodeConnection | derived | flow graph | derived topology
-Game.Simulation.ElectricityValveConnection | derived | flow graph | derived topology
-Game.Simulation.WaterPipeBuildingConnection | derived | flow graph | derived topology
-Game.Simulation.WaterPipeEdge | derived | flow graph topology; flow values host-only (see the runtime table) | infoview flow colours of pipes are a documented exception
+Game.Simulation.ElectricityNodeConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys
+Game.Simulation.ElectricityValveConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys
+Game.Simulation.WaterPipeBuildingConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (producer, consumer)
+Game.Simulation.WaterPipeEdge | keyed | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | w4/flow fix: infoview colours of water and sewage pipes (ARCH 4.11.5)
 Game.Simulation.WaterPipeNode | derived | flow graph | derived topology
-Game.Simulation.WaterPipeNodeConnection | derived | flow graph | derived topology
-Game.Simulation.WaterPipeValveConnection | derived | flow graph | derived topology
+Game.Simulation.WaterPipeNodeConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys
+Game.Simulation.WaterPipeValveConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys
 Game.Simulation.BatteryChargeNode | derived | flow graph | derived topology
 Game.Simulation.BatteryDischargeNode | derived | flow graph | derived topology
 Game.Simulation.ConnectedFlowEdge | derived | flow graph | derived topology

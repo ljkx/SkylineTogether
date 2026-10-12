@@ -266,7 +266,7 @@ Dense slots keep varints short and let every peer use flat arrays instead of has
 | 5 | `Game.Notifications.Icon` | Icon | icon channel (§4.10.4) |
 | 6 | `Game.Objects.Object` + `Secondary` | SecondaryObject | derived; keyed state (§4.10.7) |
 | 7 | `Object` + `Owner`, listed in the owner's `SubObject` buffer, and none of `ServiceUpgrade`, `Building`, `Secondary` (the criterion `SubObjectSystem` itself uses, `Game.Objects/SubObjectSystem.cs:1172-1195`, [V-R] P-A) | PrefabSubObject | derived; keyed state |
-| 8 | `ElectricityFlowNode/Edge`, `WaterPipeNode/Edge` and their connection entities | FlowGraph | derived (rebuilt by the graph systems in Modification phases) |
+| 8 | `ElectricityFlowNode/Edge`, `WaterPipeNode/Edge` (the `*NodeConnection`, `*ValveConnection` and `*BuildingConnection` components live on net nodes, edges and buildings and are no markers; they are excluded from structure records) | FlowGraph | derived (rebuilt by the graph systems in Modification phases); flow values by flow key (§4.11.5) |
 | 9 | `Route` + `Owner` whose prefab is a gate bypass path (`Game.Buildings/InitializeSystem.cs:154-168`, [V-R] P-A) | OwnedRoute | derived on every peer; `HiddenRoute` presence and segment path state through the K channel (§4.11.3) |
 | 10 | `Game.Net.Node` / `Game.Net.Edge` | NetNode / NetEdge | S |
 | 11 | `Aggregate` | Aggregate | S (+ client reconcile) |
