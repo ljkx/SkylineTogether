@@ -172,6 +172,9 @@ namespace SkylineTogether.Diagnostics
                 }
                 return null;
             });
+            // w4/flow: the flow-status channel reads and writes the flow graph's components by type
+            ProbeTypeNames("P-FLOW", Features.FlowStatus, FlowStatusSync.TypeNames, systems: false);
+            ProbeTypeNames("P-FLOW", Features.FlowStatus, FlowStatusSync.FlowSystemNames, systems: true);
             ProbeSteam();
             if (world) ProbeWorld();
             if (_uiResult != null)

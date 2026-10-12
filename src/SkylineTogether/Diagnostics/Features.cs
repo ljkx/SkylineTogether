@@ -55,6 +55,12 @@ namespace SkylineTogether.Diagnostics
         /// </summary>
         public static readonly FeatureHealth Agents = Registry.Add("agents", "citizens and companies", false);
 
+        /// <summary>
+        /// w4/flow: flow status of the electricity and water graphs by flow key for the infoviews (ARCH §4.11.5).
+        /// Fallback: clients colour power lines and pipes from the join snapshot's flows (buildings stay exact).
+        /// </summary>
+        public static readonly FeatureHealth FlowStatus = Registry.Add("flow", "electricity and water flow status", false);
+
         /// <summary>Gameplay branch: player actions outside the tools (dev tree, map tiles, milestones, UI writes).</summary>
         public static readonly FeatureHealth Actions = Registry.Add("actions", "player actions sync", false);
 

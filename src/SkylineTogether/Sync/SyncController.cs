@@ -106,6 +106,7 @@ namespace SkylineTogether.Sync
         // w2/simvals: simulation values by attention (+ time-aligned panels), cell maps, statistics history (self-contained)
         private readonly AttentionValues _simValues;
         private readonly CellMapSync _cellMaps;
+        private readonly FlowStatusSync _flow; // w4/flow: electricity and water flow status for the infoviews
         private readonly StatisticsSync _statistics;
         // w3/agents: citizens, households, pets and companies (existence here, values and attention there)
         private readonly AgentSync _agents;
@@ -223,6 +224,7 @@ namespace SkylineTogether.Sync
             Integrity = new IntegritySync(sessions, log); // feat/integrity
             _simValues = new AttentionValues(sessions, log); // w2/simvals
             _cellMaps = new CellMapSync(sessions, log) { PeerTopics = _simValues.PeerTopics };
+            _flow = new FlowStatusSync(sessions, log) { PeerTopics = _simValues.PeerTopics, InView = _simValues.InView, LocalTopics = () => _simValues.LocalTopics };
             _statistics = new StatisticsSync(sessions, log);
             _agents = new AgentSync(sessions, log); // w3/agents
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
@@ -273,7 +275,7 @@ namespace SkylineTogether.Sync
                     if (deferred > 0) s += ", " + deferred + " values waiting (slow link)";
                     if (_ids.Ids.QuarantinedCount > 0) s += ", " + _ids.Ids.QuarantinedCount + " ids in quarantine";
                 }
-                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status, _agents.Status }) // feat/terrain, w2/simvals, w3/agents
+                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status, _agents.Status, _flow.Status }) // feat/terrain, w2/simvals, w3/agents, w4/flow
                 {
                     if (env.Length > 0) s += ", " + env;
                 }
@@ -346,6 +348,7 @@ namespace SkylineTogether.Sync
             _watcher = new Compat.ModStateWatcher(_codec, _ids, _log);
             Integrity.Attach(_codec, _ids); // feat/integrity
             _simValues.Attach(_codec, _ids); // w2/simvals
+            _flow.Attach(world, _ids); // w4/flow
             _agents.Attach(_codec, _ids); // w3/agents
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             _tools = world.GetOrCreateSystemManaged<ToolSystem>();
@@ -780,6 +783,18 @@ namespace SkylineTogether.Sync
             RetryZones();
             // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
             if (!IsHost) _simValues.ApplyIncoming();
+            // w4/flow (client): flow status into the derived flow edges (after the structure apply, so new owners resolve)
+            if (!IsHost && Features.FlowStatus.IsAvailable)
+            {
+                try
+                {
+                    _flow.ApplyIncoming(now);
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.FlowStatus, "flow status apply", ex);
+                }
+            }
             // w3/agents (client): agent values once the structure batches that spawn them are applied
             if (!IsHost && Features.Agents.IsAvailable) _agents.ApplyIncoming(_inbox.Count);
             // w3/audit (client): per-player chirp likes, event target lists, weather phenomenon hotspot frames, tree growth
@@ -1452,6 +1467,17 @@ namespace SkylineTogether.Sync
                                 catch (Exception ex)
                                 {
                                     Guard.Report(Features.SimValues, "attention values and inspection samples", ex);
+                                }
+                            }
+                            if (Features.FlowStatus.IsAvailable)
+                            {
+                                try
+                                {
+                                    _flow.CaptureOutgoing(now); // w4/flow: flow status to peers with the Electricity/Water topic
+                                }
+                                catch (Exception ex)
+                                {
+                                    Guard.Report(Features.FlowStatus, "flow status capture", ex);
                                 }
                             }
                         }
