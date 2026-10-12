@@ -82,13 +82,16 @@ namespace SkylineTogether.Core.Tests.Sync
         [Test]
         public void HostGrantsDisjointRangesAndClientsTakeFromThem()
         {
-            var host = new NetIdAllocator(100);
-            Assert.Equal(100u, host.Allocate());
-            var g1 = host.Grant(10);
-            var g2 = host.Grant(5);
-            Assert.Equal(101u, g1.Start);
-            Assert.Equal(111u, g2.Start);
-            Assert.Equal(116u, host.Allocate());
+            var host = new NetIdAllocator();
+            Assert.Equal(1u, host.Allocate());
+            var runs = new List<(uint Start, uint Count)>();
+            host.Grant(10, runs);
+            host.Grant(5, runs);
+            Assert.Equal(2, runs.Count);
+            (uint Start, uint Count) g1 = runs[0], g2 = runs[1];
+            Assert.Equal(2u, g1.Start);
+            Assert.Equal(12u, g2.Start);
+            Assert.Equal(17u, host.Allocate());
             var pool = new ClientIdPool();
             Assert.False(pool.TryTake(out _));
             pool.Add(g1.Start, g1.Count);
@@ -96,12 +99,12 @@ namespace SkylineTogether.Core.Tests.Sync
             var taken = new List<uint>();
             while (pool.TryTake(out uint id)) taken.Add(id);
             Assert.Equal(15, taken.Count);
-            Assert.Equal(101u, taken[0]);
-            Assert.Equal(115u, taken[14]);
-            Assert.True(ClientIdPool.InRanges(new[] { g1, g2 }, 112));
-            Assert.False(ClientIdPool.InRanges(new[] { g1, g2 }, 116));
-            host.Reserve(500);
-            Assert.Equal(501u, host.Allocate());
+            Assert.Equal(2u, taken[0]);
+            Assert.Equal(16u, taken[14]);
+            Assert.True(ClientIdPool.InRanges(new[] { g1, g2 }, 13));
+            Assert.False(ClientIdPool.InRanges(new[] { g1, g2 }, 17));
+            Assert.True(host.Claim(500));
+            Assert.Equal(18u, host.Allocate(), "ids skipped by a claim are free (w2/ids: reused lowest first)");
         }
 
         [Test]

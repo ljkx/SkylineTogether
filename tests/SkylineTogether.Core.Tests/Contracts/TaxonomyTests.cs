@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using SkylineTogether.Core.Tests.Framework;
 
@@ -55,9 +56,9 @@ namespace SkylineTogether.Core.Tests.Contracts
             {
                 Assert.Equal(1 + i, Convert.ToInt32((MessageKind)Enum.Parse(typeof(MessageKind), sequential[i])), "MessageKind." + sequential[i]);
             }
-            // branch-owned ranges (merge coordination): w2/simvals owns 65-69
-            Pin((MessageKind.SimValues, 65), (MessageKind.CellMaps, 66), (MessageKind.Statistics, 67));
-            Assert.Equal(sequential.Length + 3, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
+            // branch-owned ranges (merge coordination): w2/ids owns 60-64, w2/simvals owns 65-69
+            Pin((MessageKind.ApplyAck, 60), (MessageKind.SimValues, 65), (MessageKind.CellMaps, 66), (MessageKind.Statistics, 67));
+            Assert.Equal(sequential.Length + 4, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
         }
 
         [Test]

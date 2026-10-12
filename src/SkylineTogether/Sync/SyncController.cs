@@ -1,13 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Reflection;
 using Game.Prefabs;
 using Game.Simulation;
 using Game.Tools;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Buffers;
+using SkylineTogether.Core.Diagnostics;
 using SkylineTogether.Core.Identity;
 using SkylineTogether.Core.Protocol;
+using SkylineTogether.Core.Scheduling;
 using SkylineTogether.Core.Session;
-using SkylineTogether.Core.Diagnostics;
 using SkylineTogether.Core.Sync;
 using SkylineTogether.Diagnostics;
 using SkylineTogether.Session;
@@ -23,20 +27,61 @@ namespace SkylineTogether.Sync
     /// predicted by the vanilla tools, captured the same way and proposed to the host, which applies them with the
     /// same applier and streams the authoritative result to everyone. Line state (paths, connections) is host data.
     /// Clients never simulate: their clock follows the host and the systems that would overwrite host data are off.
+    /// <para>
+    /// Two different counters run here; they never mix:
+    /// <list type="bullet">
+    /// <item><b>Ledger epochs</b> (gameplay branch, <see cref="AuthoredLedger"/>): the number of each host broadcast
+    /// batch, sent as <see cref="SyncRecordKind.Epoch"/>; a client names the newest one it applied as the
+    /// <c>BaseEpoch</c> of its proposals, and the host refuses edits of entities authored by somebody else after it
+    /// (conflicts, ARCH §5.4.1).</item>
+    /// <item><b>Release frames</b> (w2/ids, <see cref="ApplyAckBook"/>): one per host frame, sealed at frame start, with
+    /// a per-peer watermark of the <c>MessageKind.Epoch</c> messages queued so far. Clients acknowledge how many
+    /// <c>Epoch</c> messages they <i>applied</i> (<see cref="MessageKind.ApplyAck"/>, in order with their proposals); a
+    /// released net id is reused (<see cref="NetIdAllocator"/>) only once every peer applied the frame of its despawn
+    /// and no join is in progress.</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// w2/ids: structure is always sent; scanned values and re-sends wait per peer in a coalescing queue and are sent
+    /// only while the peer's link has room (ARCH D4: congestion becomes staleness, not backlog); motion yields to both.
+    /// </para>
     /// </summary>
     public sealed class SyncController
     {
+        private const double ApplyBudgetMs = 6.0;
         private const int MaxBatchesPerFrame = 64;
-        private const int ScanBatch = 256;
+        private const double ScanBudgetMs = 1.0;
+        private const int MinScanPerFrame = 32;
+        private const double DeferredBudgetMs = 1.5;
         private const double ClockInterval = 0.25;
         private const double ScanInterval = 0.25;
         private const double CityInterval = 1.0;
         private const double RouteWindowLinger = 2.0;
+        private const double AckInterval = 0.1;
+        private const int ResendChunkRecords = 512;
+
+        private struct Inbound
+        {
+            public PeerId Peer;
+            public byte[] Data;
+            /// <summary>Client: the apply-ack sequence number held for this batch (0: none).</summary>
+            public long Seq;
+            /// <summary>Host: a <see cref="MessageKind.ApplyAck"/> (Data holds its body).</summary>
+            public bool IsAck;
+        }
+
+        /// <summary>Host: one peer's deferred (coalesced) updates.</summary>
+        private sealed class PeerOut
+        {
+            public PeerId Peer;
+            public readonly CoalescingQueue Queue = new CoalescingQueue();
+            public long SentRecords;
+            public double LastFlush;
+        }
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
-        private readonly Queue<(PeerId Peer, byte[] Data)> _inbox = new Queue<(PeerId, byte[])>();
-        private readonly Dictionary<byte, List<(uint Start, uint Count)>> _peerRanges = new Dictionary<byte, List<(uint, uint)>>();
+        private readonly Queue<Inbound> _inbox = new Queue<Inbound>();
         private readonly ClientIdPool _pool = new ClientIdPool();
         // host: failures applying one peer's proposals (rate-limited log; the peer is removed when they keep failing)
         private readonly Dictionary<byte, FeatureHealth> _proposalHealth = new Dictionary<byte, FeatureHealth>();
@@ -45,6 +90,8 @@ namespace SkylineTogether.Sync
         private readonly HashSet<Entity> _toolOriginals = new HashSet<Entity>();
         private readonly List<PendingZone> _pendingZones = new List<PendingZone>();
         private readonly SyncBatch.Writer _batch = new SyncBatch.Writer();
+        private readonly SyncBatch.Writer _peerBatch = new SyncBatch.Writer();
+        private readonly SyncBatch.Writer _digestBatch = new SyncBatch.Writer();
         // global state (taxes, budgets, fees, loan, policies, names, demand): own batch, so a peer that cannot decode a
         // global record never loses entity data
         private readonly GlobalStateSync _global;
@@ -68,10 +115,29 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<Entity, byte> _authoredThisFrame = new Dictionary<Entity, byte>();
         /// <summary>Host: entities changed without a tag (intents, host UI direct writes) that the capture must stream.</summary>
         private readonly HashSet<Entity> _forceCapture = new HashSet<Entity>();
+        private readonly HashSet<Entity> _writtenThisFrame = new HashSet<Entity>();
         private Game.Tools.GenerateEdgesSystem _generateEdges;
+        /// <summary>Client: the newest ledger epoch applied (the base of its proposals; not a release frame).</summary>
         private uint _baseEpoch;
         private uint _seq;
         private bool _subElementFrame;
+        // w2/ids: id quarantine, grants, deferred values
+        private readonly ApplyAckBook _acks = new ApplyAckBook();
+        private readonly IdGrantBook _grants = new IdGrantBook();
+        private readonly Dictionary<byte, PeerOut> _out = new Dictionary<byte, PeerOut>();
+        private readonly List<PeerOut> _outList = new List<PeerOut>();
+        private readonly List<(uint Start, uint Count)> _grantRuns = new List<(uint, uint)>();
+        private readonly List<uint> _scratchIds = new List<uint>();
+        private readonly LinkBudgetConfig _linkConfig = new LinkBudgetConfig();
+        private readonly FrameBudget _applyBudget = new FrameBudget(ApplyBudgetMs);
+        private readonly ByteWriter _ackWriter = new ByteWriter(16);
+        private readonly Func<byte, long> _epochSent;
+        private readonly Func<uint, Family, bool> _mayCreate;
+        private PeerId _proposalPeer;
+        private uint _barrier;
+        private long _lastAckSent = -1;
+        private double _lastAckTime;
+        private double _lastFrameTime;
         private EntityCodec _codec;
         private NetIdSystem _ids;
         private SimulationSystem _simulation;
@@ -83,7 +149,8 @@ namespace SkylineTogether.Sync
         private EntityQuery _created;
         private double _lastClock, _lastScan, _lastCity;
         private int _scanCursor;
-        private List<uint> _scanIds = new List<uint>();
+        private bool _scanCity;
+        private readonly List<uint> _scanIds = new List<uint>();
         private bool _toolApplied;
         private long _toolCost;
         private double _routeWindowUntil;
@@ -127,6 +194,8 @@ namespace SkylineTogether.Sync
             _simValues = new AttentionValues(sessions, log); // w2/simvals
             _cellMaps = new CellMapSync(sessions, log) { PeerTopics = _simValues.PeerTopics };
             _statistics = new StatisticsSync(sessions, log);
+            _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
+            _mayCreate = MayCreate;
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -162,6 +231,13 @@ namespace SkylineTogether.Sync
                 string s = _ids.BoundCount + " objects in sync";
                 if (_inbox.Count > 0) s += ", " + _inbox.Count + " updates queued";
                 if (_pendingZones.Count > 0) s += ", " + _pendingZones.Count + " zone blocks pending";
+                if (IsHost)
+                {
+                    int deferred = 0;
+                    foreach (PeerOut o in _outList) deferred = Math.Max(deferred, o.Queue.Count);
+                    if (deferred > 0) s += ", " + deferred + " values waiting (slow link)";
+                    if (_ids.Ids.QuarantinedCount > 0) s += ", " + _ids.Ids.QuarantinedCount + " ids in quarantine";
+                }
                 foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status }) // feat/terrain, w2/simvals
                 {
                     if (env.Length > 0) s += ", " + env;
@@ -177,8 +253,33 @@ namespace SkylineTogether.Sync
                 }
                 FollowerClock clock = FollowerClock.Instance;
                 if (!IsHost && clock != null) s += clock.Active ? "; clock follows the host" : "; paused follower";
+                string perf = Perf.Counters.CompactSummary(Perf.Now, Perf.ReceivedBytes); // details: diagnostics dump
+                if (perf.Length > 0) s += "; perf: " + perf;
                 return s;
             }
+        }
+
+        /// <summary>w2/ids: the id tables, the quarantine, the deferred queues and the perf counters (diagnostics dump).</summary>
+        public void Describe(List<string> lines)
+        {
+            if (_ids != null) lines.Add("net ids: " + _ids.Describe());
+            if (IsHost)
+            {
+                lines.Add("release frames: sealed " + _acks.CurrentFrame + ", slowest peer " + _acks.MaxLag + " behind" + (_barrier != 0 ? ", join barrier at " + _barrier : "")
+                          + "; ledger epoch " + _ledger.LastBroadcast);
+                foreach (PeerOut o in _outList)
+                {
+                    lines.Add("peer " + o.Peer + ": applied frame " + _acks.AckedFrame(o.Peer.Value) + ", deferred " + o.Queue.Count + " (coalesced " + o.Queue.CoalescedCount
+                              + " of " + o.Queue.MarkedCount + "), sent " + o.SentRecords + " deferred records");
+                }
+            }
+            else if (_sessions.Client != null)
+            {
+                ApplyAckTracker t = _sessions.Client.ApplyAcks;
+                lines.Add("apply acks: received " + t.Received + ", applied through " + t.AppliedThrough + ", held " + t.HeldCount + ", last ack " + _lastAckSent
+                          + "; ledger base epoch " + _baseEpoch);
+            }
+            Perf.Counters.Describe(Perf.Now, lines);
         }
 
         // ================================================================== lifecycle
@@ -223,26 +324,20 @@ namespace SkylineTogether.Sync
         {
             if (!EnsureWorld()) return;
             host.PeerJoining += OnPeerJoining;
-            host.PeerLeft += peer =>
-            {
-                _peerRanges.Remove(peer.Value);
-                _proposalHealth.Remove(peer.Value);
-            };
+            host.PeerLeft += OnPeerLeft;
             host.PeerLeft += Integrity.OnPeerLeft; // feat/integrity
-            host.PeerLeft += peer =>
-            {
-                // gameplay branch
-                _rate.Forget(peer.Value);
-                _violations.Forget(peer.Value);
-            };
             Integrity.Reset();
             ResetGameplay();
+            ResetHostState();
             host.AppMessage += (peer, e) =>
             {
-                if (e.Kind != MessageKind.Proposal) return;
+                if (e.Kind != MessageKind.Proposal && e.Kind != MessageKind.ApplyAck) return;
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
-                _inbox.Enqueue((peer, copy));
+                // acknowledgements share the proposals' queue: an ack is counted only after every proposal the client
+                // sent before it was applied (those may still name ids the client knew before the despawn)
+                _inbox.Enqueue(new Inbound { Peer = peer, Data = copy, IsAck = e.Kind == MessageKind.ApplyAck });
+                Perf.Counters.AddBytes(Perf.ReceivedBytes, e.BodyCount, Perf.Now);
             };
             BindCity();
         }
@@ -255,6 +350,8 @@ namespace SkylineTogether.Sync
             Integrity.Reset(); // feat/integrity
             _shadow.Clear();
             ResetGameplay();
+            _lastAckSent = -1;
+            _ids.Authority = false;
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Epoch) return;
@@ -263,7 +360,10 @@ namespace SkylineTogether.Sync
                 if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount)) return;
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
-                _inbox.Enqueue((PeerId.Host, copy));
+                long seq = client.ApplyAcks.Received;
+                client.ApplyAcks.Hold(seq); // w2/ids: acknowledged once applied
+                _inbox.Enqueue(new Inbound { Peer = PeerId.Host, Data = copy, Seq = seq });
+                Perf.Counters.AddBytes(Perf.ReceivedBytes, e.BodyCount, Perf.Now);
             };
             client.BecameLive += () =>
             {
@@ -276,14 +376,19 @@ namespace SkylineTogether.Sync
 
         private void OnSessionEnded()
         {
-            // a client's bindings describe the host's city of that session only; a host's are rebuilt at the next
-            // session start (BindCity), so keeping them would only grow the tables and the saves (single-player safety)
+            if (_ids != null)
+            {
+                // nobody can address a quarantined id any more
+                _ids.Authority = false;
+                _ids.Ids.FlushQuarantine();
+            }
+            // a client's bindings describe the host's city of that session only; a host's are rebuilt and compacted at
+            // the next session start, so keeping them would only grow the tables (single-player safety)
             _ids?.Clear();
             _proposalHealth.Clear();
             _gate.Open();
             Integrity.Reset(); // feat/integrity
             _inbox.Clear();
-            _peerRanges.Clear();
             _pool.Clear();
             _shadow.Clear();
             _pendingZones.Clear();
@@ -299,6 +404,8 @@ namespace SkylineTogether.Sync
             _toolCost = 0;
             _global.Reset();
             ResetGameplay();
+            ResetHostState();
+            _lastAckSent = -1;
         }
 
         /// <summary>gameplay branch: forgets ledger, limits, sequence numbers and intent baselines (session start or end).</summary>
@@ -314,6 +421,17 @@ namespace SkylineTogether.Sync
             _seq = 0;
             _subElementFrame = false;
             _buildOrders = new BuildOrderAllocator();
+        }
+
+        /// <summary>w2/ids: forgets release frames, grants and deferred queues (session start or end).</summary>
+        private void ResetHostState()
+        {
+            _acks.Clear();
+            _grants.Clear();
+            _out.Clear();
+            _outList.Clear();
+            _barrier = 0;
+            _applyBudget.Reset();
         }
 
         /// <summary>Host: whether <paramref name="peer"/>'s role allows <paramref name="needed"/> (ARCH §5.6).</summary>
@@ -339,10 +457,16 @@ namespace SkylineTogether.Sync
             _codec = null; // every entry point checks it (and EnsureWorld refuses after disposal)
         }
 
-        /// <summary>Host session start (ARCH K17): binds every persistent entity and every prefab before anyone joins.</summary>
+        /// <summary>
+        /// Host session start (ARCH K17): compacts the ids (w2/ids; no peer holds any yet), then binds every persistent
+        /// entity and every prefab before anyone joins.
+        /// </summary>
         private void BindCity()
         {
             EntityManager em = _codec.EntityManager;
+            _ids.Authority = false;
+            int renumbered = _ids.Compact(); // also rebuilds the allocator (nothing quarantined)
+            _ids.Authority = true;
             int prefabs = _codec.BindAllPrefabs().Count;
             int bound = 0;
             NativeArray<Entity> entities = _tracked.ToEntityArray(Allocator.Temp);
@@ -353,15 +477,15 @@ namespace SkylineTogether.Sync
                     Family family = _codec.Families.Classify(em, e);
                     if (!FamilyClassifier.IsReplicated(family) && family != Family.Singleton) continue;
                     if (_ids.GetNetId(e) != 0) continue;
-                    _ids.Bind(e, _ids.Ids.Allocate(), family);
-                    bound++;
+                    if (_ids.BindNew(e, family) != 0) bound++;
                 }
             }
             finally
             {
                 entities.Dispose();
             }
-            _log.Info(LogCategory.Replication, "host session start: " + prefabs + " prefabs, " + _ids.BoundCount + " bindings (" + bound + " new)");
+            _log.Info(LogCategory.Replication, "host session start: " + prefabs + " prefabs, " + _ids.BoundCount + " bindings (" + bound + " new"
+                                               + (renumbered > 0 ? ", " + renumbered + " renumbered" : "") + "); " + _ids.Ids.Describe());
             PrimeBuildOrders(em);
         }
 
@@ -391,24 +515,69 @@ namespace SkylineTogether.Sync
 
         private void OnPeerJoining(PeerId peer)
         {
+            // w2/ids: the peer's stream starts now; every release frame sealed so far counts as applied by it
+            _acks.AddPeer(peer.Value);
+            var o = new PeerOut { Peer = peer };
+            _out[peer.Value] = o;
+            _outList.Add(o);
             // first messages of the joiner's stream (buffered until its load finished): the prefab table and an id range
             var w = new SyncBatch.Writer();
             foreach ((uint id, Entity prefab) in _codec.BindAllPrefabs()) _codec.WritePrefab(w, id, prefab);
-            (uint start, uint count) = _ids.Ids.Grant();
-            AddRange(peer, start, count);
-            w.IdRange(start, count);
-            // gameplay branch: the joiner's snapshot contains every epoch up to now, so its proposals start from here
+            Grant(peer, w);
+            // gameplay branch: the joiner's snapshot contains every ledger epoch up to now, so its proposals start from here
             w.Epoch(_ledger.LastBroadcast);
-            Send(peer, w);
+            Send(peer, w, Perf.StructureBytes);
             _log.Info(LogCategory.Replication, peer + ": sent " + w.RecordCount + " prefab/range records");
             _global.ResendAll(); // the joiner gets every global channel with the next capture
             _actions.ResendUnlocks();
         }
 
-        private void AddRange(PeerId peer, uint start, uint count)
+        private void OnPeerLeft(PeerId peer)
         {
-            if (!_peerRanges.TryGetValue(peer.Value, out var list)) _peerRanges[peer.Value] = list = new List<(uint, uint)>();
-            list.Add((start, count));
+            _proposalHealth.Remove(peer.Value);
+            // gameplay branch
+            _rate.Forget(peer.Value);
+            _violations.Forget(peer.Value);
+            // w2/ids
+            _acks.RemovePeer(peer.Value);
+            if (_out.TryGetValue(peer.Value, out PeerOut o))
+            {
+                _out.Remove(peer.Value);
+                _outList.Remove(o);
+            }
+            // ids the peer never used return through the quarantine (nobody else ever saw them)
+            _scratchIds.Clear();
+            _grants.Remove(peer.Value, _scratchIds);
+            int returned = 0;
+            if (_ids != null)
+            {
+                foreach (uint id in _scratchIds)
+                {
+                    if (_ids.GetEntity(id) == Entity.Null && _ids.Ids.IsAllocated(id) && _ids.Ids.Release(id)) returned++;
+                }
+            }
+            if (returned > 0) _log.Debug(LogCategory.Replication, peer + " left; " + returned + " unused granted ids returned");
+        }
+
+        /// <summary>Host: grants a client its next id range (runs of free ids, then fresh ones) and writes the records.</summary>
+        private void Grant(PeerId peer, SyncBatch.Writer w)
+        {
+            _grantRuns.Clear();
+            _ids.Ids.Grant(NetIdAllocator.DefaultGrant, _grantRuns);
+            foreach ((uint start, uint count) in _grantRuns)
+            {
+                _grants.Add(peer.Value, start, count);
+                w.IdRange(start, count);
+            }
+        }
+
+        /// <summary>
+        /// Host, proposals: a client may create only with an id of its own grants that it never used (marked used once the
+        /// entity is bound, <see cref="ApplyProposal"/>), so a stale or replayed spawn can never bind a released id.
+        /// </summary>
+        private bool MayCreate(uint id, Family family)
+        {
+            return FamilyClassifier.IsReplicated(family) && _grants.IsUnused(_proposalPeer.Value, id);
         }
 
         // ================================================================== frame start: apply
@@ -464,6 +633,10 @@ namespace SkylineTogether.Sync
                 if (_sessions.Client == null && _inbox.Count > 0) _inbox.Clear();
                 return;
             }
+            long start = Perf.Start();
+            double now = Perf.Now;
+            // w2/ids: everything the previous frame sent is out: close its release frame
+            if (IsHost) _ids.Ids.Seal(_acks.SealFrame(_epochSent), now);
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
@@ -480,19 +653,34 @@ namespace SkylineTogether.Sync
                     }
                 }
             }
+            double allowance = _applyBudget.BeginFrame();
             int n = 0;
-            while (_inbox.Count > 0 && n++ < MaxBatchesPerFrame)
+            while (_inbox.Count > 0 && n < MaxBatchesPerFrame)
             {
-                (PeerId peer, byte[] data) = _inbox.Dequeue();
+                // budgeted with carry-over; a batch (a transaction) is never split, and at least one is applied per frame
+                if (n > 0 && Perf.Elapsed(start) > allowance) break;
+                n++;
+                Inbound item = _inbox.Dequeue();
                 try
                 {
-                    if (IsHost) ApplyProposal(peer, data);
-                    else ApplyFromHost(data);
+                    if (IsHost)
+                    {
+                        if (item.IsAck) _acks.OnAck(item.Peer.Value, ApplyAckMessage.Read(item.Data, 0, item.Data.Length));
+                        else ApplyProposal(item.Peer, item.Data);
+                    }
+                    else
+                    {
+                        ApplyFromHost(item.Data);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    ApplyFailed(peer, ex);
+                    ApplyFailed(item.Peer, ex);
                     if (!Features.Replication.IsAvailable) return; // the session is ending (client: a rejoin repairs it)
+                }
+                finally
+                {
+                    if (item.Seq != 0) _sessions.Client?.ApplyAcks.Release(item.Seq);
                 }
             }
             RetryZones();
@@ -514,6 +702,8 @@ namespace SkylineTogether.Sync
                 }
                 SafeCall("milestones", _actions.AfterApply); // gameplay branch
             }
+            if (IsHost) UpdateQuarantine(now);
+            _applyBudget.EndFrame(Perf.Stop(Perf.Apply, start));
         }
 
         /// <summary>
@@ -555,21 +745,41 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>
+        /// Host: frees quarantined ids every peer has applied the despawn of. While a join is in progress, a snapshot may
+        /// still be written: ids released from that moment on wait until the join is over (the join barrier).
+        /// </summary>
+        private void UpdateQuarantine(double now)
+        {
+            SessionHost host = _sessions.Host;
+            if (host == null) return;
+            if (host.JoinInProgress)
+            {
+                if (_barrier == 0) _barrier = Math.Max(1u, _acks.CurrentFrame);
+            }
+            else
+            {
+                _barrier = 0;
+            }
+            _ids.Ids.Update(_acks.MinAckedFrame, _barrier, now);
+        }
+
         private void ApplyFromHost(byte[] data)
         {
-            ApplyResult r = _codec.Apply(data, 0, data.Length, null);
+            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length); // decoded once for every consumer
+            ApplyResult r = _codec.Apply(records, data, 0, data.Length, null);
             foreach (Entity e in r.Touched) _appliedThisFrame.Add(e);
             foreach ((uint start, uint count) in r.IdRanges) _pool.Add(start, count);
             if (r.Clock.HasValue) FollowClock(r.Clock.Value);
-            ApplyZoneRecords(data);
-            ApplyGlobal(data, PeerId.Host, false);
             if (r.Spawned + r.Upserted + r.Despawned > 0) LastApply = r.ToString();
             if (r.Problems.Count > 0) _log.Debug(LogCategory.Replication, "apply problems: " + string.Join("; ", r.Problems));
+            ApplyZoneRecords(records);
+            ApplyGlobal(data, PeerId.Host, false);
             if (Features.Integrity.IsAvailable)
             {
                 try
                 {
-                    Integrity.OnHostBatch(data, _inbox.Count); // feat/integrity: presence masks, digests, icons, line rows
+                    Integrity.OnHostBatch(records, _inbox.Count); // feat/integrity: presence masks, digests, icons, line rows
                 }
                 catch (Exception ex)
                 {
@@ -593,7 +803,6 @@ namespace SkylineTogether.Sync
 
         private void ApplyProposal(PeerId peer, byte[] data)
         {
-            _peerRanges.TryGetValue(peer.Value, out var ranges);
             List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length);
             // gameplay branch: validation (ARCH §5.4.1); a refused proposal is rolled back on its originator by a resend
             ProposalFacts facts = Facts(records, out uint seq, out uint baseEpoch);
@@ -606,7 +815,7 @@ namespace SkylineTogether.Sync
             }
             if (facts.EntityCount > 0 || facts.HasCost)
             {
-                RejectReason reason = Validate(peer, records, facts, baseEpoch, ranges);
+                RejectReason reason = Validate(peer, records, facts, baseEpoch);
                 if (reason != RejectReason.None)
                 {
                     RejectProposal(peer, seq, reason, records);
@@ -615,20 +824,26 @@ namespace SkylineTogether.Sync
                 }
             }
             List<BuildOrderRange> touchedEdges = TouchedEdgeBuildOrders(records);
-            ApplyResult r = _codec.Apply(data, 0, data.Length, (id, family) => ranges != null && ClientIdPool.InRanges(ranges, id) && FamilyClassifier.IsReplicated(family));
+            _proposalPeer = peer;
+            ApplyResult r = _codec.Apply(records, data, 0, data.Length, _mayCreate);
             RebaseBuildOrders(r.SpawnedEntities, touchedEdges);
-            foreach (SyncRecord rec in records)
+            for (int i = 0; i < records.Count; i++)
             {
+                SyncRecord rec = records[i];
                 if (rec.Kind != SyncRecordKind.Spawn && rec.Kind != SyncRecordKind.Upsert) continue;
                 Entity written = _ids.GetEntity(rec.NetId);
-                if (written != Entity.Null) _authoredThisFrame[written] = peer.Value;
+                if (written == Entity.Null) continue;
+                _authoredThisFrame[written] = peer.Value;
+                // w2/ids: the ids the client created with are used now (no-op for ids that are not its grants)
+                _grants.TryConsume(peer.Value, rec.NetId);
             }
-            ApplyZoneRecords(data);
-            ApplyGlobal(data, peer, true);
+            string summary = peer + ": " + r;
             if (r.HasCost && r.Cost != 0) ChargeCity(r.Cost);
-            ServeRequests(peer, records);
-            LastApply = peer + ": " + r;
             if (r.Problems.Count > 0) _log.Info(LogCategory.Replication, peer + " proposal problems: " + string.Join("; ", r.Problems));
+            ApplyZoneRecords(records);
+            ApplyGlobal(data, peer, true);
+            ServeRequests(peer, records);
+            LastApply = summary;
         }
 
         private void ServeRequests(PeerId peer, List<SyncRecord> records)
@@ -649,11 +864,9 @@ namespace SkylineTogether.Sync
                 if (rec.Kind != SyncRecordKind.Request) continue;
                 if (rec.Request == SyncRequest.MoreIds)
                 {
-                    (uint start, uint count) = _ids.Ids.Grant();
-                    AddRange(peer, start, count);
                     var w = new SyncBatch.Writer();
-                    w.IdRange(start, count);
-                    Send(peer, w);
+                    Grant(peer, w);
+                    if (!w.IsEmpty) Send(peer, w, Perf.StructureBytes);
                 }
                 else if (rec.Request == SyncRequest.ResendRoutes || rec.Request == SyncRequest.ResendAll)
                 {
@@ -695,9 +908,9 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// ARCH §5.4.1 rules 1-4 and 7 over the host's world: permission of the sender's role, size, existence and
-        /// conflicts of every entity the proposal edits or deletes, id ranges of its creations, and money.
+        /// conflicts of every entity the proposal edits or deletes, id grants of its creations, and money.
         /// </summary>
-        private RejectReason Validate(PeerId peer, List<SyncRecord> records, in ProposalFacts facts, uint baseEpoch, List<(uint Start, uint Count)> ranges)
+        private RejectReason Validate(PeerId peer, List<SyncRecord> records, in ProposalFacts facts, uint baseEpoch)
         {
             if (!Allows(peer, ProposalRules.Required(facts))) return RejectReason.NoPermission;
             RejectReason size = ProposalRules.CheckSize(facts);
@@ -716,7 +929,8 @@ namespace SkylineTogether.Sync
                     {
                         Entity existing = _ids.GetEntity(r.NetId);
                         bool bound = existing != Entity.Null && em.Exists(existing);
-                        if (!bound && (ranges == null || !ClientIdPool.InRanges(ranges, r.NetId))) return RejectReason.Invalid;
+                        // w2/ids: a creation needs an unused id of the sender's own grants (released ids are never reusable by a client)
+                        if (!bound && !_grants.IsUnused(peer.Value, r.NetId)) return RejectReason.Invalid;
                         if (bound && _ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
                     }
@@ -824,9 +1038,9 @@ namespace SkylineTogether.Sync
                 {
                     _log.Warn(LogCategory.Replication, peer + ": rolling back #" + id + " failed", ex);
                 }
-                if (w.RecordCount >= 512)
+                if (w.RecordCount >= ResendChunkRecords)
                 {
-                    Send(peer, w);
+                    Send(peer, w, Perf.StructureBytes);
                     w = new SyncBatch.Writer();
                 }
             }
@@ -838,7 +1052,7 @@ namespace SkylineTogether.Sync
                     if (block != Entity.Null) WriteZoneBlock(w, block, true);
                 }
             }
-            if (!w.IsEmpty) Send(peer, w);
+            if (!w.IsEmpty) Send(peer, w, Perf.StructureBytes);
         }
 
         /// <summary>Host: the build orders of the existing edges a proposal edits or deletes (read before the apply).</summary>
@@ -937,24 +1151,33 @@ namespace SkylineTogether.Sync
         public void BindCreated()
         {
             if (_codec == null || !IsHost || !Features.Replication.IsAvailable) return;
+            if (_created.IsEmptyIgnoreFilter) return;
             EntityManager em = _codec.EntityManager;
-            NativeArray<Entity> created = _created.ToEntityArray(Allocator.Temp);
+            NativeArray<ArchetypeChunk> chunks = _created.ToArchetypeChunkArray(Allocator.Temp);
             try
             {
-                foreach (Entity e in created)
+                EntityTypeHandle entityType = em.GetEntityTypeHandle();
+                foreach (ArchetypeChunk chunk in chunks)
                 {
-                    if (_ids.GetNetId(e) != 0) continue;
-                    Family family = _codec.Families.Classify(em, e);
-                    if (FamilyClassifier.IsReplicated(family)) _ids.Bind(e, _ids.Ids.Allocate(), family);
+                    bool known = _codec.Families.TryClassifyArchetype(chunk.Archetype, out Family chunkFamily);
+                    if (known && !FamilyClassifier.IsReplicated(chunkFamily)) continue; // lanes, blocks, movers, agents...
+                    NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
+                    for (int i = 0; i < entities.Length; i++)
+                    {
+                        Entity e = entities[i];
+                        if (_ids.GetNetId(e) != 0) continue;
+                        Family family = known ? chunkFamily : _codec.Families.Classify(em, e);
+                        if (FamilyClassifier.IsReplicated(family)) _ids.BindNew(e, family);
+                    }
                 }
             }
             finally
             {
-                created.Dispose();
+                chunks.Dispose();
             }
         }
 
-        // ================================================================== tool hook (client)
+        // ================================================================== tool hook
 
         /// <summary>Called at the start of the ApplyTool phase: the local tool is about to apply its preview.</summary>
         public void OnToolApply()
@@ -1046,57 +1269,67 @@ namespace SkylineTogether.Sync
                     Guard.Report(Features.SimValues, "map tiles and statistics capture", ex);
                 }
             }
-            if (_codec == null) return;
-            // gameplay branch: the bulldozer's sub-element mode deletes derived props and fences (no net ids)
-            _subElementFrame = _toolApplied && _tools.activeTool is BulldozeToolSystem bulldozer && bulldozer.actualMode != BulldozeToolSystem.Mode.MainElements;
-            try
+            double dt = _lastFrameTime > 0 ? Math.Min(0.25, Math.Max(0.0, now - _lastFrameTime)) : 1.0 / 60.0;
+            _lastFrameTime = now;
+            if (_codec != null)
             {
-                if (Features.Replication.IsAvailable)
-                {
-                    if (IsHost)
-                    {
-                        // the host player's own direct UI writes (historical, vehicles, districts, colours) become captures
-                        SafeCall("host action watch", () => _actions.HostWatch(new HashSet<Entity>(_authoredThisFrame.Keys)));
-                        CaptureHost(now);
-                        if (Features.SimValues.IsAvailable)
-                        {
-                            try
-                            {
-                                _simValues.CaptureOutgoing(now); // w2/simvals: attention values and inspection samples
-                            }
-                            catch (Exception ex)
-                            {
-                                Guard.Report(Features.SimValues, "attention values and inspection samples", ex);
-                            }
-                        }
-                    }
-                    else if (IsLiveClient)
-                    {
-                        CaptureClient(now);
-                        SafeCall("action capture", () => _actions.ClientCapture(_appliedThisFrame)); // gameplay branch
-                    }
-                }
-            }
-            finally
-            {
-                _toolApplied = false;
-                _toolCost = 0;
-                _toolOriginals.Clear();
-            }
-            if (Features.Integrity.IsAvailable)
-            {
+                // gameplay branch: the bulldozer's sub-element mode deletes derived props and fences (no net ids)
+                _subElementFrame = _toolApplied && _tools.activeTool is BulldozeToolSystem bulldozer && bulldozer.actualMode != BulldozeToolSystem.Mode.MainElements;
+                long start = Perf.Start();
                 try
                 {
-                    if (IsLiveClient) Integrity.ClientFrameEnd(now); // feat/integrity: integrity requests, icon digest
+                    if (Features.Replication.IsAvailable)
+                    {
+                        if (IsHost)
+                        {
+                            // the host player's own direct UI writes (historical, vehicles, districts, colours) become captures
+                            SafeCall("host action watch", () => _actions.HostWatch(new HashSet<Entity>(_authoredThisFrame.Keys)));
+                            CaptureHost(now, dt);
+                            if (Features.SimValues.IsAvailable)
+                            {
+                                try
+                                {
+                                    _simValues.CaptureOutgoing(now); // w2/simvals: attention values and inspection samples
+                                }
+                                catch (Exception ex)
+                                {
+                                    Guard.Report(Features.SimValues, "attention values and inspection samples", ex);
+                                }
+                            }
+                        }
+                        else if (IsLiveClient)
+                        {
+                            CaptureClient(now);
+                            SafeCall("action capture", () => _actions.ClientCapture(_appliedThisFrame)); // gameplay branch
+                        }
+                    }
+                    if (Features.Integrity.IsAvailable)
+                    {
+                        try
+                        {
+                            if (IsLiveClient) Integrity.ClientFrameEnd(now); // feat/integrity: integrity requests, icon digest
+                        }
+                        catch (Exception ex)
+                        {
+                            Guard.Report(Features.Integrity, "integrity (client frame end)", ex);
+                        }
+                    }
                 }
-                catch (Exception ex)
+                finally
                 {
-                    Guard.Report(Features.Integrity, "integrity (client frame end)", ex);
+                    Perf.Stop(Perf.Capture, start);
+                    _toolApplied = false;
+                    _toolCost = 0;
+                    _toolOriginals.Clear();
                 }
+                long global = Perf.Start();
+                if (Features.GlobalState.IsAvailable) CaptureGlobal(now);
+                Perf.Stop(Perf.Global, global);
+                _authoredThisFrame.Clear();
+                _forceCapture.Clear();
+                if (IsLiveClient && Features.Replication.IsAvailable) SendApplyAck(now);
             }
-            if (Features.GlobalState.IsAvailable) CaptureGlobal(now);
-            _authoredThisFrame.Clear();
-            _forceCapture.Clear();
+            Perf.Counters.EndFrame(now);
         }
 
         /// <summary>
@@ -1123,11 +1356,12 @@ namespace SkylineTogether.Sync
                 if (_globalBatch.IsEmpty) return;
                 if (IsHost)
                 {
-                    Broadcast(_globalBatch);
+                    Broadcast(_globalBatch, Perf.GlobalBytes);
                     return;
                 }
                 ArraySegment<byte> bytes = _globalBatch.Finish();
                 _sessions.Client?.SendToHost(MessageKind.Proposal, bytes.Array, bytes.Offset, bytes.Count);
+                Perf.Counters.AddBytes(Perf.ProposalBytes, bytes.Count, now);
             }
             catch (Exception ex)
             {
@@ -1135,89 +1369,149 @@ namespace SkylineTogether.Sync
             }
         }
 
-        private void CaptureHost(double now)
+        /// <summary>Client: tells the host how many of its epoch messages were applied (in order with the proposals).</summary>
+        private void SendApplyAck(double now)
+        {
+            SessionClient client = _sessions.Client;
+            if (client == null) return;
+            long applied = client.ApplyAcks.AppliedThrough;
+            if (applied == _lastAckSent || now - _lastAckTime < AckInterval) return;
+            _lastAckSent = applied;
+            _lastAckTime = now;
+            _ackWriter.Reset();
+            ApplyAckMessage.Write(_ackWriter, applied);
+            client.SendToHost(MessageKind.ApplyAck, _ackWriter.Buffer, 0, _ackWriter.Length);
+        }
+
+        private void CaptureHost(double now, double dt)
         {
             EntityManager em = _codec.EntityManager;
             _batch.Reset();
-            var written = new HashSet<Entity>();
-            NativeArray<Entity> changed = _changed.ToEntityArray(Allocator.Temp);
-            try
+            _writtenThisFrame.Clear();
+            // ids unbound without a despawn on the wire (their entity vanished without a Deleted tag): despawn them now,
+            // then they may enter the quarantine
+            _scratchIds.Clear();
+            if (_ids.TakePendingDespawns(_scratchIds))
             {
-                foreach (Entity e in changed)
+                foreach (uint id in _scratchIds)
                 {
-                    Family family = _codec.Families.Classify(em, e);
-                    if (family == Family.ZoneBlock)
-                    {
-                        if (!em.HasComponent<Game.Common.Deleted>(e)) WriteZoneBlock(_batch, e, false);
-                        continue;
-                    }
-                    if (_subElementFrame && (family == Family.PrefabSubObject || family == Family.Lane) && em.HasComponent<Game.Common.Deleted>(e))
-                    {
-                        _actions.NoteSubElementDeleted(e); // gameplay branch: replayed on clients by key
-                        continue;
-                    }
-                    if (!FamilyClassifier.IsReplicated(family)) continue;
-                    uint id = _ids.GetNetId(e);
-                    if (em.HasComponent<Game.Common.Deleted>(e))
-                    {
-                        if (id == 0) continue;
-                        _batch.Despawn(id);
-                        _ids.Unbind(id);
-                        _shadow.Remove(id);
-                        _ledger.Forget(id);
-                        continue;
-                    }
-                    WriteHostEntity(em, e, family, id);
-                    written.Add(e);
+                    _batch.Despawn(id);
+                    _shadow.Remove(id);
+                    _ledger.Forget(id);
+                    DropDeferred(id, DeferredClass.Upsert);
+                    _ids.Ids.Release(id);
                 }
             }
-            finally
+            if (!_changed.IsEmptyIgnoreFilter)
             {
-                changed.Dispose();
+                NativeArray<ArchetypeChunk> chunks = _changed.ToArchetypeChunkArray(Allocator.Temp);
+                try
+                {
+                    EntityTypeHandle entityType = em.GetEntityTypeHandle();
+                    foreach (ArchetypeChunk chunk in chunks)
+                    {
+                        bool deleted = chunk.Has<Game.Common.Deleted>();
+                        // w2/ids perf pass: one classification per chunk; whole chunks of derived or agent families
+                        // (lanes, movers, citizens, icons, ...) are skipped without touching their entities
+                        bool known = _codec.Families.TryClassifyArchetype(chunk.Archetype, out Family chunkFamily);
+                        bool subElements = _subElementFrame && deleted && (chunkFamily == Family.Lane || chunkFamily == Family.PrefabSubObject);
+                        if (known && chunkFamily != Family.ZoneBlock && !subElements && !FamilyClassifier.IsReplicated(chunkFamily)) continue;
+                        bool created = chunk.Has<Game.Common.Created>();
+                        bool hasPrefab = chunk.Has<PrefabRef>();
+                        NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
+                        for (int i = 0; i < entities.Length; i++)
+                        {
+                            Entity e = entities[i];
+                            Family family = known ? chunkFamily : _codec.Families.Classify(em, e);
+                            CaptureHostEntity(em, e, family, deleted, created, hasPrefab);
+                        }
+                    }
+                }
+                finally
+                {
+                    chunks.Dispose();
+                }
             }
             // gameplay branch: entities that intents or the host's own UI changed without any tag
             foreach (Entity e in _forceCapture)
             {
-                if (written.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                if (_writtenThisFrame.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
                 Family family = _codec.Families.Classify(em, e);
-                if (FamilyClassifier.IsReplicated(family)) WriteHostEntity(em, e, family, _ids.GetNetId(e));
+                if (FamilyClassifier.IsReplicated(family)) WriteHostEntity(em, e, family, _ids.GetNetId(e), em.HasComponent<Game.Common.Created>(e), em.HasComponent<PrefabRef>(e));
             }
+            long scan = Perf.Start();
             ScanValues(now);
+            Perf.Stop(Perf.Scan, scan);
             if (now - _lastClock >= ClockInterval)
             {
                 _lastClock = now;
                 _batch.Clock(_simulation.frameIndex);
             }
+            long integrity = Perf.Start();
+            _digestBatch.Reset();
             if (Features.Integrity.IsAvailable)
             {
                 try
                 {
-                    Integrity.HostCapture(now, _batch, _sessions.Host?.LivePeerCount ?? 0); // feat/integrity: digests, icons, line rows
+                    Integrity.HostCapture(now, _batch, _digestBatch, _sessions.Host?.LivePeerCount ?? 0); // feat/integrity: icons and line rows; digests per peer
                 }
                 catch (Exception ex)
                 {
                     Guard.Report(Features.Integrity, "integrity (host capture)", ex);
                 }
             }
+            Perf.Stop(Perf.Integrity, integrity);
             if (!_batch.IsEmpty)
             {
-                // gameplay branch: the epoch number goes last, so the first-record routing of batches is unchanged
+                // gameplay branch: the ledger epoch goes last, so the first-record routing of batches is unchanged
                 _batch.Epoch(_ledger.Advance());
-                Broadcast(_batch);
+                Broadcast(_batch, Perf.StructureBytes);
             }
+            long deferred = Perf.Start();
+            FlushDeferred(now, dt);
+            Perf.Stop(Perf.Deferred, deferred);
         }
 
-        private void WriteHostEntity(EntityManager em, Entity e, Family family, uint id)
+        private void CaptureHostEntity(EntityManager em, Entity e, Family family, bool deleted, bool created, bool hasPrefab)
         {
-            SyncRecordKind kind = em.HasComponent<Game.Common.Created>(e) ? SyncRecordKind.Spawn : SyncRecordKind.Upsert;
+            if (family == Family.ZoneBlock)
+            {
+                if (!deleted) WriteZoneBlock(_batch, e, false);
+                return;
+            }
+            if (_subElementFrame && deleted && (family == Family.PrefabSubObject || family == Family.Lane))
+            {
+                _actions.NoteSubElementDeleted(e); // gameplay branch: replayed on clients by key
+                return;
+            }
+            if (!FamilyClassifier.IsReplicated(family)) return;
+            uint id = _ids.GetNetId(e);
+            if (deleted)
+            {
+                if (id == 0) return;
+                _batch.Despawn(id);
+                _ids.Unbind(id, despawnSent: true);
+                _shadow.Remove(id);
+                _ledger.Forget(id);
+                DropDeferred(id, DeferredClass.Upsert);
+                return;
+            }
+            WriteHostEntity(em, e, family, id, created, hasPrefab);
+        }
+
+        private void WriteHostEntity(EntityManager em, Entity e, Family family, uint id, bool created, bool hasPrefab)
+        {
+            SyncRecordKind kind = created ? SyncRecordKind.Spawn : SyncRecordKind.Upsert;
             if (id == 0)
             {
-                id = _ids.Ids.Allocate();
-                _ids.Bind(e, id, family);
+                id = _ids.BindNew(e, family);
+                if (id == 0) return;
                 kind = SyncRecordKind.Spawn;
             }
-            if (em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
+            if (hasPrefab) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
             _codec.WriteEntity(_batch, kind, id, family, e);
+            _writtenThisFrame.Add(e);
+            DropDeferred(id, DeferredClass.Upsert); // the full record supersedes waiting values and re-sends
             if (FamilyClassifier.IsScanned(family)) _shadow[id] = _codec.HashEntity(e, true);
             // gameplay branch: authored changes (committed proposals and intents, the host player's tool) for conflicts
             if (_authoredThisFrame.TryGetValue(e, out byte author)) _ledger.MarkAuthored(id, author);
@@ -1226,7 +1520,8 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// Values that change without update tags (line paths and states, city money): a rolling hash comparison over the
-        /// scanned families, a slice per frame.
+        /// scanned families (their own index set, not the whole id table), budgeted in milliseconds per frame. A change
+        /// marks the entity in every peer's deferred queue; the current value is serialised when it is sent.
         /// </summary>
         private void ScanValues(double now)
         {
@@ -1236,54 +1531,118 @@ namespace SkylineTogether.Sync
             {
                 _lastScan = now;
                 _scanIds.Clear();
-                NativeArray<Entity> table = _ids.ReaderTable;
-                bool includeCity = now - _lastCity >= CityInterval;
-                if (includeCity) _lastCity = now;
-                for (int id = 1; id < table.Length; id++)
-                {
-                    if (table[id] == Entity.Null) continue;
-                    Family f = _ids.GetFamily((uint)id);
-                    if (f == Family.Singleton ? includeCity : FamilyClassifier.IsScanned(f)) _scanIds.Add((uint)id);
-                }
+                _ids.ScannedIds.CopyTo(_scanIds);
+                _scanCity = now - _lastCity >= CityInterval;
+                if (_scanCity) _lastCity = now;
             }
-            int end = Math.Min(_scanIds.Count, _scanCursor + ScanBatch);
-            for (; _scanCursor < end; _scanCursor++)
+            long start = Stopwatch.GetTimestamp();
+            long budget = (long)(ScanBudgetMs * Stopwatch.Frequency / 1000.0);
+            int n = 0;
+            while (_scanCursor < _scanIds.Count)
             {
-                uint id = _scanIds[_scanCursor];
+                uint id = _scanIds[_scanCursor++];
+                Family family = _ids.GetFamily(id);
+                if (family == Family.Singleton ? !_scanCity : !FamilyClassifier.IsScanned(family)) continue;
                 Entity e = _ids.GetEntity(id);
                 if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                n++;
                 ulong hash = _codec.HashEntity(e, true);
-                if (_shadow.TryGetValue(id, out ulong old) && old == hash) continue;
-                bool first = !_shadow.ContainsKey(id);
-                _shadow[id] = hash;
-                if (first && _ids.GetFamily(id) != Family.Singleton) continue; // baseline only
-                _codec.WriteEntity(_batch, SyncRecordKind.Values, id, _ids.GetFamily(id), e);
+                bool known = _shadow.TryGetValue(id, out ulong old);
+                if (!known || old != hash)
+                {
+                    _shadow[id] = hash;
+                    if (known || family == Family.Singleton) MarkDeferred(id, DeferredClass.Values, now); // first sight: baseline only
+                }
+                if (n >= MinScanPerFrame && (n & 7) == 0 && Stopwatch.GetTimestamp() - start > budget) break;
             }
             if (_scanCursor >= _scanIds.Count) _scanCursor = 0;
         }
 
+        /// <summary>Marks an id in every peer's deferred queue (joiners included: they get it once live).</summary>
+        private void MarkDeferred(uint id, DeferredClass cls, double now)
+        {
+            for (int i = 0; i < _outList.Count; i++) _outList[i].Queue.Mark(id, cls, now);
+        }
+
+        /// <summary>Drops waiting entries of an id (it was despawned, or a full record just went to everyone).</summary>
+        private void DropDeferred(uint id, DeferredClass atMost)
+        {
+            for (int i = 0; i < _outList.Count; i++) _outList[i].Queue.RemoveIfAtMost(id, atMost);
+        }
+
+        /// <summary>
+        /// Host: sends each live peer as many deferred records as its link takes this frame (ARCH §4.8.4, simplified),
+        /// oldest first, serialised from the current state; then the integrity digests to the peers that are up to date
+        /// (a digest is only comparable once everything it covers was sent).
+        /// </summary>
+        private void FlushDeferred(double now, double dt)
+        {
+            SessionHost host = _sessions.Host;
+            if (host == null || _outList.Count == 0) return;
+            EntityManager em = _codec.EntityManager;
+            long start = Stopwatch.GetTimestamp();
+            long cpuBudget = (long)(DeferredBudgetMs * Stopwatch.Frequency / 1000.0);
+            for (int p = 0; p < _outList.Count; p++)
+            {
+                PeerOut o = _outList[p];
+                if (!host.TryGetLink(o.Peer, out PeerSendState link) || !link.Live) continue;
+                if (o.Queue.Count > 0 && Stopwatch.GetTimestamp() - start <= cpuBudget)
+                {
+                    int bytes = LinkBudget.DeferredBytes(link.QueuedReliableBytes, link.PendingReliableBytes, link.SendRateBytesPerSecond, dt, _linkConfig);
+                    if (bytes > 0) FlushPeer(em, o, bytes, start, cpuBudget);
+                }
+                if (!_digestBatch.IsEmpty && o.Queue.Count == 0) Send(o.Peer, _digestBatch, Perf.IntegrityBytes);
+                else if (!_digestBatch.IsEmpty) Perf.Counters.Count("digests withheld (peer behind)");
+            }
+        }
+
+        private void FlushPeer(EntityManager em, PeerOut o, int byteBudget, long start, long cpuBudget)
+        {
+            _peerBatch.Reset();
+            int baseLength = _peerBatch.Length;
+            while (_peerBatch.Length - baseLength < byteBudget && _peerBatch.RecordCount < ResendChunkRecords)
+            {
+                if ((_peerBatch.RecordCount & 7) == 7 && Stopwatch.GetTimestamp() - start > cpuBudget) break;
+                if (!o.Queue.TryTake(out uint id, out DeferredClass cls, out _)) break;
+                Entity e = _ids.GetEntity(id);
+                if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                Family family = _ids.GetFamily(id);
+                try
+                {
+                    if (cls == DeferredClass.Upsert && em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _peerBatch);
+                    _codec.WriteEntity(_peerBatch, cls == DeferredClass.Upsert ? SyncRecordKind.Upsert : SyncRecordKind.Values, id, family, e);
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(LogCategory.Replication, "deferred record #" + id + " failed: " + ex.Message);
+                }
+            }
+            if (_peerBatch.IsEmpty) return;
+            o.SentRecords += _peerBatch.RecordCount;
+            o.LastFlush = Perf.Now;
+            Send(o.Peer, _peerBatch, Perf.DeferredBytes);
+        }
+
+        /// <summary>A client asked for the full state of every line or every entity: queued as deferred upserts (coalesced, link-paced).</summary>
         private void Resend(PeerId peer, bool routesOnly)
         {
+            if (!_out.TryGetValue(peer.Value, out PeerOut o)) return;
             EntityManager em = _codec.EntityManager;
-            var w = new SyncBatch.Writer();
             NativeArray<Entity> table = _ids.ReaderTable;
+            double now = Perf.Now;
             int n = 0;
             for (int id = 1; id < table.Length; id++)
             {
                 Entity e = table[id];
-                if (e == Entity.Null || !em.Exists(e)) continue;
+                if (e == Entity.Null) continue;
                 Family f = _ids.GetFamily((uint)id);
                 if (f == Family.Prefab) continue;
                 if (routesOnly ? !(f == Family.Route || f == Family.Waypoint || f == Family.Segment) : !FamilyClassifier.IsReplicated(f)) continue;
-                _codec.WriteEntity(w, SyncRecordKind.Upsert, (uint)id, f, e);
-                if (++n % 512 == 0)
-                {
-                    Send(peer, w);
-                    w = new SyncBatch.Writer();
-                }
+                if (!em.Exists(e)) continue;
+                o.Queue.Mark((uint)id, DeferredClass.Upsert, now);
+                n++;
             }
-            if (!w.IsEmpty) Send(peer, w);
-            _log.Info(LogCategory.Replication, peer + ": resent " + n + (routesOnly ? " line entities" : " entities"));
+            _log.Info(LogCategory.Replication, peer + ": re-sending " + n + (routesOnly ? " line entities" : " entities") + " (paced by its link)");
         }
 
         /// <summary>
@@ -1387,13 +1746,14 @@ namespace SkylineTogether.Sync
                 changed.Dispose();
             }
             if (_toolCost != 0) _batch.Cost(_toolCost);
-            // gameplay branch: sequence, base epoch and kind of the proposal (host validation, rollback)
+            // gameplay branch: sequence, base ledger epoch and kind of the proposal (host validation, rollback)
             if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
             if (_pool.ShouldRequestMore()) _batch.Request(SyncRequest.MoreIds);
             if (!_batch.IsEmpty)
             {
                 ArraySegment<byte> bytes = _batch.Finish();
                 _sessions.Client?.SendToHost(MessageKind.Proposal, bytes.Array, bytes.Offset, bytes.Count);
+                Perf.Counters.AddBytes(Perf.ProposalBytes, bytes.Count, now);
             }
         }
 
@@ -1460,13 +1820,14 @@ namespace SkylineTogether.Sync
             };
         }
 
-        private void ApplyZoneRecords(byte[] data)
+        private void ApplyZoneRecords(List<SyncRecord> records)
         {
             double now = _sessions.Clock.Seconds;
             bool fromHost = !IsHost;
-            foreach (SyncRecord r in SyncBatch.Read(data, 0, data.Length))
+            for (int i = 0; i < records.Count; i++)
             {
-                // gameplay branch: the host's epoch numbers (conflict base) and proposal results (rollback toast)
+                SyncRecord r = records[i];
+                // gameplay branch: the host's ledger epochs (conflict base) and proposal results (rollback toast)
                 if (fromHost && r.Kind == SyncRecordKind.Epoch)
                 {
                     _baseEpoch = r.EpochNumber;
@@ -1566,16 +1927,22 @@ namespace SkylineTogether.Sync
 
         // ================================================================== sending
 
-        private void Broadcast(SyncBatch.Writer w)
+        private void Broadcast(SyncBatch.Writer w, string channel)
         {
+            SessionHost host = _sessions.Host;
+            if (host == null) return;
             ArraySegment<byte> bytes = w.Finish();
-            _sessions.Host?.Broadcast(MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
+            host.Broadcast(MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
+            Perf.Counters.AddBytes(channel, (long)bytes.Count * Math.Max(1, _outList.Count), Perf.Now);
         }
 
-        private void Send(PeerId peer, SyncBatch.Writer w)
+        private void Send(PeerId peer, SyncBatch.Writer w, string channel)
         {
+            SessionHost host = _sessions.Host;
+            if (host == null) return;
             ArraySegment<byte> bytes = w.Finish();
-            _sessions.Host?.SendTo(peer, MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
+            host.SendTo(peer, MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
+            Perf.Counters.AddBytes(channel, bytes.Count, Perf.Now);
         }
     }
 }

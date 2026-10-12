@@ -66,7 +66,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             for (int k = 0; k < 256; k++)
             {
                 var kind = (MessageKind)k;
-                Assert.Equal(k >= 1 && k <= 21, Limits.IsKnownKind(kind), "kind " + k);
+                Assert.Equal((k >= 1 && k <= 21) || k == 60 || (k >= 65 && k <= 67), Limits.IsKnownKind(kind), "kind " + k);
                 int max = Limits.MaxBodyBytes(kind);
                 Assert.True(max > 0 && max <= Limits.MaxUncompressedBytes + Limits.MaxBulkChunkBytes, "limit of kind " + k);
             }

@@ -10,9 +10,11 @@ using Game.Vehicles;
 using SkylineTogether.Core;
 using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Motion;
+using SkylineTogether.Core.Scheduling;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Sync;
+using SkylineTogether.Diagnostics;
 using SkylineTogether.Session;
 using Unity.Collections;
 using Unity.Entities;
@@ -62,6 +64,22 @@ namespace SkylineTogether.Sync
             public MotionInterestRegion Region;
             public float Scale = 1f;
             public readonly Dictionary<uint, uint> Interest = new Dictionary<uint, uint>();
+            /// <summary>w2/ids perf pass: the keys of <see cref="Interest"/> as an array-backed set (the sampling loop tests it per mover).</summary>
+            public readonly IdIndexSet Members = new IdIndexSet();
+            public bool Congested;
+            public long MotionBytes;
+
+            public void Enter(uint id, uint tick)
+            {
+                Interest[id] = tick;
+                Members.Add(id);
+            }
+
+            public bool Leave(uint id)
+            {
+                Members.Remove(id);
+                return Interest.Remove(id);
+            }
         }
 
         private readonly SessionManager _sessions;
@@ -73,6 +91,7 @@ namespace SkylineTogether.Sync
         private readonly MotionFrame[] _four = new MotionFrame[4];
         private readonly uint[] _fourTicks = new uint[4];
         private readonly List<uint> _scratchIds = new List<uint>();
+        private readonly LinkBudgetConfig _linkConfig = new LinkBudgetConfig();
         private MotionHostEncoder _encoder;
         private World _world;
         private NetIdSystem _ids;
@@ -194,6 +213,7 @@ namespace SkylineTogether.Sync
                 _bindAll = false;
                 BindAll(em);
             }
+            long start = Perf.Start();
             _batch.Reset();
             CaptureDeleted(em);
             CaptureCreated(em);
@@ -203,8 +223,13 @@ namespace SkylineTogether.Sync
             {
                 ArraySegment<byte> bytes = _batch.Finish();
                 _sessions.Host.Broadcast(MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
+                Perf.Counters.AddBytes(Perf.MoverBytes, (long)bytes.Count * Math.Max(1, _peers.Count), Perf.Now);
             }
-            if (_peers.Count > 0) Motion(em);
+            Perf.Stop(Perf.MoverCapture, start);
+            if (_peers.Count == 0) return;
+            long motion = Perf.Start();
+            Motion(em);
+            Perf.Stop(Perf.MotionSample, motion);
         }
 
         private void BindAll(EntityManager em)
@@ -220,8 +245,8 @@ namespace SkylineTogether.Sync
                         uint id = _ids.GetNetId(e);
                         if (id == 0)
                         {
-                            id = _ids.Ids.Allocate();
-                            _ids.Bind(e, id, Family.Mover);
+                            id = _ids.BindNew(e, Family.Mover);
+                            if (id == 0) continue;
                             bound++;
                         }
                         MoverRecord rec = Describe(em, e);
@@ -256,12 +281,12 @@ namespace SkylineTogether.Sync
                     uint id = _ids.GetNetId(e);
                     if (id == 0 || _ids.GetFamily(id) != Family.Mover) continue;
                     _batch.MoverDespawn(id);
-                    _ids.Unbind(id);
+                    _ids.Unbind(id, despawnSent: true); // w2/ids: quarantined until every peer applied this batch
                     _movers.Remove(id);
                     if (id > NetSlot.MaxValue) continue;
                     foreach (PeerView v in _peers.Values)
                     {
-                        if (v.Interest.Remove(id)) _encoder.ExitInterest(v.Peer, new NetSlot(id));
+                        if (v.Leave(id)) _encoder.ExitInterest(v.Peer, new NetSlot(id));
                     }
                 }
             }
@@ -280,7 +305,7 @@ namespace SkylineTogether.Sync
                 // bind first, so layouts and riders inside the same batch reference each other by id
                 foreach (Entity e in entities)
                 {
-                    if (_ids.GetNetId(e) == 0) _ids.Bind(e, _ids.Ids.Allocate(), Family.Mover);
+                    if (_ids.GetNetId(e) == 0) _ids.BindNew(e, Family.Mover);
                 }
                 foreach (Entity e in entities)
                 {
@@ -289,6 +314,7 @@ namespace SkylineTogether.Sync
                         uint id = _ids.GetNetId(e);
                         MoverRecord rec = Describe(em, e);
                         if (id == 0 || rec == null) continue;
+                        ForgetInterest(id); // w2/ids: a reused id never inherits an old mover's interest
                         _batch.Mover(SyncRecordKind.MoverSpawn, id, rec);
                         _movers[id] = Remember(rec);
                     }
@@ -318,8 +344,8 @@ namespace SkylineTogether.Sync
                         if (id == 0)
                         {
                             // a mover that escaped binding (should not happen): treat it as new
-                            id = _ids.Ids.Allocate();
-                            _ids.Bind(e, id, Family.Mover);
+                            id = _ids.BindNew(e, Family.Mover);
+                            if (id == 0) continue;
                         }
                         bool knownMover = _movers.TryGetValue(id, out HostMover known);
                         if (knownMover && SameState(em, e, known)) continue;
@@ -337,6 +363,15 @@ namespace SkylineTogether.Sync
             finally
             {
                 entities.Dispose();
+            }
+        }
+
+        private void ForgetInterest(uint id)
+        {
+            if (_encoder == null || id > NetSlot.MaxValue) return;
+            foreach (PeerView v in _peers.Values)
+            {
+                if (v.Members.Contains(id) && v.Leave(id)) _encoder.ExitInterest(v.Peer, new NetSlot(id));
             }
         }
 
@@ -530,12 +565,12 @@ namespace SkylineTogether.Sync
                         foreach (PeerView v in _peers.Values)
                         {
                             if (!v.HasReport) continue;
-                            bool inside = v.Interest.ContainsKey(id);
+                            bool inside = v.Members.Contains(id);
                             if (!v.Region.Contains(p.x, p.z, inside))
                             {
                                 if (inside)
                                 {
-                                    v.Interest.Remove(id);
+                                    v.Leave(id);
                                     _encoder.ExitInterest(v.Peer, new NetSlot(id));
                                 }
                                 continue;
@@ -558,7 +593,7 @@ namespace SkylineTogether.Sync
                                 bool near = dx * dx + dz * dz <= v.Region.Radius * v.Region.Radius * 0.25f;
                                 _encoder.AddFrame(v.Peer, tick, new NetSlot(id), ToMotion(ring[slot]), near, false);
                             }
-                            v.Interest[id] = tick;
+                            v.Enter(id, tick);
                         }
                     }
                 }
@@ -597,7 +632,7 @@ namespace SkylineTogether.Sync
                 }
                 foreach (uint id in _scratchIds)
                 {
-                    v.Interest.Remove(id);
+                    v.Leave(id);
                     _encoder.ExitInterest(v.Peer, new NetSlot(id));
                 }
                 float scale = v.Scale;
@@ -631,8 +666,27 @@ namespace SkylineTogether.Sync
                 MotionQuality quality = demand <= perSecond ? MotionQuality.Full
                     : demand <= 2.0 * perSecond ? MotionQuality.FarHalf
                     : demand <= 4.0 * perSecond ? MotionQuality.FarQuarter : MotionQuality.Reduced;
-                _encoder.SetMotionBudget(v.Peer, budget, quality);
+                // w2/ids: structure and values come first (ARCH §4.8.4); while the peer's reliable backlog is high, motion
+                // keeps only a trickle (control messages, a few frames) and the client extrapolates, then pins
+                int peerBudget = budget;
+                v.Congested = host.TryGetLink(v.Peer, out PeerSendState link)
+                              && LinkBudget.IsCongested(link.QueuedReliableBytes, link.PendingReliableBytes, link.SendRateBytesPerSecond, _linkConfig);
+                if (v.Congested)
+                {
+                    peerBudget = 256;
+                    quality = MotionQuality.Reduced;
+                    Perf.Counters.Count("motion frames yielded to a congested link");
+                }
+                _encoder.SetMotionBudget(v.Peer, peerBudget, quality);
+                MotionEncoderStats before = _encoder.GetStats(v.Peer);
                 _encoder.Flush(v.Peer, output);
+                MotionEncoderStats after = _encoder.GetStats(v.Peer);
+                long sent = after.DatagramBytes - before.DatagramBytes + after.ControlBytes - before.ControlBytes;
+                if (sent > 0)
+                {
+                    v.MotionBytes += sent;
+                    Perf.Counters.AddBytes(Perf.MotionBytes, sent, Perf.Now);
+                }
             }
             foreach (uint gone in _scratchIds)
             {

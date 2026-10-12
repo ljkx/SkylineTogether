@@ -62,7 +62,7 @@ namespace SkylineTogether.Sync
         };
 
         private readonly Dictionary<int, FamilyMarker> _markerByType = new Dictionary<int, FamilyMarker>();
-        private readonly Dictionary<EntityArchetype, FamilyMarker> _cache = new Dictionary<EntityArchetype, FamilyMarker>();
+        private readonly Dictionary<EntityArchetype, ArchetypeClass> _classes = new Dictionary<EntityArchetype, ArchetypeClass>();
         private readonly ComponentType _owner;
         private readonly ComponentType _prefabRef;
         private readonly ComponentType _subObject;
@@ -105,15 +105,38 @@ namespace SkylineTogether.Sync
         public Family Classify(EntityManager em, Entity e)
         {
             EntityArchetype archetype = em.GetChunk(e).Archetype;
-            if (!_cache.TryGetValue(archetype, out FamilyMarker markers))
-            {
-                markers = Markers(archetype);
-                _cache[archetype] = markers;
-            }
+            ArchetypeClass c = ClassOf(archetype);
+            if (!c.NeedsFacts) return c.Family;
+            return FamilyRules.Classify(c.Markers, Facts(em, e, c.Markers), out _);
+        }
+
+        /// <summary>
+        /// w2/ids perf pass: the family of every entity of an archetype when it does not depend on per-entity facts (one
+        /// cached lookup per chunk); false when the entities must be classified one by one (<see cref="Classify"/>).
+        /// </summary>
+        public bool TryClassifyArchetype(EntityArchetype archetype, out Family family)
+        {
+            ArchetypeClass c = ClassOf(archetype);
+            family = c.Family;
+            return !c.NeedsFacts;
+        }
+
+        private struct ArchetypeClass
+        {
+            public FamilyMarker Markers;
+            public bool NeedsFacts;
+            public Family Family;
+        }
+
+        private ArchetypeClass ClassOf(EntityArchetype archetype)
+        {
+            if (_classes.TryGetValue(archetype, out ArchetypeClass c)) return c;
+            FamilyMarker markers = Markers(archetype);
             if ((markers & FamilyMarker.Owner) != 0 && (markers & FamilyMarker.Route) != 0) markers |= FamilyMarker.GateBypassRoutePrefab;
-            FamilyFacts facts = default;
-            if (FamilyRules.NeedsPerEntityFacts(markers)) facts = Facts(em, e, markers);
-            return FamilyRules.Classify(markers, facts, out _);
+            c = new ArchetypeClass { Markers = markers, NeedsFacts = FamilyRules.NeedsPerEntityFacts(markers) };
+            if (!c.NeedsFacts) c.Family = FamilyRules.Classify(markers, default, out _);
+            _classes[archetype] = c;
+            return c;
         }
 
         private FamilyMarker Markers(EntityArchetype archetype)

@@ -33,6 +33,11 @@ namespace SkylineTogether.Core
         /// <summary>Water correction tiles (ARCH §4.10.10, <see cref="Sync.WaterMessage"/>), host → client.</summary>
         Water = 21,
 
+        // w2/ids (merge coordination: kinds 60-64 are reserved for this branch)
+        /// <summary>Client → host: how many of the host's <c>Epoch</c> messages the client has applied
+        /// (<see cref="Sync.ApplyAckMessage"/>); gates the reuse of released net ids (ARCH §3.1).</summary>
+        ApplyAck = 60,
+
         // w2/simvals (merge coordination: this branch owns 65-69)
         /// <summary>Attention-driven simulation values and time-aligned inspection samples (ARCH D5, §4.7.9, §4.8;
         /// <see cref="Sync.SimValueMessage"/>), host → client.</summary>

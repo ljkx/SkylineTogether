@@ -75,6 +75,8 @@ namespace SkylineTogether.Core.Session
             public double LastPingSent;
             public uint PingSequence;
             public bool Admitted;
+            /// <summary>Reliable <c>Epoch</c> messages queued for this peer (w2/ids: the watermarks of <c>ApplyAckBook</c>).</summary>
+            public long EpochSent;
             /// <summary>gameplay branch: the player's role (ARCH §5.6); the host toggles builder ↔ viewer in the panel.</summary>
             public SessionRole Role = SessionRole.Builder;
         }
@@ -285,7 +287,7 @@ namespace SkylineTogether.Core.Session
         {
             foreach (Peer p in _peers.Values)
             {
-                if (p.Admitted) p.Channel.Send(kind, body, offset, count, lane);
+                if (p.Admitted) SendCounted(p, kind, body, offset, count, lane);
             }
         }
 
@@ -293,8 +295,64 @@ namespace SkylineTogether.Core.Session
         {
             foreach (Peer p in _peers.Values)
             {
-                if (p.Admitted && p.Id == peer) p.Channel.Send(kind, body, offset, count);
+                if (p.Admitted && p.Id == peer) SendCounted(p, kind, body, offset, count, Lane.Reliable);
             }
+        }
+
+        /// <summary>w2/ids: every reliable <c>Epoch</c> message a peer is sent is counted (its client counts what it applied).</summary>
+        private static void SendCounted(Peer p, MessageKind kind, byte[] body, int offset, int count, Lane lane)
+        {
+            bool ok = p.Channel.Send(kind, body, offset, count, lane);
+            if (ok && kind == MessageKind.Epoch && lane == Lane.Reliable) p.EpochSent++;
+        }
+
+        /// <summary>w2/ids: reliable <c>Epoch</c> messages queued so far for an admitted peer (0 when unknown).</summary>
+        public long GetEpochSent(PeerId peer)
+        {
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Admitted && p.Id == peer) return p.EpochSent;
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// w2/ids: true while a join is in progress (a peer between admission and live, or a snapshot being taken): a
+        /// snapshot may then still be written with the current bindings, so released net ids must stay quarantined.
+        /// </summary>
+        public bool JoinInProgress => _snapshotPending || HoldSimulation;
+
+        /// <summary>w2/ids: the admitted peers (appended to <paramref name="output"/>).</summary>
+        public void GetAdmittedPeers(List<PeerId> output)
+        {
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Admitted) output.Add(p.Id);
+            }
+        }
+
+        /// <summary>
+        /// w2/ids: the send-side state of an admitted peer for the bandwidth scheduler (ARCH §4.8): whether it is live,
+        /// the reliable bytes waiting in its outbox, the bytes the transport still holds and its send rate.
+        /// </summary>
+        public bool TryGetLink(PeerId peer, out PeerSendState link)
+        {
+            foreach (Peer p in _peers.Values)
+            {
+                if (!p.Admitted || p.Id != peer) continue;
+                ConnectionStats c = p.Channel.Outbox.Stats;
+                link = new PeerSendState
+                {
+                    Live = p.State == PlayerState.Live,
+                    QueuedReliableBytes = p.Channel.Outbox.QueuedReliableBytes,
+                    PendingReliableBytes = Math.Max(0, c.PendingReliableBytes),
+                    SendRateBytesPerSecond = Math.Max(0, c.SendRateBytesPerSecond),
+                    OutBytesPerSecond = Math.Max(0f, c.OutBytesPerSecond),
+                };
+                return true;
+            }
+            link = default;
+            return false;
         }
 
         /// <summary>Sends the host player's own presence to every live peer (unreliable; dropped when the link is busy).</summary>
