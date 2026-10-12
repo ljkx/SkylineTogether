@@ -315,6 +315,8 @@ namespace SkylineTogether.Sync
 
         private void FollowClock(uint frame)
         {
+            // movers branch: a running follower clock owns frameIndex; the record is one of its samples
+            if (FollowerClock.Instance != null && FollowerClock.Instance.OnHostClock(frame)) return;
             try
             {
                 if (_frameIndex != null && _frameIndex.CanWrite) _frameIndex.SetValue(_simulation, frame);

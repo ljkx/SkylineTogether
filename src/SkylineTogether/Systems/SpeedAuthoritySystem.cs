@@ -73,11 +73,15 @@ namespace SkylineTogether.Systems
         }
 
         /// <summary>
-        /// Clients follow: their simulation never runs (the host's results arrive as data), so the local speed stays 0.
-        /// A speed the player selects is a request to the host, which applies it for everyone.
+        /// Clients follow: their gameplay simulation never runs (the host's results arrive as data). With the follower
+        /// clock their time runs at the host's speed; without it the local speed stays 0. A speed the player selects is
+        /// a request to the host, which applies it for everyone.
         /// </summary>
         private void UpdateClient(SessionClient client)
         {
+            // movers branch: the follower clock (Sync/FollowerClock.cs) mirrors the host's speed with every gameplay
+            // GameSimulation system off and forwards player speed changes as requests; without it, stay paused below
+            if (Sync.FollowerClock.Instance != null && Sync.FollowerClock.Instance.Tick(_simulation, client)) return;
             float current = _simulation.selectedSpeed;
             if (current > 0f)
             {
