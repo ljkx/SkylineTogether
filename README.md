@@ -17,6 +17,16 @@ is repaired automatically.
 
 Status: milestone M0 (foundations) is in progress. The mod does not provide multiplayer yet.
 
+## Solo testing (no second PC)
+
+"Record test session" in the Skyline Together panel (in a city, or while hosting) adds a test recorder that joins the
+session like a player and records everything it receives into
+`%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\SkylineTogether\Recordings\`, with
+verification checkpoints. "Replay & verify" (panel, also from the main menu) loads the recorded snapshot as a joiner and
+plays the recording through the real client path without any network, then writes `verdict.txt` / `verdict.json`
+next to the recording (objects, lines, icons and global state compared with the host, apply errors, timings). See
+ARCHITECTURE §13.5.
+
 ## Repository layout
 
 ```
