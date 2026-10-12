@@ -68,6 +68,7 @@ namespace SkylineTogether.Sync
         private bool _routeWindowOpen;
         private bool _clientLive;
         private bool _wasClient;
+        private bool _disposed;
 
         private struct PendingZone
         {
@@ -118,6 +119,15 @@ namespace SkylineTogether.Sync
                 }
                 string integrity = Integrity.Status; // feat/integrity
                 if (integrity.Length > 0) s += "; " + integrity;
+                // review: the movers branch had no line in the panel or the diagnostics
+                MoverSync movers = MoverSync.Instance;
+                if (movers != null)
+                {
+                    if (IsHost && movers.Host.MoverCount > 0) s += "; " + movers.Host.MoverCount + " movers";
+                    else if (!IsHost && movers.Client.Status.Length > 0) s += "; " + movers.Client.Status;
+                }
+                FollowerClock clock = FollowerClock.Instance;
+                if (!IsHost && clock != null) s += clock.Active ? "; clock follows the host" : "; paused follower";
                 return s;
             }
         }
@@ -126,6 +136,7 @@ namespace SkylineTogether.Sync
 
         private bool EnsureWorld()
         {
+            if (_disposed) return false;
             if (_codec != null) return true;
             World world = World.DefaultGameObjectInjectionWorld;
             if (world == null) return false;
@@ -185,6 +196,9 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Epoch) return;
+                // review fix: mover batches belong to MoverClient; here they were decoded three more times for nothing
+                // and counted as backlog (which suspends the integrity comparison)
+                if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount)) return;
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 _inbox.Enqueue((PeerId.Host, copy));
@@ -215,7 +229,30 @@ namespace SkylineTogether.Sync
             _pendingZones.Clear();
             _clientLive = false;
             _routeWindowOpen = false;
+            _routeWindowUntil = 0;
+            // review fix: a value scan interrupted by the session end resumed in the next session with the old id list
+            _scanCursor = 0;
+            _scanIds.Clear();
+            _appliedThisFrame.Clear();
+            _toolOriginals.Clear();
+            _toolApplied = false;
+            _toolCost = 0;
             _global.Reset();
+        }
+
+        /// <summary>Mod unload: frees the codec's native buffers and serialization contexts (they are persistent).</summary>
+        public void Dispose()
+        {
+            _disposed = true;
+            try
+            {
+                _codec?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Replication, "disposing the codec: " + ex.Message);
+            }
+            _codec = null; // every entry point checks it (and EnsureWorld refuses after disposal)
         }
 
         /// <summary>Host session start (ARCH K17): binds every persistent entity and every prefab before anyone joins.</summary>
@@ -691,7 +728,10 @@ namespace SkylineTogether.Sync
                 Game.Zones.ZoneType z = cells[i].m_Zone;
                 if (z.Equals(Game.Zones.ZoneType.None)) continue;
                 Entity prefab = _zones.GetPrefab(z);
-                zones[i] = _codec.EnsurePrefab(prefab, _batch);
+                // review fix: only the host allocates ids. A client's EnsurePrefab allocated from its local counter
+                // (the host's high-water mark at snapshot time), which the host has long handed to new entities and
+                // movers since; the host then rebound that id to the zone prefab and lost the entity's binding
+                zones[i] = IsHost ? _codec.EnsurePrefab(prefab, _batch) : _ids.GetNetId(prefab);
                 any |= zones[i] != 0;
             }
             if (!any && em.HasComponent<Game.Common.Created>(block)) return; // a fresh empty block: nothing to tell

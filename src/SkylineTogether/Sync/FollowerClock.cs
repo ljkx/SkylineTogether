@@ -216,6 +216,9 @@ namespace SkylineTogether.Sync
                 _disabled.Clear();
                 Disable(systems);
                 _lastScan = Now;
+                // review fix: the model outlives sessions; a stale estimate from the previous session could keep this
+                // client ahead of the host (and of the motion stream) for minutes
+                _model.Reset();
                 _model.SetRate(0, Now);
                 _model.AddSample(simulation.frameIndex, Now);
                 _lastRate = 0;

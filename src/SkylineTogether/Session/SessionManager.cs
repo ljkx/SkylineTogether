@@ -266,7 +266,7 @@ namespace SkylineTogether.Session
                     Client = null;
                     _loader.Dispose();
                     _playersVersion++;
-                    SessionEnded?.Invoke();
+                    RaiseSessionEnded();
                 }
             }
         }
@@ -350,7 +350,7 @@ namespace SkylineTogether.Session
             _playersVersion++;
             if (!string.IsNullOrEmpty(LastEndReason)) AddChat(new ChatEntry { IsSystem = true, Text = LastEndReason });
             Notify(LastEndReason ?? "Disconnected.");
-            SessionEnded?.Invoke();
+            RaiseSessionEnded();
         }
 
         private void StopHost(string reason)
@@ -369,7 +369,29 @@ namespace SkylineTogether.Session
             _snapshots.ReleaseAll(); // review fix: no snapshot temp file outlives the session
             LastEndReason = reason;
             _playersVersion++;
-            SessionEnded?.Invoke();
+            RaiseSessionEnded();
+        }
+
+        /// <summary>
+        /// Review fix: every listener gets the end of the session even when an earlier one throws. Several of them turn
+        /// vanilla systems back on (follower gate, follower clock, mover gate); a plain multicast invoke stopped at the
+        /// first exception and left the game with its simulation systems disabled.
+        /// </summary>
+        private void RaiseSessionEnded()
+        {
+            Action ended = SessionEnded;
+            if (ended == null) return;
+            foreach (Delegate d in ended.GetInvocationList())
+            {
+                try
+                {
+                    ((Action)d)();
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(LogCategory.Session, "a session-end listener failed (" + d.Method.DeclaringType?.Name + "." + d.Method.Name + ")", ex);
+                }
+            }
         }
 
         private void OnGamePreload(Purpose purpose, GameMode mode)

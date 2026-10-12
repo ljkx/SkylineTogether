@@ -157,8 +157,8 @@ namespace SkylineTogether.Sync
             switch (e.Kind)
             {
                 case MessageKind.Epoch:
-                    // only the movers' own batches (their first record is a mover record); the structure apply skips them
-                    if (e.BodyCount > 5 && IsMoverKind(e.Body[e.BodyOffset + 5])) _batches.Enqueue(Copy(e));
+                    // only the movers' own batches (their first record is a mover record); SyncController skips them
+                    if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount)) _batches.Enqueue(Copy(e));
                     break;
                 case MessageKind.Motion:
                 case MessageKind.MotionControl:
@@ -166,8 +166,6 @@ namespace SkylineTogether.Sync
                     break;
             }
         }
-
-        private static bool IsMoverKind(byte kind) => kind == (byte)SyncRecordKind.MoverSpawn || kind == (byte)SyncRecordKind.MoverState || kind == (byte)SyncRecordKind.MoverDespawn;
 
         private static byte[] Copy(Envelope e)
         {

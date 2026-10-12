@@ -129,6 +129,15 @@ namespace SkylineTogether
                 Log?.Warn(LogCategory.Session, "leaving the session on exit failed", ex);
             }
             Sessions = null;
+            // review fix: the codec's persistent native buffers and serialization contexts were never freed
+            try
+            {
+                Sync?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Log?.Warn(LogCategory.Session, "disposing replication failed", ex);
+            }
             Presence = null;
             Settings?.UnregisterInOptionsUI();
             Settings = null;

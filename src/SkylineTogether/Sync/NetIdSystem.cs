@@ -59,6 +59,8 @@ namespace SkylineTogether.Sync
 
         public void Clear()
         {
+            // review fix: a client session can end on exit after the world destroyed this system (lists disposed)
+            if (!_writer.IsCreated || !_reader.IsCreated || !_family.IsCreated) return;
             _writer.Clear();
             _reader.Clear();
             _family.Clear();

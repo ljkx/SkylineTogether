@@ -135,16 +135,28 @@ namespace SkylineTogether.UI
             SessionManager s = Mod.Sessions;
             if (s == null) return "{}";
             SessionClient client = s.Client;
-            string key = s.Mode + "|" + s.PlayersVersion + "|" + s.ChatVersion + "|" + s.CanHost + "|" + s.CanJoin + "|" + (s.LastEndReason ?? "") + "|" + (Mod.Sync?.Status ?? "")
+            // review fix: since movers are bound, the bound count in the sync line changes nearly every frame, which
+            // re-serialized the whole state (players, 100 chat lines) and re-rendered the panel every frame; the line
+            // is refreshed twice a second instead
+            double now = s.Clock.Seconds;
+            if (now - _syncAt >= 0.5 || now < _syncAt)
+            {
+                _syncAt = now;
+                _sync = Mod.Sync?.Status ?? "";
+            }
+            string key = s.Mode + "|" + s.PlayersVersion + "|" + s.ChatVersion + "|" + s.CanHost + "|" + s.CanJoin + "|" + (s.LastEndReason ?? "") + "|" + _sync
                          + "|" + (s.Host != null ? s.Host.Speed.ToString() : s.Client != null ? s.Client.Speed.ToString() : "")
                          + "|" + (client != null ? client.State + ":" + ((int)(client.JoinProgress * 100)).ToString(CultureInfo.InvariantCulture) : "");
             if (key == _key) return _state;
             _key = key;
-            _state = Serialize(s);
+            _state = Serialize(s, _sync);
             return _state;
         }
 
-        private static string Serialize(SessionManager s)
+        private string _sync = "";
+        private double _syncAt = double.NegativeInfinity;
+
+        private static string Serialize(SessionManager s, string sync)
         {
             var sb = new StringBuilder(2048);
             sb.Append('{');
@@ -197,7 +209,7 @@ namespace SkylineTogether.UI
                 }
             }
             Prop(sb, "status", status).Append(',');
-            Prop(sb, "sync", Mod.Sync?.Status ?? "").Append(',');
+            Prop(sb, "sync", sync ?? "").Append(',');
             SpeedState speed = s.Host != null ? s.Host.Speed : s.Client != null ? s.Client.Speed : default(SpeedState);
             Prop(sb, "speed", speed.Held ? "paused while a player joins" : speed.Paused ? "paused" : speed.Speed + "×").Append(',');
             Prop(sb, "sessionName", sessionName).Append(',');

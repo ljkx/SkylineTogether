@@ -194,6 +194,53 @@ namespace SkylineTogether.Core.Sync
         public const int MaxIconsPerOwner = 256;
         private const int MaxPayloadBytes = 1 << 22;
 
+        /// <summary>Bytes before the first record: the version byte and the record count.</summary>
+        public const int HeaderBytes = 5;
+
+        /// <summary>
+        /// The kind of a batch's first record without decoding it (0 for an empty or truncated batch). Some producers own
+        /// whole batches (global state, movers), so their consumers recognise them by this byte alone.
+        /// </summary>
+        public static byte FirstRecordKind(byte[] data, int offset, int count)
+        {
+            if (data == null || offset < 0 || count <= HeaderBytes || offset > data.Length - count) return 0;
+            return data[offset + HeaderBytes];
+        }
+
+        /// <summary>
+        /// A batch of the movers branch (<c>MoverHost</c> writes only mover records into its batches): owned by the
+        /// client's <c>MoverClient</c>; the structure apply, the integrity check and global state never need it.
+        /// </summary>
+        public static bool IsMoverBatch(byte[] data, int offset, int count)
+        {
+            byte kind = FirstRecordKind(data, offset, count);
+            return kind == (byte)SyncRecordKind.MoverSpawn || kind == (byte)SyncRecordKind.MoverState || kind == (byte)SyncRecordKind.MoverDespawn;
+        }
+
+        /// <summary>
+        /// Record kinds a host accepts in a client's proposal. Everything else is host → client only (prefab bindings, id
+        /// ranges, the clock, integrity answers, icons, line rows, movers); a host applying such a record from a client
+        /// would let it rebind prefabs to arbitrary ids or overwrite host-owned state.
+        /// </summary>
+        public static bool AcceptedFromClient(SyncRecordKind kind)
+        {
+            switch (kind)
+            {
+                case SyncRecordKind.Spawn:
+                case SyncRecordKind.Upsert:
+                case SyncRecordKind.Values:
+                case SyncRecordKind.Despawn:
+                case SyncRecordKind.ZoneCells:
+                case SyncRecordKind.Cost:
+                case SyncRecordKind.Request:
+                case SyncRecordKind.Global:
+                case SyncRecordKind.RequestIds:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public sealed class Writer
         {
             private readonly ByteWriter _w = new ByteWriter(1 << 16);

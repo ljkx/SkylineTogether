@@ -401,7 +401,7 @@ namespace SkylineTogether.Sync
             // global records always travel in batches of their own (SyncController.CaptureGlobal), so entity batches
             // are recognised by their first record kind (offset 5: after the version byte and the record count) and
             // not decoded a further time
-            if (data == null || data.Length < 6 || data[5] != (byte)SyncRecordKind.Global) return;
+            if (data == null || SyncBatch.FirstRecordKind(data, 0, data.Length) != (byte)SyncRecordKind.Global) return;
             foreach (SyncRecord r in SyncBatch.Read(data, 0, data.Length))
             {
                 if (r.Kind != SyncRecordKind.Global || r.Payload == null) continue;

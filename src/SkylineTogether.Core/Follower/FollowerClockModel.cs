@@ -51,6 +51,19 @@ namespace SkylineTogether.Core.Follower
         /// <summary>Ticks per second the estimate advances (60 × speed, 0 while paused).</summary>
         public double Rate => _rate;
 
+        /// <summary>
+        /// Forgets every sample (a new activation, e.g. the next session in the same game run): an estimate carried over
+        /// from an earlier session within <see cref="ResetTicks"/> of the new host's frame would only drift down at
+        /// <see cref="DownwardGain"/> and keep the client ahead of the motion stream for minutes.
+        /// </summary>
+        public void Reset()
+        {
+            HasEstimate = false;
+            _anchorFrame = 0;
+            _anchorTime = 0;
+            _rate = 0;
+        }
+
         /// <summary>Changes the advance rate; the estimate is re-anchored so it stays continuous.</summary>
         public void SetRate(double ticksPerSecond, double now)
         {

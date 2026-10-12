@@ -36,6 +36,30 @@ namespace SkylineTogether.Core.Tests.Follower
         }
 
         [Test]
+        public void ResetForgetsAnEarlierSessionsEstimate()
+        {
+            // session 1 ends with the estimate running at speed 1
+            var m = new FollowerClockModel();
+            m.SetRate(60, 0);
+            m.AddSample(10000, 0);
+            // session 2 (same game run) activates 3 s later on a host whose frame is within ResetTicks of the old
+            // estimate: without a reset the late sample only pulls the estimate down by DownwardGain
+            var stale = new FollowerClockModel();
+            stale.SetRate(60, 0);
+            stale.AddSample(10000, 0);
+            stale.SetRate(0, 3.0);
+            stale.AddSample(9900, 3.0);
+            Assert.True(stale.Estimate(3.0) > 10100, "the stale estimate stays ahead of the new host");
+
+            m.Reset();
+            Assert.False(m.HasEstimate);
+            Assert.Near(0, m.Rate, 0);
+            m.SetRate(0, 3.0);
+            m.AddSample(9900, 3.0);
+            Assert.Near(9900, m.Estimate(3.0), 1e-9);
+        }
+
+        [Test]
         public void FarSamplesResetTheEstimate()
         {
             var m = new FollowerClockModel();

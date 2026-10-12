@@ -476,10 +476,20 @@ namespace SkylineTogether.Sync
             }
             NativeArray<byte>.Copy(data, offset, _batch, 0, count);
             EntityManager em = EntityManager;
+            // review fix (direction check): mayCreate is given exactly when the host applies a client's proposal. Host →
+            // client records (prefab bindings above all) and writes to host-owned bindings (movers, prefabs, the city
+            // singleton) are refused: one Prefab record rebinds a host prefab to the client's id and evicts whatever
+            // entity the host had bound to it.
+            bool proposal = mayCreate != null;
 
             // 0: prefabs and channel records
             foreach (SyncRecord r in records)
             {
+                if (proposal && !SyncBatch.AcceptedFromClient(r.Kind))
+                {
+                    result.Problems.Add("ignored " + r.Kind + " from a client");
+                    continue;
+                }
                 switch (r.Kind)
                 {
                     case SyncRecordKind.Prefab:
@@ -532,6 +542,12 @@ namespace SkylineTogether.Sync
                     _ids.Bind(e, r.NetId, r.Family);
                     spawned.Add(e);
                     result.Spawned++;
+                }
+                else if (proposal && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)))
+                {
+                    result.Skipped++;
+                    result.Problems.Add("refused to write #" + r.NetId + " (" + _ids.GetFamily(r.NetId) + ")");
+                    continue;
                 }
                 else if (r.Kind == SyncRecordKind.Values)
                 {
@@ -615,6 +631,11 @@ namespace SkylineTogether.Sync
             foreach (SyncRecord r in records)
             {
                 if (r.Kind != SyncRecordKind.Despawn) continue;
+                if (proposal && _ids.GetEntity(r.NetId) != Entity.Null && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)))
+                {
+                    result.Problems.Add("refused to delete #" + r.NetId + " (" + _ids.GetFamily(r.NetId) + ")");
+                    continue;
+                }
                 Entity e = _ids.GetEntity(r.NetId);
                 _ids.Unbind(r.NetId);
                 if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
