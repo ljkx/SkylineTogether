@@ -43,6 +43,22 @@ namespace SkylineTogether.Sync
         }
     }
 
+    /// <summary>Host: binds this frame's new entities right before <c>SaveGameSystem</c> (join snapshots).</summary>
+    public sealed class SyncBindSystem : GameSystemBase
+    {
+        protected override void OnUpdate()
+        {
+            try
+            {
+                Mod.Sync?.BindCreated();
+            }
+            catch (Exception ex)
+            {
+                Mod.Log?.Error(LogCategory.Replication, "bind failed", ex);
+            }
+        }
+    }
+
     /// <summary>First in the ApplyTool phase, which only runs when the active tool applies: records the preview's
     /// originals and cost before the vanilla apply systems consume them.</summary>
     public sealed class SyncToolApplySystem : GameSystemBase

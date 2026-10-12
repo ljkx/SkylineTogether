@@ -50,6 +50,7 @@ namespace SkylineTogether.Sync
         private CitySystem _city;
         private EntityQuery _changed;
         private EntityQuery _tracked;
+        private EntityQuery _created;
         private PropertyInfo _frameIndex;
         private double _lastClock, _lastScan, _lastCity;
         private int _scanCursor;
@@ -120,8 +121,13 @@ namespace SkylineTogether.Sync
             });
             _tracked = em.CreateEntityQuery(new EntityQueryDesc
             {
-                Any = new[] { ComponentType.ReadOnly<PrefabRef>(), ComponentType.ReadOnly<Game.City.City>() },
+                Any = new[] { ComponentType.ReadOnly<PrefabRef>(), ComponentType.ReadOnly<Game.City.City>(), ComponentType.ReadOnly<Game.Simulation.WaterSourceData>() },
                 None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>(), ComponentType.ReadOnly<PrefabData>() },
+            });
+            _created = em.CreateEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Game.Common.Created>() },
+                None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>() },
             });
             _frameIndex = typeof(SimulationSystem).GetProperty("frameIndex", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             return true;
@@ -321,6 +327,30 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>
+        /// Host, right before <c>SaveGameSystem</c>: binds the entities created this frame, so a join snapshot taken in
+        /// this frame already carries their ids (otherwise the joiner would create them a second time).
+        /// </summary>
+        public void BindCreated()
+        {
+            if (_codec == null || !IsHost) return;
+            EntityManager em = _codec.EntityManager;
+            NativeArray<Entity> created = _created.ToEntityArray(Allocator.Temp);
+            try
+            {
+                foreach (Entity e in created)
+                {
+                    if (_ids.GetNetId(e) != 0) continue;
+                    Family family = _codec.Families.Classify(em, e);
+                    if (FamilyClassifier.IsReplicated(family)) _ids.Bind(e, _ids.Ids.Allocate(), family);
+                }
+            }
+            finally
+            {
+                created.Dispose();
+            }
+        }
+
         // ================================================================== tool hook (client)
 
         /// <summary>Called at the start of the ApplyTool phase: the local tool is about to apply its preview.</summary>
@@ -385,7 +415,7 @@ namespace SkylineTogether.Sync
                         _shadow.Remove(id);
                         continue;
                     }
-                    SyncRecordKind kind = SyncRecordKind.Upsert;
+                    SyncRecordKind kind = em.HasComponent<Game.Common.Created>(e) ? SyncRecordKind.Spawn : SyncRecordKind.Upsert;
                     if (id == 0)
                     {
                         id = _ids.Ids.Allocate();
