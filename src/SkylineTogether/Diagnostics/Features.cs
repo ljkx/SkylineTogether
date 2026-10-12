@@ -52,6 +52,12 @@ namespace SkylineTogether.Diagnostics
         /// <summary>Gameplay branch: player actions outside the tools (dev tree, map tiles, milestones, UI writes).</summary>
         public static readonly FeatureHealth Actions = Registry.Add("actions", "player actions sync", false);
 
+        /// <summary>
+        /// w3/audit: events and disasters (fires, accidents, weather phenomena, floods), their marks on buildings and
+        /// roads (presence watch), the chirper feed and the event journal.
+        /// </summary>
+        public static readonly FeatureHealth Events = Registry.Add("events", "events, disasters and chirper", false);
+
         /// <summary>Remote cursors and name tags.</summary>
         public static readonly FeatureHealth Presence = Registry.Add("presence", "player cursors", false);
 

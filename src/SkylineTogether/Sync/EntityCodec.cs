@@ -89,6 +89,7 @@ namespace SkylineTogether.Sync
         private readonly List<Entity> _pathUpdated = new List<Entity>();
         private readonly ByteReader _keyReader = new ByteReader();
         private TypeHandler _pathElement, _pathInformation, _connected, _prefabRef;
+        private TypeHandler _journalEntry, _lifePathEvent, _chirp; // w3/audit: archetypes of host-only families
         private bool _handlersResolved;
 
         public EntityCodec(World world, NetIdSystem ids, ILog log)
@@ -196,16 +197,26 @@ namespace SkylineTogether.Sync
         {
             TypeHandler[] handlers = HandlersOf(e);
             w.BeginEntity(kind, netId, family, kind != SyncRecordKind.Values);
-            for (int i = 0; i < handlers.Length; i++)
+            // w3/audit: events and chirps keep their values when they name an entity that does not replicate (a citizen
+            // sender, a household target): that reference travels as null instead of dropping the whole component
+            _ws.NullRefs = LenientRefs(family);
+            try
             {
-                TypeHandler h = handlers[i];
-                if (h.Kind == SyncComponentKind.Presence)
+                for (int i = 0; i < handlers.Length; i++)
                 {
-                    if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
-                    continue;
+                    TypeHandler h = handlers[i];
+                    if (h.Kind == SyncComponentKind.Presence)
+                    {
+                        if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
+                        continue;
+                    }
+                    if (TrySerialize(h, e, out int length)) w.AddComponent(h.Hash, h.Kind, _managedScratch, 0, length);
+                    else if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
                 }
-                if (TrySerialize(h, e, out int length)) w.AddComponent(h.Hash, h.Kind, _managedScratch, 0, length);
-                else if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
+            }
+            finally
+            {
+                _ws.NullRefs = null;
             }
             w.EndEntity();
             // mod compatibility: enabled bits travel right after the record (the vanilla Decoration of trees placed outside
@@ -316,12 +327,19 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>A 64-bit hash of an entity's replicated values (shadow comparison).</summary>
-        public ulong HashEntity(Entity e, bool valuesOnly)
+        public ulong HashEntity(Entity e, bool valuesOnly) => HashEntity(e, valuesOnly, Family.Generic);
+
+        /// <summary>
+        /// A 64-bit hash of an entity's replicated values as <see cref="WriteEntity"/> writes them for
+        /// <paramref name="family"/> (w3/audit: host-only families hash with their non-replicated references nulled).
+        /// </summary>
+        public ulong HashEntity(Entity e, bool valuesOnly, Family family)
         {
             ulong hash = 1469598103934665603UL;
             EntityManager em = EntityManager;
             Func<Entity, bool> binder = DependencyBinder;
             DependencyBinder = null; // mod compatibility: hashing never binds
+            _ws.NullRefs = LenientRefs(family);
             try
             {
                 TypeHandler[] handlers = HandlersOf(e);
@@ -339,9 +357,20 @@ namespace SkylineTogether.Sync
             finally
             {
                 DependencyBinder = binder;
+                _ws.NullRefs = null;
             }
             return hash;
         }
+
+        private static readonly Func<Entity, bool> AnyRef = _ => true;
+
+        /// <summary>
+        /// w3/audit: the references a family's structure records may null. Host-only families (events, chirps, journal
+        /// entries) point at citizens, households and service requests, which do not replicate as entities; their
+        /// other values must still arrive. Every other family keeps the strict rule (an unresolvable reference sends
+        /// the component as presence only).
+        /// </summary>
+        private static Func<Entity, bool> LenientRefs(Family family) => FamilyClassifier.IsHostOnly(family) ? AnyRef : null;
 
         private static ulong Mix(ulong h, ulong v) => (h ^ v) * 1099511628211UL + (h >> 29);
 
@@ -991,6 +1020,9 @@ namespace SkylineTogether.Sync
             _pathInformation = HandlerByName("Game.Pathfind.PathInformation");
             _connected = TypeHandlers.Get<Game.Routes.Connected>();
             _prefabRef = TypeHandlers.Get<PrefabRef>();
+            _journalEntry = HandlerByName("Game.Events.EventJournalEntry");
+            _lifePathEvent = HandlerByName("Game.Triggers.LifePathEvent");
+            _chirp = HandlerByName("Game.Triggers.Chirp");
         }
 
         private static TypeHandler HandlerByName(string name)
@@ -1182,6 +1214,16 @@ namespace SkylineTogether.Sync
                     return isConnected ? em.GetComponentData<RouteData>(prefab).m_ConnectedArchetype : em.GetComponentData<RouteData>(prefab).m_WaypointArchetype;
                 case Family.Segment:
                     return em.HasComponent<RouteData>(prefab) ? em.GetComponentData<RouteData>(prefab).m_SegmentArchetype : default;
+                case Family.Event:
+                    // w3/audit: journal entries and life-path events carry their event's prefab; vanilla creates them
+                    // from ad-hoc archetypes, which the record's own type set reproduces (generic fallback)
+                    if (HasComponent(r, _journalEntry) || HasComponent(r, _lifePathEvent)) return default;
+                    if (HasComponent(r, _chirp))
+                    {
+                        if (em.HasComponent<ChirpData>(prefab)) return em.GetComponentData<ChirpData>(prefab).m_Archetype;
+                        return em.HasComponent<LifePathEventData>(prefab) ? em.GetComponentData<LifePathEventData>(prefab).m_ChirpArchetype : default;
+                    }
+                    return em.HasComponent<EventData>(prefab) ? em.GetComponentData<EventData>(prefab).m_Archetype : default;
                 default:
                     return default;
             }

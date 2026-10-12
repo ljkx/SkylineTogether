@@ -70,6 +70,14 @@ namespace SkylineTogether.Diagnostics
         /// <summary>P-NAMES: <c>NameSystem.m_Names</c> (custom names); optional.</summary>
         public static FieldInfo NameSystemNames { get; private set; }
 
+        /// <summary>w3/audit P-MAIL: <c>MailAccumulationSystem.m_LastAccumulatedMail/m_LastProcessedMail</c> (post panel); optional.</summary>
+        public static FieldInfo MailAccumulated { get; private set; }
+
+        public static FieldInfo MailProcessed { get; private set; }
+
+        /// <summary>w3/audit P-CHIRPLINKS: <c>ChirpLinkSystem.m_CachedChirpData</c> (chirp sender and link names); optional.</summary>
+        public static FieldInfo ChirpLinkCache { get; private set; }
+
         /// <summary>The latest report as text lines (log and diagnostics).</summary>
         public static IEnumerable<string> ReportLines() => Features.Registry.ReportLines();
 
@@ -141,6 +149,9 @@ namespace SkylineTogether.Diagnostics
             Safe("P-PAUSEMENU", Features.Speed, "TimeUISystem.m_UnpausedBeforeForcedPause/m_SpeedBeforePause", () =>
                 typeof(TimeUISystem).GetField("m_UnpausedBeforeForcedPause", Private) != null && typeof(TimeUISystem).GetField("m_SpeedBeforePause", Private) != null
                     ? null : "not found: the host's pause menu pauses the session", warningOnly: true);
+            // w3/audit: runtime panel values and chirp names written on clients (GlobalStateSync.Panels)
+            Safe("P-MAIL", Features.GlobalState, "MailAccumulationSystem.m_LastAccumulatedMail/m_LastProcessedMail", ProbeMail, warningOnly: true);
+            Safe("P-CHIRPLINKS", Features.Events, "ChirpLinkSystem.m_CachedChirpData", ProbeChirpLinks, warningOnly: true);
             ProbeDemandHandles();
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.GatedSystemNames, systems: true);
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.RouteSystemNames, systems: true);
@@ -248,6 +259,23 @@ namespace SkylineTogether.Diagnostics
             FieldInfo f = typeof(Game.UI.NameSystem).GetField("m_Names", Private);
             NameSystemNames = f != null && f.FieldType == typeof(Dictionary<Entity, string>) ? f : null;
             return NameSystemNames == null ? "not found: custom names will not sync" : null;
+        }
+
+        private static string ProbeMail()
+        {
+            FieldInfo acc = typeof(Game.Simulation.MailAccumulationSystem).GetField("m_LastAccumulatedMail", Private);
+            FieldInfo proc = typeof(Game.Simulation.MailAccumulationSystem).GetField("m_LastProcessedMail", Private);
+            bool ok = acc != null && proc != null && acc.FieldType == typeof(int) && proc.FieldType == typeof(int);
+            MailAccumulated = ok ? acc : null;
+            MailProcessed = ok ? proc : null;
+            return ok ? null : "not found: the post office panel's mail rates stay at the join snapshot on clients";
+        }
+
+        private static string ProbeChirpLinks()
+        {
+            FieldInfo f = typeof(Game.UI.InGame.ChirpLinkSystem).GetField("m_CachedChirpData", Private);
+            ChirpLinkCache = f != null && f.FieldType == typeof(Dictionary<Entity, Game.UI.InGame.ChirpLinkSystem.CachedChirpData>) ? f : null;
+            return ChirpLinkCache == null ? "not found: chirps of citizens show no sender name on clients" : null;
         }
 
         private static void ProbeDemandHandles()

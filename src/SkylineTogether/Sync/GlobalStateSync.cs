@@ -37,7 +37,7 @@ namespace SkylineTogether.Sync
     /// </para>
     /// All work runs on the main thread inside the sync systems; every channel is isolated by try/catch.
     /// </summary>
-    public sealed class GlobalStateSync
+    public sealed partial class GlobalStateSync
     {
         private const double HostInterval = 1.0;
         private const double KeyframeInterval = 30.0;
@@ -51,6 +51,7 @@ namespace SkylineTogether.Sync
         private readonly ChannelHold _hold = new ChannelHold(HoldSeconds);
         private readonly HashSet<string> _loggedOnce = new HashSet<string>();
         private readonly List<BlobChannel> _blobs = new List<BlobChannel>();
+        private readonly ChannelPacer _pacer = new ChannelPacer(); // w3/audit
 
         private World _world;
         private EntityCodec _codec;
@@ -98,17 +99,25 @@ namespace SkylineTogether.Sync
         private readonly List<KeyValuePair<uint, byte[]>> _released = new List<KeyValuePair<uint, byte[]>>();
         private readonly List<Entity> _entityScratch = new List<Entity>();
 
-        /// <summary>A system whose own <c>ISerializable</c> state is mirrored host → clients.</summary>
+        /// <summary>A system whose own <c>ISerializable</c> state (or a custom slice of state) is mirrored host → clients.</summary>
         private sealed class BlobChannel
         {
             public string Name;
             public uint Id;
             public ISerializable State;
+            /// <summary>w3/audit: a custom host serializer (null: <see cref="State"/>'s own <c>Serialize</c>).</summary>
+            public Action<NetWriter> Write;
+            /// <summary>w3/audit: a custom client deserializer (null: <see cref="State"/>'s own <c>Deserialize</c>).</summary>
+            public Action<NetReader> Read;
             /// <summary>Host: the system's outstanding writers (public getter), completed before reading.</summary>
             public Func<JobHandle> HostWriters;
             /// <summary>Client: the system's private job handles, completed before writing.</summary>
             public object Owner;
             public FieldInfo[] ClientHandles;
+            /// <summary>w3/audit: client work before the state is written (completing the readers of a public getter).</summary>
+            public Action ClientBefore;
+            /// <summary>w3/audit: minimum seconds between two offers (0: every 1 Hz pass); dirty channels are always due.</summary>
+            public double Interval;
             public bool Disabled;
         }
 
@@ -212,6 +221,7 @@ namespace SkylineTogether.Sync
                 AddBlob<IndustrialDemandSystem>("Demand.Industrial", s => { s.GetIndustrialDemandFactors(out JobHandle d); return d; }, "m_ReadDependencies", "m_WriteDependencies");
                 AddBlob<CountHouseholdDataSystem>("Count.Household", s => { s.GetResourceNeeds(out JobHandle d); return d; }, "m_HouseholdDataReadDependencies", "m_HouseholdDataWriteDependencies");
                 AddBlob<CountWorkplacesSystem>("Count.Workplaces", null);
+                AttachPanels(); // w3/audit: info panels, budget inputs, chirper names, signature buildings
                 _codec = codec;
                 _ids = ids;
             }
@@ -222,6 +232,12 @@ namespace SkylineTogether.Sync
         }
 
         private void AddBlob<T>(string name, Func<T, JobHandle> hostWriters, params string[] clientHandles) where T : ComponentSystemBase
+        {
+            AddBlob(name, 0, hostWriters, clientHandles);
+        }
+
+        /// <summary>w3/audit: <see cref="AddBlob{T}(string, Func{T, JobHandle}, string[])"/> with a minimum interval.</summary>
+        private void AddBlob<T>(string name, double interval, Func<T, JobHandle> hostWriters, params string[] clientHandles) where T : ComponentSystemBase
         {
             T system = _world.GetOrCreateSystemManaged<T>();
             if (!(system is ISerializable state))
@@ -244,6 +260,25 @@ namespace SkylineTogether.Sync
                 Owner = system,
                 HostWriters = hostWriters == null ? (Func<JobHandle>)null : () => hostWriters(system),
                 ClientHandles = handles.ToArray(),
+                Interval = interval,
+            });
+        }
+
+        /// <summary>
+        /// w3/audit: a channel with its own serializer pair (state that is not a whole system blob: a getter's arrays, a
+        /// private cache, prefab components). The reader must consume exactly what the writer wrote.
+        /// </summary>
+        private void AddCustom(string name, double interval, Action<NetWriter> write, Action<NetReader> read, Action clientBefore = null)
+        {
+            _blobs.Add(new BlobChannel
+            {
+                Name = name,
+                Id = GlobalChannel.Id(name),
+                Write = write,
+                Read = read,
+                ClientBefore = clientBefore,
+                ClientHandles = Array.Empty<FieldInfo>(),
+                Interval = interval,
             });
         }
 
@@ -251,6 +286,7 @@ namespace SkylineTogether.Sync
         public void Reset()
         {
             _send.Clear();
+            _pacer.Clear(); // w3/audit
             _late.Clear(); // gameplay branch
             _hold.Clear();
             _primed = false;
@@ -263,6 +299,7 @@ namespace SkylineTogether.Sync
             _namePending.Clear();
             _cityNamePending = null;
             _policyPending.Clear();
+            ResetPanels(); // w3/audit
             foreach (BlobChannel b in _blobs) b.Disabled = false;
         }
 
@@ -288,7 +325,11 @@ namespace SkylineTogether.Sync
             {
                 if (b.Disabled) continue;
                 BlobChannel channel = b;
-                Offer(w, b.Id, due, now, () => BuildBlob(channel));
+                // w3/audit: panel statistics may ask for a longer interval than the 1 Hz pass
+                bool dirty = _send.IsDirty(b.Id);
+                if (!dirty && !(due && _pacer.Due(b.Id, b.Interval, now, false))) continue;
+                if (dirty) _pacer.Due(b.Id, b.Interval, now, true);
+                Offer(w, b.Id, true, now, () => BuildBlob(channel));
             }
             _send.EndPass();
         }
@@ -352,7 +393,11 @@ namespace SkylineTogether.Sync
         private byte[] BuildBlob(BlobChannel b)
         {
             b.HostWriters?.Invoke().Complete();
-            byte[] bytes = _codec.WriteBlob(writer => b.State.Serialize(writer));
+            byte[] bytes = _codec.WriteBlob(writer =>
+            {
+                if (b.Write != null) b.Write(writer);
+                else b.State.Serialize(writer);
+            });
             if (bytes == null) Once("unresolved " + b.Name, "global state: " + b.Name + " references an unsynced entity; skipped", null);
             return bytes;
         }
@@ -620,7 +665,12 @@ namespace SkylineTogether.Sync
             if (b.Disabled) return;
             foreach (FieldInfo f in b.ClientHandles) ((JobHandle)f.GetValue(b.Owner)).Complete();
             b.HostWriters?.Invoke().Complete();
-            if (_codec.ReadBlob(payload, 0, payload.Length, reader => b.State.Deserialize(reader))) return;
+            b.ClientBefore?.Invoke();
+            if (_codec.ReadBlob(payload, 0, payload.Length, reader =>
+            {
+                if (b.Read != null) b.Read(reader);
+                else b.State.Deserialize(reader);
+            })) return;
             b.Disabled = true;
             _log.Warn(LogCategory.Replication, "global state: " + b.Name + " did not decode exactly (format differs?); channel disabled for this session");
         }
@@ -663,6 +713,7 @@ namespace SkylineTogether.Sync
             if (_hold.IsHeld(GlobalChannel.Fee, now)) ReassertFees();
             else _feePredicted.Clear();
             Rebaseline();
+            PanelsAfterApply(); // w3/audit: chirp names
         }
 
         /// <summary>Client, end of frame: detects local edits and policy events and appends them as proposals.</summary>

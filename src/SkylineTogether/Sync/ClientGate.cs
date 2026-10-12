@@ -39,6 +39,11 @@ namespace SkylineTogether.Sync
             "Game.AutoSaveSystem",
             // feat/integrity: writes nothing but warning icons, which come from the host (D11, IconSync)
             "Game.Net.ConnectionWarningSystem",
+            // w3/audit: event entities come from the host; its initializer would ignite, damage and pick random targets
+            "Game.Events.InitializeSystem",
+            // w3/audit: chirps come from the host; local triggers (weather, policies, tools) would add chirps of their own
+            // (EventSync empties the creation queue while this is off)
+            "Game.Triggers.CreateChirpSystem",
         };
 
         /// <summary>Line systems: off on clients except inside a route-tool preview window.</summary>

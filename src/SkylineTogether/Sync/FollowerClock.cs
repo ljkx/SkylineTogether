@@ -50,6 +50,9 @@ namespace SkylineTogether.Sync
             "Game.Effects.EffectFlagSystem",
             // the budget UI reads its Enabled flag; it only derives the subsidy line from replicated values (ARCH §6.1)
             "Game.Simulation.GameModeGovernmentSubsidiesSystem",
+            // w3/audit: the economy panels' trade, wealth, worker and tourist figures; a pure read of the replicated city
+            // statistics (BudgetSystem.UpdateData), without it they stay at the join snapshot
+            "Game.Simulation.BudgetSystem",
         };
 
         /// <summary>The cosmetic allow-list's names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>

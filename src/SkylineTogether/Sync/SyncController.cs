@@ -95,6 +95,8 @@ namespace SkylineTogether.Sync
         // global state (taxes, budgets, fees, loan, policies, names, demand): own batch, so a peer that cannot decode a
         // global record never loses entity data
         private readonly GlobalStateSync _global;
+        // w3/audit: events, disasters, chirps: presence watch (host) and client fix-ups
+        private readonly EventSync _events;
         private readonly SyncBatch.Writer _globalBatch = new SyncBatch.Writer();
         private readonly ClientGate _gate;
         // feat/terrain: terrain and water sync (self-contained; they follow the session events themselves)
@@ -193,6 +195,7 @@ namespace SkylineTogether.Sync
             _log = log;
             _gate = new ClientGate(log);
             _global = new GlobalStateSync(log);
+            _events = new EventSync(log); // w3/audit
             // gameplay branch: semantic intents beside the global channels; both report refusals here (rollback)
             _actions = new ActionSync(log)
             {
@@ -302,6 +305,7 @@ namespace SkylineTogether.Sync
         public void Describe(List<string> lines)
         {
             if (_ids != null) lines.Add("net ids: " + _ids.Describe());
+            if (IsHost) lines.Add("presence watch (w3/audit): " + _events.PresenceResends + " re-sends of component sets changed without a tag");
             if (IsHost)
             {
                 lines.Add("release frames: sealed " + _acks.CurrentFrame + ", slowest peer " + _acks.MaxLag + " behind" + (_barrier != 0 ? ", join barrier at " + _barrier : "")
@@ -356,6 +360,7 @@ namespace SkylineTogether.Sync
                 None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>() },
             });
             _global.Attach(world, _codec, _ids);
+            _events.Attach(world, _codec, _ids); // w3/audit
             _actions.Attach(world, _codec, _ids); // gameplay branch
             _generateEdges = world.GetOrCreateSystemManaged<Game.Tools.GenerateEdgesSystem>();
             return true;
@@ -470,6 +475,7 @@ namespace SkylineTogether.Sync
         private void ResetGameplay()
         {
             _actions.Reset();
+            _events.Reset(); // w3/audit
             _ledger.Clear();
             _rate.Clear();
             _violations.Clear();
@@ -534,8 +540,10 @@ namespace SkylineTogether.Sync
                 {
                     Family family = _codec.Families.Classify(em, e);
                     if (!FamilyClassifier.IsReplicated(family) && family != Family.Singleton) continue;
-                    if (_ids.GetNetId(e) != 0) continue;
-                    if (_ids.BindNew(e, family) != 0) bound++;
+                    uint known = _ids.GetNetId(e);
+                    if (known == 0 && (known = _ids.BindNew(e, family)) != 0) bound++;
+                    // w3/audit: the snapshot gives joiners this component set; the presence watch compares against it
+                    if (known != 0) _events.NoteWritten(em, known, e, family);
                 }
             }
             finally
@@ -712,6 +720,17 @@ namespace SkylineTogether.Sync
                     }
                 }
                 SafeCall("edit holds", ReleaseHolds); // mod compatibility
+                if (Features.Events.IsAvailable)
+                {
+                    try
+                    {
+                        _events.ClientBeforeApply(); // w3/audit: the player's chirp likes, the gated chirp queue
+                    }
+                    catch (Exception ex)
+                    {
+                        Guard.Report(Features.Events, "events (before apply)", ex);
+                    }
+                }
             }
             double allowance = _applyBudget.BeginFrame();
             int n = 0;
@@ -746,6 +765,18 @@ namespace SkylineTogether.Sync
             RetryZones();
             // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
             if (!IsHost) _simValues.ApplyIncoming();
+            // w3/audit (client): per-player chirp likes, event target lists, weather phenomenon hotspot frames
+            if (!IsHost && Features.Events.IsAvailable)
+            {
+                try
+                {
+                    _events.ClientAfterApply(_appliedThisFrame);
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Events, "events (after apply)", ex);
+                }
+            }
             // client: what the appliers wrote becomes the baseline, so it is never proposed back
             if (!IsHost)
             {
@@ -1018,6 +1049,8 @@ namespace SkylineTogether.Sync
                 {
                     case SyncRecordKind.Spawn:
                     {
+                        // w3/audit: events, chirps and journal entries come from the host's simulation only
+                        if (FamilyClassifier.IsHostOnly(r.Family)) return RejectReason.Invalid;
                         Entity existing = _ids.GetEntity(r.NetId);
                         bool bound = existing != Entity.Null && em.Exists(existing);
                         // w2/ids: a creation needs an unused id of the sender's own grants (released ids are never reusable by a client)
@@ -1033,6 +1066,7 @@ namespace SkylineTogether.Sync
                         // edited meanwhile deleted by somebody else (or never committed: a refused earlier proposal)
                         if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return RejectReason.Conflict;
                         if (!FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId))) return RejectReason.Invalid;
+                        if (FamilyClassifier.IsHostOnly(_ids.GetFamily(r.NetId))) return RejectReason.Invalid; // w3/audit
                         if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
                     }
@@ -1043,6 +1077,7 @@ namespace SkylineTogether.Sync
                         // mod compatibility: mod tools may delete vehicles, citizens and animals (Better Bulldozer)
                         Family despawned = _ids.GetFamily(r.NetId);
                         if (!FamilyClassifier.IsReplicated(despawned) && !(despawned == Family.Mover && (facts.Flags & ProposalFlags.DirectTool) != 0)) return RejectReason.Invalid;
+                        if (FamilyClassifier.IsHostOnly(despawned)) return RejectReason.Invalid; // w3/audit
                         if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
                     }
@@ -1493,6 +1528,7 @@ namespace SkylineTogether.Sync
                 {
                     _batch.Despawn(id);
                     _shadow.Remove(id);
+                    _events.Forget(id); // w3/audit
                     _ledger.Forget(id);
                     DropDeferred(id, DeferredClass.Upsert);
                     _ids.Ids.Release(id);
@@ -1526,6 +1562,18 @@ namespace SkylineTogether.Sync
                 finally
                 {
                     chunks.Dispose();
+                }
+            }
+            // w3/audit: components the simulation added or removed without a tag (fires, damage, floods, accident sites)
+            if (Features.Events.IsAvailable)
+            {
+                try
+                {
+                    _events.HostCollect(now, _forceCapture);
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Events, "presence watch", ex);
                 }
             }
             // gameplay branch: entities that intents or the host's own UI changed without any tag
@@ -1594,6 +1642,7 @@ namespace SkylineTogether.Sync
                 _batch.Despawn(id);
                 _ids.Unbind(id, despawnSent: true);
                 _shadow.Remove(id);
+                _events.Forget(id); // w3/audit
                 _ledger.Forget(id);
                 DropDeferred(id, DeferredClass.Upsert);
                 return;
@@ -1614,7 +1663,8 @@ namespace SkylineTogether.Sync
             _codec.WriteEntity(_batch, kind, id, family, e);
             _writtenThisFrame.Add(e);
             DropDeferred(id, DeferredClass.Upsert); // the full record supersedes waiting values and re-sends
-            if (FamilyClassifier.IsScanned(family)) _shadow[id] = _codec.HashEntity(e, true);
+            if (FamilyClassifier.IsScanned(family)) _shadow[id] = _codec.HashEntity(e, true, family);
+            _events.NoteWritten(em, id, e, family); // w3/audit: the component set clients now hold
             // gameplay branch: authored changes (committed proposals and intents, the host player's tool) for conflicts
             if (_authoredThisFrame.TryGetValue(e, out byte author)) _ledger.MarkAuthored(id, author);
             else if (em.HasComponent<Game.Common.Applied>(e) || _toolOriginals.Contains(e)) _ledger.MarkAuthored(id, PeerId.Host.Value);
@@ -1648,7 +1698,7 @@ namespace SkylineTogether.Sync
                 Entity e = _ids.GetEntity(id);
                 if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
                 n++;
-                ulong hash = _codec.HashEntity(e, true);
+                ulong hash = _codec.HashEntity(e, true, family);
                 bool known = _shadow.TryGetValue(id, out ulong old);
                 if (!known || old != hash)
                 {
@@ -1822,6 +1872,8 @@ namespace SkylineTogether.Sync
                         continue;
                     }
                     if (!FamilyClassifier.IsReplicated(family)) continue;
+                    // w3/audit: events, chirps and journal entries are the host simulation's alone (a local like is per player)
+                    if (FamilyClassifier.IsHostOnly(family)) continue;
                     uint id = _ids.GetNetId(e);
                     if (em.HasComponent<Game.Common.Deleted>(e))
                     {

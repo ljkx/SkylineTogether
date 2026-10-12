@@ -219,12 +219,26 @@ namespace SkylineTogether.Sync
                 case Family.WaterSource:
                 case Family.ModEntity:
                     return true;
+                // w3/audit: events and disasters, chirps, journal entries (host-only family, see IsHostOnly)
+                case Family.Event:
+                    return Diagnostics.Features.Events.IsAvailable;
                 default:
                     return false;
             }
         }
 
         /// <summary>Families whose values the host scans periodically (they change without update tags).</summary>
-        public static bool IsScanned(Family family) => family == Family.Route || family == Family.Waypoint || family == Family.Segment || family == Family.Singleton;
+        public static bool IsScanned(Family family) => family == Family.Route || family == Family.Waypoint || family == Family.Segment || family == Family.Singleton || family == Family.Event;
+
+        /// <summary>
+        /// w3/audit: replicated families only the host's simulation creates, changes and deletes (events, disasters,
+        /// chirps, journal entries). Clients never propose them, the host refuses proposals that touch them, and the
+        /// integrity check leaves them out (their values change every simulation tick).
+        /// </summary>
+        public static bool IsHostOnly(Family family) => family == Family.Event;
+
+        /// <summary>w3/audit: families whose structure entities the presence watch covers (components the simulation
+        /// adds and removes without an <c>Updated</c> tag).</summary>
+        public static bool IsPresenceWatched(Family family) => family == Family.Object || family == Family.NetEdge || family == Family.NetNode || family == Family.Area;
     }
 }

@@ -82,7 +82,7 @@ namespace SkylineTogether.Sync
         public int MaskedEntities => _presenceOnly.Count;
 
         /// <summary>Families the verification covers: the replicated ones (prefabs and singletons are not entities of the city).</summary>
-        public static bool IsVerified(Family family) => FamilyClassifier.IsReplicated(family);
+        public static bool IsVerified(Family family) => FamilyClassifier.IsReplicated(family) && !FamilyClassifier.IsHostOnly(family);
 
         /// <summary>Families whose every replicated value is verified (value-scanned by the host).</summary>
         public static bool HashesAllValues(Family family) => family == Family.Route || family == Family.Waypoint || family == Family.Segment;
