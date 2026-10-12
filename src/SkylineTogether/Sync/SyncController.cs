@@ -89,6 +89,26 @@ namespace SkylineTogether.Sync
         private bool _clientLive;
         private bool _wasClient;
         private bool _disposed;
+        // mod compatibility (docs/design/MOD-COMPATIBILITY.md): untagged mod state, mod data entities referenced by
+        // replicated values, host mod settings, and the client's edit hold for direct-write tools
+        private Compat.ModStateWatcher _watcher;
+        private readonly Compat.ModSettingsSync _modSettings;
+        private readonly List<Compat.ModStateWatcher.Change> _modChanges = new List<Compat.ModStateWatcher.Change>();
+        private readonly Queue<(Entity Entity, uint Id, Family Family)> _dependencies = new Queue<(Entity, uint, Family)>();
+        private readonly Dictionary<uint, EditHold> _holds = new Dictionary<uint, EditHold>();
+        private const double HoldSeconds = 0.6;
+        private bool _missingNotified;
+
+        /// <summary>
+        /// Client: an entity the local player is editing with a direct-write tool (Move It drag). The host's echo of an
+        /// older proposal is not applied while the hold lasts (it would snap the object back mid-drag); the latest host
+        /// record seen during the hold is applied when it ends, so the result always converges to the host's.
+        /// </summary>
+        private struct EditHold
+        {
+            public double Until;
+            public byte[] Batch;
+        }
 
         private struct PendingZone
         {
@@ -126,6 +146,7 @@ namespace SkylineTogether.Sync
             _simValues = new AttentionValues(sessions, log); // w2/simvals
             _cellMaps = new CellMapSync(sessions, log) { PeerTopics = _simValues.PeerTopics };
             _statistics = new StatisticsSync(sessions, log);
+            _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -138,6 +159,9 @@ namespace SkylineTogether.Sync
         public int BoundCount => _ids?.BoundCount ?? 0;
 
         public string LastApply { get; private set; } = "";
+
+        /// <summary>Mod compatibility: assets the host uses that this game lacks, with the number of records skipped.</summary>
+        public IReadOnlyDictionary<string, int> MissingAssets => _codec?.MissingAssets;
 
         /// <summary>feat/integrity: divergence detection and repair, host icons, line check (see <see cref="IntegritySync"/>).</summary>
         public IntegritySync Integrity { get; }
@@ -166,6 +190,19 @@ namespace SkylineTogether.Sync
                 }
                 FollowerClock clock = FollowerClock.Instance;
                 if (!IsHost && clock != null) s += clock.Active ? "; clock follows the host" : "; paused follower";
+                // mod compatibility: assets the host uses that this game lacks are never applied, so say so
+                int missing = _codec.MissingAssets.Count;
+                if (missing > 0)
+                {
+                    string first = "";
+                    foreach (string name in _codec.MissingAssets.Keys)
+                    {
+                        first = name;
+                        break;
+                    }
+                    s += "; " + missing + (missing == 1 ? " asset missing: " : " assets missing, e.g. ") + first;
+                }
+                if (!IsHost && _modSettings.OverriddenCount > 0) s += "; " + _modSettings.OverriddenCount + " mod settings from the host";
                 return s;
             }
         }
@@ -178,8 +215,10 @@ namespace SkylineTogether.Sync
             if (_codec != null) return true;
             World world = World.DefaultGameObjectInjectionWorld;
             if (world == null) return false;
+            Compat.ModCompat.Refresh(_log); // mod compatibility: before the classifier caches any archetype
             _ids = world.GetOrCreateSystemManaged<NetIdSystem>();
             _codec = new EntityCodec(world, _ids, _log);
+            _watcher = new Compat.ModStateWatcher(_codec, _ids, _log);
             Integrity.Attach(_codec, _ids); // feat/integrity
             _simValues.Attach(_codec, _ids); // w2/simvals
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
@@ -231,6 +270,9 @@ namespace SkylineTogether.Sync
                 _inbox.Enqueue((peer, copy));
             };
             BindCity();
+            // mod compatibility: untagged mod state is compared from here on; every mod setting goes out once
+            _modSettings.Reset();
+            SafeCall("mod state watcher", () => _watcher.Start(true));
         }
 
         private void OnClientStarted(SessionClient client)
@@ -242,6 +284,7 @@ namespace SkylineTogether.Sync
             Integrity.Reset(); // feat/integrity
             _shadow.Clear();
             ResetGameplay();
+            SafeCall("mod join gates", () => Compat.ModCompat.OnClientStarted(_log)); // mod compatibility: before the load
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Epoch) return;
@@ -256,6 +299,9 @@ namespace SkylineTogether.Sync
             {
                 _clientLive = true;
                 _gate.Close();
+                // mod compatibility: mod systems that would derive host-owned state go off; untagged mod state is watched
+                SafeCall("mod client gates", () => Compat.ModCompat.OnClientLive(_log));
+                SafeCall("mod state watcher", () => _watcher?.Start(false));
                 Integrity.OnClientLive(); // feat/integrity
                 _log.Info(LogCategory.Replication, "client live with " + _ids.BoundCount + " bound entities; following the host");
             };
@@ -263,6 +309,14 @@ namespace SkylineTogether.Sync
 
         private void OnSessionEnded()
         {
+            // mod compatibility: restore the player's own mod settings and every switched mod system
+            if (_wasClient) SafeCall("restoring mod settings", _modSettings.RestoreClient);
+            SafeCall("mod gates", () => Compat.ModCompat.OnSessionEnded(_log));
+            _watcher?.Stop();
+            _modSettings.Reset();
+            _holds.Clear();
+            _dependencies.Clear();
+            _missingNotified = false;
             if (_wasClient)
             {
                 // a client's bindings describe the host's city of that session only
@@ -391,6 +445,7 @@ namespace SkylineTogether.Sync
             Send(peer, w);
             _log.Info(LogCategory.Replication, peer + ": sent " + w.RecordCount + " prefab/range records");
             _global.ResendAll(); // the joiner gets every global channel with the next capture
+            _modSettings.ResendAll(); // mod compatibility: and every synchronised mod setting
             _actions.ResendUnlocks();
         }
 
@@ -422,6 +477,7 @@ namespace SkylineTogether.Sync
             {
                 SafeCall("action detection", _actions.BeforeApply); // gameplay branch: dev tree, map tiles
                 _global.BeforeApply();
+                SafeCall("edit holds", ReleaseHolds); // mod compatibility
             }
             int n = 0;
             while (_inbox.Count > 0 && n++ < MaxBatchesPerFrame)
@@ -466,7 +522,26 @@ namespace SkylineTogether.Sync
 
         private void ApplyFromHost(byte[] data)
         {
-            ApplyResult r = _codec.Apply(data, 0, data.Length, null);
+            // mod compatibility: records of entities the player is dragging with a direct-write tool wait (edit hold)
+            Func<SyncRecord, bool> skip = null;
+            if (_holds.Count > 0)
+            {
+                double now = _sessions.Clock.Seconds;
+                skip = rec =>
+                {
+                    if (rec.Kind == SyncRecordKind.Despawn || !_holds.TryGetValue(rec.NetId, out EditHold hold) || now >= hold.Until) return false;
+                    hold.Batch = data;
+                    _holds[rec.NetId] = hold;
+                    return true;
+                };
+            }
+            ApplyResult r = _codec.Apply(data, 0, data.Length, null, skip);
+            // mod compatibility: tell the player once that objects of missing assets are left out (details in the log)
+            if (!_missingNotified && _codec.MissingAssets.Count > 0)
+            {
+                _missingNotified = true;
+                SessionManager.Notify("Some objects of the host's city use assets or mods you do not have; they are left out. See the diagnostics for the list.");
+            }
             foreach (Entity e in r.Touched) _appliedThisFrame.Add(e);
             foreach ((uint start, uint count) in r.IdRanges) _pool.Add(start, count);
             if (r.Clock.HasValue) FollowClock(r.Clock.Value);
@@ -586,6 +661,13 @@ namespace SkylineTogether.Sync
             }
             foreach (SyncRecord r in records)
             {
+                // mod compatibility: an object of an asset or mod prefab the host does not have can never be created
+                // here (the client is told and its prediction rolled back)
+                if ((r.Kind == SyncRecordKind.Spawn || r.Kind == SyncRecordKind.Upsert) && _codec.NamesUnknownPrefab(r))
+                {
+                    _log.Info(LogCategory.Replication, peer + ": #" + r.NetId + " uses an asset or mod prefab the host does not have");
+                    return RejectReason.HostError;
+                }
                 switch (r.Kind)
                 {
                     case SyncRecordKind.Spawn:
@@ -611,7 +693,9 @@ namespace SkylineTogether.Sync
                     {
                         Entity e = _ids.GetEntity(r.NetId);
                         if (e == Entity.Null || !em.Exists(e)) break; // already gone: nothing to delete
-                        if (!FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId))) return RejectReason.Invalid;
+                        // mod compatibility: mod tools may delete vehicles, citizens and animals (Better Bulldozer)
+                        Family despawned = _ids.GetFamily(r.NetId);
+                        if (!FamilyClassifier.IsReplicated(despawned) && !(despawned == Family.Mover && (facts.Flags & ProposalFlags.DirectTool) != 0)) return RejectReason.Invalid;
                         if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
                     }
@@ -865,6 +949,7 @@ namespace SkylineTogether.Sync
         /// <summary>Just before <c>PrepareCleanUpSystem</c>, after every Modification phase of the frame.</summary>
         public void CaptureOutgoing(double now)
         {
+            if (_codec != null) _codec.DependencyBinder = null; // mod compatibility: never left over from a failed capture
             // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
             _terrain.CaptureOutgoing();
             _water.CaptureOutgoing();
@@ -935,6 +1020,8 @@ namespace SkylineTogether.Sync
             EntityManager em = _codec.EntityManager;
             _batch.Reset();
             var written = new HashSet<Entity>();
+            // mod compatibility: mod data entities that replicated values reference are bound and sent with them
+            _codec.DependencyBinder = HostBindDependency;
             NativeArray<Entity> changed = _changed.ToEntityArray(Allocator.Temp);
             try
             {
@@ -977,6 +1064,12 @@ namespace SkylineTogether.Sync
                 Family family = _codec.Families.Classify(em, e);
                 if (FamilyClassifier.IsReplicated(family)) WriteHostEntity(em, e, family, _ids.GetNetId(e));
             }
+            // mod compatibility: the dependencies all of the above needed, untagged mod state, and its dependencies
+            WriteDependencies(written);
+            SafeCall("mod state capture", () => CaptureModChanges(now, written, true));
+            WriteDependencies(written);
+            _codec.DependencyBinder = null;
+            SafeCall("mod settings capture", () => _modSettings.HostCapture(_batch, now));
             ScanValues(now);
             if (now - _lastClock >= ClockInterval)
             {
@@ -1102,16 +1195,24 @@ namespace SkylineTogether.Sync
                 if (!em.Exists(e)) continue;
                 uint id = _ids.GetNetId(e);
                 if (id != 0) _shadow[id] = _codec.HashEntity(e, false);
+                _watcher?.Refresh(e); // mod compatibility: the applier's writes are not the player's edits
             }
             // vanilla tools always go through ApplyTool (captured via _toolApplied); only tools from other mods may
             // write the world directly (Move It), so only those make un-applied changes count as the player's edits
+            // mod compatibility: mod tools that apply through the Temp pipeline (Traffic, Line Tool, Find It's picker) are not
+            // direct-write tools; their applies arrive through ApplyTool like vanilla ones
             bool localTool = _tools.activeTool != null && !(_tools.activeTool is DefaultToolSystem)
-                             && _tools.activeTool.GetType().Assembly != typeof(DefaultToolSystem).Assembly;
+                             && _tools.activeTool.GetType().Assembly != typeof(DefaultToolSystem).Assembly
+                             && !Compat.ModCompat.IsPipelineTool(_tools.activeTool.GetType());
             bool toolPath = _toolApplied || localTool;
             // gameplay branch: deletions from the UI (district, service upgrade, line: R10 D1-D3) happen outside any
             // tool; outside a tool path only those are proposed, every other local deletion waits for the host
             ProposalFlags flags = _toolApplied ? ProposalFlags.ToolApply : localTool ? ProposalFlags.DirectTool : ProposalFlags.None;
             _batch.Reset();
+            var written = new HashSet<Entity>();
+            var proposed = new List<uint>();
+            // mod compatibility: mod data entities the proposed values reference get ids from the pool and travel along
+            _codec.DependencyBinder = ClientBindDependency;
             NativeArray<Entity> changed = _changed.ToEntityArray(Allocator.Temp);
             try
             {
@@ -1120,6 +1221,13 @@ namespace SkylineTogether.Sync
                     if (_appliedThisFrame.Contains(e)) continue;
                     if (!toolPath && !em.HasComponent<Game.Common.Deleted>(e)) continue;
                     Family family = _codec.Families.Classify(em, e);
+                    // mod compatibility: vehicles, cims and animals a mod tool deleted (Better Bulldozer)
+                    if (family == Family.Mover && localTool && em.HasComponent<Game.Common.Deleted>(e))
+                    {
+                        uint mover = _ids.GetNetId(e);
+                        if (mover != 0 && _ids.GetFamily(mover) == Family.Mover) _batch.Despawn(mover);
+                        continue;
+                    }
                     if (family == Family.ZoneBlock)
                     {
                         if (_toolApplied && !em.HasComponent<Game.Common.Deleted>(e)) WriteZoneBlock(_batch, e, false);
@@ -1165,11 +1273,31 @@ namespace SkylineTogether.Sync
                     }
                     _shadow[id] = hash;
                     _codec.WriteEntity(_batch, kind, id, family, e);
+                    written.Add(e);
+                    proposed.Add(id);
                 }
             }
             finally
             {
                 changed.Dispose();
+            }
+            // mod compatibility: untagged mod state the player changed (components tool, info-panel toggles, Better
+            // Bulldozer's removal records), then the dependencies of everything proposed
+            WriteDependencies(written, proposed);
+            int before = proposed.Count;
+            SafeCall("mod state capture", () => CaptureModChanges(now, written, false, proposed));
+            if (proposed.Count > before) flags |= ProposalFlags.DirectTool;
+            WriteDependencies(written, proposed);
+            _codec.DependencyBinder = null;
+            // a direct-write tool's edits are held against the host's echoes while the player keeps editing
+            if ((localTool && !_toolApplied) || proposed.Count > before)
+            {
+                foreach (uint id in proposed)
+                {
+                    _holds.TryGetValue(id, out EditHold hold);
+                    hold.Until = now + HoldSeconds;
+                    _holds[id] = hold;
+                }
             }
             if (_toolCost != 0) _batch.Cost(_toolCost);
             // gameplay branch: sequence, base epoch and kind of the proposal (host validation, rollback)
@@ -1262,6 +1390,11 @@ namespace SkylineTogether.Sync
                     OnProposalResult(r);
                     continue;
                 }
+                if (fromHost && r.Kind == SyncRecordKind.ModSettings)
+                {
+                    SafeCall("mod settings", () => _modSettings.Apply(r)); // mod compatibility: the host's rules
+                    continue;
+                }
                 if (r.Kind != SyncRecordKind.ZoneCells) continue;
                 if (!TryApplyZone(r.Block, r.ZoneIds)) _pendingZones.Add(new PendingZone { Key = r.Block, Zones = r.ZoneIds, Until = now + 3.0 });
             }
@@ -1347,6 +1480,137 @@ namespace SkylineTogether.Sync
                 }
             }
             return best;
+        }
+
+        // ================================================================== mod compatibility (docs/design/MOD-COMPATIBILITY.md)
+
+        /// <summary>
+        /// Host: binds an unbound entity a replicated value references when it is itself replicated (Traffic's lane
+        /// connection data, Better Bulldozer's removal records) and queues it for this batch.
+        /// </summary>
+        private bool HostBindDependency(Entity e)
+        {
+            EntityManager em = _codec.EntityManager;
+            if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e) || _ids.GetNetId(e) != 0) return false;
+            Family family = _codec.Families.Classify(em, e);
+            if (family != Family.ModEntity && family != Family.WaterSource) return false;
+            uint id = _ids.Ids.Allocate();
+            _ids.Bind(e, id, family);
+            _dependencies.Enqueue((e, id, family));
+            return true;
+        }
+
+        /// <summary>Client: the same with an id from the host-granted pool (the host creates the entity from the proposal).</summary>
+        private bool ClientBindDependency(Entity e)
+        {
+            EntityManager em = _codec.EntityManager;
+            if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e) || _ids.GetNetId(e) != 0) return false;
+            Family family = _codec.Families.Classify(em, e);
+            if (family != Family.ModEntity) return false;
+            if (!_pool.TryTake(out uint id)) return false;
+            _ids.Bind(e, id, family);
+            _dependencies.Enqueue((e, id, family));
+            return true;
+        }
+
+        /// <summary>Writes the queued dependencies as spawns (their own references may queue more).</summary>
+        private void WriteDependencies(HashSet<Entity> written, List<uint> proposed = null)
+        {
+            EntityManager em = _codec.EntityManager;
+            int guard = 0;
+            while (_dependencies.Count > 0 && guard++ < 100000)
+            {
+                (Entity e, uint id, Family family) = _dependencies.Dequeue();
+                if (!em.Exists(e) || written.Contains(e)) continue;
+                try
+                {
+                    if (IsHost && em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
+                    _codec.WriteEntity(_batch, SyncRecordKind.Spawn, id, family, e);
+                    written.Add(e);
+                    proposed?.Add(id);
+                    if (!IsHost) _shadow[id] = _codec.HashEntity(e, false);
+                    _watcher?.Refresh(e);
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn(LogCategory.Replication, "sending the mod data entity #" + id + " failed", ex);
+                }
+            }
+            _dependencies.Clear();
+        }
+
+        /// <summary>
+        /// Untagged mod state (<see cref="Compat.ModStateWatcher"/>): changed entities are written as upserts when their set
+        /// of watched types changed, else as values. Host: unbound replicated entities are bound and spawned. Client:
+        /// only bound entities the applier did not write are proposed.
+        /// </summary>
+        private void CaptureModChanges(double now, HashSet<Entity> written, bool host, List<uint> proposed = null)
+        {
+            if (_watcher == null || !_watcher.Active) return;
+            EntityManager em = _codec.EntityManager;
+            _modChanges.Clear();
+            _watcher.Collect(now, _modChanges);
+            foreach (Compat.ModStateWatcher.Change c in _modChanges)
+            {
+                Entity e = c.Entity;
+                if (written.Contains(e) || _appliedThisFrame.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                uint id = c.NetId;
+                Family family;
+                if (id == 0)
+                {
+                    if (!host) continue;
+                    family = _codec.Families.Classify(em, e);
+                    if (!FamilyClassifier.IsReplicated(family)) continue;
+                    id = _ids.Ids.Allocate();
+                    _ids.Bind(e, id, family);
+                    if (em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
+                    _codec.WriteEntity(_batch, SyncRecordKind.Spawn, id, family, e);
+                    written.Add(e);
+                    _watcher.Refresh(e);
+                    continue;
+                }
+                family = _ids.GetFamily(id);
+                if (!FamilyClassifier.IsReplicated(family)) continue;
+                SyncRecordKind kind = c.PresenceChanged ? SyncRecordKind.Upsert : SyncRecordKind.Values;
+                if (host && kind == SyncRecordKind.Upsert && em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
+                _codec.WriteEntity(_batch, kind, id, family, e);
+                written.Add(e);
+                if (!host) _shadow[id] = _codec.HashEntity(e, false);
+                proposed?.Add(id);
+            }
+        }
+
+        /// <summary>
+        /// Client, frame start: ends expired edit holds and applies the host's latest record of each released entity
+        /// (only that entity's records of the stored batch).
+        /// </summary>
+        private void ReleaseHolds()
+        {
+            if (_holds.Count == 0 || _codec == null) return;
+            double now = _sessions.Clock.Seconds;
+            List<uint> expired = null;
+            foreach (KeyValuePair<uint, EditHold> pair in _holds)
+            {
+                if (now >= pair.Value.Until) (expired ?? (expired = new List<uint>())).Add(pair.Key);
+            }
+            if (expired == null) return;
+            foreach (uint id in expired)
+            {
+                byte[] batch = _holds[id].Batch;
+                _holds.Remove(id);
+                if (batch == null) continue;
+                try
+                {
+                    uint target = id;
+                    ApplyResult r = _codec.Apply(batch, 0, batch.Length, null, rec => rec.NetId != target
+                        || !(rec.Kind == SyncRecordKind.Spawn || rec.Kind == SyncRecordKind.Upsert || rec.Kind == SyncRecordKind.Values || rec.Kind == SyncRecordKind.EnabledBits));
+                    foreach (Entity e in r.Touched) _appliedThisFrame.Add(e);
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(LogCategory.Replication, "applying the held record of #" + id + " failed: " + ex.Message);
+                }
+            }
         }
 
         // ================================================================== sending

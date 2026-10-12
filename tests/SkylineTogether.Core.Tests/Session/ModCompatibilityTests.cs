@@ -78,6 +78,26 @@ namespace SkylineTogether.Core.Tests.Session
         }
 
         [Test]
+        public void TheStructuredRefusalLeavesClientLocalModsOut()
+        {
+            var host = new List<ModEntry> { M("Traffic", "2.0", "80095"), M("I18NEverywhere", "1.0", "75426"), M("Anarchy", "1.5") };
+            var client = new List<ModEntry> { M("ExtendedTooltip", "3"), M("Anarchy", "1.6"), M("CimCensus") };
+            MismatchReport report = MismatchReport.CompareMods(host, client);
+            Assert.NotNull(report);
+            Assert.Equal(1, report.Missing.Count);
+            Assert.Equal("Traffic", report.Missing[0].Name);
+            Assert.Equal(0, report.Extra.Count);
+            Assert.Equal(1, report.Versions.Count);
+            Assert.Equal("Anarchy", report.Versions[0].Name);
+            // only client-local differences: no report at all, the join goes ahead
+            Assert.Null(MismatchReport.CompareMods(new List<ModEntry> { M("CimCensus", "1") }, new List<ModEntry> { M("FindIt"), M("CimCensus", "2") }));
+            // the encoded report survives the round trip without the local mods
+            MismatchReport decoded = MismatchReport.Decode(MismatchReport.Encode(report));
+            Assert.Equal(1, decoded.Missing.Count);
+            Assert.DoesNotContain("I18NEverywhere", report.Describe());
+        }
+
+        [Test]
         public void EitherSidesScanCanFlagAModAsWorldAffecting()
         {
             // the client's copy says local, the host's copy registers components: blocks on a version difference

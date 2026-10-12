@@ -104,7 +104,15 @@ namespace SkylineTogether.Sync
             if ((markers & FamilyMarker.Owner) != 0 && (markers & FamilyMarker.Route) != 0) markers |= FamilyMarker.GateBypassRoutePrefab;
             FamilyFacts facts = default;
             if (FamilyRules.NeedsPerEntityFacts(markers)) facts = Facts(em, e, markers);
-            return FamilyRules.Classify(markers, facts, out _);
+            Family family = FamilyRules.Classify(markers, facts, out _);
+            // mod compatibility (ARCH §3.2 rule 1): a mod entity whose PrefabRef names no prefab is a tool artefact
+            // (Move It's control points use PrefabRef(Entity.Null)); it is never replicated
+            if ((family == Family.ModEntity || family == Family.Generic) && em.HasComponent<Game.Prefabs.PrefabRef>(e)
+                && em.GetComponentData<Game.Prefabs.PrefabRef>(e).m_Prefab == Entity.Null)
+            {
+                return Family.ToolLocal;
+            }
+            return family;
         }
 
         private FamilyMarker Markers(EntityArchetype archetype)
@@ -118,6 +126,9 @@ namespace SkylineTogether.Sync
                 foreach (ComponentType t in types)
                 {
                     if (_markerByType.TryGetValue(t.TypeIndex.Value, out FamilyMarker m)) markers |= m;
+                    // mod compatibility: a type an adapter lists as tool-local (Traffic's connectors and lane handles,
+                    // Move It's control points) makes the whole entity tool-local
+                    if (Compat.ModCompat.IsLocalType(t.TypeIndex)) markers |= FamilyMarker.AdapterLocal;
                     if (t.TypeIndex == _prefabRef.TypeIndex) hasPrefabRef = true;
                     if (!hasModSerializable && TypeHandlers.Get(t) != null)
                     {
@@ -130,7 +141,11 @@ namespace SkylineTogether.Sync
             {
                 types.Dispose();
             }
-            if (!hasPrefabRef && hasModSerializable && (markers & ~FamilyMarker.Owner) == 0) markers |= FamilyMarker.OnlyModSerializable;
+            // mod compatibility: an entity that only a mod's serializable data defines is a mod entity, with or without a
+            // PrefabRef (Traffic's lane connection data carries PrefabRef(Traffic.FakePrefab), Better Bulldozer's removal
+            // records the removed prefab); without this rule they fell to Generic and never replicated
+            if (hasModSerializable && (markers & ~FamilyMarker.Owner) == 0) markers |= FamilyMarker.OnlyModSerializable;
+            _ = hasPrefabRef;
             return markers;
         }
 

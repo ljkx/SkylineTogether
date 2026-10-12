@@ -56,7 +56,19 @@ namespace SkylineTogether.Session
                         if (!info.isValid || !info.isLoaded || info.asset == null) continue;
                         var name = new AssemblyName(info.asset.fullName);
                         if (string.Equals(name.Name, own, StringComparison.OrdinalIgnoreCase)) continue;
-                        list.Add(new ModEntry { Name = name.Name, Version = info.asset.version?.ToString() ?? "" });
+                        var entry = new ModEntry { Name = name.Name, Version = info.asset.version?.ToString() ?? "" };
+                        // mod compatibility: whether the mod can touch shared state (client-local mods never block a join)
+                        try
+                        {
+                            bool registers = Compat.ModAssemblyScanner.RegistersSharedState(info.asset.assembly);
+                            entry.RegistersTypesOrSystemsOrPrefabs = registers;
+                            entry.ClientLocalHint = !registers;
+                        }
+                        catch (Exception)
+                        {
+                            entry.RegistersTypesOrSystemsOrPrefabs = true; // fail closed
+                        }
+                        list.Add(entry);
                     }
                     catch (Exception)
                     {
