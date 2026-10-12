@@ -418,10 +418,73 @@ function Client(props) {
   );
 }
 
+// ---- title-screen "Multiplayer" button (in the vanilla main menu list, between Load Game and Editor) ----
+
+const MAIN_MENU_PATH = "game-ui/menu/components/main-menu-screen/main-menu-screen.tsx";
+const MENU_BUTTON_PATH = "game-ui/common/input/button/labeled-icon-button.tsx";
+const MENU_THEME_PATH = "game-ui/menu/themes/menu-item.module.scss";
+const MENU_ICON =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="#ffffff">' +
+      '<circle cx="11" cy="10" r="5"/><circle cx="22" cy="11" r="4"/>' +
+      '<path d="M1 27c0-5.5 4.5-9 10-9s10 3.5 10 9z"/><path d="M19 27c0-3-1-5.6-2.8-7.3 1.5-.9 3.2-1.4 5-1.4 4.8 0 8.8 3.1 8.8 8.7z"/>' +
+      "</svg>"
+  );
+
+// the title-screen button and the panel talk through this tiny event bus
+const panelListeners = new Set();
+function openPanel() {
+  panelListeners.forEach(function (f) {
+    try {
+      f();
+    } catch (e) {
+      // a listener of an unmounted root
+    }
+  });
+}
+let menuButtonInstalled = false;
+
+function installMainMenuButton(moduleRegistry) {
+  try {
+    const LabeledIconButton = moduleRegistry.get(MENU_BUTTON_PATH, "LabeledIconButton");
+    const theme = moduleRegistry.get(MENU_THEME_PATH, "classes");
+    if (!LabeledIconButton || !moduleRegistry.get(MAIN_MENU_PATH, "MainMenuNavigation")) return false;
+    function SkylineTogetherMenuButton() {
+      return h(LabeledIconButton, { tinted: true, src: MENU_ICON, theme: theme, onSelect: openPanel }, "Multiplayer");
+    }
+    moduleRegistry.extend(MAIN_MENU_PATH, "MainMenuNavigation", function (Original) {
+      return function SkylineTogetherMainMenuNavigation(props) {
+        try {
+          const children = React.Children.toArray(props.children);
+          // Continue, New Game, Load Game, then ours
+          children.splice(Math.min(3, children.length), 0, h(SkylineTogetherMenuButton, { key: "skyline-together-multiplayer" }));
+          return h(Original, Object.assign({}, props, { children: children }));
+        } catch (e) {
+          return h(Original, props);
+        }
+      };
+    });
+    return true;
+  } catch (e) {
+    console.warn("SkylineTogether: main menu button unavailable (" + e + "); using the corner button");
+    return false;
+  }
+}
+
 function makeRoot(inGame) {
   return function SkylineTogetherRoot() {
     const s = parse(api.useValue(stateBinding));
     const [open, setOpen] = React.useState(false);
+    React.useEffect(function () {
+      const show = function () {
+        setOpen(true);
+      };
+      panelListeners.add(show);
+      return function () {
+        panelListeners.delete(show);
+      };
+    }, []);
     const mode = s.mode || "None";
     const count = (s.players || []).length;
     const dot = mode === "None" ? C.dim : mode === "Joining" ? C.warn : C.good;
@@ -434,12 +497,14 @@ function makeRoot(inGame) {
       "div",
       null,
       inGame && (mode === "Hosting" || mode === "Client") ? h(NameTags, null) : null, // presence branch: under the panel
-      h(
+      inGame || !menuButtonInstalled
+        ? h(
         "div",
         { style: S.toggle, onClick: function () { setOpen(!open); } },
         h("div", { style: merge(S.dot, { background: dot }) }),
         mode === "None" ? "Multiplayer" : mode === "Joining" ? "Joining…" : "Multiplayer · " + count
-      ),
+      )
+        : null,
       open
         ? h(
             "div",
@@ -465,6 +530,7 @@ export default function register(moduleRegistry) {
     console.warn("SkylineTogether: UI globals missing; the panel is unavailable (use the Options page)");
     return;
   }
+  menuButtonInstalled = installMainMenuButton(moduleRegistry);
   moduleRegistry.append("Game", GameRoot);
   moduleRegistry.append("Menu", MenuRoot);
 }
