@@ -225,7 +225,8 @@ namespace SkylineTogether.UI
         }
 
         /// <summary>
-        /// Remote players for the name tags and the panel, at most 20 times a second:
+        /// Remote players for the name tags and the panel, at most 20 times a second and only when a tag changed noticeably
+        /// (polish: <see cref="Core.Session.PresenceTagDiff"/>, applied in <c>PresenceController.SetTags</c>):
         /// <c>{tags: [{id, name, color, x, y, on, activity}]}</c> with x, y as fractions of the screen.
         /// </summary>
         private string BuildPresence()
@@ -240,7 +241,7 @@ namespace SkylineTogether.UI
             var sb = new StringBuilder(256);
             sb.Append("{\"tags\":[");
             bool first = true;
-            foreach (Presence.PresenceTag t in p.Tags)
+            foreach (Core.Session.PresenceTag t in p.Tags)
             {
                 if (!first) sb.Append(',');
                 first = false;

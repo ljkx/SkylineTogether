@@ -8,21 +8,6 @@ using ILog = SkylineTogether.Core.ILog;
 
 namespace SkylineTogether.Presence
 {
-    /// <summary>A remote player's marker as the UI shows it: name tag position (0..1 of the screen) and activity.</summary>
-    public sealed class PresenceTag
-    {
-        public byte Peer;
-        public string Name;
-        /// <summary>CSS colour, e.g. <c>#3fb6e8</c>.</summary>
-        public string Color;
-        /// <summary>Screen position of the tag anchor, 0..1 from the left and from the top.</summary>
-        public float ScreenX, ScreenY;
-        /// <summary>The cursor is over the world and in front of the camera.</summary>
-        public bool OnScreen;
-        /// <summary>"building Small Road", or empty while the player only looks around.</summary>
-        public string Activity;
-    }
-
     /// <summary>
     /// Remote presence (ARCH K15, §11.4), session side: keeps the <see cref="PresenceTable"/> fed from the host or
     /// client session, sends the local player's presence through it, and holds the tags the UI shows. The drawing and
@@ -64,7 +49,8 @@ namespace SkylineTogether.Presence
         /// <summary>The local player's peer id (host: 0).</summary>
         public PeerId LocalPeer => _sessions.Client != null ? _sessions.Client.LocalPeer : PeerId.Host;
 
-        /// <summary>Tags of the remote players, replaced as a whole every frame by <see cref="PresenceSystem"/>.</summary>
+        /// <summary>Tags of the remote players as the UI shows them, replaced as a whole by <see cref="PresenceSystem"/> when
+        /// they changed noticeably.</summary>
         public IReadOnlyList<PresenceTag> Tags => _tags;
 
         /// <summary>Changes whenever <see cref="Tags"/> is replaced.</summary>
@@ -90,9 +76,15 @@ namespace SkylineTogether.Presence
             }
         }
 
+        /// <summary>
+        /// Replaces the tags when they differ noticeably from the ones the UI shows (<see cref="PresenceTagDiff"/>); the
+        /// version (and with it the UI binding) changes only then. polish: the projection runs every frame, a push only
+        /// when a tag moved by a few pixels or changed. <paramref name="tags"/> is copied, so the caller may reuse it.
+        /// </summary>
         public void SetTags(List<PresenceTag> tags)
         {
-            _tags = tags ?? new List<PresenceTag>();
+            if (tags != null && !PresenceTagDiff.Differs(_tags, tags)) return;
+            _tags = tags == null ? new List<PresenceTag>() : new List<PresenceTag>(tags);
             TagsVersion++;
         }
 
