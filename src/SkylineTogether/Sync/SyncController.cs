@@ -362,6 +362,7 @@ namespace SkylineTogether.Sync
             _agents.Attach(_codec, _ids); // w3/agents
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             _tools = world.GetOrCreateSystemManaged<ToolSystem>();
+            _tools.EventToolChanged += OnToolChanged; // polish: the route preview window opens with the tool
             _zones = world.GetOrCreateSystemManaged<ZoneSystem>();
             _city = world.GetOrCreateSystemManaged<CitySystem>();
             EntityManager em = world.EntityManager;
@@ -549,6 +550,7 @@ namespace SkylineTogether.Sync
                 _log.Debug(LogCategory.Replication, "disposing the codec: " + ex.Message);
             }
             _codec = null; // every entry point checks it (and EnsureWorld refuses after disposal)
+            if (_tools != null) _tools.EventToolChanged -= OnToolChanged; // polish
         }
 
         /// <summary>
@@ -2086,6 +2088,27 @@ namespace SkylineTogether.Sync
         /// route path and waypoint systems run so the preview follows the roads; afterwards the host's line state is
         /// requested again, so no locally derived line state survives.
         /// </summary>
+        /// <summary>
+        /// polish: opens the route preview window in the frame the route tool is selected (<c>ToolSystem.activeTool</c>
+        /// raises <c>EventToolChanged</c>), not at that frame's end capture, so the temp segments the tool creates in its
+        /// first ToolUpdate already get their road-following path from <c>RoutePathSystem</c> (an <c>Updated</c> tag is
+        /// seen once only). Closing stays with <see cref="UpdateRouteWindow"/> (linger, host line re-send).
+        /// </summary>
+        private void OnToolChanged(ToolBaseSystem tool)
+        {
+            try
+            {
+                if (!(tool is RouteToolSystem) || !IsLiveClient || _routeWindowOpen) return;
+                _routeWindowUntil = Perf.Now + RouteWindowLinger; // the capture clock (SyncSystems: realtimeSinceStartup)
+                _routeWindowOpen = true;
+                _gate.SetRouteWindow(true);
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Gate, "route preview window on tool change: " + ex.Message);
+            }
+        }
+
         private void UpdateRouteWindow(double now)
         {
             bool routeTool = _tools.activeTool is RouteToolSystem;

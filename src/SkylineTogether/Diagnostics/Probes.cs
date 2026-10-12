@@ -155,6 +155,7 @@ namespace SkylineTogether.Diagnostics
             ProbeDemandHandles();
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.GatedSystemNames, systems: true);
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.RouteSystemNames, systems: true);
+            ProbeTypeNames("P-GATE", Features.Gate, ClientGate.PreviewPipelineNames, systems: true); // polish
             ProbeTypeNames("P-MOVERGATE", Features.Movers, MoverClient.GatedSystemNames, systems: true);
             ProbeTypeNames("P-COSMETIC", Features.Clock, FollowerClock.CosmeticSystemNames, systems: true);
             ProbeTypeNames("P-FAMILY", Features.Replication, FamilyClassifier.MarkerTypeNames, systems: false);
