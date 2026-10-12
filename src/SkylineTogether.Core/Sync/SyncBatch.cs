@@ -32,6 +32,22 @@ namespace SkylineTogether.Core.Sync
         /// Host → client: the channel's full state; client → host: the entries the client changed.
         /// </summary>
         Global = 11,
+
+        // ---- integrity and icon channels (feat/integrity; values 40-49 are reserved for them by merge coordination) ----
+        /// <summary>Host → client: the integrity digest of one bucket of net ids (rolling verification).</summary>
+        BucketDigest = 40,
+        /// <summary>Host → client: the integrity hash of every bound entity of one bucket (answer to <see cref="SyncRequest.BucketDetail"/>).</summary>
+        EntityHashes = 41,
+        /// <summary>Client → host: a request with a list of ids (<see cref="SyncRequest"/> values 40-49).</summary>
+        RequestIds = 42,
+        /// <summary>Host → client: the members of one entity's integrity hash (answer to <see cref="SyncRequest.ExplainEntities"/>).</summary>
+        EntityExplain = 43,
+        /// <summary>Host → client: the complete default-layer icon set of one owner (empty: the owner has no icons).</summary>
+        IconSet = 44,
+        /// <summary>Host → client: icon digest, or the start or end of a full icon sync (<see cref="IconControlMode"/>).</summary>
+        IconControl = 45,
+        /// <summary>Host → client: the UI-level line rows (<c>LineStateReport.WriteRows</c>).</summary>
+        LineRows = 46,
     }
 
     /// <summary>What a client asks the host for.</summary>
@@ -43,6 +59,18 @@ namespace SkylineTogether.Core.Sync
         ResendRoutes = 2,
         /// <summary>The full state of every replicated entity (repair).</summary>
         ResendAll = 3,
+
+        // ---- with a list of ids (SyncRecordKind.RequestIds; feat/integrity; values 40-49 reserved) ----
+        /// <summary>The per-entity hashes of the listed buckets.</summary>
+        BucketDetail = 40,
+        /// <summary>Re-send the listed entities (as spawns; ids the host does not have are answered with a despawn).</summary>
+        ResendEntities = 41,
+        /// <summary>The members of the listed entities' integrity hashes (diagnostics of a persistent mismatch).</summary>
+        ExplainEntities = 42,
+        /// <summary>Re-send the listed lines with all their waypoints and segments.</summary>
+        ResendLines = 43,
+        /// <summary>Every icon set the host has sent (no ids).</summary>
+        IconFullSync = 44,
     }
 
     /// <summary>How one component travels.</summary>
@@ -90,6 +118,24 @@ namespace SkylineTogether.Core.Sync
         public uint Channel;
         public byte[] Payload;
 
+        // ---- integrity and icon channels (feat/integrity) ----
+        /// <summary><see cref="SyncRecordKind.BucketDigest"/>, <see cref="SyncRecordKind.EntityHashes"/>: the bucket.</summary>
+        public uint Bucket;
+        /// <summary><see cref="SyncRecordKind.BucketDigest"/>: entities in the bucket; <see cref="SyncRecordKind.IconControl"/>: owners.</summary>
+        public uint Count;
+        /// <summary><see cref="SyncRecordKind.IconControl"/>: icons.</summary>
+        public uint Count2;
+        /// <summary><see cref="SyncRecordKind.BucketDigest"/>, <see cref="SyncRecordKind.IconControl"/>: the digest.</summary>
+        public ulong Hash;
+        public List<EntityHash> Hashes;
+        /// <summary><see cref="SyncRecordKind.RequestIds"/>: the ids (buckets, entities or lines).</summary>
+        public uint[] Ids;
+        public List<ComponentHash> ComponentHashes;
+        /// <summary><see cref="SyncRecordKind.IconSet"/>: the owner and its icons.</summary>
+        public SyncRef Owner;
+        public List<SyncIcon> Icons;
+        public IconControlMode IconMode;
+
         public override string ToString() => Kind + " #" + NetId + (Components.Count > 0 ? " (" + Components.Count + " components)" : "");
     }
 
@@ -131,6 +177,11 @@ namespace SkylineTogether.Core.Sync
         private const int MaxStringBytes = 1024;
         private const int MaxZoneCells = 4096;
         private const int MaxGlobalPayload = 1 << 22;
+        /// <summary>Ids per <see cref="SyncRecordKind.RequestIds"/> and hashes per <see cref="SyncRecordKind.EntityHashes"/> record at most.</summary>
+        public const int MaxIdsPerRecord = 4096;
+        /// <summary>Icons per owner in one <see cref="SyncRecordKind.IconSet"/> record at most.</summary>
+        public const int MaxIconsPerOwner = 256;
+        private const int MaxPayloadBytes = 1 << 22;
 
         public sealed class Writer
         {
@@ -282,6 +333,85 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            // ---- integrity and icon channels (feat/integrity) ----
+
+            public void BucketDigest(uint bucket, uint count, ulong hash)
+            {
+                _w.WriteByte((byte)SyncRecordKind.BucketDigest);
+                _w.WriteVarUInt32(bucket);
+                _w.WriteVarUInt32(count);
+                _w.WriteUInt64(hash);
+                _count++;
+            }
+
+            public void EntityHashes(uint bucket, IReadOnlyList<EntityHash> hashes)
+            {
+                if (hashes.Count > MaxIdsPerRecord) throw new ArgumentException("too many entity hashes", nameof(hashes));
+                _w.WriteByte((byte)SyncRecordKind.EntityHashes);
+                _w.WriteVarUInt32(bucket);
+                _w.WriteVarUInt32((uint)hashes.Count);
+                for (int i = 0; i < hashes.Count; i++)
+                {
+                    _w.WriteVarUInt32(hashes[i].NetId);
+                    _w.WriteUInt64(hashes[i].Hash);
+                }
+                _count++;
+            }
+
+            public void RequestIds(SyncRequest request, IReadOnlyList<uint> ids)
+            {
+                if (ids.Count > MaxIdsPerRecord) throw new ArgumentException("too many ids", nameof(ids));
+                _w.WriteByte((byte)SyncRecordKind.RequestIds);
+                _w.WriteByte((byte)request);
+                _w.WriteVarUInt32((uint)ids.Count);
+                for (int i = 0; i < ids.Count; i++) _w.WriteVarUInt32(ids[i]);
+                _count++;
+            }
+
+            public void EntityExplain(uint netId, IReadOnlyList<ComponentHash> members)
+            {
+                if (members.Count > MaxComponents) throw new ArgumentException("too many members", nameof(members));
+                _w.WriteByte((byte)SyncRecordKind.EntityExplain);
+                _w.WriteVarUInt32(netId);
+                _w.WriteVarUInt32((uint)members.Count);
+                for (int i = 0; i < members.Count; i++)
+                {
+                    _w.WriteUInt64(members[i].TypeHash);
+                    _w.WriteUInt64(members[i].ValueHash);
+                    _w.WriteByte((byte)members[i].State);
+                }
+                _count++;
+            }
+
+            public void IconSet(SyncRef owner, IReadOnlyList<SyncIcon> icons)
+            {
+                if (icons.Count > MaxIconsPerOwner) throw new ArgumentException("too many icons", nameof(icons));
+                _w.WriteByte((byte)SyncRecordKind.IconSet);
+                owner.Write(_w);
+                _w.WriteVarUInt32((uint)icons.Count);
+                for (int i = 0; i < icons.Count; i++) icons[i].Write(_w);
+                _count++;
+            }
+
+            public void IconControl(IconControlMode mode, uint owners, uint icons, ulong hash)
+            {
+                _w.WriteByte((byte)SyncRecordKind.IconControl);
+                _w.WriteByte((byte)mode);
+                _w.WriteVarUInt32(owners);
+                _w.WriteVarUInt32(icons);
+                _w.WriteUInt64(hash);
+                _count++;
+            }
+
+            public void LineRows(byte[] data, int offset, int count)
+            {
+                if (count > MaxPayloadBytes) throw new ArgumentException("line rows too large", nameof(count));
+                _w.WriteByte((byte)SyncRecordKind.LineRows);
+                _w.WriteVarUInt32((uint)count);
+                if (count > 0) _w.WriteBytes(data, offset, count);
+                _count++;
+            }
+
             /// <summary>The finished batch bytes (valid until the next write).</summary>
             public ArraySegment<byte> Finish()
             {
@@ -316,6 +446,14 @@ namespace SkylineTogether.Core.Sync
             {
                 throw new DecodeException("malformed sync batch: " + ex.Message);
             }
+        }
+
+        /// <summary>A list length, checked against its limit and the bytes left (each element needs at least <paramref name="minBytes"/>).</summary>
+        private static uint ReadCount(ByteReader r, int max, int minBytes, string what)
+        {
+            uint n = r.ReadVarUInt32();
+            if (n > (uint)max || n > (uint)(r.Remaining / minBytes)) throw new DecodeException("record with " + n + " " + what);
+            return n;
         }
 
         private static SyncRecord ReadRecord(ByteReader r, byte[] buffer, int baseOffset)
@@ -404,6 +542,63 @@ namespace SkylineTogether.Core.Sync
                     if (length > MaxGlobalPayload || length > (uint)r.Remaining) throw new DecodeException("global payload of " + length + " bytes");
                     rec.Payload = new byte[length];
                     if (length > 0) r.ReadBytes(rec.Payload, 0, (int)length);
+                    return rec;
+                }
+                case SyncRecordKind.BucketDigest:
+                    rec.Bucket = r.ReadVarUInt32();
+                    rec.Count = r.ReadVarUInt32();
+                    rec.Hash = r.ReadUInt64();
+                    return rec;
+                case SyncRecordKind.EntityHashes:
+                {
+                    rec.Bucket = r.ReadVarUInt32();
+                    uint n = ReadCount(r, MaxIdsPerRecord, 9, "entity hashes");
+                    rec.Hashes = new List<EntityHash>((int)n);
+                    for (uint i = 0; i < n; i++) rec.Hashes.Add(new EntityHash(r.ReadVarUInt32(), r.ReadUInt64()));
+                    return rec;
+                }
+                case SyncRecordKind.RequestIds:
+                {
+                    rec.Request = (SyncRequest)r.ReadByte();
+                    uint n = ReadCount(r, MaxIdsPerRecord, 1, "requested ids");
+                    rec.Ids = new uint[n];
+                    for (uint i = 0; i < n; i++) rec.Ids[i] = r.ReadVarUInt32();
+                    return rec;
+                }
+                case SyncRecordKind.EntityExplain:
+                {
+                    rec.NetId = r.ReadVarUInt32();
+                    uint n = ReadCount(r, MaxComponents, 17, "explained members");
+                    rec.ComponentHashes = new List<ComponentHash>((int)n);
+                    for (uint i = 0; i < n; i++)
+                    {
+                        var m = new ComponentHash(r.ReadUInt64(), r.ReadUInt64(), (ComponentHashState)r.ReadByte());
+                        if (m.State > ComponentHashState.Presence) throw new DecodeException("unknown member state " + (byte)m.State);
+                        rec.ComponentHashes.Add(m);
+                    }
+                    return rec;
+                }
+                case SyncRecordKind.IconSet:
+                {
+                    rec.Owner = SyncRef.Read(r);
+                    uint n = ReadCount(r, MaxIconsPerOwner, 16, "icons");
+                    rec.Icons = new List<SyncIcon>((int)n);
+                    for (uint i = 0; i < n; i++) rec.Icons.Add(SyncIcon.Read(r));
+                    return rec;
+                }
+                case SyncRecordKind.IconControl:
+                    rec.IconMode = (IconControlMode)r.ReadByte();
+                    if (rec.IconMode < IconControlMode.Digest || rec.IconMode > IconControlMode.FullEnd) throw new DecodeException("unknown icon control mode " + (byte)rec.IconMode);
+                    rec.Count = r.ReadVarUInt32();
+                    rec.Count2 = r.ReadVarUInt32();
+                    rec.Hash = r.ReadUInt64();
+                    return rec;
+                case SyncRecordKind.LineRows:
+                {
+                    uint n = r.ReadVarUInt32();
+                    if (n > MaxPayloadBytes || n > (uint)r.Remaining) throw new DecodeException("line rows of " + n + " bytes");
+                    rec.Payload = new byte[n];
+                    r.ReadBytes(rec.Payload, 0, (int)n);
                     return rec;
                 }
                 default:

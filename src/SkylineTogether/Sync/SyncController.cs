@@ -86,6 +86,7 @@ namespace SkylineTogether.Sync
             _terrain = new TerrainSync(sessions, log);
             _water = new WaterSync(sessions, log);
             _terrain.HeightsChanged += _water.MarkHot;
+            Integrity = new IntegritySync(sessions, log); // feat/integrity
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -98,6 +99,9 @@ namespace SkylineTogether.Sync
         public int BoundCount => _ids?.BoundCount ?? 0;
 
         public string LastApply { get; private set; } = "";
+
+        /// <summary>feat/integrity: divergence detection and repair, host icons, line check (see <see cref="IntegritySync"/>).</summary>
+        public IntegritySync Integrity { get; }
 
         /// <summary>One line for the panel: what replication is doing.</summary>
         public string Status
@@ -112,6 +116,8 @@ namespace SkylineTogether.Sync
                 {
                     if (env.Length > 0) s += ", " + env;
                 }
+                string integrity = Integrity.Status; // feat/integrity
+                if (integrity.Length > 0) s += "; " + integrity;
                 return s;
             }
         }
@@ -125,6 +131,7 @@ namespace SkylineTogether.Sync
             if (world == null) return false;
             _ids = world.GetOrCreateSystemManaged<NetIdSystem>();
             _codec = new EntityCodec(world, _ids, _log);
+            Integrity.Attach(_codec, _ids); // feat/integrity
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             _tools = world.GetOrCreateSystemManaged<ToolSystem>();
             _zones = world.GetOrCreateSystemManaged<ZoneSystem>();
@@ -155,6 +162,8 @@ namespace SkylineTogether.Sync
             if (!EnsureWorld()) return;
             host.PeerJoining += OnPeerJoining;
             host.PeerLeft += peer => _peerRanges.Remove(peer.Value);
+            host.PeerLeft += Integrity.OnPeerLeft; // feat/integrity
+            Integrity.Reset();
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Proposal) return;
@@ -171,6 +180,7 @@ namespace SkylineTogether.Sync
             _clientLive = false;
             _wasClient = true;
             _pool.Clear();
+            Integrity.Reset(); // feat/integrity
             _shadow.Clear();
             client.AppMessage += e =>
             {
@@ -183,6 +193,7 @@ namespace SkylineTogether.Sync
             {
                 _clientLive = true;
                 _gate.Close();
+                Integrity.OnClientLive(); // feat/integrity
                 _log.Info(LogCategory.Replication, "client live with " + _ids.BoundCount + " bound entities; following the host");
             };
         }
@@ -196,6 +207,7 @@ namespace SkylineTogether.Sync
                 _wasClient = false;
             }
             _gate.Open();
+            Integrity.Reset(); // feat/integrity
             _inbox.Clear();
             _peerRanges.Clear();
             _pool.Clear();
@@ -300,6 +312,7 @@ namespace SkylineTogether.Sync
             _global.Apply(data, PeerId.Host, false);
             if (r.Spawned + r.Upserted + r.Despawned > 0) LastApply = r.ToString();
             if (r.Problems.Count > 0) _log.Debug(LogCategory.Replication, "apply problems: " + string.Join("; ", r.Problems));
+            Integrity.OnHostBatch(data, _inbox.Count); // feat/integrity: presence masks, digests, icons, line rows
         }
 
         private void ApplyProposal(PeerId peer, byte[] data)
@@ -311,6 +324,7 @@ namespace SkylineTogether.Sync
             if (r.HasCost && r.Cost != 0) ChargeCity(r.Cost);
             foreach (SyncRecord rec in SyncBatch.Read(data, 0, data.Length))
             {
+                if (rec.Kind == SyncRecordKind.RequestIds) Integrity.OnPeerRequest(peer, rec); // feat/integrity
                 if (rec.Kind != SyncRecordKind.Request) continue;
                 if (rec.Request == SyncRequest.MoreIds)
                 {
@@ -417,6 +431,7 @@ namespace SkylineTogether.Sync
             if (_codec == null) return;
             if (IsHost) CaptureHost(now);
             else if (IsLiveClient) CaptureClient(now);
+            if (IsLiveClient) Integrity.ClientFrameEnd(now); // feat/integrity: integrity requests, icon digest
             _toolApplied = false;
             _toolCost = 0;
             _toolOriginals.Clear();
@@ -496,6 +511,7 @@ namespace SkylineTogether.Sync
                 _lastClock = now;
                 _batch.Clock(_simulation.frameIndex);
             }
+            Integrity.HostCapture(now, _batch, _sessions.Host?.LivePeerCount ?? 0); // feat/integrity: digests, icons, line rows
             if (!_batch.IsEmpty) Broadcast(_batch);
         }
 

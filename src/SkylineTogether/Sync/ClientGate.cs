@@ -37,6 +37,8 @@ namespace SkylineTogether.Sync
             "Game.Buildings.ZoneCheckSystem",
             "Game.City.DevTreeSystem",
             "Game.AutoSaveSystem",
+            // feat/integrity: writes nothing but warning icons, which come from the host (D11, IconSync)
+            "Game.Net.ConnectionWarningSystem",
         };
 
         /// <summary>Line systems: off on clients except inside a route-tool preview window.</summary>

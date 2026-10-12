@@ -154,6 +154,9 @@ namespace SkylineTogether.Sync
             "Game.Common.BatchesUpdated",
             "Game.Common.EffectsUpdated",
             "Game.Common.PathfindUpdated",
+            // feat/integrity: maintained by IconCommandSystem on every peer (icons come from the host through IconSync);
+            // reconciling its presence would strip a client owner's buffer and orphan its icon entities
+            "Game.Notifications.IconElement",
         };
 
         private static readonly Dictionary<int, TypeHandler> ByIndex = new Dictionary<int, TypeHandler>();
