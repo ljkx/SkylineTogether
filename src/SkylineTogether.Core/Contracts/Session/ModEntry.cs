@@ -13,6 +13,10 @@ namespace SkylineTogether.Core
         /// <summary>The mod registers serializable types, simulation systems or prefabs (never eligible for the
         /// local-only relaxation).</summary>
         public bool RegistersTypesOrSystemsOrPrefabs;
+        /// <summary>The sending peer scanned its copy of the mod and found nothing that can touch shared state (no
+        /// serializable component, saved system, prefab, tool or patch library): eligible for the client-local relaxation
+        /// unless the built-in list knows it as world-affecting (Session.ModCompatibility).</summary>
+        public bool ClientLocalHint;
 
         public override string ToString() => (Name ?? "?") + " " + (Version ?? "?");
     }

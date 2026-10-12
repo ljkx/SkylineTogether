@@ -348,7 +348,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             // the mod's flags byte sits right after its four strings: "a", "", "", ""
             int flags = Array.LastIndexOf(bytes, (byte)0x61) + 4;
             Assert.Equal((byte)0, bytes[flags]);
-            bytes[flags] = 0x04;
+            bytes[flags] = 0x08;
             Assert.Throws<DecodeException>(() => ManifestDetailMessage.Decode(bytes, 0, bytes.Length));
         }
 

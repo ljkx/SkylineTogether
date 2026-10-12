@@ -57,6 +57,17 @@ namespace SkylineTogether.Core.Sync
         MoverState = 21,
         /// <summary>Host → client: a mover disappeared.</summary>
         MoverDespawn = 22,
+
+        // ---- mod compatibility (docs/design/MOD-COMPATIBILITY.md; values 110-119 are reserved for it) ----
+
+        /// <summary>
+        /// The enabled state of an entity's enableable replicated components (<c>IEnableableComponent</c>, for example
+        /// <c>Game.Objects.Decoration</c> or Tree Controller's <c>LumberResource</c>); written right after the entity's
+        /// record in the same batch. Both directions.
+        /// </summary>
+        EnabledBits = 110,
+        /// <summary>Host → client: the host's values of simulation-relevant mod settings (the host's rules for everyone).</summary>
+        ModSettings = 111,
     }
 
     /// <summary>What a client asks the host for.</summary>
@@ -104,6 +115,19 @@ namespace SkylineTogether.Core.Sync
         public int Count;
     }
 
+    /// <summary>The enabled state of one enableable component (<see cref="SyncRecordKind.EnabledBits"/>).</summary>
+    public struct SyncEnabledBit
+    {
+        public ulong TypeHash;
+        public bool Enabled;
+
+        public SyncEnabledBit(ulong typeHash, bool enabled)
+        {
+            TypeHash = typeHash;
+            Enabled = enabled;
+        }
+    }
+
     /// <summary>A decoded record; fields are used according to <see cref="Kind"/>.</summary>
     public sealed class SyncRecord
     {
@@ -146,6 +170,10 @@ namespace SkylineTogether.Core.Sync
         public IconControlMode IconMode;
         /// <summary>For <see cref="SyncRecordKind.MoverSpawn"/> and <see cref="SyncRecordKind.MoverState"/> (movers branch).</summary>
         public MoverRecord Mover;
+        /// <summary>For <see cref="SyncRecordKind.EnabledBits"/> (with <see cref="NetId"/>): the components' enabled states.</summary>
+        public List<SyncEnabledBit> EnabledBits;
+        /// <summary>For <see cref="SyncRecordKind.ModSettings"/>: mod, key and invariant value of each setting.</summary>
+        public List<SettingEntry> Settings;
 
         public override string ToString() => Kind + " #" + NetId + (Components.Count > 0 ? " (" + Components.Count + " components)" : "");
     }
@@ -193,6 +221,9 @@ namespace SkylineTogether.Core.Sync
         /// <summary>Icons per owner in one <see cref="SyncRecordKind.IconSet"/> record at most.</summary>
         public const int MaxIconsPerOwner = 256;
         private const int MaxPayloadBytes = 1 << 22;
+        /// <summary>Mod settings per <see cref="SyncRecordKind.ModSettings"/> record at most.</summary>
+        public const int MaxModSettings = 1024;
+        private const int MaxSettingTextBytes = 4096;
 
         /// <summary>Bytes before the first record: the version byte and the record count.</summary>
         public const int HeaderBytes = 5;
@@ -235,6 +266,7 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.Request:
                 case SyncRecordKind.Global:
                 case SyncRecordKind.RequestIds:
+                case SyncRecordKind.EnabledBits:
                     return true;
                 default:
                     return false;
@@ -488,6 +520,36 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            /// <summary>The enabled states of an entity's enableable components (<see cref="SyncRecordKind.EnabledBits"/>).</summary>
+            public void EnabledBits(uint netId, IReadOnlyList<SyncEnabledBit> bits)
+            {
+                if (bits.Count > MaxComponents) throw new ArgumentException("too many enabled bits", nameof(bits));
+                _w.WriteByte((byte)SyncRecordKind.EnabledBits);
+                _w.WriteVarUInt32(netId);
+                _w.WriteVarUInt32((uint)bits.Count);
+                for (int i = 0; i < bits.Count; i++)
+                {
+                    _w.WriteUInt64(bits[i].TypeHash);
+                    _w.WriteBool(bits[i].Enabled);
+                }
+                _count++;
+            }
+
+            /// <summary>The host's values of simulation-relevant mod settings (<see cref="SyncRecordKind.ModSettings"/>).</summary>
+            public void ModSettings(IReadOnlyList<SettingEntry> settings)
+            {
+                if (settings.Count > MaxModSettings) throw new ArgumentException("too many mod settings", nameof(settings));
+                _w.WriteByte((byte)SyncRecordKind.ModSettings);
+                _w.WriteVarUInt32((uint)settings.Count);
+                for (int i = 0; i < settings.Count; i++)
+                {
+                    _w.WriteString(settings[i].Mod ?? "", MaxSettingTextBytes);
+                    _w.WriteString(settings[i].Key ?? "", MaxSettingTextBytes);
+                    _w.WriteString(settings[i].Value ?? "", MaxSettingTextBytes);
+                }
+                _count++;
+            }
+
             /// <summary>The finished batch bytes (valid until the next write).</summary>
             public ArraySegment<byte> Finish()
             {
@@ -685,6 +747,29 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.MoverDespawn:
                     rec.NetId = r.ReadVarUInt32();
                     return rec;
+                case SyncRecordKind.EnabledBits:
+                {
+                    rec.NetId = r.ReadVarUInt32();
+                    uint n = ReadCount(r, MaxComponents, 9, "enabled bits");
+                    rec.EnabledBits = new List<SyncEnabledBit>((int)n);
+                    for (uint i = 0; i < n; i++) rec.EnabledBits.Add(new SyncEnabledBit(r.ReadUInt64(), r.ReadBool()));
+                    return rec;
+                }
+                case SyncRecordKind.ModSettings:
+                {
+                    uint n = ReadCount(r, MaxModSettings, 3, "mod settings");
+                    rec.Settings = new List<SettingEntry>((int)n);
+                    for (uint i = 0; i < n; i++)
+                    {
+                        rec.Settings.Add(new SettingEntry
+                        {
+                            Mod = r.ReadString(MaxSettingTextBytes),
+                            Key = r.ReadString(MaxSettingTextBytes),
+                            Value = r.ReadString(MaxSettingTextBytes),
+                        });
+                    }
+                    return rec;
+                }
                 default:
                     throw new DecodeException("unknown sync record kind " + (byte)rec.Kind);
             }

@@ -48,6 +48,12 @@ namespace SkylineTogether.Sync
         private readonly ByteWriter _payload = new ByteWriter(4096);
         private readonly HashSet<ulong> _failedTypes = new HashSet<ulong>();
         private readonly HashSet<string> _missingPrefabs = new HashSet<string>();
+        // mod compatibility: prefabs the host named that this game lacks (asset packs, runtime prefabs of mods); the
+        // binding is retried when a record needs it, because some mods create prefabs after the join's prefab table
+        private readonly Dictionary<uint, byte[]> _unresolvedPrefabs = new Dictionary<uint, byte[]>();
+        private readonly Dictionary<uint, string> _unresolvedPrefabNames = new Dictionary<uint, string>();
+        private readonly SortedDictionary<string, int> _missingAssets = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<SyncEnabledBit> _bits = new List<SyncEnabledBit>();
         private Context _writeContext;
         private Context _readContext;
         private NativeList<byte> _scratch;
@@ -79,6 +85,21 @@ namespace SkylineTogether.Sync
         public NetIdSystem Ids => _ids;
 
         public FamilyClassifier Families => _families;
+
+        /// <summary>
+        /// Mod compatibility (dependency binding): set by the capture while it writes. Called for an entity reference
+        /// that has neither a net id nor a derived key; returns true when it bound the entity (and queued it to be sent
+        /// in the same batch), so the referencing value is serialized again instead of travelling as presence only.
+        /// Traffic's lane connection data and Better Bulldozer's removal records are such entities.
+        /// </summary>
+        public Func<Entity, bool> DependencyBinder { get; set; }
+
+        /// <summary>
+        /// Mod compatibility: assets (prefabs) the host uses that this game lacks, with the number of records skipped
+        /// because of them. A record whose prefab is missing is never applied (an entity without its prefab breaks the
+        /// game's systems).
+        /// </summary>
+        public IReadOnlyDictionary<string, int> MissingAssets => _missingAssets;
 
         public void Dispose()
         {
@@ -132,9 +153,52 @@ namespace SkylineTogether.Sync
                     else if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
                 }
                 w.EndEntity();
+                // mod compatibility: enabled bits travel right after the record (the vanilla Decoration of trees placed
+                // outside decoration mode, Tree Controller's LumberResource)
+                _bits.Clear();
+                foreach (ComponentType t in types)
+                {
+                    TypeHandler h = TypeHandlers.Get(t);
+                    if (h == null || !h.SyncEnabledBit) continue;
+                    _bits.Add(new SyncEnabledBit(h.Hash, em.IsComponentEnabled(e, t)));
+                }
+                if (_bits.Count > 0) w.EnabledBits(netId, _bits);
             }
             finally
             {
+                types.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Mod compatibility (<see cref="Compat.ModStateWatcher"/>): hashes of an entity's replicated state restricted to
+        /// the types <paramref name="include"/> accepts (every replicated type when it is null): the presence of those
+        /// types, and their values and (with <paramref name="bits"/>) enabled bits. Never binds dependencies.
+        /// </summary>
+        public void HashSubset(Entity e, Func<TypeIndex, bool> include, bool bits, out ulong presence, out ulong value)
+        {
+            presence = 1469598103934665603UL;
+            value = 1469598103934665603UL;
+            EntityManager em = EntityManager;
+            NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
+            Func<Entity, bool> binder = DependencyBinder;
+            DependencyBinder = null;
+            try
+            {
+                foreach (ComponentType t in types)
+                {
+                    TypeHandler h = TypeHandlers.Get(t);
+                    if (h == null || (include != null && !include(t.TypeIndex))) continue;
+                    presence = Mix(presence, h.Hash);
+                    if (bits && h.SyncEnabledBit && !em.IsComponentEnabled(e, t)) value = Mix(value, h.Hash ^ 0xE0E0E0E0UL);
+                    if (h.Kind == SyncComponentKind.Presence) continue;
+                    if (!TrySerialize(h, e, out int length)) continue;
+                    value = Mix(value, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
+                }
+            }
+            finally
+            {
+                DependencyBinder = binder;
                 types.Dispose();
             }
         }
@@ -146,21 +210,41 @@ namespace SkylineTogether.Sync
         private bool TrySerialize(TypeHandler h, Entity e, out int length)
         {
             length = 0;
-            _scratch.Clear();
-            _ws.BeginComponent();
-            _ws.Table = _ids.WriterTable;
-            var inner = default(BinaryWriter);
-            inner.Initialize(_writeContext, _scratch, _ws.Table);
-            try
+            for (int attempt = 0; ; attempt++)
             {
-                h.Write(EntityManager, e, new NetWriter(inner, _ws));
+                _scratch.Clear();
+                _ws.BeginComponent();
+                _ws.Table = _ids.WriterTable;
+                var inner = default(BinaryWriter);
+                inner.Initialize(_writeContext, _scratch, _ws.Table);
+                try
+                {
+                    h.Write(EntityManager, e, new NetWriter(inner, _ws));
+                }
+                catch (Exception ex)
+                {
+                    if (_failedTypes.Add(h.Hash)) _log.Warn(LogCategory.Replication, "cannot serialize " + h.Name + "; it will not replicate", ex);
+                    return false;
+                }
+                if (!_ws.Unresolved) break;
+                // mod compatibility: bind unbound mod data entities the value references, then write it again (the
+                // writer table may have grown, so the whole value is serialized anew)
+                if (attempt > 0 || DependencyBinder == null || _ws.UnresolvedEntities.Count == 0) return false;
+                bool bound = false;
+                var pending = new List<Entity>(_ws.UnresolvedEntities);
+                foreach (Entity dependency in pending)
+                {
+                    try
+                    {
+                        bound |= DependencyBinder(dependency);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Debug(LogCategory.Replication, "binding a dependency of " + h.Name + " failed: " + ex.Message);
+                    }
+                }
+                if (!bound) return false;
             }
-            catch (Exception ex)
-            {
-                if (_failedTypes.Add(h.Hash)) _log.Warn(LogCategory.Replication, "cannot serialize " + h.Name + "; it will not replicate", ex);
-                return false;
-            }
-            if (_ws.Unresolved) return false;
             _payload.Reset();
             _payload.WriteVarUInt32((uint)_ws.UsedKeys.Count);
             foreach (DerivedKey k in _ws.UsedKeys)
@@ -187,6 +271,8 @@ namespace SkylineTogether.Sync
             ulong hash = 1469598103934665603UL;
             EntityManager em = EntityManager;
             NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
+            Func<Entity, bool> binder = DependencyBinder;
+            DependencyBinder = null; // mod compatibility: hashing never binds
             try
             {
                 foreach (ComponentType t in types)
@@ -194,6 +280,8 @@ namespace SkylineTogether.Sync
                     TypeHandler h = TypeHandlers.Get(t);
                     if (h == null) continue;
                     hash = Mix(hash, h.Hash);
+                    // mod compatibility: a disabled enableable component differs from an enabled one
+                    if (h.SyncEnabledBit && !em.IsComponentEnabled(e, t)) hash = Mix(hash, h.Hash ^ 0xE0E0E0E0UL);
                     if (h.Kind == SyncComponentKind.Presence) continue;
                     if (!TrySerialize(h, e, out int length)) continue;
                     hash = Mix(hash, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
@@ -201,6 +289,7 @@ namespace SkylineTogether.Sync
             }
             finally
             {
+                DependencyBinder = binder;
                 types.Dispose();
             }
             return hash;

@@ -15,6 +15,13 @@ namespace SkylineTogether.Sync
         public ulong Hash;
         public SyncComponentKind Kind;
         public string Name;
+        /// <summary>
+        /// Mod compatibility: the component is enableable and the save format keeps its enabled bit (not
+        /// <c>ISerializeAsEnabled</c>), so the bit replicates too (<c>SyncRecordKind.EnabledBits</c>).
+        /// </summary>
+        public bool SyncEnabledBit;
+        /// <summary>Mod compatibility: the type comes from another mod's assembly (not the game's).</summary>
+        public bool FromMod;
 
         /// <summary>Serializes the entity's value (data and buffer kinds only).</summary>
         public virtual void Write(EntityManager em, Entity e, NetWriter w)
@@ -238,6 +245,8 @@ namespace SkylineTogether.Sync
             handler.Type = ComponentType.ReadWrite(index);
             handler.Hash = TypeManager.GetTypeInfo(index).StableTypeHash;
             handler.Name = type.FullName;
+            handler.SyncEnabledBit = index.IsEnableable && !typeof(ISerializeAsEnabled).IsAssignableFrom(type);
+            handler.FromMod = type.Assembly != typeof(Game.Common.Owner).Assembly;
             return handler;
         }
     }
