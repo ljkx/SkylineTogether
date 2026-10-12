@@ -111,12 +111,15 @@ namespace SkylineTogether.Core.Protocol
                 case MessageKind.Chat: return 8 * 1024;
                 case MessageKind.Terrain: return MaxUncompressedBytes;
                 case MessageKind.Water: return MaxUncompressedBytes;
-                case MessageKind.EpochAck: return 64;
+                case MessageKind.ApplyAck: return 64;
+                case MessageKind.SimValues: return MaxUncompressedBytes;
+                case MessageKind.CellMaps: return MaxUncompressedBytes;
+                case MessageKind.Statistics: return MaxUncompressedBytes;
                 default: return 64 * 1024;
             }
         }
 
-        /// <summary>True for the kinds of <see cref="MessageKind"/> (1-21, 60); the router drops every other kind (ARCH §14.3).</summary>
-        public static bool IsKnownKind(MessageKind kind) => (kind >= MessageKind.Hello && kind <= MessageKind.Water) || kind == MessageKind.EpochAck;
+        /// <summary>True for the kinds of <see cref="MessageKind"/> (1-21, 60, 65-67); the router drops every other kind (ARCH §14.3).</summary>
+        public static bool IsKnownKind(MessageKind kind) => (kind >= MessageKind.Hello && kind <= MessageKind.Water) || kind == MessageKind.ApplyAck || (kind >= MessageKind.SimValues && kind <= MessageKind.Statistics);
     }
 }

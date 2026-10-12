@@ -8,88 +8,88 @@ using SkylineTogether.Core.Tests.Framework;
 namespace SkylineTogether.Core.Tests.Sync
 {
     /// <summary>w2/ids: per-peer epoch acknowledgements on the host and applied-message tracking on the client.</summary>
-    public sealed class EpochAckTests
+    public sealed class ApplyAckTests
     {
         [Test]
         public void WithoutPeersEveryEpochCountsAsApplied()
         {
-            var book = new EpochAckBook();
-            Assert.Equal(0u, book.MinAckedEpoch);
-            Assert.Equal(1u, book.Seal(_ => 0));
-            Assert.Equal(2u, book.Seal(_ => 0));
-            Assert.Equal(2u, book.MinAckedEpoch);
+            var book = new ApplyAckBook();
+            Assert.Equal(0u, book.MinAckedFrame);
+            Assert.Equal(1u, book.SealFrame(_ => 0));
+            Assert.Equal(2u, book.SealFrame(_ => 0));
+            Assert.Equal(2u, book.MinAckedFrame);
         }
 
         [Test]
         public void APeerHasAppliedAnEpochOnceItsCountReachesTheWatermark()
         {
-            var book = new EpochAckBook();
+            var book = new ApplyAckBook();
             var sent = new Dictionary<byte, long> { [1] = 0 };
             book.AddPeer(1);
             sent[1] = 3;
-            uint e1 = book.Seal(p => sent[p]); // watermark 3
+            uint e1 = book.SealFrame(p => sent[p]); // watermark 3
             sent[1] = 5;
-            uint e2 = book.Seal(p => sent[p]); // watermark 5
-            Assert.Equal(0u, book.MinAckedEpoch);
+            uint e2 = book.SealFrame(p => sent[p]); // watermark 5
+            Assert.Equal(0u, book.MinAckedFrame);
             book.OnAck(1, 2);
-            Assert.Equal(0u, book.AckedEpoch(1));
+            Assert.Equal(0u, book.AckedFrame(1));
             book.OnAck(1, 3);
-            Assert.Equal(e1, book.AckedEpoch(1));
+            Assert.Equal(e1, book.AckedFrame(1));
             book.OnAck(1, 4);
-            Assert.Equal(e1, book.MinAckedEpoch);
+            Assert.Equal(e1, book.MinAckedFrame);
             book.OnAck(1, 5);
-            Assert.Equal(e2, book.MinAckedEpoch);
+            Assert.Equal(e2, book.MinAckedFrame);
             book.OnAck(1, 1); // stale, ignored
-            Assert.Equal(e2, book.MinAckedEpoch);
+            Assert.Equal(e2, book.MinAckedFrame);
         }
 
         [Test]
         public void EpochsWithNothingNewForAPeerNeedNoAck()
         {
-            var book = new EpochAckBook();
+            var book = new ApplyAckBook();
             book.AddPeer(1);
             long sent = 2;
-            book.Seal(_ => sent);
+            book.SealFrame(_ => sent);
             book.OnAck(1, 2);
-            Assert.Equal(1u, book.MinAckedEpoch);
-            uint e2 = book.Seal(_ => sent); // nothing sent since the ack
-            Assert.Equal(e2, book.AckedEpoch(1), "the peer has everything of epoch 2 already");
+            Assert.Equal(1u, book.MinAckedFrame);
+            uint e2 = book.SealFrame(_ => sent); // nothing sent since the ack
+            Assert.Equal(e2, book.AckedFrame(1), "the peer has everything of epoch 2 already");
         }
 
         [Test]
         public void ANewPeerStartsCaughtUpAndTheSlowestPeerHoldsTheMinimum()
         {
-            var book = new EpochAckBook();
+            var book = new ApplyAckBook();
             var sent = new Dictionary<byte, long> { [1] = 0, [2] = 0 };
             book.AddPeer(1);
             sent[1] = 1;
-            book.Seal(p => sent[p]);
+            book.SealFrame(p => sent[p]);
             sent[1] = 2;
-            book.Seal(p => sent[p]);
+            book.SealFrame(p => sent[p]);
             book.AddPeer(2); // joins after epoch 2: earlier epochs never went to it
-            Assert.Equal(2u, book.AckedEpoch(2));
+            Assert.Equal(2u, book.AckedFrame(2));
             sent[1] = 3;
             sent[2] = 1;
-            uint e3 = book.Seal(p => sent[p]);
+            uint e3 = book.SealFrame(p => sent[p]);
             book.OnAck(1, 3);
-            Assert.Equal(e3, book.AckedEpoch(1));
-            Assert.Equal(2u, book.MinAckedEpoch, "peer 2 has not applied epoch 3");
+            Assert.Equal(e3, book.AckedFrame(1));
+            Assert.Equal(2u, book.MinAckedFrame, "peer 2 has not applied epoch 3");
             book.OnAck(2, 1);
-            Assert.Equal(e3, book.MinAckedEpoch);
+            Assert.Equal(e3, book.MinAckedFrame);
             Assert.Equal(0u, book.MaxLag);
         }
 
         [Test]
         public void ALeavingPeerNoLongerHoldsAnythingBack()
         {
-            var book = new EpochAckBook();
+            var book = new ApplyAckBook();
             book.AddPeer(1);
             book.AddPeer(2);
-            book.Seal(_ => 4);
+            book.SealFrame(_ => 4);
             book.OnAck(1, 4);
-            Assert.Equal(0u, book.MinAckedEpoch);
+            Assert.Equal(0u, book.MinAckedFrame);
             book.RemovePeer(2);
-            Assert.Equal(1u, book.MinAckedEpoch);
+            Assert.Equal(1u, book.MinAckedFrame);
             book.OnAck(2, 100); // unknown peer: ignored
             Assert.False(book.HasPeer(2));
         }
@@ -97,7 +97,7 @@ namespace SkylineTogether.Core.Tests.Sync
         [Test]
         public void TrackerAcknowledgesOnlyWhatWasAppliedInOrder()
         {
-            var t = new EpochAckTracker();
+            var t = new ApplyAckTracker();
             Assert.Equal(0L, t.AppliedThrough);
             long a = t.OnReceived();
             long b = t.OnReceived();
@@ -116,7 +116,7 @@ namespace SkylineTogether.Core.Tests.Sync
         [Test]
         public void TwoConsumersCanHoldTheSameMessage()
         {
-            var t = new EpochAckTracker();
+            var t = new ApplyAckTracker();
             long a = t.OnReceived();
             t.Hold(a);
             t.Hold(a);
@@ -131,7 +131,7 @@ namespace SkylineTogether.Core.Tests.Sync
         [Test]
         public void TrackerRejectsHoldsOutOfOrderOrInTheFuture()
         {
-            var t = new EpochAckTracker();
+            var t = new ApplyAckTracker();
             long a = t.OnReceived();
             long b = t.OnReceived();
             t.Hold(b);
@@ -143,7 +143,7 @@ namespace SkylineTogether.Core.Tests.Sync
         [Test]
         public void TrackerStaysSmallUnderALongRandomSession()
         {
-            var t = new EpochAckTracker();
+            var t = new ApplyAckTracker();
             var random = new DeterministicRandom(7);
             var held = new List<long>();
             long expected = 0;
@@ -179,11 +179,11 @@ namespace SkylineTogether.Core.Tests.Sync
         public void AckMessageRoundTripsAndRejectsGarbage()
         {
             var w = new ByteWriter(16);
-            EpochAckMessage.Write(w, 123_456_789_012);
-            Assert.Equal(123_456_789_012L, EpochAckMessage.Read(w.Buffer, 0, w.Length));
-            Assert.Throws<ArgumentOutOfRangeException>(() => EpochAckMessage.Write(new ByteWriter(4), -1));
-            Assert.Throws<DecodeException>(() => EpochAckMessage.Read(new byte[] { 0x80 }, 0, 1));
-            Assert.Throws<DecodeException>(() => EpochAckMessage.Read(new byte[] { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01 }, 0, 10));
+            ApplyAckMessage.Write(w, 123_456_789_012);
+            Assert.Equal(123_456_789_012L, ApplyAckMessage.Read(w.Buffer, 0, w.Length));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ApplyAckMessage.Write(new ByteWriter(4), -1));
+            Assert.Throws<DecodeException>(() => ApplyAckMessage.Read(new byte[] { 0x80 }, 0, 1));
+            Assert.Throws<DecodeException>(() => ApplyAckMessage.Read(new byte[] { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01 }, 0, 10));
         }
     }
 }

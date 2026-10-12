@@ -534,7 +534,8 @@ namespace SkylineTogether.Sync
                 case TerraformingTarget.None:
                     return false;
                 default:
-                    WarnOnce("resource", "resource brush stamps (ore, oil, fertility, groundwater) are not replicated by terrain sync");
+                    // w2/simvals: resource brushes (ore, oil, fertility, groundwater) write CPU cell maps; CellMapSync
+                    // sends the painted cells as patches and the host streams the merged map tiles
                     return false;
             }
         }

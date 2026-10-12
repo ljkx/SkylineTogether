@@ -35,7 +35,17 @@ namespace SkylineTogether.Core
 
         // w2/ids (merge coordination: kinds 60-64 are reserved for this branch)
         /// <summary>Client → host: how many of the host's <c>Epoch</c> messages the client has applied
-        /// (<see cref="Sync.EpochAckMessage"/>); gates the reuse of released net ids (ARCH §3.1).</summary>
-        EpochAck = 60
+        /// (<see cref="Sync.ApplyAckMessage"/>); gates the reuse of released net ids (ARCH §3.1).</summary>
+        ApplyAck = 60,
+
+        // w2/simvals (merge coordination: this branch owns 65-69)
+        /// <summary>Attention-driven simulation values and time-aligned inspection samples (ARCH D5, §4.7.9, §4.8;
+        /// <see cref="Sync.SimValueMessage"/>), host → client.</summary>
+        SimValues = 65,
+        /// <summary>Cell-map tiles host → client and resource-paint patches client → host (ARCH §4.10.8;
+        /// <see cref="Fields.CellMapMessage"/>).</summary>
+        CellMaps = 66,
+        /// <summary>City statistics history (<see cref="Sync.StatisticsMessage"/>), host → client.</summary>
+        Statistics = 67
     }
 }

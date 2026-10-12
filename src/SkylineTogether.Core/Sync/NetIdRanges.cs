@@ -9,11 +9,11 @@ namespace SkylineTogether.Core.Sync
     /// The host's net id authority (ARCH §3.1): dense ids from 1 with safe reuse. A freed id goes through a quarantine
     /// before anything may reuse it:
     /// <list type="number">
-    /// <item><see cref="Release"/> (the despawn was written into this frame's batches) parks it in the open epoch;</item>
+    /// <item><see cref="Release"/> (the despawn was written into this frame's batches) parks it in the open release frame;</item>
     /// <item><see cref="Seal"/> (once per frame, after every batch of the frame was handed to the peers) stamps the
-    /// parked ids with the epoch number and the time;</item>
-    /// <item><see cref="Update"/> frees the oldest sealed ids whose epoch every live peer has acknowledged as applied
-    /// (from <see cref="EpochAckBook"/>), which lie below the join barrier (no join snapshot
+    /// parked ids with the release frame number and the time;</item>
+    /// <item><see cref="Update"/> frees the oldest sealed ids whose release frame every live peer has acknowledged as applied
+    /// (from <see cref="ApplyAckBook"/>), which lie below the join barrier (no join snapshot
     /// in progress could still contain the old binding) and which have waited at least
     /// <see cref="MinQuarantineSeconds"/> (channels that refer to ids at a slower cadence, such as icon sets or digests,
     /// have flushed their own removal by then).</item>
@@ -36,7 +36,7 @@ namespace SkylineTogether.Core.Sync
         /// <summary>A grant is assembled from at most this many runs of free ids (the rest comes fresh and contiguous).</summary>
         public const int MaxGrantRuns = 16;
 
-        /// <summary>Default minimum time a released id stays quarantined after its epoch was sealed.</summary>
+        /// <summary>Default minimum time a released id stays quarantined after its release frame was sealed.</summary>
         public const double DefaultMinQuarantineSeconds = 3.0;
 
         private const int Limit = (int)MaxId + 1;
@@ -47,7 +47,7 @@ namespace SkylineTogether.Core.Sync
         private struct Pending
         {
             public uint Id;
-            public uint Epoch;
+            public uint Frame;
             public double SealedAt;
         }
 
@@ -59,7 +59,7 @@ namespace SkylineTogether.Core.Sync
         private readonly Queue<Pending> _sealed = new Queue<Pending>();
         private byte[][] _generationPages = new byte[16][];
         private int _highWater = 1;
-        private uint _epoch;
+        private uint _frame;
         private long _reused, _invalidReleases, _exhausted;
 
         public NetIdAllocator(ILog log = null)
@@ -67,7 +67,7 @@ namespace SkylineTogether.Core.Sync
             _log = log;
         }
 
-        /// <summary>Minimum time a released id stays quarantined after its epoch was sealed.</summary>
+        /// <summary>Minimum time a released id stays quarantined after its release frame was sealed.</summary>
         public double MinQuarantineSeconds { get; set; } = DefaultMinQuarantineSeconds;
 
         /// <summary>The next fresh id (one above the highest id ever handed out; persisted with the city).</summary>
@@ -82,8 +82,8 @@ namespace SkylineTogether.Core.Sync
         /// <summary>Released ids waiting in the quarantine (open and sealed).</summary>
         public int QuarantinedCount => _quarantined.Count;
 
-        /// <summary>The last sealed epoch (0 before the first <see cref="Seal"/>).</summary>
-        public uint SealedEpoch => _epoch;
+        /// <summary>The last sealed release frame (0 before the first <see cref="Seal"/>).</summary>
+        public uint SealedFrame => _frame;
 
         /// <summary>Ids handed out again after a quarantine (diagnostics).</summary>
         public long ReusedCount => _reused;
@@ -229,19 +229,19 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// Closes the open epoch: every id released since the previous seal is stamped with <paramref name="epoch"/> (the
-        /// epoch number of <see cref="EpochAckBook.Seal"/>, which must not decrease) and <paramref name="now"/>.
+        /// Closes the open release frame: every id released since the previous seal is stamped with <paramref name="frame"/> (the
+        /// release frame number of <see cref="ApplyAckBook.SealFrame"/>, which must not decrease) and <paramref name="now"/>.
         /// </summary>
-        public void Seal(uint epoch, double now)
+        public void Seal(uint frame, double now)
         {
-            if (epoch < _epoch) epoch = _epoch; // never earlier: it could only advance a reuse
-            _epoch = epoch;
-            foreach (uint id in _open) _sealed.Enqueue(new Pending { Id = id, Epoch = epoch, SealedAt = now });
+            if (frame < _frame) frame = _frame; // never earlier: it could only advance a reuse
+            _frame = frame;
+            foreach (uint id in _open) _sealed.Enqueue(new Pending { Id = id, Frame = frame, SealedAt = now });
             _open.Clear();
         }
 
         /// <summary>
-        /// Frees the sealed ids whose epoch is at most <paramref name="minAcked"/> and below <paramref name="barrier"/>
+        /// Frees the sealed ids whose release frame is at most <paramref name="minAcked"/> and below <paramref name="barrier"/>
         /// (0 = no barrier) and that were sealed at least <see cref="MinQuarantineSeconds"/> before <paramref name="now"/>.
         /// Returns the number freed.
         /// </summary>
@@ -251,8 +251,8 @@ namespace SkylineTogether.Core.Sync
             while (_sealed.Count > 0)
             {
                 Pending head = _sealed.Peek();
-                if (head.Epoch > minAcked) break;
-                if (barrier != 0 && head.Epoch >= barrier) break;
+                if (head.Frame > minAcked) break;
+                if (barrier != 0 && head.Frame >= barrier) break;
                 if (now - head.SealedAt < MinQuarantineSeconds) break;
                 _sealed.Dequeue();
                 _quarantined.Clear((int)head.Id);
@@ -328,7 +328,7 @@ namespace SkylineTogether.Core.Sync
             _sealed.Clear();
             _generationPages = new byte[16][];
             _highWater = 1;
-            _epoch = 0;
+            _frame = 0;
         }
 
         /// <summary>One line for diagnostics.</summary>

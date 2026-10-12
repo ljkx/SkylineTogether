@@ -12,7 +12,7 @@ namespace SkylineTogether.Core.Tests.Session
     /// w2/ids: the session counts reliable <c>Epoch</c> messages on both ends (host per peer when queued, client when
     /// dispatched, joiners included), carries <c>EpochAck</c> to the host and reports joins and per-peer link state.
     /// </summary>
-    public sealed class EpochCountingTests
+    public sealed class ApplyAckSessionTests
     {
         [Test]
         public void HostAndClientCountTheSameEpochMessagesEvenAcrossTheJoin()
@@ -31,13 +31,13 @@ namespace SkylineTogether.Core.Tests.Session
             rig.Host.Broadcast(MessageKind.Water, new byte[] { 1 }, 0, 1, Lane.Bulk);
             Assert.Equal(13L, rig.Host.GetEpochSent(anna));
             rig.Run(200);
-            Assert.Equal(0L, client.EpochAcks.Received, "nothing is dispatched while the city loads");
+            Assert.Equal(0L, client.ApplyAcks.Received, "nothing is dispatched while the city loads");
             loader.Finish();
             rig.Run(20);
             Assert.Equal(ClientState.Live, client.State, client.EndReason);
             Assert.False(rig.Host.JoinInProgress);
-            Assert.Equal(13L, client.EpochAcks.Received);
-            Assert.Equal(13L, client.EpochAcks.AppliedThrough, "nobody held them");
+            Assert.Equal(13L, client.ApplyAcks.Received);
+            Assert.Equal(13L, client.ApplyAcks.AppliedThrough, "nobody held them");
             Assert.Equal(0L, rig.Host.GetEpochSent(new PeerId(77)), "unknown peer");
         }
 
@@ -52,13 +52,13 @@ namespace SkylineTogether.Core.Tests.Session
             PeerId from = PeerId.Host;
             rig.Host.AppMessage += (peer, e) =>
             {
-                if (e.Kind != MessageKind.EpochAck) return;
+                if (e.Kind != MessageKind.ApplyAck) return;
                 from = peer;
-                acked = EpochAckMessage.Read(e.Body, e.BodyOffset, e.BodyCount);
+                acked = ApplyAckMessage.Read(e.Body, e.BodyOffset, e.BodyCount);
             };
             var w = new ByteWriter(16);
-            EpochAckMessage.Write(w, 41);
-            client.SendToHost(MessageKind.EpochAck, w.Buffer, 0, w.Length);
+            ApplyAckMessage.Write(w, 41);
+            client.SendToHost(MessageKind.ApplyAck, w.Buffer, 0, w.Length);
             rig.Run(5);
             Assert.Equal(41L, acked);
             Assert.NotEqual(PeerId.Host, from);

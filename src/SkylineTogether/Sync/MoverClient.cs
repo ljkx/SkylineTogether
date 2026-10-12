@@ -168,8 +168,8 @@ namespace SkylineTogether.Sync
                         SessionClient client = _sessions.Client;
                         if (client != null)
                         {
-                            seq = client.EpochAcks.Received;
-                            client.EpochAcks.Hold(seq);
+                            seq = client.ApplyAcks.Received;
+                            client.ApplyAcks.Hold(seq);
                         }
                         _batches.Enqueue((Copy(e), seq));
                     }
@@ -237,7 +237,7 @@ namespace SkylineTogether.Sync
                 }
                 finally
                 {
-                    if (seq != 0) _sessions.Client?.EpochAcks.Release(seq);
+                    if (seq != 0) _sessions.Client?.ApplyAcks.Release(seq);
                 }
             }
             if (n > 0) _applyBudget.EndFrame(Perf.Stop(Perf.MoverApply, start));
@@ -834,6 +834,7 @@ namespace SkylineTogether.Sync
             _view.CamX = Finite(position.x);
             _view.CamY = Finite(position.y);
             _view.CamZ = Finite(position.z);
+            AttentionValues.Instance?.FillViewReport(_view); // w2/simvals: selected entity and infoview topics
             _report.Reset();
             ViewReport.Write(_report, _view);
             client.SendToHost(MessageKind.View, _report.Buffer, 0, _report.Length);

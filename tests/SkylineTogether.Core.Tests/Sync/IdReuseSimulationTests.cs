@@ -33,7 +33,7 @@ namespace SkylineTogether.Core.Tests.Sync
             public byte Id;
             public readonly Queue<Message> Inbox = new Queue<Message>();
             public readonly Dictionary<uint, int> Map = new Dictionary<uint, int>();
-            public readonly EpochAckTracker Tracker = new EpochAckTracker();
+            public readonly ApplyAckTracker Tracker = new ApplyAckTracker();
             public readonly Queue<(int At, bool IsAck, long Count, uint Id, int Entity)> Upstream = new Queue<(int, bool, long, uint, int)>();
             public long Sent;
             public bool Live;
@@ -57,7 +57,7 @@ namespace SkylineTogether.Core.Tests.Sync
         {
             var random = new DeterministicRandom(seed);
             var ids = new NetIdAllocator { MinQuarantineSeconds = 0 };
-            var book = new EpochAckBook();
+            var book = new ApplyAckBook();
             var host = new Dictionary<uint, int>();
             var peers = new List<SimPeer>();
             var outcome = new Outcome();
@@ -98,7 +98,7 @@ namespace SkylineTogether.Core.Tests.Sync
             {
                 bool quiet = f > frames;
                 // frame start: close the previous frame's epoch, then the upstream messages that arrived
-                ids.Seal(book.Seal(pid => peers.Find(x => x.Id == pid)?.Sent ?? 0), f);
+                ids.Seal(book.SealFrame(pid => peers.Find(x => x.Id == pid)?.Sent ?? 0), f);
                 foreach (SimPeer p in peers)
                 {
                     while (p.Upstream.Count > 0 && p.Upstream.Peek().At <= f)
@@ -117,14 +117,14 @@ namespace SkylineTogether.Core.Tests.Sync
                 bool joining = peers.Exists(x => !x.Live && x.LiveAt > 0);
                 if (barrier && joining)
                 {
-                    if (barrierEpoch == 0) barrierEpoch = Math.Max(1u, book.CurrentEpoch);
+                    if (barrierEpoch == 0) barrierEpoch = Math.Max(1u, book.CurrentFrame);
                 }
                 else
                 {
                     barrierEpoch = 0;
                 }
                 long reusedBefore = ids.ReusedCount;
-                ids.Update(honourAcks ? book.MinAckedEpoch : book.CurrentEpoch, barrierEpoch, f);
+                ids.Update(honourAcks ? book.MinAckedFrame : book.CurrentFrame, barrierEpoch, f);
 
                 // the host's edits of this frame
                 var ops = new List<Op>();

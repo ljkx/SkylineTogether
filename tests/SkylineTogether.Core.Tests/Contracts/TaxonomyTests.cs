@@ -52,10 +52,13 @@ namespace SkylineTogether.Core.Tests.Contracts
                 "View", "Presence", "HashDetail", "RepairRequest", "BlobManifest", "BlobChunk", "BlobHave", "Ping", "Chat",
                 "Terrain", "Water", // feat/terrain
             };
-            var names = new List<string>(sequential) { "EpochAck" }; // w2/ids: merge-reserved block 60-64
-            Assert.SequenceEqual(names, Enum.GetNames(typeof(MessageKind)), "MessageKind members");
-            for (int i = 0; i < sequential.Length; i++) Assert.Equal(1 + i, (int)(MessageKind)Enum.Parse(typeof(MessageKind), sequential[i]), sequential[i]);
-            Assert.Equal(60, (int)MessageKind.EpochAck);
+            for (int i = 0; i < sequential.Length; i++)
+            {
+                Assert.Equal(1 + i, Convert.ToInt32((MessageKind)Enum.Parse(typeof(MessageKind), sequential[i])), "MessageKind." + sequential[i]);
+            }
+            // branch-owned ranges (merge coordination): w2/ids owns 60-64, w2/simvals owns 65-69
+            Pin((MessageKind.ApplyAck, 60), (MessageKind.SimValues, 65), (MessageKind.CellMaps, 66), (MessageKind.Statistics, 67));
+            Assert.Equal(sequential.Length + 4, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
         }
 
         [Test]

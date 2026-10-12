@@ -75,8 +75,10 @@ namespace SkylineTogether.Core.Session
             public double LastPingSent;
             public uint PingSequence;
             public bool Admitted;
-            /// <summary>Reliable <c>Epoch</c> messages queued for this peer (w2/ids: the watermarks of <c>EpochAckBook</c>).</summary>
+            /// <summary>Reliable <c>Epoch</c> messages queued for this peer (w2/ids: the watermarks of <c>ApplyAckBook</c>).</summary>
             public long EpochSent;
+            /// <summary>gameplay branch: the player's role (ARCH §5.6); the host toggles builder ↔ viewer in the panel.</summary>
+            public SessionRole Role = SessionRole.Builder;
         }
 
         private static readonly long JoinerQueueLimitBytes = new OutboxConfig().DisconnectQueuedBytes;
@@ -196,7 +198,7 @@ namespace SkylineTogether.Core.Session
             foreach (Peer p in _peers.Values)
             {
                 if (!p.Admitted) continue;
-                list.Add(new PlayerInfo { Id = p.Id, Name = p.Name, SteamId = p.SteamId, Role = SessionRole.Builder, State = p.State, PingMs = p.PingMs, Progress = Progress(p) });
+                list.Add(new PlayerInfo { Id = p.Id, Name = p.Name, SteamId = p.SteamId, Role = p.Role, State = p.State, PingMs = p.PingMs, Progress = Progress(p) });
             }
             list.Sort((a, b) => a.Id.Value.CompareTo(b.Id.Value));
             return list;
@@ -431,6 +433,42 @@ namespace SkylineTogether.Core.Session
             BroadcastControl(ControlKind.Toast, _payload, live: false);
         }
 
+        /// <summary>gameplay branch: a player's role changed (<see cref="SetRole"/>).</summary>
+        public event Action<PeerId, SessionRole> RoleChanged;
+
+        /// <summary>The role of an admitted peer (<see cref="SessionRole.Host"/> for the host itself, Viewer for unknown peers).</summary>
+        public SessionRole GetRole(PeerId id)
+        {
+            if (id == PeerId.Host) return SessionRole.Host;
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Admitted && p.Id == id) return p.Role;
+            }
+            return SessionRole.Viewer;
+        }
+
+        /// <summary>
+        /// Sets a peer's role (builder, co-host or viewer; the host role cannot be given). The player list carries it to
+        /// every client, whose own role decides whether its tools predict (viewer: no-predict gate). False when the
+        /// peer is unknown or the role is not assignable.
+        /// </summary>
+        public bool SetRole(PeerId id, SessionRole role)
+        {
+            if (role == SessionRole.Host || id == PeerId.Host) return false;
+            foreach (Peer p in _peers.Values)
+            {
+                if (!p.Admitted || p.Id != id) continue;
+                if (p.Role == role) return true;
+                p.Role = role;
+                _playersDirty = true;
+                _log.Info(LogCategory.Session, p.Name + " is now a " + role.ToString().ToLowerInvariant());
+                SystemMessage(p.Name + " is now a " + role.ToString().ToLowerInvariant() + ".");
+                RoleChanged?.Invoke(id, role);
+                return true;
+            }
+            return false;
+        }
+
         public void Kick(PeerId id, string reason)
         {
             foreach (Peer p in new List<Peer>(_peers.Values))
@@ -525,7 +563,8 @@ namespace SkylineTogether.Core.Session
                     if (p.Hello != null) return;
                     if (HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount) != ProtocolVersion.Current)
                     {
-                        Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Host: " + ProtocolVersion.Current + ". Update both games to the same mod version.");
+                        Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Host: " + ProtocolVersion.Current + ". Update both games to the same mod version.",
+                            new MismatchReport { Kind = "protocol", HostProtocol = ProtocolVersion.Current.ToString(System.Globalization.CultureInfo.InvariantCulture), ClientProtocol = HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount).ToString(System.Globalization.CultureInfo.InvariantCulture) });
                         return;
                     }
                     p.Hello = HelloMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
@@ -707,7 +746,7 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
                 case ControlKind.SpeedRequest:
-                    if (p.State != PlayerState.Live) return;
+                    if (p.State != PlayerState.Live || !RolePermissions.Allows(p.Role, Permission.Speed)) return;
                     _reader.Reset(payload, 0, payload.Length);
                     SpeedRequested?.Invoke(p.Id, SessionPayloads.ReadSpeed(_reader));
                     return;
@@ -723,20 +762,22 @@ namespace SkylineTogether.Core.Session
             HandshakeDigests theirs = p.Hello.Digests;
             if (theirs.ModBuild != mine.ModBuild)
             {
-                Refuse(p, RefuseReason.Mismatch, "Skyline Together builds differ. Both players need exactly the same mod version.");
+                Refuse(p, RefuseReason.Mismatch, "Skyline Together builds differ. Both players need exactly the same mod version.", new MismatchReport { Kind = "build" });
                 return;
             }
             if (!string.Equals(theirs.GameVersion, mine.GameVersion, StringComparison.Ordinal))
             {
-                Refuse(p, RefuseReason.Mismatch, "Game versions differ (host " + mine.GameVersion + ", you " + theirs.GameVersion + "). Update both games.");
+                Refuse(p, RefuseReason.Mismatch, "Game versions differ (host " + mine.GameVersion + ", you " + theirs.GameVersion + "). Update both games.",
+                    new MismatchReport { Kind = "game", HostGameVersion = mine.GameVersion, ClientGameVersion = theirs.GameVersion });
                 return;
             }
             if (_options.RequireSameMods)
             {
-                string diff = SessionPayloads.CompareMods(_info.BuildManifest(false).Mods, p.Manifest.Mods);
+                MismatchReport diff = MismatchReport.CompareMods(_info.BuildManifest(false).Mods, p.Manifest.Mods);
                 if (diff != null)
                 {
-                    Refuse(p, RefuseReason.Mismatch, "Your mods differ from the host's. " + diff);
+                    // the detail text is cut at 1024 characters; the report carries the complete lists for the UI
+                    Refuse(p, RefuseReason.Mismatch, "Your mods differ from the host's. " + diff.Describe(), diff);
                     return;
                 }
             }
@@ -778,8 +819,8 @@ namespace SkylineTogether.Core.Session
             {
                 SessionId = _sessionId,
                 AssignedPeer = p.Id,
-                Role = SessionRole.Builder,
-                Permissions = Permission.All,
+                Role = p.Role,
+                Permissions = RolePermissions.Of(p.Role),
                 SessionSettings = _payload.ToArray(),
                 HostNonce = new byte[0],
                 EnabledSysEntries = new uint[0],
@@ -962,11 +1003,13 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        private void Refuse(Peer p, RefuseReason reason, string detail)
+        private void Refuse(Peer p, RefuseReason reason, string detail, MismatchReport report = null)
         {
             _log.Info(LogCategory.Session, "refused " + p.Name + " (" + reason + "): " + detail);
             _body.Reset();
-            RefuseMessage.Write(_body, new RefuseMessage { Reason = reason, Detail = ProtocolText.Truncate(detail, RefuseMessage.MaxDetailChars) });
+            byte[] encoded = MismatchReport.Encode(report);
+            if (encoded != null && encoded.Length > RefuseMessage.MaxMismatchReportBytes) encoded = null;
+            RefuseMessage.Write(_body, new RefuseMessage { Reason = reason, Detail = ProtocolText.Truncate(detail, RefuseMessage.MaxDetailChars), MismatchReport = encoded });
             p.Channel.Send(MessageKind.Refuse, _body);
             Remove(p, 0, "refused: " + reason, true);
         }

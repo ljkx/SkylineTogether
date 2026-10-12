@@ -106,7 +106,7 @@ namespace SkylineTogether.Core.Tests.Sync
             a.Seal(10, 0);
             a.Release(x);
             a.Seal(3, 0); // an older number is clamped up to the last sealed epoch
-            Assert.Equal(10u, a.SealedEpoch);
+            Assert.Equal(10u, a.SealedFrame);
             Assert.Equal(0, a.Update(9, 0, 1), "the release counts as epoch 10, not 3");
             Assert.Equal(1, a.Update(10, 0, 1));
         }

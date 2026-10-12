@@ -5,40 +5,41 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// Host: which epoch each peer has applied (ARCH §3.1 condition (a), §4.5.4). An epoch is one host frame's worth of
-    /// replication messages; <see cref="Seal"/> closes it and records, per admitted peer, how many reliable
-    /// <c>Epoch</c> messages had been queued for that peer by then (its watermark). A peer acknowledges with the number
-    /// of <c>Epoch</c> messages it has <i>applied</i> (<see cref="EpochAckTracker"/>), so it has applied epoch E once its
-    /// acknowledged count reaches E's watermark. Epochs sealed before a peer was admitted count as applied by it (its
-    /// stream starts after them, and its join snapshot is taken after its admission).
+    /// Host: which <b>release frame</b> each peer has applied (ARCH §3.1 condition (a)). A release frame is one host
+    /// frame's worth of replication messages; <see cref="SealFrame"/> closes it and records, per admitted peer, how many
+    /// reliable <c>Epoch</c> messages had been queued for that peer by then (its watermark). A peer acknowledges with the
+    /// number of <c>Epoch</c> messages it has <i>applied</i> (<see cref="ApplyAckTracker"/>), so it has applied frame F once
+    /// its acknowledged count reaches F's watermark. Frames sealed before a peer was admitted count as applied by it (its
+    /// stream starts after them, and its join snapshot is taken after its admission). Release frames gate net id reuse
+    /// only; they are unrelated to the gameplay branch's ledger epochs (<c>SyncRecordKind.Epoch</c>, conflict bases).
     /// <para>Host main thread. Not thread-safe.</para>
     /// </summary>
-    public sealed class EpochAckBook
+    public sealed class ApplyAckBook
     {
         private sealed class PeerProgress
         {
             public uint Baseline;
             public long Acked;
-            public uint AckedEpoch;
-            public readonly Queue<(uint Epoch, long Watermark)> Marks = new Queue<(uint, long)>();
+            public uint AckedFrame;
+            public readonly Queue<(uint Frame, long Watermark)> Marks = new Queue<(uint, long)>();
         }
 
         /// <summary>Marks kept per peer at most; beyond it the oldest are merged (a peer that never acknowledges just stays behind).</summary>
         public const int MaxMarksPerPeer = 1 << 16;
 
         private readonly Dictionary<byte, PeerProgress> _peers = new Dictionary<byte, PeerProgress>();
-        private uint _epoch;
+        private uint _frame;
 
-        /// <summary>The last sealed epoch (0 before the first seal).</summary>
-        public uint CurrentEpoch => _epoch;
+        /// <summary>The last sealed frame (0 before the first seal).</summary>
+        public uint CurrentFrame => _frame;
 
         /// <summary>Peers tracked.</summary>
         public int PeerCount => _peers.Count;
 
-        /// <summary>A peer was admitted: its stream starts now; every epoch sealed so far counts as applied by it.</summary>
+        /// <summary>A peer was admitted: its stream starts now; every frame sealed so far counts as applied by it.</summary>
         public void AddPeer(byte peer)
         {
-            _peers[peer] = new PeerProgress { Baseline = _epoch, AckedEpoch = _epoch };
+            _peers[peer] = new PeerProgress { Baseline = _frame, AckedFrame = _frame };
         }
 
         /// <summary>A peer left: it no longer holds anything back.</summary>
@@ -47,26 +48,26 @@ namespace SkylineTogether.Core.Sync
         public bool HasPeer(byte peer) => _peers.ContainsKey(peer);
 
         /// <summary>
-        /// Closes the current epoch. <paramref name="sentCount"/> returns the number of reliable <c>Epoch</c> messages
-        /// queued so far for a peer. Returns the sealed epoch's number.
+        /// Closes the current release frame. <paramref name="sentCount"/> returns the number of reliable <c>Epoch</c> messages
+        /// queued so far for a peer. Returns the sealed frame's number.
         /// </summary>
-        public uint Seal(Func<byte, long> sentCount)
+        public uint SealFrame(Func<byte, long> sentCount)
         {
             if (sentCount == null) throw new ArgumentNullException(nameof(sentCount));
-            _epoch++;
+            _frame++;
             foreach (KeyValuePair<byte, PeerProgress> pair in _peers)
             {
                 PeerProgress p = pair.Value;
                 long watermark = sentCount(pair.Key);
                 if (watermark <= p.Acked && p.Marks.Count == 0)
                 {
-                    p.AckedEpoch = _epoch; // nothing of this epoch is outstanding for this peer
+                    p.AckedFrame = _frame; // nothing of this frame is outstanding for this peer
                     continue;
                 }
                 if (p.Marks.Count >= MaxMarksPerPeer) p.Marks.Dequeue(); // keeps memory bounded; can only delay acks
-                p.Marks.Enqueue((_epoch, watermark));
+                p.Marks.Enqueue((_frame, watermark));
             }
-            return _epoch;
+            return _frame;
         }
 
         /// <summary>A peer reports how many <c>Epoch</c> messages it has applied (monotonic; smaller values are ignored).</summary>
@@ -76,35 +77,35 @@ namespace SkylineTogether.Core.Sync
             p.Acked = appliedCount;
             while (p.Marks.Count > 0 && p.Marks.Peek().Watermark <= appliedCount)
             {
-                p.AckedEpoch = p.Marks.Dequeue().Epoch;
+                p.AckedFrame = p.Marks.Dequeue().Frame;
             }
-            if (p.Marks.Count == 0) p.AckedEpoch = _epoch;
+            if (p.Marks.Count == 0) p.AckedFrame = _frame;
         }
 
-        /// <summary>The newest epoch the peer has applied (the current epoch for unknown peers).</summary>
-        public uint AckedEpoch(byte peer) => _peers.TryGetValue(peer, out PeerProgress p) ? p.AckedEpoch : _epoch;
+        /// <summary>The newest frame the peer has applied (the current frame for unknown peers).</summary>
+        public uint AckedFrame(byte peer) => _peers.TryGetValue(peer, out PeerProgress p) ? p.AckedFrame : _frame;
 
-        /// <summary>The newest epoch every tracked peer has applied; the current epoch when no peer is tracked.</summary>
-        public uint MinAckedEpoch
+        /// <summary>The newest frame every tracked peer has applied; the current frame when no peer is tracked.</summary>
+        public uint MinAckedFrame
         {
             get
             {
-                uint min = _epoch;
+                uint min = _frame;
                 foreach (PeerProgress p in _peers.Values)
                 {
-                    if (p.AckedEpoch < min) min = p.AckedEpoch;
+                    if (p.AckedFrame < min) min = p.AckedFrame;
                 }
                 return min;
             }
         }
 
-        /// <summary>Epochs the slowest peer is behind (diagnostics).</summary>
-        public uint MaxLag => _epoch - MinAckedEpoch;
+        /// <summary>Release frames the slowest peer is behind (diagnostics).</summary>
+        public uint MaxLag => _frame - MinAckedFrame;
 
         public void Clear()
         {
             _peers.Clear();
-            _epoch = 0;
+            _frame = 0;
         }
     }
 
@@ -112,10 +113,10 @@ namespace SkylineTogether.Core.Sync
     /// Client: which of the host's <c>Epoch</c> messages have been applied. Each received message gets the next sequence
     /// number (<see cref="OnReceived"/>); a consumer that applies it later holds it (<see cref="Hold"/>) and releases it
     /// once applied (<see cref="Release"/>). <see cref="AppliedThrough"/> is the highest sequence number below which
-    /// nothing is held any more: what the client acknowledges (<see cref="EpochAckMessage"/>). Messages nobody holds
+    /// nothing is held any more: what the client acknowledges (<see cref="ApplyAckMessage"/>). Messages nobody holds
     /// count as applied at once. Holds may be released in any order. Main thread. Not thread-safe.
     /// </summary>
-    public sealed class EpochAckTracker
+    public sealed class ApplyAckTracker
     {
         private readonly List<long> _seqs = new List<long>();
         private readonly List<int> _counts = new List<int>();
@@ -197,8 +198,8 @@ namespace SkylineTogether.Core.Sync
         }
     }
 
-    /// <summary>The body of <c>MessageKind.EpochAck</c> (client → host): the number of host <c>Epoch</c> messages applied.</summary>
-    public static class EpochAckMessage
+    /// <summary>The body of <c>MessageKind.ApplyAck</c> (client → host): the number of host <c>Epoch</c> messages applied.</summary>
+    public static class ApplyAckMessage
     {
         public static void Write(ByteWriter w, long appliedCount)
         {
@@ -211,7 +212,7 @@ namespace SkylineTogether.Core.Sync
         {
             var r = new ByteReader(buffer, offset, count);
             ulong v = r.ReadVarUInt64();
-            if (v > long.MaxValue) throw new DecodeException("epoch ack out of range");
+            if (v > long.MaxValue) throw new DecodeException("frame ack out of range");
             return (long)v;
         }
     }
