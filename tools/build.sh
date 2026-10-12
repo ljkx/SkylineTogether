@@ -157,8 +157,17 @@ Install: extract this archive into
 so that the files end up in Mods\\SkylineTogether, then start the game. Local mods take precedence over
 Paradox Mods subscriptions of the same name.
 
-Every player of a session needs the same build of the mod, the same game version and the same mods.
-After a test, use "Write diagnostics dump" in Options > Skyline Together and send the zip.
+Every player of a session needs this exact build of the mod, the same game version and (by default) the same
+code mods. The host is told exactly which mods differ.
+
+Play:
+  Host:  load your city, open the "Multiplayer" button (top left), set a name/password, press "Host this city".
+         Give your friend the Steam ID shown in the panel.
+  Join:  open the same panel (main menu or in game), enter the host's Steam ID (or IP:port), press "Join".
+         Your game downloads and loads the host's city; the host's game pauses until you are in.
+
+This is a test build. Please send both players' logs after a session:
+  %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Logs\SkylineTogether.log
 EOF
   # zip, else the bsdtar that ships with Windows 10+, else PowerShell (which writes backslashes into entry names)
   if command -v zip >/dev/null 2>&1; then

@@ -6,6 +6,8 @@
     the exit code is the number of failed tests (capped at 125).
   -->
   <PropertyGroup>
+    <!-- test fakes expose switches (Throw..., Fail...) that some suites never flip -->
+    <NoWarn>$(NoWarn);CS0649</NoWarn>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>SkylineTogether.Core.Tests</AssemblyName>
