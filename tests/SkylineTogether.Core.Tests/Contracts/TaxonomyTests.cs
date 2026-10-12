@@ -46,7 +46,8 @@ namespace SkylineTogether.Core.Tests.Contracts
         public void MessageKindsStartAtOne()
         {
             SequentialFrom<MessageKind>(1, "Hello", "Welcome", "Refuse", "Control", "Epoch", "Ack", "Proposal", "Motion", "MotionControl", "Clock",
-                                        "View", "Presence", "HashDetail", "RepairRequest", "BlobManifest", "BlobChunk", "BlobHave", "Ping", "Chat");
+                                        "View", "Presence", "HashDetail", "RepairRequest", "BlobManifest", "BlobChunk", "BlobHave", "Ping", "Chat",
+                                        "Terrain", "Water"); // feat/terrain
         }
 
         [Test]

@@ -42,6 +42,9 @@ namespace SkylineTogether.Sync
         private readonly List<PendingZone> _pendingZones = new List<PendingZone>();
         private readonly SyncBatch.Writer _batch = new SyncBatch.Writer();
         private readonly ClientGate _gate;
+        // feat/terrain: terrain and water sync (self-contained; they follow the session events themselves)
+        private readonly TerrainSync _terrain;
+        private readonly WaterSync _water;
         private EntityCodec _codec;
         private NetIdSystem _ids;
         private SimulationSystem _simulation;
@@ -74,6 +77,10 @@ namespace SkylineTogether.Sync
             _sessions = sessions;
             _log = log;
             _gate = new ClientGate(log);
+            // feat/terrain
+            _terrain = new TerrainSync(sessions, log);
+            _water = new WaterSync(sessions, log);
+            _terrain.HeightsChanged += _water.MarkHot;
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -96,6 +103,10 @@ namespace SkylineTogether.Sync
                 string s = _ids.BoundCount + " objects in sync";
                 if (_inbox.Count > 0) s += ", " + _inbox.Count + " updates queued";
                 if (_pendingZones.Count > 0) s += ", " + _pendingZones.Count + " zone blocks pending";
+                foreach (string env in new[] { _terrain.Status, _water.Status }) // feat/terrain
+                {
+                    if (env.Length > 0) s += ", " + env;
+                }
                 return s;
             }
         }
@@ -237,6 +248,9 @@ namespace SkylineTogether.Sync
         public void ApplyIncoming()
         {
             _appliedThisFrame.Clear();
+            // feat/terrain: received stamps and heightmap/water tiles (independent of the entity stream)
+            _terrain.ApplyIncoming();
+            _water.ApplyIncoming();
             if (_codec == null) return;
             if (!IsHost && !IsLiveClient)
             {
@@ -356,6 +370,7 @@ namespace SkylineTogether.Sync
         /// <summary>Called at the start of the ApplyTool phase: the local tool is about to apply its preview.</summary>
         public void OnToolApply()
         {
+            _terrain.OnToolApply(); // feat/terrain: brush stamps, on the host and on clients
             if (!IsLiveClient) return;
             EntityManager em = _codec.EntityManager;
             _toolApplied = true;
@@ -382,6 +397,9 @@ namespace SkylineTogether.Sync
         /// <summary>Just before <c>PrepareCleanUpSystem</c>, after every Modification phase of the frame.</summary>
         public void CaptureOutgoing(double now)
         {
+            // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
+            _terrain.CaptureOutgoing();
+            _water.CaptureOutgoing();
             if (_codec == null) return;
             if (IsHost) CaptureHost(now);
             else if (IsLiveClient) CaptureClient(now);
