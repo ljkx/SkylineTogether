@@ -14,7 +14,7 @@ namespace SkylineTogether.Core.Protocol
     /// <code>
     /// digests (as in Hello)
     /// | list mods      (≤ 4096):   string name (≤ 512 B) | string version (≤ 128 B) | string platformId (≤ 128 B) | string dllHash (≤ 256 B)
-    ///                              | u8 flags {bit 0 IsUiModule, bit 1 RegistersTypesOrSystemsOrPrefabs}
+    ///                              | u8 flags {bit 0 IsUiModule, bit 1 RegistersTypesOrSystemsOrPrefabs, bit 2 ClientLocalHint}
     /// | list content   (≤ 16384):  string (≤ 512 B)
     /// | list formatTagNames (≤ 4096): string (≤ 256 B)
     /// | list prefabIds (≤ 262144): string (≤ 1024 B)
@@ -56,6 +56,7 @@ namespace SkylineTogether.Core.Protocol
 
         private const byte ModUiModule = 1;
         private const byte ModRegisters = 2;
+        private const byte ModClientLocal = 4;
         private const byte SettingSimulationRelevant = 1;
         private const byte SettingPushable = 2;
         private const byte DataFileOverridden = 1;
@@ -111,7 +112,7 @@ namespace SkylineTogether.Core.Protocol
                     MessageFields.WriteString(w, mod.Version, MaxVersionBytes, "ModEntry.Version");
                     MessageFields.WriteString(w, mod.PlatformId, MaxPlatformIdBytes, "ModEntry.PlatformId");
                     MessageFields.WriteString(w, mod.DllHash, MaxDllHashBytes, "ModEntry.DllHash");
-                    w.WriteByte((byte)((mod.IsUiModule ? ModUiModule : 0) | (mod.RegistersTypesOrSystemsOrPrefabs ? ModRegisters : 0)));
+                    w.WriteByte((byte)((mod.IsUiModule ? ModUiModule : 0) | (mod.RegistersTypesOrSystemsOrPrefabs ? ModRegisters : 0) | (mod.ClientLocalHint ? ModClientLocal : 0)));
                 }
             }
 
@@ -163,9 +164,10 @@ namespace SkylineTogether.Core.Protocol
                     PlatformId = MessageFields.ReadString(r, MaxPlatformIdBytes, "ModEntry.PlatformId"),
                     DllHash = MessageFields.ReadString(r, MaxDllHashBytes, "ModEntry.DllHash")
                 };
-                byte flags = MessageFields.ReadFlags(r, ModUiModule | ModRegisters, "ModEntry flags");
+                byte flags = MessageFields.ReadFlags(r, ModUiModule | ModRegisters | ModClientLocal, "ModEntry flags");
                 mod.IsUiModule = (flags & ModUiModule) != 0;
                 mod.RegistersTypesOrSystemsOrPrefabs = (flags & ModRegisters) != 0;
+                mod.ClientLocalHint = (flags & ModClientLocal) != 0;
                 manifest.Mods.Add(mod);
             }
 

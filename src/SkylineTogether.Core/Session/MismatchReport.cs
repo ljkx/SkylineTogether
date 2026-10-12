@@ -39,7 +39,11 @@ namespace SkylineTogether.Core.Session
 
         public bool HasModDifferences => Missing.Count > 0 || Extra.Count > 0 || Versions.Count > 0;
 
-        /// <summary>Compares two mod lists by Paradox Mods id (or name) and version (or DLL hash); null when they match.</summary>
+        /// <summary>
+        /// Compares two mod lists by Paradox Mods id (or name) and version (or DLL hash); null when nothing blocks.
+        /// Mods that only affect their own player (<see cref="ModCompatibility"/>: UI, tooltips, icons, overlays,
+        /// statistics panels) are left out whether one side lacks them or the versions differ.
+        /// </summary>
         public static MismatchReport CompareMods(IReadOnlyList<ModEntry> host, IReadOnlyList<ModEntry> client)
         {
             var hostByKey = new Dictionary<string, ModEntry>(StringComparer.OrdinalIgnoreCase);
@@ -49,7 +53,9 @@ namespace SkylineTogether.Core.Session
             var report = new MismatchReport { Kind = "mods" };
             foreach (KeyValuePair<string, ModEntry> h in hostByKey)
             {
-                if (!clientByKey.TryGetValue(h.Key, out ModEntry c))
+                clientByKey.TryGetValue(h.Key, out ModEntry c);
+                if (ModCompatibility.IsLocalPair(h.Value, c)) continue; // mod compatibility: client-local mods never block
+                if (c == null)
                 {
                     report.Missing.Add(h.Value);
                 }
@@ -62,7 +68,7 @@ namespace SkylineTogether.Core.Session
             }
             foreach (KeyValuePair<string, ModEntry> c in clientByKey)
             {
-                if (!hostByKey.ContainsKey(c.Key)) report.Extra.Add(c.Value);
+                if (!hostByKey.ContainsKey(c.Key) && !ModCompatibility.IsLocalPair(null, c.Value)) report.Extra.Add(c.Value);
             }
             if (!report.HasModDifferences) return null;
             report.Missing.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.ToString(), b.ToString()));

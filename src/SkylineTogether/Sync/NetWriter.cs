@@ -42,6 +42,12 @@ namespace SkylineTogether.Sync
         public readonly System.Collections.Generic.List<DerivedKey> UsedKeys = new System.Collections.Generic.List<DerivedKey>();
         private readonly System.Collections.Generic.Dictionary<Entity, int> _keyIndex = new System.Collections.Generic.Dictionary<Entity, int>();
 
+        // mod compatibility: dependency discovery (docs/design/MOD-COMPATIBILITY.md). A component can reference a mod's
+        // data entity that is not bound yet (Traffic's lane connection data, Better Bulldozer's removal records); the
+        // codec binds and sends such entities with the referencing one instead of dropping the value.
+        /// <summary>Non-null entity references of the component that had neither a net id nor a derived key.</summary>
+        public readonly System.Collections.Generic.List<Entity> UnresolvedEntities = new System.Collections.Generic.List<Entity>();
+
         public delegate bool KeyBuilder(Entity entity, out DerivedKey key);
 
         public void BeginComponent()
@@ -49,6 +55,7 @@ namespace SkylineTogether.Sync
             Unresolved = false;
             UsedKeys.Clear();
             _keyIndex.Clear();
+            UnresolvedEntities.Clear();
         }
 
         /// <summary>Index of the entity's derived key in <see cref="UsedKeys"/>, or -1.</summary>
@@ -120,6 +127,7 @@ namespace SkylineTogether.Sync
                     return true;
                 }
                 _state.Unresolved = true;
+                _state.UnresolvedEntities.Add(value); // mod compatibility: candidates for dependency binding
                 return false;
             }
             _inner.Write(-2 - key);

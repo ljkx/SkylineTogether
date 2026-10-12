@@ -150,6 +150,9 @@ namespace SkylineTogether.Sync
                 foreach (ComponentType t in types)
                 {
                     if (_markerByType.TryGetValue(t.TypeIndex.Value, out FamilyMarker m)) markers |= m;
+                    // mod compatibility: a type an adapter lists as tool-local (Traffic's connectors and lane handles,
+                    // Move It's control points) makes the whole entity tool-local
+                    if (Compat.ModCompat.IsLocalType(t.TypeIndex)) markers |= FamilyMarker.AdapterLocal;
                     if (t.TypeIndex == _prefabRef.TypeIndex) hasPrefabRef = true;
                     if (!hasModSerializable && TypeHandlers.Get(t) != null)
                     {
@@ -162,7 +165,11 @@ namespace SkylineTogether.Sync
             {
                 types.Dispose();
             }
-            if (!hasPrefabRef && hasModSerializable && (markers & ~FamilyMarker.Owner) == 0) markers |= FamilyMarker.OnlyModSerializable;
+            // mod compatibility: an entity that only a mod's serializable data defines is a mod entity, with or without a
+            // PrefabRef (Traffic's lane connection data carries PrefabRef(Traffic.FakePrefab), Better Bulldozer's removal
+            // records the removed prefab); without this rule they fell to Generic and never replicated
+            if (hasModSerializable && (markers & ~FamilyMarker.Owner) == 0) markers |= FamilyMarker.OnlyModSerializable;
+            _ = hasPrefabRef;
             return markers;
         }
 

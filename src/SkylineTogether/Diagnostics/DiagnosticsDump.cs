@@ -184,7 +184,23 @@ namespace SkylineTogether.Diagnostics
             {
                 IReadOnlyList<ModEntry> mods = new GameInfoProvider().Mods();
                 Line(sb, mods.Count + " other code mods loaded:");
-                foreach (ModEntry m in mods) Line(sb, "  " + m.Name + " " + m.Version);
+                foreach (ModEntry m in mods) Line(sb, "  " + m.Name + " " + m.Version + " (" + Core.Session.ModCompatibility.Classify(m) + ")");
+            });
+
+            // mod compatibility: which adapters run and what they switch
+            Section(sb, "Mod compatibility");
+            Safe(sb, () =>
+            {
+                foreach (string l in Compat.ModCompat.Describe().Split((char)10))
+                {
+                    if (l.Length > 0) Line(sb, l);
+                }
+                IReadOnlyDictionary<string, int> missing = Mod.Sync?.MissingAssets;
+                if (missing != null && missing.Count > 0)
+                {
+                    Line(sb, missing.Count + " missing assets (objects using them were left out):");
+                    foreach (KeyValuePair<string, int> m in missing) Line(sb, "  " + m.Key + " (" + m.Value + " records)");
+                }
             });
 
             Section(sb, "Recent log lines");

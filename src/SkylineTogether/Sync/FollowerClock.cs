@@ -281,7 +281,8 @@ namespace SkylineTogether.Sync
         {
             foreach (ComponentSystemBase s in systems)
             {
-                if (s == null || Cosmetic.Contains(s.GetType().FullName ?? "")) continue;
+                // mod compatibility: adapters keep mod systems that write no replicated state (Compat.ModAdapter.ClientSimulationSystems)
+                if (s == null || Cosmetic.Contains(s.GetType().FullName ?? "") || Compat.ModCompat.IsClientSimulationAllowed(s.GetType())) continue;
                 if (!_disabled.ContainsKey(s)) _disabled[s] = SystemSwitch.TurnOff(s); // true original even if the gate got there first
                 else s.Enabled = false;
             }

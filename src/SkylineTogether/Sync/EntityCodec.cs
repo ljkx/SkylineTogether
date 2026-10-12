@@ -63,6 +63,12 @@ namespace SkylineTogether.Sync
         private readonly ByteWriter _payload = new ByteWriter(4096);
         private readonly HashSet<ulong> _failedTypes = new HashSet<ulong>();
         private readonly HashSet<string> _missingPrefabs = new HashSet<string>();
+        // mod compatibility: prefabs the host named that this game lacks (asset packs, runtime prefabs of mods); the
+        // binding is retried when a record needs it, because some mods create prefabs after the join's prefab table
+        private readonly Dictionary<uint, byte[]> _unresolvedPrefabs = new Dictionary<uint, byte[]>();
+        private readonly Dictionary<uint, string> _unresolvedPrefabNames = new Dictionary<uint, string>();
+        private readonly SortedDictionary<string, int> _missingAssets = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<SyncEnabledBit> _bits = new List<SyncEnabledBit>();
         private Context _writeContext;
         private Context _readContext;
         private NativeList<byte> _scratch;
@@ -108,6 +114,21 @@ namespace SkylineTogether.Sync
         public NetIdSystem Ids => _ids;
 
         public FamilyClassifier Families => _families;
+
+        /// <summary>
+        /// Mod compatibility (dependency binding): set by the capture while it writes. Called for an entity reference
+        /// that has neither a net id nor a derived key; returns true when it bound the entity (and queued it to be sent
+        /// in the same batch), so the referencing value is serialized again instead of travelling as presence only.
+        /// Traffic's lane connection data and Better Bulldozer's removal records are such entities.
+        /// </summary>
+        public Func<Entity, bool> DependencyBinder { get; set; }
+
+        /// <summary>
+        /// Mod compatibility: assets (prefabs) the host uses that this game lacks, with the number of records skipped
+        /// because of them. A record whose prefab is missing is never applied (an entity without its prefab breaks the
+        /// game's systems).
+        /// </summary>
+        public IReadOnlyDictionary<string, int> MissingAssets => _missingAssets;
 
         public void Dispose()
         {
@@ -187,6 +208,49 @@ namespace SkylineTogether.Sync
                 else if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
             }
             w.EndEntity();
+            // mod compatibility: enabled bits travel right after the record (the vanilla Decoration of trees placed outside
+            // decoration mode, Tree Controller's LumberResource)
+            _bits.Clear();
+            EntityManager em = EntityManager;
+            for (int i = 0; i < handlers.Length; i++)
+            {
+                TypeHandler h = handlers[i];
+                if (h.SyncEnabledBit) _bits.Add(new SyncEnabledBit(h.Hash, em.IsComponentEnabled(e, h.Type)));
+            }
+            if (_bits.Count > 0) w.EnabledBits(netId, _bits);
+        }
+
+        /// <summary>
+        /// Mod compatibility (<see cref="Compat.ModStateWatcher"/>): hashes of an entity's replicated state restricted to
+        /// the types <paramref name="include"/> accepts (every replicated type when it is null): the presence of those
+        /// types, and their values and (with <paramref name="bits"/>) enabled bits. Never binds dependencies.
+        /// </summary>
+        public void HashSubset(Entity e, Func<TypeIndex, bool> include, bool bits, out ulong presence, out ulong value)
+        {
+            presence = 1469598103934665603UL;
+            value = 1469598103934665603UL;
+            EntityManager em = EntityManager;
+            NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
+            Func<Entity, bool> binder = DependencyBinder;
+            DependencyBinder = null;
+            try
+            {
+                foreach (ComponentType t in types)
+                {
+                    TypeHandler h = TypeHandlers.Get(t);
+                    if (h == null || (include != null && !include(t.TypeIndex))) continue;
+                    presence = Mix(presence, h.Hash);
+                    if (bits && h.SyncEnabledBit && !em.IsComponentEnabled(e, t)) value = Mix(value, h.Hash ^ 0xE0E0E0E0UL);
+                    if (h.Kind == SyncComponentKind.Presence) continue;
+                    if (!TrySerialize(h, e, out int length)) continue;
+                    value = Mix(value, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
+                }
+            }
+            finally
+            {
+                DependencyBinder = binder;
+                types.Dispose();
+            }
         }
 
         /// <summary>
@@ -196,21 +260,41 @@ namespace SkylineTogether.Sync
         private bool TrySerialize(TypeHandler h, Entity e, out int length)
         {
             length = 0;
-            _scratch.Clear();
-            _ws.BeginComponent();
-            _ws.Table = _ids.WriterTable;
-            var inner = default(BinaryWriter);
-            inner.Initialize(_writeContext, _scratch, _ws.Table);
-            try
+            for (int attempt = 0; ; attempt++)
             {
-                h.Write(EntityManager, e, new NetWriter(inner, _ws));
+                _scratch.Clear();
+                _ws.BeginComponent();
+                _ws.Table = _ids.WriterTable;
+                var inner = default(BinaryWriter);
+                inner.Initialize(_writeContext, _scratch, _ws.Table);
+                try
+                {
+                    h.Write(EntityManager, e, new NetWriter(inner, _ws));
+                }
+                catch (Exception ex)
+                {
+                    if (_failedTypes.Add(h.Hash)) _log.Warn(LogCategory.Replication, "cannot serialize " + h.Name + "; it will not replicate", ex);
+                    return false;
+                }
+                if (!_ws.Unresolved) break;
+                // mod compatibility: bind unbound mod data entities the value references, then write it again (the
+                // writer table may have grown, so the whole value is serialized anew)
+                if (attempt > 0 || DependencyBinder == null || _ws.UnresolvedEntities.Count == 0) return false;
+                bool bound = false;
+                var pending = new List<Entity>(_ws.UnresolvedEntities);
+                foreach (Entity dependency in pending)
+                {
+                    try
+                    {
+                        bound |= DependencyBinder(dependency);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Debug(LogCategory.Replication, "binding a dependency of " + h.Name + " failed: " + ex.Message);
+                    }
+                }
+                if (!bound) return false;
             }
-            catch (Exception ex)
-            {
-                if (_failedTypes.Add(h.Hash)) _log.Warn(LogCategory.Replication, "cannot serialize " + h.Name + "; it will not replicate", ex);
-                return false;
-            }
-            if (_ws.Unresolved) return false;
             _payload.Reset();
             _payload.WriteVarUInt32((uint)_ws.UsedKeys.Count);
             foreach (DerivedKey k in _ws.UsedKeys)
@@ -235,14 +319,26 @@ namespace SkylineTogether.Sync
         public ulong HashEntity(Entity e, bool valuesOnly)
         {
             ulong hash = 1469598103934665603UL;
-            TypeHandler[] handlers = HandlersOf(e);
-            for (int i = 0; i < handlers.Length; i++)
+            EntityManager em = EntityManager;
+            Func<Entity, bool> binder = DependencyBinder;
+            DependencyBinder = null; // mod compatibility: hashing never binds
+            try
             {
-                TypeHandler h = handlers[i];
-                hash = Mix(hash, h.Hash);
-                if (h.Kind == SyncComponentKind.Presence) continue;
-                if (!TrySerialize(h, e, out int length)) continue;
-                hash = Mix(hash, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
+                TypeHandler[] handlers = HandlersOf(e);
+                for (int i = 0; i < handlers.Length; i++)
+                {
+                    TypeHandler h = handlers[i];
+                    hash = Mix(hash, h.Hash);
+                    // mod compatibility: a disabled enableable component differs from an enabled one
+                    if (h.SyncEnabledBit && !em.IsComponentEnabled(e, h.Type)) hash = Mix(hash, h.Hash ^ 0xE0E0E0E0UL);
+                    if (h.Kind == SyncComponentKind.Presence) continue;
+                    if (!TrySerialize(h, e, out int length)) continue;
+                    hash = Mix(hash, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
+                }
+            }
+            finally
+            {
+                DependencyBinder = binder;
             }
             return hash;
         }
@@ -475,6 +571,27 @@ namespace SkylineTogether.Sync
         private void BindPrefab(SyncRecord rec, ApplyResult result)
         {
             byte[] data = rec.PrefabData ?? Array.Empty<byte>();
+            if (TryBindPrefab(rec.NetId, data, out string pid))
+            {
+                _unresolvedPrefabs.Remove(rec.NetId);
+                _unresolvedPrefabNames.Remove(rec.NetId);
+                return;
+            }
+            // mod compatibility: remembered, so the binding is retried when a record needs this prefab (mods such as Find
+            // It create prefabs at runtime, possibly after the join's prefab table arrived)
+            _unresolvedPrefabs[rec.NetId] = data;
+            _unresolvedPrefabNames[rec.NetId] = string.IsNullOrEmpty(pid) ? (rec.PrefabName ?? "#" + rec.NetId) : pid;
+            if (_missingPrefabs.Add(rec.PrefabName ?? pid))
+            {
+                result.Problems.Add("missing prefab " + pid);
+                _log.Warn(LogCategory.Replication, "the host uses a prefab this game does not have: " + pid + " (an asset or mod is missing)");
+            }
+        }
+
+        /// <summary>Resolves an encoded <c>PrefabID</c> in this game's prefab system and binds it to <paramref name="netId"/>.</summary>
+        private bool TryBindPrefab(uint netId, byte[] data, out string pidText)
+        {
+            pidText = "";
             var native = new NativeArray<byte>(Math.Max(1, data.Length), Allocator.Temp);
             try
             {
@@ -484,20 +601,103 @@ namespace SkylineTogether.Sync
                 reader.Initialize(_readContext, native, _position, _ids.ReaderTable);
                 PrefabID pid = default;
                 pid.Deserialize(reader);
-                if (_prefabs.TryGetPrefab(pid, out PrefabBase prefab))
-                {
-                    _ids.Bind(_prefabs.GetEntity(prefab), rec.NetId, Family.Prefab);
-                }
-                else if (_missingPrefabs.Add(rec.PrefabName ?? pid.ToString()))
-                {
-                    result.Problems.Add("missing prefab " + pid);
-                    _log.Warn(LogCategory.Replication, "the host uses a prefab this game does not have: " + pid + " (an asset or mod is missing)");
-                }
+                pidText = pid.ToString();
+                if (!_prefabs.TryGetPrefab(pid, out PrefabBase prefab)) return false;
+                _ids.Bind(_prefabs.GetEntity(prefab), netId, Family.Prefab);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Replication, "prefab #" + netId + " could not be read: " + ex.Message);
+                return false;
             }
             finally
             {
                 native.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Mod compatibility: the asset a record's <c>PrefabRef</c> needs when this game cannot resolve it (null when the
+        /// record has no prefab or its prefab is here). Such a record is never applied: an entity whose prefab is missing
+        /// (or null) breaks every game system that reads its prefab data.
+        /// </summary>
+        private string MissingPrefab(SyncRecord r, int batchOffset)
+        {
+            TypeHandler prefabRef = TypeHandlers.Get<PrefabRef>();
+            if (prefabRef == null) return null;
+            foreach (SyncComponent c in r.Components)
+            {
+                if (c.TypeHash != prefabRef.Hash) continue;
+                if (c.Kind != SyncComponentKind.Data) return "an asset the other player does not have";
+                try
+                {
+                    var keys = new ByteReader(c.Data, c.Offset, c.Count);
+                    if (keys.ReadVarUInt32() != 0) return null;
+                    _position.Value = c.Offset - batchOffset + keys.Position;
+                    var inner = default(BinaryReader);
+                    inner.Initialize(_readContext, _batch, _position, _ids.ReaderTable);
+                    inner.Read(out int index);
+                    if (index <= 0) return index == 0 ? null : "an asset the other player does not have";
+                    uint id = (uint)index;
+                    Entity prefab = _ids.GetEntity(id);
+                    if (prefab != Entity.Null && EntityManager.Exists(prefab)) return null;
+                    if (_unresolvedPrefabs.TryGetValue(id, out byte[] encoded) && TryBindPrefab(id, encoded, out _))
+                    {
+                        _log.Info(LogCategory.Replication, "prefab " + _unresolvedPrefabNames[id] + " is available now");
+                        _unresolvedPrefabs.Remove(id);
+                        _unresolvedPrefabNames.Remove(id);
+                        return null;
+                    }
+                    return _unresolvedPrefabNames.TryGetValue(id, out string name) ? name : "asset #" + id;
+                }
+                catch (Exception)
+                {
+                    return null; // malformed: the normal read reports it
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Mod compatibility (host validation of a proposal): true when an entity record's <c>PrefabRef</c> names no
+        /// prefab the host has (the client used an asset or a mod's runtime prefab the host lacks, so it could not even
+        /// name it). Reads the decoded record's own bytes, so it works before <see cref="Apply"/>.
+        /// </summary>
+        public bool NamesUnknownPrefab(SyncRecord r)
+        {
+            TypeHandler prefabRef = TypeHandlers.Get<PrefabRef>();
+            if (prefabRef == null || r == null) return false;
+            foreach (SyncComponent c in r.Components)
+            {
+                if (c.TypeHash != prefabRef.Hash) continue;
+                if (c.Kind != SyncComponentKind.Data) return true;
+                try
+                {
+                    var keys = new ByteReader(c.Data, c.Offset, c.Count);
+                    if (keys.ReadVarUInt32() != 0) return false;
+                    int at = c.Offset + keys.Position;
+                    if (at + 4 > c.Offset + c.Count) return false;
+                    int index = BitConverter.ToInt32(c.Data, at);
+                    if (index == 0) return false;
+                    if (index < 0) return true;
+                    Entity prefab = _ids.GetEntity((uint)index);
+                    return prefab == Entity.Null || !EntityManager.Exists(prefab);
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        private void NoteMissingAsset(string asset, uint netId, ApplyResult result)
+        {
+            _missingAssets.TryGetValue(asset, out int n);
+            _missingAssets[asset] = n + 1;
+            if (n == 0) _log.Warn(LogCategory.Replication, "skipped #" + netId + " and every other object that uses " + asset + ": this asset is missing here (subscribe to the same asset packs and mods as the other player)");
+            result.Problems.Add("#" + netId + " needs missing " + asset);
         }
 
         // ================================================================== applying
@@ -506,9 +706,11 @@ namespace SkylineTogether.Sync
         /// Applies a batch. <paramref name="mayCreate"/> (host, for proposals) decides whether a spawn of an unknown id
         /// is allowed; null allows everything (client). The result is reused by the next apply.
         /// </summary>
-        public ApplyResult Apply(byte[] data, int offset, int count, Func<uint, Family, bool> mayCreate)
+        /// <param name="skip">Mod compatibility (client): entity records to leave alone this time (the local player is
+        /// still dragging them with a direct-write tool; see <c>SyncController</c>'s edit hold). Despawns are never skipped.</param>
+        public ApplyResult Apply(byte[] data, int offset, int count, Func<uint, Family, bool> mayCreate, Func<SyncRecord, bool> skip = null)
         {
-            return Apply(SyncBatch.Read(data, offset, count), data, offset, count, mayCreate);
+            return Apply(SyncBatch.Read(data, offset, count), data, offset, count, mayCreate, skip);
         }
 
         /// <summary>
@@ -516,7 +718,7 @@ namespace SkylineTogether.Sync
         /// by the caller and shared with the other consumers of the batch). The returned result is owned by the codec and
         /// valid until the next apply.
         /// </summary>
-        public ApplyResult Apply(List<SyncRecord> records, byte[] data, int offset, int count, Func<uint, Family, bool> mayCreate)
+        public ApplyResult Apply(List<SyncRecord> records, byte[] data, int offset, int count, Func<uint, Family, bool> mayCreate, Func<SyncRecord, bool> skip = null)
         {
             ResolveHandlers();
             ApplyResult result = _result;
@@ -570,6 +772,19 @@ namespace SkylineTogether.Sync
             {
                 SyncRecord r = records[i];
                 if (r.Kind != SyncRecordKind.Spawn && r.Kind != SyncRecordKind.Upsert && r.Kind != SyncRecordKind.Values) continue;
+                if (skip != null && skip(r))
+                {
+                    result.Skipped++;
+                    continue;
+                }
+                // mod compatibility: never apply a record whose asset is missing here (or was unnamed on the sender)
+                string missing = MissingPrefab(r, offset);
+                if (missing != null)
+                {
+                    result.Skipped++;
+                    NoteMissingAsset(missing, r.NetId, result);
+                    continue;
+                }
                 Entity e = _ids.GetEntity(r.NetId);
                 if (e != Entity.Null && !em.Exists(e))
                 {
@@ -691,6 +906,35 @@ namespace SkylineTogether.Sync
                 if (path) _pathUpdated.Add(e);
             }
 
+            // 3b (mod compatibility): enabled bits of enableable components, for the entities written above
+            Dictionary<uint, Entity> written = null;
+            for (int i = 0; i < records.Count; i++)
+            {
+                SyncRecord r = records[i];
+                if (r.Kind != SyncRecordKind.EnabledBits || r.EnabledBits == null || (skip != null && skip(r))) continue;
+                if (written == null)
+                {
+                    written = new Dictionary<uint, Entity>();
+                    for (int t = 0; t < _targets.Count; t++) written[_targets[t].Item1.NetId] = _targets[t].Item2;
+                }
+                if (!written.TryGetValue(r.NetId, out Entity e) || !em.Exists(e)) continue;
+                bool keepHostOwned = proposal && !_spawned.Contains(e);
+                foreach (SyncEnabledBit bit in r.EnabledBits)
+                {
+                    TypeHandler h = TypeHandlers.GetByHash(bit.TypeHash);
+                    if (h == null || !h.SyncEnabledBit || !em.HasComponent(e, h.Type)) continue;
+                    if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
+                    try
+                    {
+                        if (em.IsComponentEnabled(e, h.Type) != bit.Enabled) em.SetComponentEnabled(e, h.Type, bit.Enabled);
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Problems.Add("enabled bit of " + h.Name + ": " + ex.Message);
+                    }
+                }
+            }
+
             // 4: tags: created entities already carry Created/Updated from their archetype; edits re-derive with closure
             for (int t = 0; t < _targets.Count; t++)
             {
@@ -708,8 +952,9 @@ namespace SkylineTogether.Sync
             for (int i = 0; i < records.Count; i++)
             {
                 SyncRecord r = records[i];
-                if (r.Kind != SyncRecordKind.Despawn) continue;
-                if (proposal && _ids.GetEntity(r.NetId) != Entity.Null && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)))
+                if (r.Kind != SyncRecordKind.Despawn || (skip != null && skip(r))) continue;
+                // mod compatibility: a client may delete vehicles, citizens and animals with a mod tool (Better Bulldozer)
+                if (proposal && _ids.GetEntity(r.NetId) != Entity.Null && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)) && _ids.GetFamily(r.NetId) != Family.Mover)
                 {
                     result.Problems.Add("refused to delete #" + r.NetId + " (" + _ids.GetFamily(r.NetId) + ")");
                     continue;
