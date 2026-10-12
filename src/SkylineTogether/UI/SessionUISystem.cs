@@ -51,7 +51,8 @@ namespace SkylineTogether.UI
             SessionManager s = Mod.Sessions;
             if (s == null) return "{}";
             SessionClient client = s.Client;
-            string key = s.Mode + "|" + s.PlayersVersion + "|" + s.ChatVersion + "|" + s.CanHost + "|" + s.CanJoin + "|" + (s.LastEndReason ?? "")
+            string key = s.Mode + "|" + s.PlayersVersion + "|" + s.ChatVersion + "|" + s.CanHost + "|" + s.CanJoin + "|" + (s.LastEndReason ?? "") + "|" + (Mod.Sync?.Status ?? "")
+                         + "|" + (s.Host != null ? s.Host.Speed.ToString() : s.Client != null ? s.Client.Speed.ToString() : "")
                          + "|" + (client != null ? client.State + ":" + ((int)(client.JoinProgress * 100)).ToString(CultureInfo.InvariantCulture) : "");
             if (key == _key) return _state;
             _key = key;
@@ -100,6 +101,9 @@ namespace SkylineTogether.UI
                 }
             }
             Prop(sb, "status", status).Append(',');
+            Prop(sb, "sync", Mod.Sync?.Status ?? "").Append(',');
+            SpeedState speed = s.Host != null ? s.Host.Speed : s.Client != null ? s.Client.Speed : default(SpeedState);
+            Prop(sb, "speed", speed.Held ? "paused while a player joins" : speed.Paused ? "paused" : speed.Speed + "×").Append(',');
             Prop(sb, "sessionName", sessionName).Append(',');
             Prop(sb, "progress", progress).Append(',');
 

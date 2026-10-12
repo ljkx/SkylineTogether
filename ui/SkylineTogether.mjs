@@ -294,6 +294,7 @@ function Hosting(props) {
       h("div", { style: S.label }, "Session"),
       h("div", null, s.sessionName),
       h("div", { style: { color: s.status === "Hosting" ? C.good : C.warn, marginTop: "4px" } }, s.status),
+      s.sync ? h("div", { style: merge(S.label, { marginTop: "4px" }) }, s.sync) : null,
       h("div", { style: merge(S.label, { marginTop: "8px" }) }, "Friends join with your Steam ID"),
       h("div", { style: S.mono }, s.steamId),
       s.directPort > 0 ? h("div", { style: merge(S.label, { marginTop: "6px" }) }, "or your public IP address and port " + s.directPort) : null
@@ -320,7 +321,15 @@ function Client(props) {
   return h(
     "div",
     null,
-    h("div", { style: S.section }, h("div", { style: S.label }, "Session"), h("div", null, s.sessionName), h("div", { style: { color: C.good, marginTop: "4px" } }, s.status)),
+    h(
+      "div",
+      { style: S.section },
+      h("div", { style: S.label }, "Session"),
+      h("div", null, s.sessionName),
+      h("div", { style: { color: C.good, marginTop: "4px" } }, s.status),
+      h("div", { style: merge(S.label, { marginTop: "4px" }) }, "Game speed (set by the host): " + (s.speed || "")),
+      s.sync ? h("div", { style: S.label }, s.sync) : null
+    ),
     h(Players, { state: s }),
     h(Chat, { state: s, canSend: true }),
     h(Button, { kind: "secondary", onClick: function () { api.trigger(GROUP, "leave"); } }, "Leave session")

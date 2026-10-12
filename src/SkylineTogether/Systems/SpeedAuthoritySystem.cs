@@ -7,8 +7,8 @@ namespace SkylineTogether.Systems
 {
     /// <summary>
     /// One game speed for everyone. The host's speed is the session's; while a player joins, the host's simulation is
-    /// held (paused) and resumes afterwards. On clients the host's speed is enforced every frame, and a speed change
-    /// the player makes becomes a request to the host, which applies it for everyone.
+    /// held (paused) and resumes afterwards. Clients never simulate (they follow the host's clock and results); a speed
+    /// the client player selects becomes a request to the host. Runs in LateUpdate right before the simulation.
     /// </summary>
     public sealed class SpeedAuthoritySystem : GameSystemBase
     {
@@ -16,7 +16,6 @@ namespace SkylineTogether.Systems
         private bool _holding;
         private float _speedBeforeHold;
         private float _lastNonZero = 1f;
-        private float _enforced = -1f;
 
         protected override void OnCreate()
         {
@@ -34,7 +33,7 @@ namespace SkylineTogether.Systems
             }
             if (_holding) Release();
             if (sessions != null && sessions.Client != null && sessions.Client.State == ClientState.Live) UpdateClient(sessions.Client);
-            else _enforced = -1f;
+
         }
 
         private void UpdateHost(SessionManager sessions)
@@ -73,18 +72,18 @@ namespace SkylineTogether.Systems
             _simulation.selectedSpeed = _speedBeforeHold;
         }
 
+        /// <summary>
+        /// Clients follow: their simulation never runs (the host's results arrive as data), so the local speed stays 0.
+        /// A speed the player selects is a request to the host, which applies it for everyone.
+        /// </summary>
         private void UpdateClient(SessionClient client)
         {
-            SpeedState s = client.Speed;
-            float wanted = s.Paused || s.Held ? 0f : MultiplierToSpeed(s.Speed);
             float current = _simulation.selectedSpeed;
-            if (_enforced >= 0f && current != _enforced && !s.Held)
+            if (current > 0f)
             {
-                // the player changed the speed locally: ask the host and keep the host's speed until it answers
-                client.RequestSpeed(new SpeedState { Speed = current > 0f ? SpeedToMultiplier(current) : s.Speed, Paused = current <= 0f });
+                if (UnityEngine.Application.isFocused) client.RequestSpeed(new SpeedState { Speed = SpeedToMultiplier(current), Paused = false });
+                _simulation.selectedSpeed = 0f;
             }
-            if (current != wanted) _simulation.selectedSpeed = wanted;
-            _enforced = wanted;
         }
 
         private static int SpeedToMultiplier(float speed) => speed >= 3.5f ? 4 : speed >= 1.5f ? 2 : 1;

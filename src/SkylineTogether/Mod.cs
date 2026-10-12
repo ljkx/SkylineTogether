@@ -1,12 +1,17 @@
 using System;
 using Colossal.IO.AssetDatabase;
 using Game;
+using Game.Common;
 using Game.Modding;
 using Game.SceneFlow;
+using Game.Serialization;
+using Game.Simulation;
+using Unity.Entities;
 using SkylineTogether.Core;
 using SkylineTogether.Diagnostics;
 using SkylineTogether.Session;
 using SkylineTogether.Settings;
+using SkylineTogether.Sync;
 using SkylineTogether.Systems;
 using SkylineTogether.UI;
 using Steamworks;
@@ -28,6 +33,8 @@ namespace SkylineTogether
         public static SkylineTogetherSettings Settings { get; private set; }
 
         public static SessionManager Sessions { get; private set; }
+
+        public static SyncController Sync { get; private set; }
 
         private static GameObject _driver;
 
@@ -53,7 +60,20 @@ namespace SkylineTogether
                 }
 
                 Sessions = new SessionManager(Settings, log);
-                updateSystem.UpdateAt<SpeedAuthoritySystem>(SystemUpdatePhase.MainLoop);
+                Sync = new SyncController(Sessions, log);
+
+                // identity: saved into every save (join snapshots included) by the game's own system serializer
+                updateSystem.UpdateAt<NetIdSystem>(SystemUpdatePhase.MainLoop);
+                updateSystem.UpdateAfter<PostDeserialize<NetIdSystem>>(SystemUpdatePhase.Deserialize);
+                World.DefaultGameObjectInjectionWorld?.GetExistingSystemManaged<SerializerSystem>()?.SetDirty();
+
+                // replication: apply right after EndFrameBarrier, capture right before PrepareCleanUpSystem
+                updateSystem.UpdateAfter<SyncApplySystem, EndFrameBarrier>(SystemUpdatePhase.MainLoop);
+                updateSystem.UpdateBefore<SyncCaptureSystem, PrepareCleanUpSystem>(SystemUpdatePhase.MainLoop);
+                updateSystem.UpdateBefore<SyncToolApplySystem>(SystemUpdatePhase.ApplyTool);
+
+                // speed authority right before the simulation consumes the speed (R05 §8)
+                updateSystem.UpdateBefore<SpeedAuthoritySystem, SimulationSystem>(SystemUpdatePhase.LateUpdate);
                 updateSystem.UpdateAt<SessionUISystem>(SystemUpdatePhase.UIUpdate);
 
                 if (_driver == null)
