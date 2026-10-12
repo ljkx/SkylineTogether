@@ -41,6 +41,10 @@ namespace SkylineTogether.Sync
         private readonly HashSet<Entity> _toolOriginals = new HashSet<Entity>();
         private readonly List<PendingZone> _pendingZones = new List<PendingZone>();
         private readonly SyncBatch.Writer _batch = new SyncBatch.Writer();
+        // global state (taxes, budgets, fees, loan, policies, names, demand): own batch, so a peer that cannot decode a
+        // global record never loses entity data
+        private readonly GlobalStateSync _global;
+        private readonly SyncBatch.Writer _globalBatch = new SyncBatch.Writer();
         private readonly ClientGate _gate;
         private EntityCodec _codec;
         private NetIdSystem _ids;
@@ -74,6 +78,7 @@ namespace SkylineTogether.Sync
             _sessions = sessions;
             _log = log;
             _gate = new ClientGate(log);
+            _global = new GlobalStateSync(log);
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -130,6 +135,7 @@ namespace SkylineTogether.Sync
                 None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>() },
             });
             _frameIndex = typeof(SimulationSystem).GetProperty("frameIndex", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            _global.Attach(world, _codec, _ids);
             return true;
         }
 
@@ -186,6 +192,7 @@ namespace SkylineTogether.Sync
             _pendingZones.Clear();
             _clientLive = false;
             _routeWindowOpen = false;
+            _global.Reset();
         }
 
         /// <summary>Host session start (ARCH K17): binds every persistent entity and every prefab before anyone joins.</summary>
@@ -223,6 +230,7 @@ namespace SkylineTogether.Sync
             w.IdRange(start, count);
             Send(peer, w);
             _log.Info(LogCategory.Replication, peer + ": sent " + w.RecordCount + " prefab/range records");
+            _global.ResendAll(); // the joiner gets every global channel with the next capture
         }
 
         private void AddRange(PeerId peer, uint start, uint count)
@@ -243,6 +251,8 @@ namespace SkylineTogether.Sync
                 if (_sessions.Client == null && _inbox.Count > 0) _inbox.Clear();
                 return;
             }
+            // client: local global-state edits are detected before host data can overwrite them
+            if (!IsHost) _global.BeforeApply();
             int n = 0;
             while (_inbox.Count > 0 && n++ < MaxBatchesPerFrame)
             {
@@ -262,6 +272,8 @@ namespace SkylineTogether.Sync
                 }
             }
             RetryZones();
+            // client: what the appliers wrote becomes the baseline, so it is never proposed back
+            if (!IsHost) _global.AfterApply();
         }
 
         private void ApplyFromHost(byte[] data)
@@ -271,6 +283,7 @@ namespace SkylineTogether.Sync
             foreach ((uint start, uint count) in r.IdRanges) _pool.Add(start, count);
             if (r.Clock.HasValue) FollowClock(r.Clock.Value);
             ApplyZoneRecords(data);
+            _global.Apply(data, PeerId.Host, false);
             if (r.Spawned + r.Upserted + r.Despawned > 0) LastApply = r.ToString();
             if (r.Problems.Count > 0) _log.Debug(LogCategory.Replication, "apply problems: " + string.Join("; ", r.Problems));
         }
@@ -280,6 +293,7 @@ namespace SkylineTogether.Sync
             _peerRanges.TryGetValue(peer.Value, out var ranges);
             ApplyResult r = _codec.Apply(data, 0, data.Length, (id, family) => ranges != null && ClientIdPool.InRanges(ranges, id) && FamilyClassifier.IsReplicated(family));
             ApplyZoneRecords(data);
+            _global.Apply(data, peer, true);
             if (r.HasCost && r.Cost != 0) ChargeCity(r.Cost);
             foreach (SyncRecord rec in SyncBatch.Read(data, 0, data.Length))
             {
@@ -388,6 +402,33 @@ namespace SkylineTogether.Sync
             _toolApplied = false;
             _toolCost = 0;
             _toolOriginals.Clear();
+            CaptureGlobal();
+        }
+
+        /// <summary>
+        /// Global state (<see cref="GlobalStateSync"/>), in a batch of its own after the entity batch (so names of new
+        /// entities resolve): the host's changed channels to everyone, a client's UI edits to the host.
+        /// </summary>
+        private void CaptureGlobal()
+        {
+            try
+            {
+                _globalBatch.Reset();
+                if (IsHost) _global.HostCapture(_globalBatch);
+                else if (IsLiveClient) _global.ClientCapture(_globalBatch);
+                if (_globalBatch.IsEmpty) return;
+                if (IsHost)
+                {
+                    Broadcast(_globalBatch);
+                    return;
+                }
+                ArraySegment<byte> bytes = _globalBatch.Finish();
+                _sessions.Client?.SendToHost(MessageKind.Proposal, bytes.Array, bytes.Offset, bytes.Count);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(LogCategory.Replication, "global state capture failed", ex);
+            }
         }
 
         private void CaptureHost(double now)

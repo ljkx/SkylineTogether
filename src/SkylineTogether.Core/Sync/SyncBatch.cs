@@ -27,6 +27,11 @@ namespace SkylineTogether.Core.Sync
         Clock = 9,
         /// <summary>Client → host: a request (<see cref="SyncRequest"/>).</summary>
         Request = 10,
+        /// <summary>
+        /// Global state (<c>GlobalStateSync</c>): a channel id (<see cref="GlobalChannel"/>) and an opaque payload.
+        /// Host → client: the channel's full state; client → host: the entries the client changed.
+        /// </summary>
+        Global = 11,
     }
 
     /// <summary>What a client asks the host for.</summary>
@@ -81,6 +86,9 @@ namespace SkylineTogether.Core.Sync
         public long Amount;
         public uint Frame;
         public SyncRequest Request;
+        /// <summary>For <see cref="SyncRecordKind.Global"/>: the channel id and a copy of its payload.</summary>
+        public uint Channel;
+        public byte[] Payload;
 
         public override string ToString() => Kind + " #" + NetId + (Components.Count > 0 ? " (" + Components.Count + " components)" : "");
     }
@@ -122,6 +130,7 @@ namespace SkylineTogether.Core.Sync
         private const int MaxComponents = 512;
         private const int MaxStringBytes = 1024;
         private const int MaxZoneCells = 4096;
+        private const int MaxGlobalPayload = 1 << 22;
 
         public sealed class Writer
         {
@@ -262,6 +271,17 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            /// <summary>A global-state record (<see cref="SyncRecordKind.Global"/>).</summary>
+            public void Global(uint channel, byte[] data, int offset, int count)
+            {
+                if (count < 0 || count > MaxGlobalPayload) throw new ArgumentException("global payload of " + count + " bytes", nameof(count));
+                _w.WriteByte((byte)SyncRecordKind.Global);
+                _w.WriteUInt32(channel);
+                _w.WriteVarUInt32((uint)count);
+                if (count > 0) _w.WriteBytes(data, offset, count);
+                _count++;
+            }
+
             /// <summary>The finished batch bytes (valid until the next write).</summary>
             public ArraySegment<byte> Finish()
             {
@@ -377,6 +397,15 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.Request:
                     rec.Request = (SyncRequest)r.ReadByte();
                     return rec;
+                case SyncRecordKind.Global:
+                {
+                    rec.Channel = r.ReadUInt32();
+                    uint length = r.ReadVarUInt32();
+                    if (length > MaxGlobalPayload || length > (uint)r.Remaining) throw new DecodeException("global payload of " + length + " bytes");
+                    rec.Payload = new byte[length];
+                    if (length > 0) r.ReadBytes(rec.Payload, 0, (int)length);
+                    return rec;
+                }
                 default:
                     throw new DecodeException("unknown sync record kind " + (byte)rec.Kind);
             }

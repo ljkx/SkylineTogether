@@ -765,6 +765,62 @@ namespace SkylineTogether.Sync
             }
         }
 
+        // ================================================================== opaque blobs (GlobalStateSync)
+
+        /// <summary>
+        /// Serializes arbitrary game state (for example a system's own <c>ISerializable</c>) with the codec's full-tag
+        /// save context; entity references become net ids. Returns null when the state references an entity that has
+        /// no net id (derived keys are not available in blobs).
+        /// </summary>
+        public byte[] WriteBlob(Action<NetWriter> write)
+        {
+            NetWriterState.KeyBuilder keys = _ws.Keys;
+            _scratch.Clear();
+            _ws.BeginComponent();
+            _ws.Table = _ids.WriterTable;
+            _ws.Keys = null;
+            try
+            {
+                var inner = default(BinaryWriter);
+                inner.Initialize(_writeContext, _scratch, _ws.Table);
+                write(new NetWriter(inner, _ws));
+                if (_ws.Unresolved) return null;
+                var bytes = new byte[_scratch.Length];
+                if (_scratch.Length > 0) NativeArray<byte>.Copy(_scratch.AsArray(), 0, bytes, 0, _scratch.Length);
+                return bytes;
+            }
+            finally
+            {
+                _ws.Keys = keys;
+            }
+        }
+
+        /// <summary>
+        /// Deserializes a blob written by <see cref="WriteBlob"/> with the codec's full-tag load context (R11 §5.3: the
+        /// systems' runtime <c>Deserialize</c> needs every format tag). False when the reader did not consume exactly
+        /// the blob or a reference did not resolve; exceptions of <paramref name="read"/> propagate.
+        /// </summary>
+        public bool ReadBlob(byte[] data, int offset, int count, Action<NetReader> read)
+        {
+            var native = new NativeArray<byte>(Math.Max(1, count), Allocator.Temp);
+            try
+            {
+                if (count > 0) NativeArray<byte>.Copy(data, offset, native, 0, count);
+                _position.Value = 0;
+                _rs.Keys.Clear();
+                _rs.Unresolved = false;
+                _rs.Table = _ids.ReaderTable;
+                var inner = default(BinaryReader);
+                inner.Initialize(_readContext, native, _position, _rs.Table);
+                read(new NetReader(inner, _rs));
+                return _position.Value == count && !_rs.Unresolved;
+            }
+            finally
+            {
+                native.Dispose();
+            }
+        }
+
         /// <summary>
         /// The event the host's pathfinder produced for a segment (ARCH §4.11.3): its consumers rebuild the line's
         /// curves, search tree and render buffers from the host's path.
