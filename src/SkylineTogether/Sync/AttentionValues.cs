@@ -54,6 +54,7 @@ namespace SkylineTogether.Sync
         private const long MaxBacklogBytes = 384 * 1024;
         private const int MaxMessageBytes = 32 * 1024;
         private const int MaxInboxPerFrame = 32;
+        private const int MaxHeldValueMessages = 512; // final review: held behind the structure backlog at most this many
         private const float GridCell = 128f;
 
         private sealed class HostPeer
@@ -642,7 +643,7 @@ namespace SkylineTogether.Sync
         /// Client frame start, right after the structure apply (so ids spawned in the same frame resolve): attention
         /// values apply on arrival, inspection samples when the follower clock reaches their tick.
         /// </summary>
-        public void ApplyIncoming()
+        public void ApplyIncoming(int structureBacklog = 0)
         {
             if (_codec == null || !IsLiveClient)
             {
@@ -652,7 +653,11 @@ namespace SkylineTogether.Sync
             try
             {
                 int n = 0;
-                while (_inbox.Count > 0 && n++ < MaxInboxPerFrame)
+                // final review: values sent after structure batches that are still queued (budgeted apply after
+                // go-live or a burst) were applied first: values of entities not spawned yet were dropped for good and
+                // an older Upsert applied afterwards overwrote newer values. They wait like the agent values do.
+                bool hold = structureBacklog > 0 && _inbox.Count < MaxHeldValueMessages;
+                while (!hold && _inbox.Count > 0 && n++ < MaxInboxPerFrame)
                 {
                     byte[] data = _inbox.Dequeue();
                     try

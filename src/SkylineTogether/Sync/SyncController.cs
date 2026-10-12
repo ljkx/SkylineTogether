@@ -779,7 +779,7 @@ namespace SkylineTogether.Sync
             }
             RetryZones();
             // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
-            if (!IsHost) _simValues.ApplyIncoming();
+            if (!IsHost) _simValues.ApplyIncoming(_inbox.Count);
             // w3/agents (client): agent values once the structure batches that spawn them are applied
             if (!IsHost && Features.Agents.IsAvailable) _agents.ApplyIncoming(_inbox.Count);
             // w3/audit (client): per-player chirp likes, event target lists, weather phenomenon hotspot frames, tree growth
