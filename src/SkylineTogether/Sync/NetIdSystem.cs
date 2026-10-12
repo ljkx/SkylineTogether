@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Colossal.Serialization.Entities;
 using Game;
 using Game.Serialization;
@@ -15,18 +17,38 @@ namespace SkylineTogether.Sync
     /// game's <c>BinaryWriter</c>/<c>BinaryReader</c>. The bindings of tracked entities are saved into every save
     /// (the join snapshot included) by the game's own system serializer, so a joiner's freshly loaded entities carry
     /// the host's ids without any table transfer. Without the mod, the block is skipped by the game.
+    /// <para>
+    /// w2/ids: ids are reused. On the host (<see cref="Authority"/>) every unbinding hands the id to the quarantine of
+    /// <see cref="Ids"/> (<see cref="NetIdAllocator"/>), which frees it only after every peer applied the despawn; an
+    /// id unbound without a despawn on the wire waits in <see cref="TakePendingDespawns"/> until the capture writes one.
+    /// Per-family index sets (<see cref="ScannedIds"/>) replace scans over the whole table. Session start compacts the
+    /// ids (<see cref="Compact"/>). Saves of format 1 (no generations) still load.
+    /// </para>
     /// </summary>
     [FormerlySerializedAs("SkylineTogether.Sync.NetIdSystem, SkylineTogether")]
     public sealed class NetIdSystem : GameSystemBase, IDefaultSerializable, ISerializable, IPostDeserialize
     {
-        private const int FormatVersion = 1;
+        /// <summary>1: bindings (entity, id, family). 2: + the id's generation.</summary>
+        private const int FormatVersion = 2;
+
+        private const int FamilyCount = 32;
 
         private NativeList<Entity> _writer;
         private NativeList<Entity> _reader;
         private NativeList<byte> _family;
         private int _bound;
+        private readonly IdIndexSet _scanned = new IdIndexSet();
+        private readonly int[] _familyCounts = new int[FamilyCount];
+        private readonly List<uint> _pendingDespawns = new List<uint>();
+        private bool _warnedExhausted;
 
-        public NetIdAllocator Ids { get; private set; } = new NetIdAllocator();
+        public NetIdAllocator Ids { get; } = new NetIdAllocator(Mod.Log);
+
+        /// <summary>
+        /// True on the host during a session: unbinding releases ids into the quarantine. False on clients and outside
+        /// sessions (ids are then only mirrored).
+        /// </summary>
+        public bool Authority { get; set; }
 
         /// <summary>Index = <c>Entity.Index</c>; value = <c>Entity(netId, version)</c>, default when unbound.</summary>
         public NativeArray<Entity> WriterTable => _writer.AsArray();
@@ -35,6 +57,12 @@ namespace SkylineTogether.Sync
         public NativeArray<Entity> ReaderTable => _reader.AsArray();
 
         public int BoundCount => _bound;
+
+        /// <summary>Bound ids of the value-scanned families (<see cref="FamilyClassifier.IsScanned"/>).</summary>
+        public IdIndexSet ScannedIds => _scanned;
+
+        /// <summary>Bound ids per family (diagnostics).</summary>
+        public int CountOf(Family family) => (int)family < FamilyCount ? _familyCounts[(int)family] : 0;
 
         protected override void OnCreate()
         {
@@ -68,7 +96,11 @@ namespace SkylineTogether.Sync
             _family.Add(0);
             _writer.Add(default(Entity));
             _bound = 0;
-            Ids = new NetIdAllocator();
+            _scanned.Clear();
+            Array.Clear(_familyCounts, 0, _familyCounts.Length);
+            _pendingDespawns.Clear();
+            Ids.Clear();
+            _warnedExhausted = false;
         }
 
         /// <summary>The entity's net id, 0 when unbound (or when the index now belongs to another entity).</summary>
@@ -90,35 +122,103 @@ namespace SkylineTogether.Sync
             return netId > 0 && netId < (uint)_family.Length ? (Family)_family[(int)netId] : Family.Generic;
         }
 
+        /// <summary>The id's generation (incremented on each reuse; host and the clients that loaded its save).</summary>
+        public byte GetGeneration(uint netId) => Ids.GenerationOf(netId);
+
+        /// <summary>
+        /// Host: a new id (lowest free after quarantine, else fresh), 0 when all 16 777 215 ids are in use (logged once;
+        /// the caller then leaves the entity unbound).
+        /// </summary>
+        public uint AllocateId()
+        {
+            if (Ids.TryAllocate(out uint id)) return id;
+            if (!_warnedExhausted)
+            {
+                _warnedExhausted = true;
+                Mod.Log?.Error(LogCategory.Replication, "net ids exhausted (" + Ids.Describe() + "); new entities are not replicated");
+            }
+            return 0;
+        }
+
+        /// <summary>Host: allocates an id and binds the entity to it; 0 when no id is left.</summary>
+        public uint BindNew(Entity entity, Family family)
+        {
+            uint id = AllocateId();
+            if (id != 0) Bind(entity, id, family);
+            return id;
+        }
+
         public void Bind(Entity entity, uint netId, Family family)
         {
-            if (entity == Entity.Null || netId == 0 || netId >= int.MaxValue) return;
+            if (entity == Entity.Null || netId == 0 || netId > NetIdAllocator.MaxId) return;
+            if (Authority && !Ids.IsAllocated(netId) && !Ids.Claim(netId)) return; // quarantined ids are never rebound
             Entity old = GetEntity(netId);
             if (old != Entity.Null && old != entity) UnbindEntityIndex(old);
             uint previous = GetNetId(entity);
-            if (previous != 0 && previous != netId) UnbindId(previous);
+            if (previous != 0 && previous != netId) UnbindId(previous, false);
             EnsureReader((int)netId);
             EnsureWriter(entity.Index);
             if (_reader[(int)netId] == Entity.Null) _bound++;
+            else RemoveFromIndexes(netId, (Family)_family[(int)netId]);
             _reader[(int)netId] = entity;
             _family[(int)netId] = (byte)family;
             _writer[entity.Index] = new Entity { Index = (int)netId, Version = entity.Version };
-            Ids.Reserve(netId);
+            AddToIndexes(netId, family);
         }
 
-        public void Unbind(uint netId)
+        /// <summary>
+        /// Unbinds an id. <paramref name="despawnSent"/>: the caller wrote the despawn into this frame's batch (host: the id
+        /// goes to the quarantine now); otherwise the host keeps the id allocated until the capture wrote a despawn for it
+        /// (<see cref="TakePendingDespawns"/>), so no peer can keep a binding of an id that is reused.
+        /// </summary>
+        public void Unbind(uint netId, bool despawnSent = false)
         {
             Entity e = GetEntity(netId);
             if (e != Entity.Null) UnbindEntityIndex(e);
-            UnbindId(netId);
+            UnbindId(netId, despawnSent);
         }
 
-        private void UnbindId(uint netId)
+        /// <summary>Host: ids unbound without a despawn on the wire; the caller writes despawns and releases them.</summary>
+        public bool TakePendingDespawns(List<uint> output)
+        {
+            if (_pendingDespawns.Count == 0) return false;
+            output.AddRange(_pendingDespawns);
+            _pendingDespawns.Clear();
+            return true;
+        }
+
+        private void UnbindId(uint netId, bool despawnSent)
         {
             if (netId == 0 || netId >= (uint)_reader.Length) return;
-            if (_reader[(int)netId] != Entity.Null) _bound--;
+            bool wasBound = _reader[(int)netId] != Entity.Null;
+            if (wasBound)
+            {
+                _bound--;
+                RemoveFromIndexes(netId, (Family)_family[(int)netId]);
+            }
             _reader[(int)netId] = Entity.Null;
             _family[(int)netId] = 0;
+            // only a binding is released: an allocated but unbound id is a client's unused grant (returned when it
+            // leaves) or already waits for its despawn
+            if (!wasBound || !Authority || !Ids.IsAllocated(netId)) return;
+            if (despawnSent)
+            {
+                Ids.Release(netId);
+                return;
+            }
+            if (!_pendingDespawns.Contains(netId)) _pendingDespawns.Add(netId);
+        }
+
+        private void AddToIndexes(uint id, Family family)
+        {
+            if ((int)family < FamilyCount) _familyCounts[(int)family]++;
+            if (FamilyClassifier.IsScanned(family)) _scanned.Add(id);
+        }
+
+        private void RemoveFromIndexes(uint id, Family family)
+        {
+            if ((int)family < FamilyCount && _familyCounts[(int)family] > 0) _familyCounts[(int)family]--;
+            _scanned.Remove(id);
         }
 
         private void UnbindEntityIndex(Entity e)
@@ -129,7 +229,7 @@ namespace SkylineTogether.Sync
         private void EnsureReader(int index)
         {
             if (index < _reader.Length) return;
-            int size = System.Math.Max(index + 1, _reader.Length * 2);
+            int size = Math.Max(index + 1, Math.Min(_reader.Length * 2, (int)NetIdAllocator.MaxId + 1));
             int old = _reader.Length;
             _reader.Resize(size, NativeArrayOptions.ClearMemory);
             _family.Resize(size, NativeArrayOptions.ClearMemory);
@@ -139,25 +239,123 @@ namespace SkylineTogether.Sync
         private void EnsureWriter(int index)
         {
             if (index < _writer.Length) return;
-            int size = System.Math.Max(index + 1, _writer.Length * 2);
+            int size = Math.Max(index + 1, _writer.Length * 2);
             _writer.Resize(size, NativeArrayOptions.ClearMemory);
         }
 
-        /// <summary>Drops bindings whose entity no longer exists.</summary>
+        /// <summary>Drops bindings whose entity no longer exists (no despawn is sent: only for load time).</summary>
         public int Prune()
         {
             int dropped = 0;
+            bool authority = Authority;
+            Authority = false;
+            try
+            {
+                for (int id = 1; id < _reader.Length; id++)
+                {
+                    Entity e = _reader[id];
+                    if (e == Entity.Null) continue;
+                    if (!EntityManager.Exists(e))
+                    {
+                        Unbind((uint)id);
+                        dropped++;
+                    }
+                }
+            }
+            finally
+            {
+                Authority = authority;
+            }
+            return dropped;
+        }
+
+        /// <summary>
+        /// Rebuilds the allocator from the current bindings (every unbound id below <paramref name="next"/> becomes free,
+        /// nothing stays quarantined). Only when no peer can hold an id: after a load, at host session start.
+        /// </summary>
+        public void RebuildAllocator(uint next)
+        {
+            var bound = new List<KeyValuePair<uint, byte>>(_bound);
+            for (int id = 1; id < _reader.Length; id++)
+            {
+                if (_reader[id] != Entity.Null) bound.Add(new KeyValuePair<uint, byte>((uint)id, Ids.GenerationOf((uint)id)));
+            }
+            _pendingDespawns.Clear();
+            int skipped = Ids.Restore(next, bound);
+            if (skipped > 0) Mod.Log?.Warn(LogCategory.Replication, "net ids: " + skipped + " invalid bindings skipped while rebuilding the allocator");
+        }
+
+        /// <summary>
+        /// Host session start, before any peer is admitted (ARCH K17): packs the bound ids into 1..n when long sessions
+        /// spread them (<see cref="NetIdCompaction.ShouldCompact"/>), keeping their order, and rebuilds the allocator.
+        /// Returns the number of ids that changed. Nothing may hold an id across this call (every session cache is reset
+        /// at session end, and the movers bind lazily).
+        /// </summary>
+        public int Compact()
+        {
+            uint next = Math.Max(Ids.Next, (uint)_reader.Length);
+            if (!NetIdCompaction.ShouldCompact(_bound, next))
+            {
+                RebuildAllocator(next);
+                return 0;
+            }
+            var ids = new List<uint>(_bound);
+            var entities = new List<Entity>(_bound);
+            var families = new List<byte>(_bound);
             for (int id = 1; id < _reader.Length; id++)
             {
                 Entity e = _reader[id];
                 if (e == Entity.Null) continue;
-                if (!EntityManager.Exists(e))
+                ids.Add((uint)id);
+                entities.Add(e);
+                families.Add(_family[id]);
+            }
+            if (!NetIdCompaction.BuildMap(ids, out uint[] map))
+            {
+                RebuildAllocator(next);
+                return 0;
+            }
+            bool authority = Authority;
+            Authority = false;
+            int moved = 0;
+            try
+            {
+                for (int i = 0; i < _writer.Length; i++) _writer[i] = default(Entity);
+                for (int i = 0; i < _reader.Length; i++)
                 {
-                    Unbind((uint)id);
-                    dropped++;
+                    _reader[i] = Entity.Null;
+                    _family[i] = 0;
+                }
+                _bound = 0;
+                _scanned.Clear();
+                Array.Clear(_familyCounts, 0, _familyCounts.Length);
+                Ids.Clear();
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    if (map[i] != ids[i]) moved++;
+                    Bind(entities[i], map[i], (Family)families[i]);
+                }
+                int length = Math.Max(1 << 16, ids.Count + 1);
+                if (_reader.Length > length)
+                {
+                    _reader.Resize(length, NativeArrayOptions.ClearMemory);
+                    _family.Resize(length, NativeArrayOptions.ClearMemory);
                 }
             }
-            return dropped;
+            finally
+            {
+                Authority = authority;
+            }
+            RebuildAllocator((uint)ids.Count + 1);
+            Mod.Log?.Info(LogCategory.Replication, "net ids compacted: " + ids.Count + " bindings now 1.." + ids.Count + " (was up to " + (next - 1) + "), " + moved + " renumbered");
+            return moved;
+        }
+
+        /// <summary>One line for the diagnostics.</summary>
+        public string Describe()
+        {
+            return _bound + " bound, table " + _reader.Length + "/" + _writer.Length + " (ids/entities), " + Ids.Describe()
+                   + (_pendingDespawns.Count > 0 ? ", " + _pendingDespawns.Count + " despawns pending" : "");
         }
 
         // ------------------------------------------------------------------ persistence (every save)
@@ -165,7 +363,7 @@ namespace SkylineTogether.Sync
         public void Serialize<TWriter>(TWriter writer) where TWriter : IWriter
         {
             writer.Write(FormatVersion);
-            writer.Write(Ids.Next);
+            writer.Write(Math.Max(Ids.Next, 1u));
             int count = 0;
             for (int id = 1; id < _reader.Length; id++)
             {
@@ -179,6 +377,7 @@ namespace SkylineTogether.Sync
                 writer.Write(e);
                 writer.Write((uint)id);
                 writer.Write(_family[id]);
+                writer.Write(Ids.GenerationOf((uint)id));
             }
         }
 
@@ -186,18 +385,24 @@ namespace SkylineTogether.Sync
         {
             // runs inside the deserializer's exclusive entity transaction: containers only
             Clear();
+            Authority = false;
             reader.Read(out int format);
-            if (format != FormatVersion) return;
+            if (format != 1 && format != FormatVersion) return;
             reader.Read(out uint next);
             reader.Read(out int count);
+            var generations = new List<KeyValuePair<uint, byte>>(Math.Max(0, Math.Min(count, 1 << 20)));
             for (int i = 0; i < count; i++)
             {
                 reader.Read(out Entity e);
                 reader.Read(out uint id);
                 reader.Read(out byte family);
-                if (e != Entity.Null) Bind(e, id, (Family)family);
+                byte generation = 0;
+                if (format >= 2) reader.Read(out generation);
+                if (e == Entity.Null || id == 0 || id > NetIdAllocator.MaxId) continue;
+                Bind(e, id, (Family)family);
+                if (GetEntity(id) == e) generations.Add(new KeyValuePair<uint, byte>(id, generation));
             }
-            Ids.Reserve(next > 0 ? next - 1 : 0);
+            Ids.Restore(Math.Min(Math.Max(next, 1u), NetIdAllocator.MaxId + 1), generations);
         }
 
         public void SetDefaults(Context context)
@@ -208,7 +413,8 @@ namespace SkylineTogether.Sync
         public void PostDeserialize(Context context)
         {
             int dropped = Prune();
-            Mod.Log?.Info(LogCategory.Replication, "net ids after load: " + _bound + " bound" + (dropped > 0 ? ", " + dropped + " dropped" : ""));
+            RebuildAllocator(Ids.Next);
+            Mod.Log?.Info(LogCategory.Replication, "net ids after load: " + _bound + " bound" + (dropped > 0 ? ", " + dropped + " dropped" : "") + "; " + Ids.Describe());
         }
     }
 }

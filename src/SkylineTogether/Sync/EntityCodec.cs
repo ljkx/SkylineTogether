@@ -26,6 +26,18 @@ namespace SkylineTogether.Sync
         public readonly HashSet<Entity> Touched = new HashSet<Entity>();
         public readonly List<string> Problems = new List<string>();
 
+        /// <summary>Clears the result for the next apply (the codec reuses one instance).</summary>
+        public void Reset()
+        {
+            Spawned = Upserted = Values = Despawned = Skipped = ZoneBlocks = 0;
+            Cost = 0;
+            HasCost = false;
+            Clock = null;
+            IdRanges.Clear();
+            Touched.Clear();
+            Problems.Clear();
+        }
+
         public override string ToString() => "+" + Spawned + " ~" + Upserted + " v" + Values + " -" + Despawned + (Skipped > 0 ? " skipped " + Skipped : "") + (ZoneBlocks > 0 ? " zones " + ZoneBlocks : "");
     }
 
@@ -56,6 +68,18 @@ namespace SkylineTogether.Sync
         private byte[] _managedScratch = new byte[4096];
         private EntityArchetype _pathEventArchetype;
         private bool _disposed;
+        // w2/ids perf pass: per-archetype handler lists and pooled apply collections (no allocation per record)
+        private readonly Dictionary<EntityArchetype, TypeHandler[]> _handlersByArchetype = new Dictionary<EntityArchetype, TypeHandler[]>();
+        private readonly List<TypeHandler> _handlerScratch = new List<TypeHandler>(64);
+        private readonly ApplyResult _result = new ApplyResult();
+        private readonly List<(SyncRecord Record, Entity Entity)> _targets = new List<(SyncRecord, Entity)>();
+        private readonly HashSet<Entity> _spawned = new HashSet<Entity>();
+        private readonly HashSet<Entity> _touch = new HashSet<Entity>();
+        private readonly HashSet<int> _recordTypes = new HashSet<int>();
+        private readonly List<Entity> _pathUpdated = new List<Entity>();
+        private readonly ByteReader _keyReader = new ByteReader();
+        private TypeHandler _pathElement, _pathInformation, _connected, _prefabRef;
+        private bool _handlersResolved;
 
         public EntityCodec(World world, NetIdSystem ids, ILog log)
         {
@@ -111,32 +135,52 @@ namespace SkylineTogether.Sync
 
         // ================================================================== writing
 
-        /// <summary>Appends an entity record. Values records carry data only; others carry the full replicated type set.</summary>
-        public void WriteEntity(SyncBatch.Writer w, SyncRecordKind kind, uint netId, Family family, Entity e)
+        /// <summary>
+        /// The replicating type handlers of an archetype, in the archetype's type order (cached: archetypes live as long as
+        /// the world). Replaces a <c>GetComponentTypes</c> allocation and a handler lookup per type on every write or hash.
+        /// </summary>
+        public TypeHandler[] HandlersOf(EntityArchetype archetype)
         {
-            EntityManager em = EntityManager;
-            NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
+            if (_handlersByArchetype.TryGetValue(archetype, out TypeHandler[] cached)) return cached;
+            NativeArray<ComponentType> types = archetype.GetComponentTypes(Allocator.Temp);
             try
             {
-                w.BeginEntity(kind, netId, family, kind != SyncRecordKind.Values);
+                _handlerScratch.Clear();
                 foreach (ComponentType t in types)
                 {
                     TypeHandler h = TypeHandlers.Get(t);
-                    if (h == null) continue;
-                    if (h.Kind == SyncComponentKind.Presence)
-                    {
-                        if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
-                        continue;
-                    }
-                    if (TrySerialize(h, e, out int length)) w.AddComponent(h.Hash, h.Kind, _managedScratch, 0, length);
-                    else if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
+                    if (h != null) _handlerScratch.Add(h);
                 }
-                w.EndEntity();
+                cached = _handlerScratch.ToArray();
             }
             finally
             {
                 types.Dispose();
             }
+            _handlersByArchetype[archetype] = cached;
+            return cached;
+        }
+
+        /// <summary>The replicating type handlers of an existing entity (see <see cref="HandlersOf(EntityArchetype)"/>).</summary>
+        public TypeHandler[] HandlersOf(Entity e) => HandlersOf(EntityManager.GetChunk(e).Archetype);
+
+        /// <summary>Appends an entity record. Values records carry data only; others carry the full replicated type set.</summary>
+        public void WriteEntity(SyncBatch.Writer w, SyncRecordKind kind, uint netId, Family family, Entity e)
+        {
+            TypeHandler[] handlers = HandlersOf(e);
+            w.BeginEntity(kind, netId, family, kind != SyncRecordKind.Values);
+            for (int i = 0; i < handlers.Length; i++)
+            {
+                TypeHandler h = handlers[i];
+                if (h.Kind == SyncComponentKind.Presence)
+                {
+                    if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
+                    continue;
+                }
+                if (TrySerialize(h, e, out int length)) w.AddComponent(h.Hash, h.Kind, _managedScratch, 0, length);
+                else if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
+            }
+            w.EndEntity();
         }
 
         /// <summary>
@@ -185,23 +229,14 @@ namespace SkylineTogether.Sync
         public ulong HashEntity(Entity e, bool valuesOnly)
         {
             ulong hash = 1469598103934665603UL;
-            EntityManager em = EntityManager;
-            NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
-            try
+            TypeHandler[] handlers = HandlersOf(e);
+            for (int i = 0; i < handlers.Length; i++)
             {
-                foreach (ComponentType t in types)
-                {
-                    TypeHandler h = TypeHandlers.Get(t);
-                    if (h == null) continue;
-                    hash = Mix(hash, h.Hash);
-                    if (h.Kind == SyncComponentKind.Presence) continue;
-                    if (!TrySerialize(h, e, out int length)) continue;
-                    hash = Mix(hash, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
-                }
-            }
-            finally
-            {
-                types.Dispose();
+                TypeHandler h = handlers[i];
+                hash = Mix(hash, h.Hash);
+                if (h.Kind == SyncComponentKind.Presence) continue;
+                if (!TrySerialize(h, e, out int length)) continue;
+                hash = Mix(hash, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
             }
             return hash;
         }
@@ -383,8 +418,8 @@ namespace SkylineTogether.Sync
                         uint id = _ids.GetNetId(p);
                         if (id == 0)
                         {
-                            id = _ids.Ids.Allocate();
-                            _ids.Bind(p, id, Family.Prefab);
+                            id = _ids.BindNew(p, Family.Prefab);
+                            if (id == 0) continue;
                         }
                         list.Add((id, p));
                     }
@@ -403,8 +438,8 @@ namespace SkylineTogether.Sync
             if (prefab == Entity.Null) return 0;
             uint id = _ids.GetNetId(prefab);
             if (id != 0) return id;
-            id = _ids.Ids.Allocate();
-            _ids.Bind(prefab, id, Family.Prefab);
+            id = _ids.BindNew(prefab, Family.Prefab);
+            if (id == 0) return 0;
             WritePrefab(w, id, prefab);
             return id;
         }
@@ -463,12 +498,23 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// Applies a batch. <paramref name="mayCreate"/> (host, for proposals) decides whether a spawn of an unknown id
-        /// is allowed; null allows everything (client).
+        /// is allowed; null allows everything (client). The result is reused by the next apply.
         /// </summary>
         public ApplyResult Apply(byte[] data, int offset, int count, Func<uint, Family, bool> mayCreate)
         {
-            var result = new ApplyResult();
-            List<SyncRecord> records = SyncBatch.Read(data, offset, count);
+            return Apply(SyncBatch.Read(data, offset, count), data, offset, count, mayCreate);
+        }
+
+        /// <summary>
+        /// Applies an already decoded batch (<paramref name="records"/> must come from <paramref name="data"/>, decoded once
+        /// by the caller and shared with the other consumers of the batch). The returned result is owned by the codec and
+        /// valid until the next apply.
+        /// </summary>
+        public ApplyResult Apply(List<SyncRecord> records, byte[] data, int offset, int count, Func<uint, Family, bool> mayCreate)
+        {
+            ResolveHandlers();
+            ApplyResult result = _result;
+            result.Reset();
             if (_batch.Length < count)
             {
                 _batch.Dispose();
@@ -481,10 +527,15 @@ namespace SkylineTogether.Sync
             // singleton) are refused: one Prefab record rebinds a host prefab to the client's id and evicts whatever
             // entity the host had bound to it.
             bool proposal = mayCreate != null;
+            _targets.Clear();
+            _spawned.Clear();
+            _touch.Clear();
+            _pathUpdated.Clear();
 
             // 0: prefabs and channel records
-            foreach (SyncRecord r in records)
+            for (int i = 0; i < records.Count; i++)
             {
+                SyncRecord r = records[i];
                 if (proposal && !SyncBatch.AcceptedFromClient(r.Kind))
                 {
                     result.Problems.Add("ignored " + r.Kind + " from a client");
@@ -509,14 +560,14 @@ namespace SkylineTogether.Sync
             }
 
             // 1: create the entities of spawns (all first, so references inside the batch resolve)
-            var targets = new Dictionary<SyncRecord, Entity>();
-            var spawned = new HashSet<Entity>();
-            foreach (SyncRecord r in records)
+            for (int i = 0; i < records.Count; i++)
             {
+                SyncRecord r = records[i];
                 if (r.Kind != SyncRecordKind.Spawn && r.Kind != SyncRecordKind.Upsert && r.Kind != SyncRecordKind.Values) continue;
                 Entity e = _ids.GetEntity(r.NetId);
                 if (e != Entity.Null && !em.Exists(e))
                 {
+                    // host: the id waits for a despawn on the wire before it can be reused (NetIdSystem)
                     _ids.Unbind(r.NetId);
                     e = Entity.Null;
                 }
@@ -540,7 +591,15 @@ namespace SkylineTogether.Sync
                         continue;
                     }
                     _ids.Bind(e, r.NetId, r.Family);
-                    spawned.Add(e);
+                    if (_ids.GetEntity(r.NetId) != e)
+                    {
+                        // the id could not be bound (host: quarantined); never leave an unbound replica behind
+                        em.DestroyEntity(e);
+                        result.Skipped++;
+                        result.Problems.Add("#" + r.NetId + " could not be bound");
+                        continue;
+                    }
+                    _spawned.Add(e);
                     result.Spawned++;
                 }
                 else if (proposal && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)))
@@ -557,79 +616,69 @@ namespace SkylineTogether.Sync
                 {
                     result.Upserted++;
                 }
-                targets[r] = e;
+                _targets.Add((r, e));
             }
 
             // 2: reconcile the replicated component set (structural changes)
-            var recordTypes = new HashSet<int>();
-            foreach (KeyValuePair<SyncRecord, Entity> pair in targets)
+            for (int t = 0; t < _targets.Count; t++)
             {
-                SyncRecord r = pair.Key;
+                (SyncRecord r, Entity e) = _targets[t];
                 if (r.Kind == SyncRecordKind.Values) continue;
-                Entity e = pair.Value;
-                recordTypes.Clear();
-                foreach (SyncComponent c in r.Components)
+                _recordTypes.Clear();
+                for (int c = 0; c < r.Components.Count; c++)
                 {
-                    TypeHandler h = TypeHandlers.GetByHash(c.TypeHash);
+                    TypeHandler h = TypeHandlers.GetByHash(r.Components[c].TypeHash);
                     if (h == null) continue;
-                    recordTypes.Add(h.Index.Value);
+                    _recordTypes.Add(h.Index.Value);
                     if (!em.HasComponent(e, h.Type)) em.AddComponent(e, h.Type);
                 }
                 if (r.CompleteSet)
                 {
-                    NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
-                    try
+                    // the cached list is a snapshot of the archetype before the removals below
+                    TypeHandler[] present = HandlersOf(e);
+                    for (int i = 0; i < present.Length; i++)
                     {
-                        foreach (ComponentType t in types)
-                        {
-                            TypeHandler h = TypeHandlers.Get(t);
-                            if (h != null && !recordTypes.Contains(t.TypeIndex.Value)) em.RemoveComponent(e, t);
-                        }
-                    }
-                    finally
-                    {
-                        types.Dispose();
+                        TypeHandler h = present[i];
+                        if (!_recordTypes.Contains(h.Index.Value) && em.HasComponent(e, h.Type)) em.RemoveComponent(e, h.Type);
                     }
                 }
             }
 
             // 3: values
-            var pathUpdated = new List<Entity>();
-            foreach (KeyValuePair<SyncRecord, Entity> pair in targets)
+            for (int t = 0; t < _targets.Count; t++)
             {
-                SyncRecord r = pair.Key;
-                Entity e = pair.Value;
+                (SyncRecord r, Entity e) = _targets[t];
                 bool path = false;
-                foreach (SyncComponent c in r.Components)
+                for (int c = 0; c < r.Components.Count; c++)
                 {
-                    if (c.Kind == SyncComponentKind.Presence) continue;
-                    TypeHandler h = TypeHandlers.GetByHash(c.TypeHash);
+                    SyncComponent comp = r.Components[c];
+                    if (comp.Kind == SyncComponentKind.Presence) continue;
+                    TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
                     if (h == null || h.Kind == SyncComponentKind.Presence || !em.HasComponent(e, h.Type)) continue;
-                    ReadComponent(h, e, c, offset, data, result);
-                    if (r.Family == Family.Segment && (h.Name == "Game.Pathfind.PathElement" || h.Name == "Game.Pathfind.PathInformation")) path = true;
+                    ReadComponent(h, e, comp, offset, data, result);
+                    if (r.Family == Family.Segment && (h == _pathElement || h == _pathInformation)) path = true;
                 }
                 result.Touched.Add(e);
-                if (path) pathUpdated.Add(e);
+                if (path) _pathUpdated.Add(e);
             }
 
             // 4: tags: created entities already carry Created/Updated from their archetype; edits re-derive with closure
-            var touch = new HashSet<Entity>();
-            foreach (KeyValuePair<SyncRecord, Entity> pair in targets)
+            for (int t = 0; t < _targets.Count; t++)
             {
-                SyncRecord r = pair.Key;
+                (SyncRecord r, Entity e) = _targets[t];
                 if (r.Kind == SyncRecordKind.Values) continue;
-                Entity e = pair.Value;
-                touch.Add(e);
-                if (r.Family == Family.NetEdge || r.Family == Family.NetNode) Closure(e, touch);
+                _touch.Add(e);
+                if (r.Family == Family.NetEdge || r.Family == Family.NetNode) Closure(e, _touch);
             }
-            foreach (Entity e in spawned)
+            foreach (Entity e in _spawned)
             {
                 if (!em.HasComponent<Game.Common.Created>(e)) em.AddComponent<Game.Common.Created>(e);
             }
 
             // 5: despawns
-            foreach (SyncRecord r in records)
+            for (int i = 0; i < records.Count; i++)
             {
+                SyncRecord r = records[i];
                 if (r.Kind != SyncRecordKind.Despawn) continue;
                 if (proposal && _ids.GetEntity(r.NetId) != Entity.Null && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)))
                 {
@@ -637,29 +686,51 @@ namespace SkylineTogether.Sync
                     continue;
                 }
                 Entity e = _ids.GetEntity(r.NetId);
-                _ids.Unbind(r.NetId);
+                // w2/ids: the host keeps the binding of a proposed deletion; its capture sees the Deleted tag, broadcasts
+                // the despawn to every peer and only then releases the id (unbinding here hid the despawn from the
+                // other clients)
+                if (!proposal) _ids.Unbind(r.NetId);
                 if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
                 Family family = _families.Classify(em, e);
-                if (family == Family.NetEdge || family == Family.NetNode) Closure(e, touch);
+                if (family == Family.NetEdge || family == Family.NetNode) Closure(e, _touch);
                 em.AddComponent<Game.Common.Deleted>(e);
-                touch.Remove(e);
+                _touch.Remove(e);
                 result.Touched.Add(e);
                 result.Despawned++;
             }
 
-            foreach (Entity e in touch)
+            foreach (Entity e in _touch)
             {
                 if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
                 if (!em.HasComponent<Game.Common.Updated>(e)) em.AddComponent<Game.Common.Updated>(e);
                 result.Touched.Add(e);
             }
-            foreach (Entity segment in pathUpdated) SynthesizePathUpdated(segment);
+            for (int i = 0; i < _pathUpdated.Count; i++) SynthesizePathUpdated(_pathUpdated[i]);
             return result;
+        }
+
+        private void ResolveHandlers()
+        {
+            if (_handlersResolved) return;
+            _handlersResolved = true;
+            _pathElement = HandlerByName("Game.Pathfind.PathElement");
+            _pathInformation = HandlerByName("Game.Pathfind.PathInformation");
+            _connected = TypeHandlers.Get<Game.Routes.Connected>();
+            _prefabRef = TypeHandlers.Get<PrefabRef>();
+        }
+
+        private static TypeHandler HandlerByName(string name)
+        {
+            Type type = FamilyClassifier.FindType(name);
+            if (type == null) return null;
+            TypeIndex index = TypeManager.GetTypeIndex(type);
+            return index == TypeIndex.Null ? null : TypeHandlers.Get(index);
         }
 
         private void ReadComponent(TypeHandler h, Entity e, in SyncComponent c, int batchOffset, byte[] data, ApplyResult result)
         {
-            var keys = new ByteReader(data, c.Offset, c.Count);
+            ByteReader keys = _keyReader;
+            keys.Reset(data, c.Offset, c.Count);
             _rs.Keys.Clear();
             _rs.Unresolved = false;
             try
@@ -732,11 +803,13 @@ namespace SkylineTogether.Sync
 
         private Entity ReadPrefab(SyncRecord r, int batchOffset)
         {
-            TypeHandler prefabRef = TypeHandlers.Get<PrefabRef>();
-            foreach (SyncComponent c in r.Components)
+            TypeHandler prefabRef = _prefabRef;
+            for (int i = 0; i < r.Components.Count; i++)
             {
+                SyncComponent c = r.Components[i];
                 if (prefabRef == null || c.TypeHash != prefabRef.Hash || c.Kind != SyncComponentKind.Data) continue;
-                var keys = new ByteReader(c.Data, c.Offset, c.Count);
+                ByteReader keys = _keyReader;
+                keys.Reset(c.Data, c.Offset, c.Count);
                 if (keys.ReadVarUInt32() != 0) return Entity.Null;
                 _position.Value = c.Offset - batchOffset + keys.Position;
                 _rs.Keys.Clear();
@@ -748,6 +821,16 @@ namespace SkylineTogether.Sync
                 return value.m_Prefab;
             }
             return Entity.Null;
+        }
+
+        private static bool HasComponent(SyncRecord r, TypeHandler h)
+        {
+            if (h == null) return false;
+            for (int i = 0; i < r.Components.Count; i++)
+            {
+                if (r.Components[i].TypeHash == h.Hash) return true;
+            }
+            return false;
         }
 
         private EntityArchetype PrefabArchetype(SyncRecord r, Entity prefab)
@@ -770,8 +853,7 @@ namespace SkylineTogether.Sync
                     return em.HasComponent<RouteData>(prefab) ? em.GetComponentData<RouteData>(prefab).m_RouteArchetype : default;
                 case Family.Waypoint:
                     if (!em.HasComponent<RouteData>(prefab)) return default;
-                    TypeHandler connected = TypeHandlers.Get<Game.Routes.Connected>();
-                    bool isConnected = connected != null && r.Components.Exists(c => c.TypeHash == connected.Hash);
+                    bool isConnected = HasComponent(r, _connected);
                     return isConnected ? em.GetComponentData<RouteData>(prefab).m_ConnectedArchetype : em.GetComponentData<RouteData>(prefab).m_WaypointArchetype;
                 case Family.Segment:
                     return em.HasComponent<RouteData>(prefab) ? em.GetComponentData<RouteData>(prefab).m_SegmentArchetype : default;

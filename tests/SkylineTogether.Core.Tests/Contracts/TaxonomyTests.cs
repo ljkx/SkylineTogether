@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using SkylineTogether.Core.Tests.Framework;
 
@@ -45,9 +46,16 @@ namespace SkylineTogether.Core.Tests.Contracts
         [Test]
         public void MessageKindsStartAtOne()
         {
-            SequentialFrom<MessageKind>(1, "Hello", "Welcome", "Refuse", "Control", "Epoch", "Ack", "Proposal", "Motion", "MotionControl", "Clock",
-                                        "View", "Presence", "HashDetail", "RepairRequest", "BlobManifest", "BlobChunk", "BlobHave", "Ping", "Chat",
-                                        "Terrain", "Water"); // feat/terrain
+            string[] sequential =
+            {
+                "Hello", "Welcome", "Refuse", "Control", "Epoch", "Ack", "Proposal", "Motion", "MotionControl", "Clock",
+                "View", "Presence", "HashDetail", "RepairRequest", "BlobManifest", "BlobChunk", "BlobHave", "Ping", "Chat",
+                "Terrain", "Water", // feat/terrain
+            };
+            var names = new List<string>(sequential) { "EpochAck" }; // w2/ids: merge-reserved block 60-64
+            Assert.SequenceEqual(names, Enum.GetNames(typeof(MessageKind)), "MessageKind members");
+            for (int i = 0; i < sequential.Length; i++) Assert.Equal(1 + i, (int)(MessageKind)Enum.Parse(typeof(MessageKind), sequential[i]), sequential[i]);
+            Assert.Equal(60, (int)MessageKind.EpochAck);
         }
 
         [Test]

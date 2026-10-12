@@ -183,8 +183,11 @@ namespace SkylineTogether.Sync
 
         // ================================================================== host
 
-        /// <summary>Host, at the end of the frame's capture: rolling digests, icon sets and line rows into the broadcast batch.</summary>
-        public void HostCapture(double now, SyncBatch.Writer batch, int livePeers)
+        /// <summary>
+        /// Host, at the end of the frame's capture: icon sets and line rows into the broadcast batch, the rolling digests into
+        /// <paramref name="digests"/> (w2/ids: sent per peer after its deferred values, only to peers that are up to date).
+        /// </summary>
+        public void HostCapture(double now, SyncBatch.Writer batch, SyncBatch.Writer digests, int livePeers)
         {
             if (_codec == null) return;
             try
@@ -206,7 +209,7 @@ namespace SkylineTogether.Sync
             if (livePeers <= 0) return; // nobody to verify against
             try
             {
-                HostDigests(now, batch);
+                HostDigests(now, digests);
             }
             catch (Exception ex)
             {
@@ -459,8 +462,14 @@ namespace SkylineTogether.Sync
         public void OnHostBatch(byte[] data, int backlog)
         {
             if (_codec == null || _liveSince < 0) return;
+            OnHostBatch(SyncBatch.Read(data, 0, data.Length), backlog);
+        }
+
+        /// <summary>As <see cref="OnHostBatch(byte[], int)"/> with the records the caller already decoded (w2/ids: decoded once).</summary>
+        public void OnHostBatch(List<SyncRecord> records, int backlog)
+        {
+            if (_codec == null || _liveSince < 0) return;
             double now = _sessions.Clock.Seconds;
-            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length);
             bool compare = now - _liveSince >= ClientSettleSeconds && backlog <= ClientMaxBacklogForCompare;
             foreach (SyncRecord r in records)
             {
@@ -475,6 +484,7 @@ namespace SkylineTogether.Sync
                             break;
                         case SyncRecordKind.Despawn:
                             _hasher.Forget(r.NetId);
+                            Icons.ForgetNetId(r.NetId); // w2/ids: the id may be reused; the old owner's icons must not stick to it
                             break;
                         case SyncRecordKind.BucketDigest:
                             if (compare) OnDigest(r.Bucket, r.Count, r.Hash, now);

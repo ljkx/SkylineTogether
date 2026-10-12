@@ -14,6 +14,8 @@ using SkylineTogether.Core.Motion;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Sync;
+using SkylineTogether.Core.Diagnostics;
+using SkylineTogether.Diagnostics;
 using SkylineTogether.Session;
 using Unity.Collections;
 using Unity.Entities;
@@ -73,7 +75,8 @@ namespace SkylineTogether.Sync
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
-        private readonly Queue<byte[]> _batches = new Queue<byte[]>();
+        private readonly Queue<(byte[] Data, long Seq)> _batches = new Queue<(byte[], long)>();
+        private readonly FrameBudget _applyBudget = new FrameBudget(4.0);
         private readonly Queue<(MessageKind Kind, byte[] Body)> _motion = new Queue<(MessageKind, byte[])>();
         private readonly List<SlotState> _slots = new List<SlotState>();
         private readonly List<MotionPin> _pins = new List<MotionPin>();
@@ -158,7 +161,18 @@ namespace SkylineTogether.Sync
             {
                 case MessageKind.Epoch:
                     // only the movers' own batches (their first record is a mover record); SyncController skips them
-                    if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount)) _batches.Enqueue(Copy(e));
+                    if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount))
+                    {
+                        // w2/ids: held until applied, so the host reuses a despawned mover's id only after this batch
+                        long seq = 0;
+                        SessionClient client = _sessions.Client;
+                        if (client != null)
+                        {
+                            seq = client.EpochAcks.Received;
+                            client.EpochAcks.Hold(seq);
+                        }
+                        _batches.Enqueue((Copy(e), seq));
+                    }
                     break;
                 case MessageKind.Motion:
                 case MessageKind.MotionControl:
@@ -200,10 +214,15 @@ namespace SkylineTogether.Sync
                 GoLive(em);
             }
             if (!_active) return;
+            long start = Perf.Start();
+            double allowance = _applyBudget.BeginFrame();
             int n = 0;
-            while (_batches.Count > 0 && n++ < MaxBatchesPerFrame)
+            while (_batches.Count > 0 && n < MaxBatchesPerFrame)
             {
-                byte[] data = _batches.Dequeue();
+                // w2/ids: budgeted in milliseconds with carry-over; at least one batch per frame, never split
+                if (n > 0 && Perf.Elapsed(start) > allowance) break;
+                n++;
+                (byte[] data, long seq) = _batches.Dequeue();
                 try
                 {
                     ApplyBatch(em, SyncBatch.Read(data, 0, data.Length));
@@ -216,7 +235,12 @@ namespace SkylineTogether.Sync
                 {
                     _log.Error(LogCategory.Replication, "applying a mover batch failed", ex);
                 }
+                finally
+                {
+                    if (seq != 0) _sessions.Client?.EpochAcks.Release(seq);
+                }
             }
+            if (n > 0) _applyBudget.EndFrame(Perf.Stop(Perf.MoverApply, start));
         }
 
         private void GoLive(EntityManager em)
@@ -628,6 +652,19 @@ namespace SkylineTogether.Sync
         {
             SessionClient client = _sessions.Client;
             if (client == null || !_active || !EnsureWorld()) return;
+            long start = Perf.Start();
+            try
+            {
+                WriteFrame(client);
+            }
+            finally
+            {
+                Perf.Stop(Perf.MotionWrite, start);
+            }
+        }
+
+        private void WriteFrame(SessionClient client)
+        {
             EntityManager em = _world.EntityManager;
             DrainMotion(em);
             uint render = _rendering.frameIndex;
