@@ -69,6 +69,8 @@ namespace SkylineTogether.Sync
         private readonly HashSet<ulong> _recordTypes = new HashSet<ulong>();
         private readonly List<ulong> _masked = new List<ulong>();
         private List<TypeHandler> _structural;
+        private readonly Dictionary<EntityArchetype, TypeHandler[]> _lineMembers = new Dictionary<EntityArchetype, TypeHandler[]>();
+        private readonly Dictionary<EntityArchetype, TypeHandler[]> _structuralMembers = new Dictionary<EntityArchetype, TypeHandler[]>();
 
         public IntegrityHasher(EntityCodec codec, ILog log)
         {
@@ -106,28 +108,37 @@ namespace SkylineTogether.Sync
             output.Clear();
             EntityManager em = _codec.EntityManager;
             _presenceOnly.TryGetValue(netId, out ulong[] mask);
-            if (HashesAllValues(family))
+            // w2/ids perf pass: the members of an archetype are cached (no type enumeration or name lookup per entity)
+            EntityArchetype archetype = em.GetChunk(e).Archetype;
+            bool all = HashesAllValues(family);
+            Dictionary<EntityArchetype, TypeHandler[]> cache = all ? _lineMembers : _structuralMembers;
+            if (!cache.TryGetValue(archetype, out TypeHandler[] members))
             {
-                NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
-                try
-                {
-                    foreach (ComponentType t in types)
-                    {
-                        TypeHandler h = TypeHandlers.Get(t);
-                        if (h == null || NotVerified.Contains(h.Name)) continue;
-                        output.Add(Member(h, e, mask));
-                    }
-                }
-                finally
-                {
-                    types.Dispose();
-                }
-                return;
+                members = BuildMembers(archetype, all);
+                cache[archetype] = members;
             }
-            foreach (TypeHandler h in Structural())
+            for (int i = 0; i < members.Length; i++) output.Add(Member(members[i], e, mask));
+        }
+
+        private TypeHandler[] BuildMembers(EntityArchetype archetype, bool all)
+        {
+            TypeHandler[] present = _codec.HandlersOf(archetype);
+            var list = new List<TypeHandler>(all ? present.Length : 16);
+            if (all)
             {
-                if (em.HasComponent(e, h.Type)) output.Add(Member(h, e, mask));
+                foreach (TypeHandler h in present)
+                {
+                    if (!NotVerified.Contains(h.Name)) list.Add(h);
+                }
             }
+            else
+            {
+                foreach (TypeHandler h in Structural())
+                {
+                    if (Array.IndexOf(present, h) >= 0) list.Add(h);
+                }
+            }
+            return list.ToArray();
         }
 
         private ComponentHash Member(TypeHandler h, Entity e, ulong[] mask)
@@ -191,18 +202,9 @@ namespace SkylineTogether.Sync
                 if (e == Entity.Null || !em.Exists(e)) return;
                 _recordTypes.Clear();
                 foreach (SyncComponent c in r.Components) _recordTypes.Add(c.TypeHash);
-                NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
-                try
+                foreach (TypeHandler h in _codec.HandlersOf(e))
                 {
-                    foreach (ComponentType t in types)
-                    {
-                        TypeHandler h = TypeHandlers.Get(t);
-                        if (h != null && h.Kind != SyncComponentKind.Presence && !_recordTypes.Contains(h.Hash)) _masked.Add(h.Hash);
-                    }
-                }
-                finally
-                {
-                    types.Dispose();
+                    if (h.Kind != SyncComponentKind.Presence && !_recordTypes.Contains(h.Hash)) _masked.Add(h.Hash);
                 }
             }
             else

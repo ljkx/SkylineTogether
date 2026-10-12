@@ -159,6 +159,13 @@ namespace SkylineTogether.Core.Session
         public event Action<SpeedState> SpeedChanged;
 
         /// <summary>Replication-layer messages from the host, in order, only while live (earlier ones are buffered).</summary>
+        /// <summary>
+        /// w2/ids: sequence numbers of the host's <c>Epoch</c> messages in dispatch order. A handler of <see cref="AppMessage"/>
+        /// that applies an <c>Epoch</c> message later holds <see cref="Sync.ApplyAckTracker.Received"/> and releases it once
+        /// applied; the replication layer acknowledges <see cref="Sync.ApplyAckTracker.AppliedThrough"/> to the host.
+        /// </summary>
+        public Sync.ApplyAckTracker ApplyAcks { get; } = new Sync.ApplyAckTracker();
+
         public event Action<Envelope> AppMessage
         {
             add => _appMessage += value;
@@ -430,6 +437,7 @@ namespace SkylineTogether.Core.Session
                 default:
                     if (State == ClientState.Live && _buffered.Count == 0)
                     {
+                        if (e.Kind == MessageKind.Epoch) ApplyAcks.OnReceived(); // w2/ids
                         _appMessage?.Invoke(e);
                     }
                     else if (State != ClientState.Ended)
@@ -588,6 +596,7 @@ namespace SkylineTogether.Core.Session
             while (_buffered.Count > 0 && State == ClientState.Live)
             {
                 Buffered b = _buffered.Dequeue();
+                if (b.Kind == MessageKind.Epoch) ApplyAcks.OnReceived(); // w2/ids
                 _appMessage?.Invoke(new Envelope { Kind = b.Kind, Body = b.Body, BodyOffset = 0, BodyCount = b.Body.Length });
             }
         }

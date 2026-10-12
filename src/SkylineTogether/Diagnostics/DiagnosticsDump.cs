@@ -134,6 +134,10 @@ namespace SkylineTogether.Diagnostics
                 Line(sb, "host: " + sync.IsHost + ", live client: " + sync.IsLiveClient + ", bound entities: " + sync.BoundCount);
                 Line(sb, "status: " + sync.Status);
                 Line(sb, "last apply: " + sync.LastApply);
+                // w2/ids: id tables and quarantine, epochs, deferred queues, per-component ms/frame and bytes/s per channel
+                var details = new List<string>();
+                sync.Describe(details);
+                foreach (string d in details) Line(sb, "  " + d);
             });
 
             Section(sb, "Presence");

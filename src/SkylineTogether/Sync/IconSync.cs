@@ -75,6 +75,7 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<Entity, SentOwner> _sent = new Dictionary<Entity, SentOwner>();
         private readonly HashSet<Entity> _seen = new HashSet<Entity>();
         private readonly List<Entity> _gone = new List<Entity>();
+        private readonly HashSet<SyncRef> _liveRefs = new HashSet<SyncRef>();
         private double _lastScan = -1000;
         private int _scans;
         private uint _hostIcons;
@@ -176,6 +177,22 @@ namespace SkylineTogether.Sync
                 None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>() },
             });
             _iconSystem = codec.World.GetExistingSystemManaged<IconCommandSystem>();
+        }
+
+        /// <summary>
+        /// Client: the host despawned net id <paramref name="netId"/> (w2/ids: ids are reused after a quarantine). The icon
+        /// set the host sent for that owner is forgotten, so it cannot attach to the next entity bound to the id.
+        /// </summary>
+        public void ForgetNetId(uint netId)
+        {
+            if (netId == 0) return;
+            SyncRef owner = SyncRef.ForNetId(netId);
+            if (_hostSets.TryGetValue(owner, out HostSet set))
+            {
+                _hostSets.Remove(owner);
+                Unmap(set);
+            }
+            _unresolved.Remove(owner);
         }
 
         public void Reset()
@@ -320,13 +337,17 @@ namespace SkylineTogether.Sync
                 owners.Dispose();
             }
             _gone.Clear();
+            _liveRefs.Clear();
             foreach (KeyValuePair<Entity, SentOwner> pair in _sent)
             {
                 if (!_seen.Contains(pair.Key)) _gone.Add(pair.Key);
+                else _liveRefs.Add(pair.Value.Ref);
             }
             foreach (Entity owner in _gone)
             {
-                batch.IconSet(_sent[owner].Ref, Array.Empty<SyncIcon>());
+                // w2/ids: a reused net id may already name a new owner whose set went out above; never clear that one
+                SyncRef gone = _sent[owner].Ref;
+                if (!_liveRefs.Contains(gone)) batch.IconSet(gone, Array.Empty<SyncIcon>());
                 _sent.Remove(owner);
             }
             if (_scans % DigestEveryScans == 0)
