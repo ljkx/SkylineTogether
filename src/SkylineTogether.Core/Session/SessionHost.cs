@@ -63,6 +63,8 @@ namespace SkylineTogether.Core.Session
             public BlobSender Sender;
             public FileStream SenderStream;
             public SnapshotReady Snapshot;
+            // final review: the first snapshot request this peer may use (one issued after its admission)
+            public uint MinSnapshotGen;
             public long SnapshotSize;
             public float LoadProgress;
             /// <summary>The joiner's own download fraction (from its LoadProgress reports), -1 until it reported one.</summary>
@@ -99,6 +101,7 @@ namespace SkylineTogether.Core.Session
         private SnapshotReady _snapshot;
         private readonly List<SnapshotReady> _retired = new List<SnapshotReady>();
         private bool _snapshotPending;
+        private uint _snapshotGen;
         private uint _nextBlobId = 1;
         private bool _playersDirty;
         private double _lastPlayersSent;
@@ -831,6 +834,9 @@ namespace SkylineTogether.Core.Session
             _log.Info(LogCategory.Session, "admitted " + p.Name + " as " + p.Id);
             SystemMessage(p.Name + " is joining…");
             PeerJoining?.Invoke(p.Id);
+            // final review: a snapshot already requested may have serialized the city before this admission, and this
+            // peer's stream starts only now; it waits for the next request (OnSnapshotReady issues it)
+            p.MinSnapshotGen = _snapshotGen + 1;
             if (_snapshot != null && !_snapshotPending)
             {
                 // the replication stream for this peer starts now, so it needs a snapshot taken from now on
@@ -857,11 +863,12 @@ namespace SkylineTogether.Core.Session
         {
             if (_snapshotPending) return;
             _snapshotPending = true;
+            uint gen = ++_snapshotGen;
             _log.Info(LogCategory.Join, "taking a snapshot of the city");
-            _snapshots.RequestSnapshot(OnSnapshotReady, OnSnapshotFailed);
+            _snapshots.RequestSnapshot(ready => OnSnapshotReady(ready, gen), OnSnapshotFailed);
         }
 
-        private void OnSnapshotReady(SnapshotReady ready)
+        private void OnSnapshotReady(SnapshotReady ready, uint gen)
         {
             _snapshotPending = false;
             if (_disposed)
@@ -872,9 +879,22 @@ namespace SkylineTogether.Core.Session
             _snapshot = ready;
             _log.Info(LogCategory.Join, "snapshot ready: " + new FileInfo(ready.FilePath).Length + " bytes");
             // a copy: StartTransfer removes the peer when the transfer cannot start
+            bool later = false;
             foreach (Peer p in new List<Peer>(_peers.Values))
             {
-                if (p.Admitted && p.State == PlayerState.WaitingForSnapshot) StartTransfer(p);
+                if (!p.Admitted || p.State != PlayerState.WaitingForSnapshot) continue;
+                if (p.MinSnapshotGen > gen)
+                {
+                    later = true; // admitted while this snapshot was being taken
+                    continue;
+                }
+                StartTransfer(p);
+            }
+            if (later)
+            {
+                _retired.Add(_snapshot);
+                _snapshot = null;
+                RequestSnapshot();
             }
         }
 

@@ -330,6 +330,28 @@ namespace SkylineTogether.Core.Tests.Session
         }
 
         [Test]
+        public void APlayerAdmittedWhileTheSnapshotIsTakenGetsANewerOne()
+        {
+            // final review: the pending snapshot may predate the second admission (whose stream starts later)
+            var rig = new SessionRig();
+            rig.Snapshots.Hold = true;
+            var (anna, _, _) = rig.AddClient("Anna");
+            rig.Run(60);
+            Assert.Equal(ClientState.WaitingForSnapshot, anna.State, anna.EndReason);
+            var (ben, _, _) = rig.AddClient("Ben");
+            rig.Run(60);
+            Assert.Equal(ClientState.WaitingForSnapshot, ben.State, ben.EndReason);
+            Assert.Equal(1, rig.Snapshots.Requests);
+            rig.Snapshots.Hold = false;
+            rig.Snapshots.DeliverPending();
+            rig.Run(400);
+            Assert.Equal(2, rig.Snapshots.Requests, "Ben waited for a snapshot requested after his admission");
+            Assert.Equal(ClientState.Live, anna.State, anna.EndReason);
+            Assert.Equal(ClientState.Live, ben.State, ben.EndReason);
+            Assert.Equal(rig.Snapshots.Requests, rig.Snapshots.Released.Count, "both snapshot files were released");
+        }
+
+        [Test]
         public void LargeReplicationMessagesAreFragmented()
         {
             var rig = new SessionRig();
