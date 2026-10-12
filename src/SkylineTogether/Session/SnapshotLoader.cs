@@ -14,6 +14,7 @@ using Game.Settings;
 using Game.Simulation;
 using Game.UI;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Session;
 using Unity.Entities;
 using ILog = SkylineTogether.Core.ILog;
 
@@ -42,6 +43,34 @@ namespace SkylineTogether.Session
         }
 
         public bool IsLoading { get; private set; }
+
+        /// <summary>polish: the joiner's achievements flag from before the first join load (achievements are off in
+        /// the host's city).</summary>
+        private readonly SuspendedFlag _achievements = new SuspendedFlag();
+
+        /// <summary>
+        /// polish: gives the achievements flag back as it was before the join (session over, offline copy, main menu).
+        /// With <paramref name="forget"/> the held value is dropped instead: another city is loading, and the vanilla
+        /// main menu set the flag for that city already (<c>MenuUISystem</c>), which must not be overwritten.
+        /// </summary>
+        public void RestoreAchievements(bool forget = false)
+        {
+            if (forget)
+            {
+                _achievements.Forget();
+                return;
+            }
+            if (!_achievements.TryRestore(out bool value)) return;
+            try
+            {
+                PlatformManager.instance.achievementsEnabled = value;
+                _log.Debug(LogCategory.Join, "achievements restored (" + value + ")");
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Join, "could not restore achievements: " + ex.Message);
+            }
+        }
 
         /// <summary>The simulation's load progress (0..1) while loading.</summary>
         public float Progress
@@ -95,7 +124,8 @@ namespace SkylineTogether.Session
             map.mapName = "Skyline Together";
             try
             {
-                PlatformManager.instance.achievementsEnabled = false;
+                // polish: the player's own value is kept and given back when the session ends (RestoreAchievements)
+                PlatformManager.instance.achievementsEnabled = _achievements.Suspend(PlatformManager.instance.achievementsEnabled);
             }
             catch (Exception ex)
             {

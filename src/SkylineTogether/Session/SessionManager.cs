@@ -454,6 +454,7 @@ namespace SkylineTogether.Session
             if (!_rejoin.Recovering && !_holdingCity) return;
             _rejoin.Reset();
             ReleaseCity();
+            _loader.RestoreAchievements(); // polish
             _recoveryVersion++;
             AddChat(new ChatEntry { IsSystem = true, Text = LocaleSource.Resolve("st.chat.offlineCopy") });
             Notify(LocaleSource.Resolve("st.toast.offlineCopy"), ProgressState.Complete);
@@ -470,6 +471,7 @@ namespace SkylineTogether.Session
             }
             _rejoin.Reset();
             ReleaseCity();
+            _loader.RestoreAchievements(); // polish: the main menu sets the flag again for the next city it loads
             _recoveryVersion++;
             try
             {
@@ -660,6 +662,7 @@ namespace SkylineTogether.Session
             if (!recovering)
             {
                 if (wasRecovering) ReleaseCity();
+                _loader.RestoreAchievements(); // polish: the session is over
                 if (!string.IsNullOrEmpty(reason)) AddChat(new ChatEntry { IsSystem = true, Text = reason });
                 Notify(string.IsNullOrEmpty(reason) ? LocaleSource.Resolve("st.toast.disconnected") : reason, kind == ClientEndKind.Left ? ProgressState.Complete : ProgressState.Warning);
                 return;
@@ -835,6 +838,9 @@ namespace SkylineTogether.Session
             {
                 // our own join load replaces the city on purpose; any other load leaves the session
                 if (Client != null && Client.State == ClientState.Loading && _loader.IsLoading) return;
+                // polish: leaving the host's city gives the achievements flag back; a city loaded from the main menu
+                // got its own value there already (MenuUISystem), so the held one is only dropped then
+                _loader.RestoreAchievements(forget: (mode & GameMode.MainMenu) == 0);
                 if (Host != null)
                 {
                     _log.Info(LogCategory.Session, "the host is leaving the city (" + purpose + ", " + mode + "); ending the session");
