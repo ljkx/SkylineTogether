@@ -89,6 +89,12 @@ namespace SkylineTogether.Core.Replay
         /// <summary>Why the recording ended: its end note, the host's disconnect, or a truncated or damaged file.</summary>
         public string EndReason { get; private set; } = "";
 
+        /// <summary>
+        /// The recording ended at its end marker, at the host's disconnect, or in a partial last entry (the game was closed
+        /// while recording); false for a damaged or unreadable file.
+        /// </summary>
+        public bool EndedNormally { get; private set; }
+
         /// <summary>The barrier playback is waiting at, if any.</summary>
         public RecordingBarrier? WaitingFor { get; private set; }
 
@@ -211,10 +217,10 @@ namespace SkylineTogether.Core.Replay
                         LastNote = e.Text ?? "";
                         continue;
                     case RecordingEntryKind.Disconnected:
-                        Finish("the host closed the connection while recording (" + e.Text + ")");
+                        Finish("the host closed the connection while recording (" + e.Text + ")", true);
                         return;
                     case RecordingEntryKind.End:
-                        Finish(string.IsNullOrEmpty(e.Text) ? "the recording ended" : e.Text);
+                        Finish(string.IsNullOrEmpty(e.Text) ? "the recording ended" : e.Text, true);
                         return;
                     default:
                         continue; // Connected: already reported when the client connected
@@ -246,15 +252,16 @@ namespace SkylineTogether.Core.Replay
                 return false;
             }
             if (_reader.Corrupt) Finish("the recording is damaged (" + _reader.CorruptReason + ")");
-            else if (_reader.Truncated) Finish("the recording was cut off (the game was closed while recording)");
-            else Finish("the recording ended without an end marker");
+            else if (_reader.Truncated) Finish("the recording was cut off (the game was closed while recording)", true);
+            else Finish("the recording ended without an end marker", true);
             return false;
         }
 
-        private void Finish(string reason)
+        private void Finish(string reason, bool normal = false)
         {
             if (Finished) return;
             Finished = true;
+            EndedNormally = normal;
             EndReason = reason ?? "";
             WaitingFor = null;
             _log?.Info(LogCategory.Session, "replay: end of the recording after " + MessagesDelivered + " messages (" + EndReason + ")");

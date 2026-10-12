@@ -333,6 +333,18 @@ namespace SkylineTogether.Core.Sync
             return send;
         }
 
+        /// <summary>Solo testing: the hash of the channel's last sent state; false when it was never sent.</summary>
+        public bool TryGetSent(uint channel, out ulong hash)
+        {
+            if (_sent.TryGetValue(channel, out var last))
+            {
+                hash = last.Hash;
+                return true;
+            }
+            hash = 0;
+            return false;
+        }
+
         /// <summary>Called after every channel was evaluated once: an all-dirty mark has been served.</summary>
         public void EndPass() => _allDirty = false;
 

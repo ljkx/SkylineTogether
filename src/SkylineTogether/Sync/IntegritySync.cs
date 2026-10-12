@@ -121,6 +121,57 @@ namespace SkylineTogether.Sync
             Lines.Attach(codec, ids);
         }
 
+        // ---------------------------------------------------------------- solo testing (record/replay verdict, ARCH §13.5)
+
+        /// <summary>
+        /// Client, while replaying a recording: every checkpoint record (<see cref="SyncRecordKind.ReplayHashes"/>,
+        /// <see cref="SyncRecordKind.ReplayMembers"/>, <see cref="SyncRecordKind.ReplayCheckpoint"/>) and icon record of a
+        /// host batch, right after the batch was applied. Null otherwise.
+        /// </summary>
+        public Action<SyncRecord> ReplayRecord;
+
+        /// <summary>True once bound to the world's codec and id tables.</summary>
+        public bool IsAttached => _codec != null;
+
+        /// <summary>One past the highest net id that can be bound (the checkpoints hash every bucket below it).</summary>
+        public uint IdLimit => _ids == null ? 1u : Math.Max((uint)_ids.ReaderTable.Length, _ids.Ids.Next);
+
+        /// <summary>The integrity hashes of one bucket, exactly as the rolling verification computes them (both roles).</summary>
+        public void HashBucketForReplay(uint bucket, List<EntityHash> output)
+        {
+            if (_codec == null)
+            {
+                output.Clear();
+                return;
+            }
+            HashBucket(bucket, output);
+        }
+
+        /// <summary>The members of a bound, verified entity's integrity hash; false when it has none here.</summary>
+        public bool CollectForReplay(uint id, List<ComponentHash> output, out Family family)
+        {
+            output.Clear();
+            family = default;
+            if (_codec == null) return false;
+            Entity e = _ids.GetEntity(id);
+            if (e == Entity.Null) return false;
+            family = _ids.GetFamily(id);
+            EntityManager em = _codec.EntityManager;
+            if (!IntegrityHasher.IsVerified(family) || !em.Exists(e)) return false;
+            _hasher.Collect(e, id, family, output);
+            return true;
+        }
+
+        /// <summary>The family of a bound id ("" when it is not bound).</summary>
+        public string FamilyNameOf(uint id)
+        {
+            if (_ids == null || _ids.GetEntity(id) == Entity.Null) return "";
+            return _ids.GetFamily(id).ToString();
+        }
+
+        /// <summary>A component type's name from its hash (as the explanations name it).</summary>
+        public static string TypeNameOf(ulong typeHash) => TypeName(typeHash);
+
         /// <summary>Forgets all session state (session ended or started).</summary>
         public void Reset()
         {
@@ -498,6 +549,12 @@ namespace SkylineTogether.Sync
                         case SyncRecordKind.IconSet:
                         case SyncRecordKind.IconControl:
                             Icons.OnRecord(r, now);
+                            ReplayRecord?.Invoke(r); // solo testing: newer icons make a pending icon comparison stale
+                            break;
+                        case SyncRecordKind.ReplayHashes:
+                        case SyncRecordKind.ReplayMembers:
+                        case SyncRecordKind.ReplayCheckpoint:
+                            ReplayRecord?.Invoke(r); // solo testing: the checkpoints of a recording (replay only)
                             break;
                         case SyncRecordKind.LineRows:
                             Lines.OnHostRows(r.Payload, now, compare);

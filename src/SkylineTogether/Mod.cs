@@ -49,6 +49,9 @@ namespace SkylineTogether
         /// <summary>Steam friends: rich presence "connect", the invite dialog, invite joins.</summary>
         public static SteamInvites Invites { get; private set; }
 
+        /// <summary>Solo testing: "Record test session" and "Replay &amp; verify" (ARCH §13.5).</summary>
+        public static SkylineTogether.Replay.ReplayController Replay { get; private set; }
+
         /// <summary>Join, leave and progress toasts.</summary>
         public static SessionToasts Toasts { get; private set; }
 
@@ -93,6 +96,7 @@ namespace SkylineTogether
                 Movers = new MoverSync(Sessions, log);
                 Toasts = new SessionToasts(Sessions);
                 Invites = new SteamInvites(Sessions, Settings, log);
+                Replay = new SkylineTogether.Replay.ReplayController(Sessions, log); // solo testing
             });
             if (!core)
             {
@@ -135,6 +139,7 @@ namespace SkylineTogether
                 updateSystem.UpdateBefore<SpeedAuthoritySystem, SimulationSystem>(SystemUpdatePhase.LateUpdate);
             });
             Step(log, "panel bindings", () => updateSystem.UpdateAt<SessionUISystem>(SystemUpdatePhase.UIUpdate));
+            Step(log, "solo testing bindings", () => updateSystem.UpdateAt<ReplayUISystem>(SystemUpdatePhase.UIUpdate));
             Step(log, "presence system", () =>
             {
                 // presence branch: remote cursors drawn into the overlay buffer right before it renders (ARCH K15)
@@ -170,6 +175,7 @@ namespace SkylineTogether
         public void OnDispose()
         {
             Log?.Info(LogCategory.Session, "disposing");
+            Replay?.Shutdown(); // solo testing: keep the recording, write the verdict
             try
             {
                 Sessions?.Dispose();

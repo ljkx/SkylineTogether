@@ -80,6 +80,7 @@ namespace SkylineTogether.Session
         {
             get
             {
+                if (_sessions.SoloHost || _sessions.IsReplay) return 0; // solo testing: nobody can join a test session or a replay
                 if (_sessions.Host != null) return _sessions.LocalSteamId;
                 SessionClient client = _sessions.Client;
                 if (client == null || client.State != ClientState.Live) return 0;

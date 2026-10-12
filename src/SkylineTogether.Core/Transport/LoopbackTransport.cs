@@ -124,6 +124,22 @@ namespace SkylineTogether.Core.Transport
             }
         }
 
+        /// <summary>
+        /// The send rate this transport's connections report in <see cref="IConnection.GetStats"/> (0: unknown, the
+        /// default). Solo testing gives the recorder's link a realistic rate so the host paces it like a remote player.
+        /// </summary>
+        public int ReportedSendRateBytesPerSecond
+        {
+            get { lock (_network.Lock) return _reportedSendRate; }
+            set
+            {
+                if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
+                lock (_network.Lock) _reportedSendRate = value;
+            }
+        }
+
+        private int _reportedSendRate;
+
         public bool IsListening
         {
             get { lock (_network.Lock) return _listen != null; }
@@ -321,7 +337,7 @@ namespace SkylineTogether.Core.Transport
                 {
                     PingMs = 0,
                     Quality = open ? 1f : 0f,
-                    SendRateBytesPerSecond = 0,
+                    SendRateBytesPerSecond = _reportedSendRate,
                     PendingReliableBytes = Clamp(connection.PendingReliable),
                     PendingUnreliableBytes = Clamp(connection.PendingUnreliable),
                     QueueTimeMicroseconds = 0,

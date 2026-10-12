@@ -913,6 +913,74 @@ namespace SkylineTogether.Sync
             }
         }
 
+        // ================================================================== solo testing (record/replay verdict, ARCH §13.5)
+
+        /// <summary>Host: the digest of every icon set sent so far, per owner and in total (the recorder's checkpoints).</summary>
+        public bool HostOwnerDigests(List<Core.Replay.IconOwnerDigest> output, out uint owners, out uint icons, out ulong sum)
+        {
+            owners = 0;
+            icons = 0;
+            sum = 0;
+            if (_codec == null) return false;
+            var total = new IconSetDigest.Accumulator();
+            foreach (SentOwner sent in _sent.Values)
+            {
+                ulong owner = sent.Ref.NormalizedHash();
+                var one = new IconSetDigest.Accumulator();
+                foreach (SyncIcon icon in sent.Icons) one.AddIcon(IconSetDigest.Member(owner, icon.Prefab, icon.Target.NormalizedHash(), icon.Priority, icon.Flags));
+                total.AddOwner();
+                foreach (SyncIcon icon in sent.Icons) total.AddIcon(IconSetDigest.Member(owner, icon.Prefab, icon.Target.NormalizedHash(), icon.Priority, icon.Flags));
+                output.Add(new Core.Replay.IconOwnerDigest(sent.Ref, one.Icons, one.Sum));
+            }
+            owners = total.Owners;
+            icons = total.Icons;
+            sum = total.Sum;
+            return true;
+        }
+
+        /// <summary>Client: no reconciliation is pending (the live icons reflect every host set received so far).</summary>
+        public bool ClientSettled => _codec != null && _clientActive && _dirty.Count == 0 && !_sweepAll && _verify.Count == 0 && _fullSyncSince < 0 && _unresolved.Count == 0;
+
+        /// <summary>Client: the live default-layer icons per owner and in total, computed like the periodic digest.</summary>
+        public bool LocalOwnerDigests(List<Core.Replay.IconOwnerDigest> output, out uint owners, out uint icons, out ulong sum)
+        {
+            owners = 0;
+            icons = 0;
+            sum = 0;
+            if (_codec == null) return false;
+            var total = new IconSetDigest.Accumulator();
+            EntityManager em = _codec.EntityManager;
+            NativeArray<Entity> all = _owners.ToEntityArray(Allocator.Temp);
+            try
+            {
+                foreach (Entity owner in all)
+                {
+                    if (!_codec.TryGetPortableRef(owner, out uint id, out DerivedKey key)) continue;
+                    SyncRef r = ToRef(id, key);
+                    ulong ownerHash = r.NormalizedHash();
+                    CollectLive(em, owner, _live);
+                    if (_live.Count == 0) continue;
+                    var one = new IconSetDigest.Accumulator();
+                    total.AddOwner();
+                    foreach (LiveIcon l in _live)
+                    {
+                        ulong member = IconSetDigest.Member(ownerHash, _ids.GetNetId(l.Prefab), Portable(l.Target).NormalizedHash(), l.Priority, l.Flags);
+                        one.AddIcon(member);
+                        total.AddIcon(member);
+                    }
+                    output.Add(new Core.Replay.IconOwnerDigest(r, one.Icons, one.Sum));
+                }
+            }
+            finally
+            {
+                all.Dispose();
+            }
+            owners = total.Owners;
+            icons = total.Icons;
+            sum = total.Sum;
+            return true;
+        }
+
         /// <summary>Commands issued by the reconciliation since creation (diagnostics).</summary>
         public long CommandsIssued => _commandsIssued;
     }

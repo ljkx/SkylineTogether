@@ -16,6 +16,9 @@ namespace SkylineTogether.Diagnostics
         /// <summary>Raised when a critical feature tripped (the session manager ends the session).</summary>
         public static event Action<FeatureHealth> CriticalTripped;
 
+        /// <summary>Solo testing: every failure reported to the guard (feature, where, exception), before it is counted.</summary>
+        public static event Action<FeatureHealth, string, Exception> Reported;
+
         private static double Now
         {
             get
@@ -103,6 +106,14 @@ namespace SkylineTogether.Diagnostics
         /// <summary>Records a caught exception of <paramref name="feature"/> (rate-limited log; may turn the feature off).</summary>
         public static void Report(FeatureHealth feature, string where, Exception ex)
         {
+            try
+            {
+                Reported?.Invoke(feature, where, ex); // solo testing: the replay verdict lists every failure
+            }
+            catch (Exception)
+            {
+                // a listener must never break the guard
+            }
             try
             {
                 ILog log = Mod.Log;

@@ -12,6 +12,7 @@ using SkylineTogether.Core;
 using SkylineTogether.Core.Diagnostics;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Session;
+using SkylineTogether.Core.Transport;
 using SkylineTogether.Diagnostics;
 using SkylineTogether.Net;
 using SkylineTogether.Settings;
@@ -109,6 +110,29 @@ namespace SkylineTogether.Session
         public SessionHost Host { get; private set; }
 
         public SessionClient Client { get; private set; }
+
+        // ---- solo testing (record/replay verdict, ARCH §13.5) ----
+
+        /// <summary>The host's transport: Steam (or nothing, for a solo test host) plus in-process parts (the test recorder).</summary>
+        public CompositeTransport HostTransport { get; private set; }
+
+        /// <summary>The handshake digests and manifests of this game (the test recorder joins with them).</summary>
+        public IGameInfoProvider Info => _info;
+
+        /// <summary>The client session plays a recording (no network); it never enters recovery.</summary>
+        public bool IsReplay { get; private set; }
+
+        /// <summary>The host session was started for a solo test recording (no network part).</summary>
+        public bool SoloHost { get; private set; }
+
+        /// <summary>A replay's client session ended (kind and reason); the replay controller writes its verdict.</summary>
+        public event Action<ClientEndKind, string> ReplayEnded;
+
+        /// <summary>A solo test host can start: in a city, nothing else running (Steam is not needed).</summary>
+        public bool CanHostSolo => !InSession && BlockingReason() == null && GameManager.instance != null && GameManager.instance.gameMode == GameMode.Game && !GameManager.instance.isGameLoading;
+
+        /// <summary>A replay can start: no session, no load in progress (from the main menu or a city).</summary>
+        public bool CanReplay => !InSession && BlockingReason() == null && (GameManager.instance == null || !GameManager.instance.isGameLoading) && !_loader.IsLoading;
 
         public ILog Log => _log;
 
@@ -273,8 +297,10 @@ namespace SkylineTogether.Session
                     RequireSameMods = _settings.RequireSameMods,
                     Listen = new ListenOptions { VirtualPort = VirtualPort, AllowIp = _settings.AllowDirectConnections, IpPort = _settings.DirectPort, MaxConnections = Math.Max(2, _settings.MaxPlayers) },
                 };
-                var host = new SessionHost(transport, _info, _snapshots, options, _clock, _log);
+                var composite = new CompositeTransport(transport); // solo testing: the test recorder attaches here
+                var host = new SessionHost(composite, _info, _snapshots, options, _clock, _log);
                 created = host;
+                HostTransport = composite;
                 host.ChatReceived += AddChat;
                 host.PlayersChanged += () => _playersVersion++;
                 host.SpeedRequested += (peer, speed) =>
@@ -319,6 +345,142 @@ namespace SkylineTogether.Session
                 }
                 StopHost(null);
                 Notify(LocaleSource.Resolve("st.toast.hostFailed", "ERROR", ex.Message), ProgressState.Failed);
+            }
+        }
+
+        /// <summary>
+        /// Solo testing: hosts the city without any network part, so the test recorder can join it alone (no Steam
+        /// needed). The host behaves exactly as with a remote player; the recorder is started by the caller.
+        /// </summary>
+        public bool StartSoloHost()
+        {
+            if (!CanHostSolo)
+            {
+                Notify(InSession ? LocaleSource.Resolve("st.toast.join.inSession") : BlockingReason() != null ? LocaleSource.Resolve("st.toast.blocked", "REASON", BlockingReason()) : LocaleSource.Resolve("st.toast.hostNeedsCity"), ProgressState.Warning);
+                return false;
+            }
+            SessionHost created = null;
+            try
+            {
+                Features.Registry.RearmAll();
+                string name = PlayerName;
+                var composite = new CompositeTransport(null);
+                var options = new HostOptions
+                {
+                    HostName = name,
+                    HostSteamId = 0,
+                    SessionName = (string.IsNullOrWhiteSpace(_settings.SessionName) ? name + "'s city" : _settings.SessionName.Trim()) + " (test)",
+                    Password = "",
+                    MaxPlayers = 2,
+                    RequireSameMods = true,
+                    Listen = new ListenOptions { MaxConnections = 2 },
+                };
+                var host = new SessionHost(composite, _info, _snapshots, options, _clock, _log);
+                created = host;
+                host.ChatReceived += AddChat;
+                host.PlayersChanged += () => _playersVersion++;
+                host.Start();
+                Host = host;
+                HostTransport = composite;
+                SoloHost = true;
+                LastEndReason = null;
+                LastEnd = null;
+                ClearChat();
+                AddChat(new ChatEntry { IsSystem = true, Text = LocaleSource.Resolve("st.chat.soloHost") });
+                if (!RaiseStarted(HostStarted, host, "host"))
+                {
+                    StopHost("The host's game could not start the session.");
+                    Notify(LocaleSource.Resolve("st.toast.startFailed"), ProgressState.Failed);
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log.Error(LogCategory.Session, "solo test host failed", ex);
+                if (Host == null)
+                {
+                    try
+                    {
+                        created?.Dispose();
+                    }
+                    catch (Exception)
+                    {
+                        // best effort
+                    }
+                }
+                StopHost(null);
+                Notify(LocaleSource.Resolve("st.toast.hostFailed", "ERROR", ex.Message), ProgressState.Failed);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Solo testing: plays a recording into the normal client path (snapshot download and load through the real
+        /// loader, follower gates and clock, the replication receive path). Nothing touches the network; the session never
+        /// enters recovery and ends like a normal leave.
+        /// </summary>
+        public bool StartReplay(Core.Replay.PlaybackTransport transport, string name)
+        {
+            if (transport == null) throw new ArgumentNullException(nameof(transport));
+            if (!CanReplay)
+            {
+                Notify(InSession ? LocaleSource.Resolve("st.toast.join.inSession") : BlockingReason() != null ? LocaleSource.Resolve("st.toast.blocked", "REASON", BlockingReason()) : LocaleSource.Resolve("st.toast.join.loading"), ProgressState.Warning);
+                transport.Dispose();
+                return false;
+            }
+            try
+            {
+                Features.Registry.RearmAll();
+                _rejoin.Reset();
+                var client = new SessionClient(transport, _info, _loader, new ClientOptions
+                {
+                    PlayerName = PlayerName,
+                    Password = Core.Replay.PlaybackTransport.AnyPassword,
+                    ConnectTimeoutSeconds = 120,
+                    SnapshotWaitTimeoutSeconds = 900,
+                    DownloadStallTimeoutSeconds = 900,
+                    LiveWaitTimeoutSeconds = 900,
+                }, _clock, _log);
+                client.ChatReceived += AddChat;
+                client.PlayersChanged += () => _playersVersion++;
+                client.StateChanged += () => OnClientStateChanged(client);
+                Client = client;
+                IsReplay = true;
+                LastEndReason = null;
+                LastEnd = null;
+                _joinTarget = name ?? "";
+                ClearChat();
+                AddChat(new ChatEntry { IsSystem = true, Text = LocaleSource.Resolve("st.chat.replayStarted", "NAME", name ?? "") });
+                _recoveryVersion++;
+                if (!RaiseStarted(ClientStarted, client, "client"))
+                {
+                    client.Abort(LocaleSource.Resolve("st.toast.startFailed"));
+                    EndClient();
+                    return false;
+                }
+                client.Connect(new Endpoint { Host = "replay" });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log.Error(LogCategory.Session, "starting the replay failed", ex);
+                Notify(LocaleSource.Resolve("st.toast.replay.failed", "ERROR", ex.Message), ProgressState.Failed);
+                if (Client != null)
+                {
+                    SessionClient failed = Client;
+                    Client = null;
+                    IsReplay = false;
+                    failed.Dispose();
+                    _loader.Dispose();
+                    _playersVersion++;
+                    RaiseSessionEnded();
+                }
+                else
+                {
+                    transport.Dispose();
+                }
+                return false;
             }
         }
 
@@ -647,9 +809,27 @@ namespace SkylineTogether.Session
             }
             _loader.Dispose();
             _playersVersion++;
+            // solo testing: a replay never enters recovery (a rejoin would go to the network); it ends like a leave
+            bool replay = IsReplay;
+            IsReplay = false;
+            if (replay) LastEnd = null;
             // the follower state (gate, clock, movers, icon filter, bindings) is reset for every end; a rejoin builds it
             // again from a fresh snapshot
             RaiseSessionEnded();
+            if (replay)
+            {
+                _loader.RestoreAchievements();
+                _recoveryVersion++;
+                try
+                {
+                    ReplayEnded?.Invoke(kind, reason);
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Session, "replay end", ex);
+                }
+                return;
+            }
             OnRecoveryEnded(kind, reason, entered);
         }
 
@@ -741,6 +921,8 @@ namespace SkylineTogether.Session
             SessionHost host = Host;
             if (host == null) return;
             Host = null;
+            HostTransport = null; // solo testing
+            SoloHost = false;
             try
             {
                 host.Stop(reason);

@@ -1026,6 +1026,60 @@ namespace SkylineTogether.Sync
             if (_loggedOnce.Add(key)) _log.Warn(LogCategory.Replication, message, ex);
         }
 
+        // ================================================================== solo testing (record/replay verdict, ARCH §13.5)
+
+        /// <summary>
+        /// Host: the hash of every channel's last sent state (the recorder's checkpoints). Taxes, budgets, names and the
+        /// city name are strict; the systems' own state blobs are compared as warnings (their client side may round
+        /// their values on the way back).
+        /// </summary>
+        public void SentChannelHashes(List<Core.Replay.GlobalChannelHash> output)
+        {
+            if (!Attached) return;
+            foreach (uint channel in new[] { GlobalChannel.Tax, GlobalChannel.Budget, GlobalChannel.Name, GlobalChannel.CityName })
+            {
+                if (_send.TryGetSent(channel, out ulong hash)) output.Add(new Core.Replay.GlobalChannelHash(channel, ChannelName(channel), hash, true));
+            }
+            foreach (BlobChannel b in _blobs)
+            {
+                if (!b.Disabled && _send.TryGetSent(b.Id, out ulong hash)) output.Add(new Core.Replay.GlobalChannelHash(b.Id, b.Name, hash, false));
+            }
+        }
+
+        /// <summary>Client: the hashes of the same channels built from the local state with the host's own builders.</summary>
+        public void LocalChannelHashes(IReadOnlyList<Core.Replay.GlobalChannelHash> wanted, List<Core.Replay.GlobalChannelHash> output)
+        {
+            if (!Attached) return;
+            foreach (Core.Replay.GlobalChannelHash w in wanted)
+            {
+                byte[] payload = null;
+                try
+                {
+                    if (w.Channel == GlobalChannel.Tax) payload = BuildTax();
+                    else if (w.Channel == GlobalChannel.Budget) payload = BuildBudgets();
+                    else if (w.Channel == GlobalChannel.Name) payload = BuildNames();
+                    else if (w.Channel == GlobalChannel.CityName) payload = BuildCityName();
+                    else
+                    {
+                        foreach (BlobChannel b in _blobs)
+                        {
+                            if (b.Id != w.Channel || b.Disabled) continue;
+                            foreach (FieldInfo f in b.ClientHandles) ((JobHandle)f.GetValue(b.Owner)).Complete();
+                            b.ClientBefore?.Invoke();
+                            payload = BuildBlob(b);
+                            break;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(LogCategory.Replication, "replay: reading " + w.Name + " failed: " + ex.Message);
+                    payload = null;
+                }
+                if (payload != null) output.Add(new Core.Replay.GlobalChannelHash(w.Channel, w.Name, XxHash64.Hash(payload, 0, payload.Length), w.Strict));
+            }
+        }
+
         private string ChannelName(uint channel)
         {
             if (channel == GlobalChannel.Tax) return "taxes";

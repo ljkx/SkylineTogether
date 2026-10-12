@@ -269,6 +269,17 @@ namespace SkylineTogether.Sync
         /// <summary>feat/integrity: divergence detection and repair, host icons, line check (see <see cref="IntegritySync"/>).</summary>
         public IntegritySync Integrity { get; }
 
+        // ---- solo testing (record/replay verdict, ARCH §13.5): read-only views for the recorder and the replay ----
+
+        /// <summary>Host: deferred values waiting for <paramref name="peer"/> (-1: unknown peer); checkpoints wait for 0.</summary>
+        public int DeferredCount(PeerId peer) => _out.TryGetValue(peer.Value, out PeerOut o) ? o.Queue.Count : -1;
+
+        /// <summary>Client: host batches received and not applied yet.</summary>
+        public int PendingBatches => _inbox.Count;
+
+        /// <summary>The global-state channels (checkpoint hashes).</summary>
+        public GlobalStateSync Global => _global;
+
         /// <summary>One line for the panel: what replication is doing.</summary>
         public string Status
         {

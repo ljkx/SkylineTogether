@@ -576,9 +576,10 @@ namespace SkylineTogether.Sync
         /// Client view report hook (<see cref="MoverClient"/>, about 10 Hz): the selected entity and the topics of the
         /// active infoview (<see cref="InfomodeTopics"/>). The camera fields are the movers branch's.
         /// </summary>
-        public void FillViewReport(ViewReport view)
+        public void FillViewReport(ViewReport view, bool forRecorder = false)
         {
-            if (view == null || _codec == null || !IsLiveClient) return;
+            // solo testing: the host fills the test recorder's view report with its own selection (forRecorder)
+            if (view == null || _codec == null || (!IsLiveClient && !forRecorder)) return;
             try
             {
                 Entity selected = _selectedInfo != null ? _selectedInfo.selectedEntity : Entity.Null;

@@ -17,6 +17,7 @@ namespace SkylineTogether.Session
             try
             {
                 Mod.Sessions?.Tick();
+                Mod.Replay?.Tick(); // solo testing: the recorder after the host's tick, the replay's end
             }
             catch (Exception ex)
             {

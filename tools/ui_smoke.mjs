@@ -16,7 +16,8 @@ let failed = 0;
 const fail = (msg) => { failed++; console.log("FAIL " + msg); };
 
 // ------------------------------------------------------------------------------------------- C# declarations
-const cs = read("src/SkylineTogether/UI/SessionUISystem.cs");
+// every UI system of the module's group (SessionUISystem, ReplayUISystem for solo testing)
+const cs = read("src/SkylineTogether/UI/SessionUISystem.cs") + "\n" + read("src/SkylineTogether/UI/ReplayUISystem.cs");
 const csBindings = new Set([...cs.matchAll(/GetterValueBinding<string>\(Group, "([^"]+)"/g)].map((m) => m[1]));
 const csTriggers = new Set([...cs.matchAll(/TriggerBinding(?:<[^>]*>)?\(Group, "([^"]+)"/g)].map((m) => m[1]));
 for (const b of ["state", "join", "net", "presence"]) if (!csBindings.has(b)) fail("SessionUISystem lost the binding " + b);
@@ -182,7 +183,16 @@ const cases = {
   recoveryChoice: { state: { ...base, mode: "Recovering", recovery: { phase: "NeedsChoice", attempt: 2, max: 6, seconds: 4, reason: "Lost the connection to the host (timed out).", canReconnect: true, hostEnded: false, attemptStage: "downloading" } } },
   recoveryEnded: { state: { ...base, mode: "Recovering", recovery: { phase: "NeedsChoice", attempt: 2, max: 6, seconds: 4, reason: "Lost the connection to the host (timed out).", canReconnect: true, hostEnded: false, attemptStage: "downloading", hostEnded: true, canReconnect: false } } },
   lobbyBlocked: { state: { ...base, mode: "None", canHost: false, canJoin: false, blocked: "replication: self-test failed: P-CTX", probes: "Self-test: 29/31 checks passed; off: replication" } },
-  garbage: { state: "{not json", net: "", presence: "null", join: "[1,2" },
+  // solo testing: recordings and a verdict in the lobby, recording while hosting, a replay running
+  soloLobby: { state: { ...base, mode: "None" }, replay: { canRecord: true, canReplay: true, recording: false, replaying: false, root: "C:/Users/x/AppData/LocalLow/Colossal Order/Cities Skylines II/ModsData/SkylineTogether/Recordings",
+    recordings: [{ id: "20261012-120000 Riverside", city: "Riverside", when: "2026-10-12 12:00", duration: "5:12", mb: "312.4", verdict: "passed" }, { id: "20261012-110000 Riverside", city: "", when: "2026-10-12 11:00", duration: "", mb: "1.0", verdict: "" }],
+    verdict: { status: "failed", summary: "Failed: 2 objects differ (NetEdge: 2)", folder: "C:/x/20261012-120000 Riverside" } } },
+  soloMenu: { state: { ...base, mode: "None", inGame: false }, replay: { canRecord: false, canReplay: true, recordings: [], verdict: { status: "incomplete", summary: "Incomplete: no checkpoint was completed", folder: "" } } },
+  soloRecording: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X (test)", players }, replay: { recording: true, stopping: false, recordStatus: "Recording 1:05 · 40.2 MB · 1 checkpoints", recordings: [] } },
+  soloHostIdle: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X" }, replay: { canRecord: true, recording: false } },
+  soloReplaying: { state: { ...base, mode: "Client", status: "Connected", sessionName: "X (test)" }, replay: { replaying: true, replayStatus: "Replayed 0:40 of the recording · 1 checkpoints compared · 0 objects differ", progress: 0.3 } },
+  soloReplayLoading: { state: { ...base, mode: "Joining", stage: "loading", progress: 0.7 }, join: join("loading", { load: 0.4, progress: 0.7 }), replay: { replaying: true, replayStatus: "Loading the recorded city…", progress: 0.1 } },
+  garbage: { state: "{not json", net: "", presence: "null", join: "[1,2", replay: "{oops" },
   empty: { state: "{}" },
 };
 const passes = [

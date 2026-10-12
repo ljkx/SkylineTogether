@@ -30,6 +30,9 @@ namespace SkylineTogether.Core.Replay
 
         /// <summary>Longest wait for the host's snapshot (the host saves the city first).</summary>
         public double SnapshotWaitTimeoutSeconds = 900;
+
+        /// <summary>The send rate the recorder's link reports to the host (a good broadband player; the host paces deferred values by it).</summary>
+        public int LinkBytesPerSecond = 2 << 20;
     }
 
     /// <summary>
@@ -83,6 +86,7 @@ namespace SkylineTogether.Core.Replay
             var (hostEnd, clientEnd) = LoopbackTransport.CreatePair(new PeerIdentity(0, "recorder-host", "Host"), new PeerIdentity(0, "recorder", _options.Name));
             _hostEnd = hostEnd;
             _hostEnd.Listen(new ListenOptions { MaxConnections = 1 });
+            _hostEnd.ReportedSendRateBytesPerSecond = Math.Max(0, _options.LinkBytesPerSecond);
             _tap = new RecordingTransport(clientEnd, writer, clock, frame, clock.Seconds);
             Loader = new RecorderLoader(openSnapshotTarget, () => _writer.Barrier(_tap.Now, SafeFrame(frame), RecordingBarrier.LoadDone));
             Client = new SessionClient(_tap, info, Loader, new ClientOptions

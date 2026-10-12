@@ -29,6 +29,8 @@ const stateBinding = bind("state", "{}");
 const joinBinding = bind("join", "{}");
 const netBinding = bind("net", "{}");
 const presenceBinding = bind("presence", "{\"tags\":[]}");
+// solo testing: recording and replay state, recordings, last verdict (ReplayUISystem)
+const replayBinding = bind("replay", "{}");
 
 function parse(json) {
   try {
@@ -228,6 +230,28 @@ const EN = {
   "st.ui.recovery.stayOffline": "Stay offline (keep a copy)",
   "st.ui.recovery.badge": "Disconnected",
   "st.ui.selftest.details": "Details",
+  // solo testing (record/replay verdict)
+  "st.ui.test.title": "Solo test (no second PC needed)",
+  "st.ui.test.intro": "Record a session on this PC, then replay it the way a joining player receives it. The replay checks that every object, line, icon and global value ends up exactly as on the host.",
+  "st.ui.test.record": "Record test session",
+  "st.ui.test.recordHint": "Adds a test recorder to your session (or hosts this city without network first) and records everything a joining player would receive. Build and play as usual, then stop.",
+  "st.ui.test.stop": "Stop recording",
+  "st.ui.test.needCity": "Load a city first to record a test session.",
+  "st.ui.test.recordings": "Recordings",
+  "st.ui.test.none": "No recordings yet.",
+  "st.ui.test.replay": "Replay & verify",
+  "st.ui.test.speed": "Speed",
+  "st.ui.test.speedFast": "max",
+  "st.ui.test.refresh": "Refresh",
+  "st.ui.test.stopReplay": "Stop replay",
+  "st.ui.test.replayBanner": "Replaying a recording: nothing is sent over the network. At the end the verdict is saved next to the recording and the session ends.",
+  "st.ui.test.replayHint": "Replaying loads the recorded city in place of the one you are playing. Save first.",
+  "st.ui.test.verdict.passed": "Replay passed",
+  "st.ui.test.verdict.failed": "Replay found differences",
+  "st.ui.test.verdict.incomplete": "Replay incomplete",
+  "st.ui.test.verdictFile": "Full report: {FOLDER}",
+  "st.ui.test.copyPath": "Copy path",
+  "st.ui.test.folder": "Recordings folder: {FOLDER}",
   "st.ui.blocked": "Hosting and joining are unavailable: {REASON}",
 };
 
@@ -796,6 +820,7 @@ function Lobby(p) {
     ),
     h(Labeled, { label: t("st.ui.profile.name") }, h(Field, { value: name, onChange: setName, onBlur: saveName, placeholder: t("st.ui.profile.namePlaceholder"), title: t("st.ui.profile.name"), max: 64 })),
     tab === "host" ? h(HostTab, { state: s, name: name, inGame: p.inGame }) : h(JoinTab, { state: s, name: name, inGame: p.inGame }),
+    h(SoloTestSection, { state: s, inGame: p.inGame }),
     s.blocked ? h("div", { style: merge(S.notice, { marginTop: "8rem", color: T.bad }) }, t("st.ui.blocked", { REASON: s.blocked })) : null,
     h(SelfTest, { state: s })
   );
@@ -1127,6 +1152,7 @@ function SessionView(p) {
     s.hold ? h("div", { style: S.notice }, s.status || t("st.ui.session.holding")) : null,
     !hosting ? h("div", { style: merge(S.hint, { marginBottom: "8rem" }) }, t("st.ui.session.speed", { SPEED: speedText(s) })) : null,
     s.sync ? h("div", { style: merge(S.hint, { fontSize: FS.xs, marginBottom: "8rem", color: T.dimmer }) }, s.sync) : null,
+    hosting ? h(RecordControls, null) : h(ReplayBanner, null),
     h(Players, { state: s }),
     h(Invite, { state: s }),
     hosting ? h(LiveSettings, { state: s }) : null,
@@ -1141,6 +1167,118 @@ function SessionView(p) {
   );
 }
 
+// ------------------------------------------------------------------------------- solo testing (record/replay)
+
+const SPEEDS = [1, 2, 4, 0];
+
+function verdictColor(status) {
+  return status === "passed" ? T.good : status === "failed" ? T.bad : T.warn;
+}
+
+function VerdictLine(p) {
+  const v = p.verdict;
+  if (!v || !v.status) return null;
+  const kind = v.status === "passed" || v.status === "failed" ? v.status : "incomplete";
+  return h(
+    "div",
+    { style: merge(S.notice, { borderColor: verdictColor(v.status), marginBottom: "8rem" }) },
+    h("div", { style: merge(S.row, { marginBottom: "4rem" }) }, h(Dot, { color: verdictColor(v.status) }), h("div", { style: { flex: 1, fontSize: FS.m } }, t("st.ui.test.verdict." + kind))),
+    h("div", { style: S.hint }, v.summary || ""),
+    v.folder
+      ? h(
+          "div",
+          { style: merge(S.hint, { marginTop: "4rem", fontSize: FS.xs }) },
+          t("st.ui.test.verdictFile", { FOLDER: v.folder }) + " ",
+          h("span", { style: { color: T.accent, cursor: "pointer" }, onClick: function () { send("copyText", v.folder); } }, t("st.ui.test.copyPath"))
+        )
+      : null
+  );
+}
+
+function RecordingRow(p) {
+  const r = p.rec;
+  return h(
+    "div",
+    { style: merge(S.row, { padding: "5rem 6rem", borderRadius: "3rem", cursor: "pointer", background: p.selected ? T.selected : "transparent" }), onClick: function () { p.onSelect(r.id); } },
+    h(Dot, { color: r.verdict ? verdictColor(r.verdict) : T.dimmer, size: 8 }),
+    h(
+      "div",
+      { style: { flex: 1 } },
+      h("div", null, r.city || r.id || ""),
+      h("div", { style: merge(S.hint, { fontSize: FS.xs }) }, (r.when || "") + (r.duration ? " · " + r.duration : "") + " · " + (r.mb || "0") + " MB")
+    )
+  );
+}
+
+// the lobby: record a test session, pick a recording and replay it, the last verdict
+function SoloTestSection(p) {
+  const r = useJson(replayBinding);
+  const [selected, setSelected] = React.useState("");
+  const [speed, setSpeed] = React.useState(1);
+  const recs = list(r.recordings);
+  let chosen = recs.length > 0 ? recs[0].id : "";
+  for (const x of recs) if (x.id === selected) chosen = selected;
+  return h(
+    Section,
+    { title: t("st.ui.test.title"), right: h("div", { style: merge(S.link, { fontSize: FS.xs }), onClick: function () { send("replayRefresh"); } }, t("st.ui.test.refresh")) },
+    h("div", { style: merge(S.hint, { marginBottom: "8rem" }) }, t("st.ui.test.intro")),
+    h(VerdictLine, { verdict: r.verdict }),
+    h(Btn, { kind: "primary", disabled: !p.inGame || !r.canRecord, onClick: function () { send("recordStart"); }, style: { width: "100%" } }, t("st.ui.test.record")),
+    h("div", { style: merge(S.hint, { margin: "4rem 0 10rem 0" }) }, p.inGame ? t("st.ui.test.recordHint") : t("st.ui.test.needCity")),
+    h("div", { style: S.label }, t("st.ui.test.recordings")),
+    recs.length === 0
+      ? h("div", { style: merge(S.hint, { marginBottom: "6rem" }) }, t("st.ui.test.none"))
+      : h("div", { style: { maxHeight: "180rem", overflowY: "auto", marginBottom: "8rem" } }, recs.map(function (x) { return h(RecordingRow, { key: x.id, rec: x, selected: x.id === chosen, onSelect: setSelected }); })),
+    recs.length > 0
+      ? h(
+          "div",
+          { style: merge(S.row, { marginBottom: "6rem" }) },
+          h("div", { style: { marginRight: "8rem", color: T.dim } }, t("st.ui.test.speed")),
+          SPEEDS.map(function (v) {
+            return h(Btn, { key: String(v), small: true, kind: v === speed ? "primary" : "flat", style: { marginRight: "4rem" }, onClick: function () { setSpeed(v); } }, v === 0 ? t("st.ui.test.speedFast") : v + "×");
+          })
+        )
+      : null,
+    recs.length > 0 ? h(Btn, { kind: "primary", disabled: !r.canReplay || !chosen, onClick: function () { send("replayStart", chosen, speed); }, style: { width: "100%" } }, t("st.ui.test.replay")) : null,
+    recs.length > 0 && p.inGame ? h("div", { style: merge(S.hint, { marginTop: "4rem" }) }, t("st.ui.test.replayHint")) : null,
+    r.root ? h("div", { style: merge(S.hint, { marginTop: "6rem", fontSize: FS.xs, color: T.dimmer }) }, t("st.ui.test.folder", { FOLDER: r.root })) : null
+  );
+}
+
+// while hosting: start or stop the test recorder
+function RecordControls() {
+  const r = useJson(replayBinding);
+  if (r.recording) {
+    return h(
+      "div",
+      { style: merge(S.notice, { borderColor: T.bad }) },
+      h("div", { style: merge(S.row, { marginBottom: "6rem" }) }, h(Dot, { color: T.bad }), h("div", { style: { flex: 1 } }, r.recordStatus || "")),
+      h(Btn, { disabled: !!r.stopping, onClick: function () { send("recordStop"); }, style: { width: "100%" } }, t("st.ui.test.stop"))
+    );
+  }
+  if (!r.canRecord) return null;
+  return h(
+    "div",
+    { style: { marginBottom: "8rem" } },
+    h(Btn, { onClick: function () { send("recordStart"); }, style: { width: "100%" } }, t("st.ui.test.record")),
+    h("div", { style: merge(S.hint, { marginTop: "4rem" }) }, t("st.ui.test.recordHint"))
+  );
+}
+
+// while replaying: what is happening, how far, and the way out
+function ReplayBanner() {
+  const r = useJson(replayBinding);
+  if (!r.replaying) return null;
+  return h(
+    "div",
+    { style: S.notice },
+    h("div", { style: { marginBottom: "4rem" } }, t("st.ui.test.replayBanner")),
+    r.replayStatus ? h("div", { style: S.hint }, r.replayStatus) : null,
+    h(Progress, { value: r.progress, style: { margin: "6rem 0" } }),
+    h(Btn, { onClick: function () { send("replayStop"); }, style: { width: "100%" } }, t("st.ui.test.stopReplay"))
+  );
+}
+
 function PanelContent(p) {
   const s = p.state;
   const mode = s.mode || "None";
@@ -1151,6 +1289,7 @@ function PanelContent(p) {
     return h(
       "div",
       null,
+      h(ReplayBanner, null),
       h("div", { style: merge(S.hint, { marginBottom: "8rem" }) }, s.status || t("st.ui.join.overlayTitleUnknown")),
       h(Progress, { value: s.progress, style: { marginBottom: "10rem" } }),
       h(Btn, { onClick: function () { send("leave"); }, style: { width: "100%" } }, t("st.ui.join.cancel"))

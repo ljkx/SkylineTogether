@@ -44,6 +44,8 @@ namespace SkylineTogether.Sync
             {
                 Guard.Report(Features.Replication, "capture", ex);
             }
+            // solo testing: the recorder's checkpoints (host) and the replay's icon comparison (client), after the capture
+            Replay.ReplayController.Instance?.OnCaptureEnd();
         }
     }
 

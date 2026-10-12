@@ -1034,9 +1034,10 @@ namespace SkylineTogether.Sync
         /// Client, view report hook (about 10 Hz): the entity the camera follows ("follow citizen"), so the host streams its
         /// citizen, household and vehicle first.
         /// </summary>
-        public void FillViewReport(ViewReport view)
+        public void FillViewReport(ViewReport view, bool forRecorder = false)
         {
-            if (view == null || _codec == null || !IsLiveClient) return;
+            // solo testing: the host fills the test recorder's view report with its own selection (forRecorder)
+            if (view == null || _codec == null || (!IsLiveClient && !forRecorder)) return;
             try
             {
                 Entity followed = _camera?.orbitCameraController != null ? _camera.orbitCameraController.followedEntity : Entity.Null;
