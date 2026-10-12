@@ -39,10 +39,29 @@ namespace SkylineTogether.Core.Tests.Session
         /// <summary>When set, snapshots are not delivered (the host keeps "saving the city").</summary>
         public bool Hold;
 
+        private readonly List<Action<SnapshotReady>> _pending = new List<Action<SnapshotReady>>();
+
+        /// <summary>Completes the snapshots requested while <see cref="Hold"/> was set.</summary>
+        public void DeliverPending()
+        {
+            var pending = new List<Action<SnapshotReady>>(_pending);
+            _pending.Clear();
+            foreach (Action<SnapshotReady> onReady in pending) Deliver(onReady);
+        }
+
         public void RequestSnapshot(Action<SnapshotReady> onReady, Action<string> onFailed)
         {
             Requests++;
-            if (Hold) return;
+            if (Hold)
+            {
+                _pending.Add(onReady);
+                return;
+            }
+            Deliver(onReady);
+        }
+
+        private void Deliver(Action<SnapshotReady> onReady)
+        {
             uint id = _next++;
             string path = Path.Combine(_dir, id + ".save");
             File.WriteAllBytes(path, Data);

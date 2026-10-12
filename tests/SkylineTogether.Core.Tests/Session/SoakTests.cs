@@ -469,6 +469,97 @@ namespace SkylineTogether.Core.Tests.Session
         }
 
         [Test(TimeoutSeconds = 120)]
+        public void JoinChurnLeavesNoStalePeersHeldSimulationOrSnapshotFiles()
+        {
+            var rig = new SoakRig(Wan(101, 4 << 20), snapshotBytes: 600_000) { ClientOptions = Wan(102, 1 << 20), BroadcastBytesPerFrame = 1_500 };
+            SoakRig.Player stay = rig.AddPlayer("Stay");
+            Assert.True(rig.RunUntil(() => stay.IsLive, 60), rig.Describe());
+            SoakRig.Player churn = rig.AddPlayer("Churn");
+            var r = new DeterministicRandom(7);
+            for (int i = 0; i < 12; i++)
+            {
+                // leave or get cut at a random point of the join (or after it), then come back
+                rig.Run(0.2 + r.NextDouble() * 4);
+                if (churn.Client != null)
+                {
+                    if (i % 3 == 0) rig.Cut(churn, hostNotices: true);
+                    else churn.Client.Leave();
+                }
+                rig.Run(0.5);
+                if (churn.Client == null && !churn.Rejoin.Recovering) rig.Connect(churn);
+                else if (churn.Rejoin.Recovering) churn.Rejoin.ReconnectNow(rig.Clock.Seconds);
+            }
+            Assert.True(rig.RunUntil(() => churn.IsLive && stay.IsLive, 90), rig.Describe());
+            rig.Run(5);
+            Assert.Equal(2, rig.Host.LivePeerCount, rig.Describe());
+            Assert.False(rig.Host.HoldSimulation, "no joiner holds the host's simulation any more");
+            Assert.Equal(0, stay.Gaps);
+            Assert.Equal(0, churn.Gaps);
+            Assert.True(stay.LiveCount == 1, "the player who stayed was never disturbed");
+            rig.Run(2);
+            Assert.Equal(rig.Snapshots.Requests, rig.Snapshots.Released.Count, "every snapshot file was released");
+            rig.AssertNoErrors();
+        }
+
+        [Test(TimeoutSeconds = 120)]
+        public void AJoinerThatVanishesWhileTheHostSavesReleasesTheSnapshot()
+        {
+            var rig = new SoakRig(new NetSimOptions { LatencyMs = 30, Seed = 111 }) { BroadcastBytesPerFrame = 500 };
+            rig.Snapshots.Hold = true; // the host is still saving the city
+            SoakRig.Player p = rig.AddPlayer("Anna");
+            Assert.True(rig.RunUntil(() => p.Client != null && p.Client.State == ClientState.WaitingForSnapshot, 30), rig.Describe());
+            Assert.True(rig.Host.HoldSimulation);
+            rig.Cut(p, hostNotices: true);
+            rig.Run(1);
+            Assert.False(rig.Host.HoldSimulation);
+            Assert.Equal(1, rig.Snapshots.Requests);
+            // the save finishes later: nobody waits for it, so it is released at once
+            rig.Snapshots.Hold = false;
+            rig.Snapshots.DeliverPending();
+            rig.Run(1);
+            Assert.Equal(rig.Snapshots.Requests, rig.Snapshots.Released.Count, "the late snapshot was released");
+            rig.Connect(p);
+            Assert.True(rig.RunUntil(() => p.IsLive, 60), rig.Describe());
+            rig.AssertNoErrors();
+        }
+
+        [Test(TimeoutSeconds = 300)]
+        public void SeedSweepOfCutsAndRejoinsOnAHarshLink()
+        {
+            var failures = new List<string>();
+            for (int seed = 200; seed < 216; seed++)
+            {
+                var harsh = new NetSimOptions { LatencyMs = 90, JitterMs = 60, LossRate = 0.08, ReorderRate = 0.2, DuplicateRate = 0.05, BandwidthBytesPerSecond = 3 << 20, Seed = seed };
+                var rig = new SoakRig(harsh, snapshotBytes: 900_000, seed: seed) { ClientOptions = harsh.Clone(), BroadcastBytesPerFrame = 1_200 + seed * 10, BurstEvery = 97 };
+                rig.ClientOptions.Seed = seed + 1000;
+                rig.ClientOptions.BandwidthBytesPerSecond = 512 << 10;
+                SoakRig.Player a = rig.AddPlayer("A");
+                SoakRig.Player b = rig.AddPlayer("B");
+                SoakRig.Player c = rig.AddPlayer("C");
+                var r = new DeterministicRandom((ulong)seed);
+                bool ok = rig.RunUntil(() => rig.LiveCount() == 3, 120);
+                for (int i = 0; ok && i < 4; i++)
+                {
+                    rig.Run(r.NextDouble() * 6);
+                    SoakRig.Player victim = rig.Players[r.Next(0, 3)];
+                    rig.Cut(victim, hostNotices: r.NextBool());
+                    rig.Run(0.5); // the cut is noticed at the next polls
+                    ok = rig.RunUntil(() => rig.LiveCount() == 3, 150);
+                }
+                rig.Run(3);
+                string problem = null;
+                if (!ok || rig.LiveCount() != 3) problem = "not all live";
+                else if (rig.Host.LivePeerCount != 3) problem = "host has " + rig.Host.LivePeerCount + " live peers";
+                else if (rig.Host.HoldSimulation) problem = "host still holds the simulation";
+                else if (a.Gaps + b.Gaps + c.Gaps != 0) problem = "gaps";
+                else if (rig.ProposalOrderErrors != 0) problem = "proposal order";
+                else if (rig.Log.Count(LogLevel.Error) != 0) problem = "errors logged";
+                if (problem != null) failures.Add("seed " + seed + ": " + problem + " / " + rig.Describe());
+            }
+            Assert.Equal(0, failures.Count, string.Join(Environment.NewLine, failures));
+        }
+
+        [Test(TimeoutSeconds = 120)]
         public void PresenceSurvivesLossReorderingAndDuplication()
         {
             var opts = new NetSimOptions { LatencyMs = 50, JitterMs = 50, LossRate = 0.2, ReorderRate = 0.3, DuplicateRate = 0.2, Seed = 71 };

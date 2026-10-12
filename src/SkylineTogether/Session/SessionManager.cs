@@ -524,9 +524,9 @@ namespace SkylineTogether.Session
         public void Dispose()
         {
             if (_disposed) return;
-            Leave();
-            _rejoin.Reset();
+            _rejoin.Reset(); // no recovery (and no "offline copy" message) while the game shuts down
             ReleaseCity();
+            Leave();
             _disposed = true;
             Guard.CriticalTripped -= OnCriticalTripped;
             if (GameManager.instance != null)
