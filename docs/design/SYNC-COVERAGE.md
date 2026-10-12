@@ -33,7 +33,7 @@ again on the client from host data. The statuses:
 | `presence` | structure codec plus the **presence watch** (new): components the simulation adds or removes *without* an `Updated` tag are found by comparing component sets and re-sent |
 | `scan` | structure value scan: values hashed every 0.25-1 s (lines, the City entity, and now events), changes re-sent |
 | `values` | attention values (`AttentionValues`): simulation values of buildings, edges, areas and now nodes, by camera and selection priority |
-| `keyed` | keyed state on derived entities (zone cells, station stops, sub-element deletions) |
+| `keyed` | keyed state on derived entities (zone cells, station stops, sub-element deletions, flow status of the flow graphs) |
 | `global` | `GlobalStateSync`: a system's own `ISerializable` state, a custom slice of state, or a typed channel (taxes, budgets, names, ...) |
 | `actions` | `ActionSync` intents and the unlock set, or a client proposal channel |
 | `statistics`, `cellmap`, `terrain`, `water`, `movers`, `icons` | the dedicated channels of those branches |
@@ -64,6 +64,8 @@ again on the client from host data. The statuses:
 | 11 | Node wear and other node values froze | nodes were not attention candidates | part of fix 10 |
 | 12 | Trees never grew on clients | tree growth changes `Tree` values with `BatchesUpdated` only; trees are not attention candidates | the presence watch re-sends a tree's values when it has `BatchesUpdated` with an unchanged component set; clients tag it `BatchesUpdated` so the mesh is chosen again |
 | 13 | Following a citizen only worked for the player who clicked it | the followed list (50 citizens, life paths) is city state written by `LifePathEventSystem.FollowCitizen` | channel `Follow`: client deltas, the host follows through the vanilla API, agent replication brings `Followed` and the life path to everyone |
+| 14 | The Electricity and Water infoviews coloured power lines, transformers, water and sewage pipes from the join snapshot's flows on clients (bottlenecks, disconnected lines and pipe pollution never changed) | flow values live on the derived flow graph (`ElectricityFlowEdge`, `WaterPipeEdge`), written only by the GameSimulation flow systems, and flow edges have no portable identity | w4/flow: the **flow-status channel** of ARCH §4.11.5 (`FlowStatusSync`, `MessageKind.FlowStatus`). A flow edge is keyed by its start and end flow node, a flow node by its owner's net id and role (net node or edge, valve, building transformer/producer/consumer/charge/discharge node, source, sink; `FlowKey`). While a peer's view report has the Electricity or Water topic, the host runs a time-sliced pass over the graph (0.75 ms per frame, at most one start per second) and sends the edges the peer lacks or whose value changed significantly (flags and capacities exactly, flows by 1/64), in-view first, within a 16 KB/s per-peer budget; activation is a keyframe. Clients write the values into their own derived edges after completing the jobs that read or write the edge type, and while their own infoview has the topic, local passes re-apply cached values to edges the graph systems rebuilt. The kept graph systems only create edges and rewrite direction and capacity on building and road-connection updates (`ElectricityBuildingGraphSystem.CreateOrUpdateFlowEdge`, `ElectricityGraphUtils.TrySetFlowEdge`, water likewise), never flow or flags; the flow systems themselves are GameSimulation (off on clients; a warning is logged if one runs). Building consumer state (`ElectricityConsumer`, `WaterConsumer`) keeps coming from the attention values under the same topics |
+| 15 | Roads, power lines and pipes with a utility connection would not have replicated at all | `ElectricityNodeConnection`/`WaterPipeNodeConnection` were flow-graph family markers, but the graph systems add them to the net nodes and edges themselves, so those nets classified as derived `FlowGraph` (rule 8 precedes the net rules) | they are no markers any more; all six flow-graph connection components (`*NodeConnection`, `*ValveConnection`, `*BuildingConnection`) are excluded from structure records (`TypeHandlers.Excluded`): they point at derived flow nodes, and as presence-only components a spawn would have added them with null references that the edge graph system takes for an existing flow node |
 
 ## Runtime state the UI and the renderer read (not saved components)
 
@@ -91,7 +93,8 @@ again on the client from host data. The statuses:
 | Map tile purchase state | `MapTilePurchaseSystem` | intent `PurchaseMapTiles`, tiles as structure (`Native`) | actions + structure |
 | Unlocks, milestones, development points, XP | `UnlockSystem`, `MilestoneSystem`, `DevTreeSystem`, `XPSystem` | unlock set, City scan, signature buildings (fix 9) | actions + scan + global |
 | Policies | `Policies.ModifiedSystem` | channel `Policy` | global |
-| Info views | `InfoviewsUISystem` | per player; their data: cell maps, attention values (topic priority) | local |
+| Info views | `InfoviewsUISystem` | per player; their data: cell maps, attention values (topic priority), flow status (fix 14) | local |
+| Electricity and water flow colours of lines, transformers and pipes; electricity and water tooltips; transformer panel | `ElectricityFlowSystem`, `WaterPipeFlowSystem` (GameSimulation) via the flow edges, read by `NetColorSystem`, `ObjectColorSystem`, `RaycastElectricityTooltipSystem`, `RaycastWaterTooltipSystem`, `TransformerSection` | fix 14 (while the topic is active; otherwise the values of the last time it was) | keyed |
 | Service coverage | coverage systems | `ServiceCoverage` buffers of edges (values) | values |
 | Garbage, healthcare, education, deathcare, police, fire, post panels | panel UI systems | building values, statistics, fix 4, fix 8 | values + statistics + global |
 | Selected entity panel | `SelectedInfoUISystem` | time-aligned inspection samples (`AttentionValues`), agents of the selection first (`AgentSync`) | values + agents |
@@ -102,7 +105,6 @@ again on the client from host data. The statuses:
 
 | State | Why it is not synced | Player impact |
 |---|---|---|
-| Flow values of the electricity and water graphs (`ElectricityFlowEdge`, `WaterPipeEdge` flow, capacity, bottleneck flags) | the flow graph is derived per peer and has no portable identity; the host-only flow simulation decides the outcome, and every outcome a player depends on is synced: consumers' fulfilment (`ElectricityConsumer`, `WaterConsumer` values), "not enough electricity/water" icons, the electricity and water panels (fix 4) | the electricity and water infoviews colour power lines and pipes from the join snapshot's flows on clients; buildings and panels are exact. A flow-key channel (ARCH §4.11.5) is the follow-up |
 | Transient agents (service requests, job and school seekers, partner search, meetings) | dispatch bookkeeping of the host simulation; references to them arrive as null (`EntityCodec` lenient references, as w3/agents does) | none visible: dispatched vehicles, their targets, icons and building values are synced |
 | Object wetness, dirt and snow, wind, snow cover | cosmetic, simulated locally (ARCH 2.4) | slight visual differences of weather effects |
 | Per-player state (camera, selection, info views, tools, radio, chirp likes, palette, tutorials, victory pop-up seen) | by design | none |
@@ -121,8 +123,14 @@ again on the client from host data. The statuses:
   player's camera follow within the attention latency (well under a second at default budgets).
 - **Blob channels** decode with an exact-length check; a channel that fails once is off for the session (logged).
 - **`CreateChirpSystem.GetQueue`** asserts that the system is enabled; release builds strip Unity assertions.
+- **Flow status volume.** A keyframe is every keyed edge of the network (about 12-20 bytes each), sent in-view first at
+  16 KB/s per peer, so in a city with 100 000 flow edges the far side of the map converges within about two minutes of
+  opening the infoview; afterwards only significant changes travel. Passes are time-sliced (0.75 ms per frame on the host,
+  0.375 ms on a client with the infoview open) and run only while someone has the topic.
+- **Flow keys** need bound owners. Edges touching an owner without a net id are not keyed and keep their local values;
+  duplicate keys are dropped on both sides. The first pass logs the number of keyed and ambiguous edges per network.
 - Nothing here is tested in game yet; every new path is behind `Features.Events`, `Features.GlobalState` or
-  `Features.SimValues` and contained by `Guard`.
+  `Features.SimValues` (flow status: `Features.FlowStatus`) and contained by `Guard`.
 
 ## Generated inventory
 
@@ -138,7 +146,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `presence` | 14 | 0 | structure codec + presence watch: components the simulation adds or removes without an Updated tag |
 | `scan` | 45 | 0 | structure value scan: entity values hashed every 0.25-1 s, changes re-sent |
 | `values` | 86 | 1 | simulation values (attention scan, SimValues stream) |
-| `keyed` | 6 | 0 | keyed state on derived entities (zone cells, sub-element deletions, line rows) |
+| `keyed` | 8 | 0 | keyed state on derived entities (zone cells, sub-element deletions, line rows, flow status) |
 | `global` | 5 | 25 | global state channel (GlobalStateSync: a system's own ISerializable blob or a typed channel) |
 | `actions` | 2 | 0 | UI intent / unlock channel (ActionSync) |
 | `statistics` | 2 | 1 | statistics history channel (StatisticsSync) |
@@ -148,7 +156,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `movers` | 84 | 0 | mover channel (MoverHost/MoverClient: existence, discrete state, motion) |
 | `icons` | 5 | 0 | notification icon channel (IconSync) |
 | `clock` | 0 | 4 | follower clock (frame index, speed) and the local pure functions of it |
-| `derived` | 111 | 7 | derived identically on every peer from synced inputs (the vanilla system keeps running) |
+| `derived` | 109 | 7 | derived identically on every peer from synced inputs (the vanilla system keeps running) |
 | `snapshot` | 164 | 6 | arrives with the join snapshot and is invariant during a session (or changes only with synced inputs) |
 | `local` | 5 | 8 | per-player by design (camera, UI, tool, preferences) |
 | `transient` | 2 | 0 | one-frame command, tool-time or render-time data; never outlives a frame or a tool action |
@@ -191,7 +199,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Game.Simulation.CountVehicleDataSystem` | GameSimulation | `global` | blob "Count.Vehicles" (2 s) | w3/audit fix: bicycle and parking counters |
 | `Game.Simulation.CountWorkplacesSystem` | GameSimulation | `global` | blob "Count.Workplaces" | workplace counters |
 | `Game.Simulation.DeathCheckSystem` | GameSimulation | `snapshot` | join snapshot | death-rate curve flag, set once per save |
-| `Game.Simulation.ElectricityFlowSystem` | GameSimulation | `derived` | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph; flow values: see the runtime table |
+| `Game.Simulation.ElectricityFlowSystem` | GameSimulation | `derived` | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync, w4/flow) |
 | `Game.Simulation.ElectricityStatisticsSystem` | GameSimulation | `global` | blob "Electricity.Statistics" (1 s) | w3/audit fix: electricity panel production and consumption |
 | `Game.Simulation.ElectricityTradeSystem` | GameSimulation | `global` | blob "Electricity.Trade" (1 s) | w3/audit fix: electricity import and export |
 | `Game.Simulation.FireHazardSystem` | GameSimulation | `global` | blob "FireHazard" (5 s) | w3/audit fix: dry days of the fire hazard view |
@@ -222,7 +230,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Game.Simulation.TrafficAmbienceSystem` | GameSimulation | `cellmap` | CellMapSync | traffic ambience map |
 | `Game.Simulation.TransportLineSystem` | GameSimulation | `hostonly` | host-only input | maximum transport speeds used by the host's vehicle AIs |
 | `Game.Simulation.TransportUsageTrackSystem` | GameSimulation | `hostonly` | host-only input | transport usage feeds unlock requirements (host); results travel on the unlock channel |
-| `Game.Simulation.WaterPipeFlowSystem` | GameSimulation | `derived` | flow graph topology rebuilt on every peer | flow values: see the runtime table |
+| `Game.Simulation.WaterPipeFlowSystem` | GameSimulation | `derived` | flow graph topology rebuilt on every peer | source and sink node (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync, w4/flow) |
 | `Game.Simulation.WaterStatisticsSystem` | GameSimulation | `global` | blob "Water.Statistics" (1 s) | w3/audit fix: water panel |
 | `Game.Simulation.WaterSystem` | PostSimulation | `water` | WaterSync | water surface, sources, sea level |
 | `Game.Simulation.WaterTradeSystem` | GameSimulation | `global` | blob "Water.Trade" (1 s) | w3/audit fix: water import and export |
@@ -982,11 +990,11 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `ConnectedFlowEdge` | buffer (empty) | `derived` | flow graph | derived topology |
 | `Creditworthiness` | component | `scan` | City entity value scan (1 s) | loan panel |
 | `Dispatched` | component | `hostonly` | service requests (TransientAgent family) | requests and dispatch are host simulation |
-| `ElectricityBuildingConnection` | component | `derived` | flow graph | derived topology |
-| `ElectricityFlowEdge` | component | `derived` | flow graph topology; flow values host-only (see the runtime table) | infoview flow colours of power lines are a documented exception |
+| `ElectricityBuildingConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (transformer, producer, consumer, charge, discharge) |
+| `ElectricityFlowEdge` | component | `keyed` | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | w4/flow fix: infoview colours of power lines and transformers (ARCH 4.11.5) |
 | `ElectricityFlowNode` | component (empty) | `derived` | flow graph | derived topology |
-| `ElectricityNodeConnection` | component | `derived` | flow graph | derived topology |
-| `ElectricityValveConnection` | component | `derived` | flow graph | derived topology |
+| `ElectricityNodeConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys |
+| `ElectricityValveConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys |
 | `EvacuationRequest` | component | `hostonly` | TransientAgent family | host simulation |
 | `FireRescueRequest` | component | `hostonly` | TransientAgent family | host simulation |
 | `FloodCounterData` | component | `hostonly` | host-only counter | flood bookkeeping of the host's water danger systems; floods arrive as events |
@@ -1010,11 +1018,11 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `TradeNode` | component (empty) | `derived` | flow graph | derived topology |
 | `TransportVehicleRequest` | component | `hostonly` | TransientAgent family | host simulation |
 | `UpdateFrame` | shared | `movers` | spawn bundle (host UpdateFrame) / prefab archetype | shared component; set on spawn |
-| `WaterPipeBuildingConnection` | component | `derived` | flow graph | derived topology |
-| `WaterPipeEdge` | component | `derived` | flow graph topology; flow values host-only (see the runtime table) | infoview flow colours of pipes are a documented exception |
+| `WaterPipeBuildingConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (producer, consumer) |
+| `WaterPipeEdge` | component | `keyed` | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | w4/flow fix: infoview colours of water and sewage pipes (ARCH 4.11.5) |
 | `WaterPipeNode` | component | `derived` | flow graph | derived topology |
-| `WaterPipeNodeConnection` | component | `derived` | flow graph | derived topology |
-| `WaterPipeValveConnection` | component | `derived` | flow graph | derived topology |
+| `WaterPipeNodeConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys |
+| `WaterPipeValveConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys |
 | `WaterSourceData` | component | `water` | WaterSource family (structure) | water sources |
 
 #### Game.Tools (3)

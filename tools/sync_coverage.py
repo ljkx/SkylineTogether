@@ -33,7 +33,7 @@ STATUS_TEXT = OrderedDict([
     ("presence", "structure codec + presence watch: components the simulation adds or removes without an Updated tag"),
     ("scan", "structure value scan: entity values hashed every 0.25-1 s, changes re-sent"),
     ("values", "simulation values (attention scan, SimValues stream)"),
-    ("keyed", "keyed state on derived entities (zone cells, sub-element deletions, line rows)"),
+    ("keyed", "keyed state on derived entities (zone cells, sub-element deletions, line rows, flow status)"),
     ("global", "global state channel (GlobalStateSync: a system's own ISerializable blob or a typed channel)"),
     ("actions", "UI intent / unlock channel (ActionSync)"),
     ("statistics", "statistics history channel (StatisticsSync)"),

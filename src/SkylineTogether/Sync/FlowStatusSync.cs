@@ -94,6 +94,8 @@ namespace SkylineTogether.Sync
             public FlowNetwork Network;
             public AttentionTopic Topic;
             public EntityQuery Edges, NodeConnections, ValveConnections, BuildingConnections;
+            /// <summary>Client: read-write query of the edge type; completing it waits for the readers too (NetColorSystem, tooltips).</summary>
+            public EntityQuery Writes;
             public readonly Dictionary<Entity, FlowNodeKey> Owners = new Dictionary<Entity, FlowNodeKey>();
             public FlowStatusTable Scan = new FlowStatusTable(), Current = new FlowStatusTable();
             public Dictionary<FlowKey, Entity> ScanIndex = new Dictionary<FlowKey, Entity>(), Index = new Dictionary<FlowKey, Entity>();
@@ -185,10 +187,12 @@ namespace SkylineTogether.Sync
             _electricityFlow = world.GetOrCreateSystemManaged<ElectricityFlowSystem>();
             _waterFlow = world.GetOrCreateSystemManaged<WaterPipeFlowSystem>();
             _electricity.Edges = Query(em, ComponentType.ReadOnly<ElectricityFlowEdge>());
+            _electricity.Writes = Query(em, ComponentType.ReadWrite<ElectricityFlowEdge>());
             _electricity.NodeConnections = Query(em, ComponentType.ReadOnly<ElectricityNodeConnection>());
             _electricity.ValveConnections = Query(em, ComponentType.ReadOnly<ElectricityValveConnection>());
             _electricity.BuildingConnections = Query(em, ComponentType.ReadOnly<ElectricityBuildingConnection>());
             _water.Edges = Query(em, ComponentType.ReadOnly<WaterPipeEdge>());
+            _water.Writes = Query(em, ComponentType.ReadWrite<WaterPipeEdge>());
             _water.NodeConnections = Query(em, ComponentType.ReadOnly<WaterPipeNodeConnection>());
             _water.ValveConnections = Query(em, ComponentType.ReadOnly<WaterPipeValveConnection>());
             _water.BuildingConnections = Query(em, ComponentType.ReadOnly<WaterPipeBuildingConnection>());
@@ -654,7 +658,8 @@ namespace SkylineTogether.Sync
             }
         }
 
-        private static void CompleteEdges(Graph g) => g.Edges.CompleteDependency();
+        /// <summary>Completes every job that reads or writes the edge type before the main thread writes it.</summary>
+        private static void CompleteEdges(Graph g) => g.Writes.CompleteDependency();
 
         /// <summary>After a local pass: cached host values onto the edges the graph systems built or rebuilt meanwhile.</summary>
         private void Reapply(Graph g)
