@@ -236,6 +236,7 @@
   "st.toast.critical.host": "Skyline Together hit repeated errors in {FEATURE} and ended the session. Diagnostics were written; please send them to us.",
   "st.toast.critical.other": "Skyline Together hit repeated errors in {FEATURE}. Please write diagnostics and send them to us.",
   "st.toast.featureOff": "Skyline Together: {FEATURE} hit repeated errors and is off for this session. Please use \"Write diagnostics\" and send us the file.",
+  "st.toast.viewerFollow": "You are a viewer in this session: ask the host to make you a builder to follow citizens.",
   "st.toast.uiMissing": "The Skyline Together panel did not load. Host, join and leave from Options → Skyline Together instead, and please send us the diagnostics file.",
   "st.chat.reconnecting": "Reconnecting (attempt {N} of {MAX})…",
   "st.chat.reconnected": "Reconnected to \"{SESSION}\".",

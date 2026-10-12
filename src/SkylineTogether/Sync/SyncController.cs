@@ -216,6 +216,12 @@ namespace SkylineTogether.Sync
             };
             _global.Actions = _actions;
             _global.Allows = Allows;
+            // polish: a viewer's client undoes its own edits of shared state no tool gate covers (following citizens)
+            _global.LocalAllows = needed =>
+            {
+                SessionClient client = _sessions.Client;
+                return client == null || client.State != ClientState.Live || RolePermissions.Allows(client.LocalRole, needed);
+            };
             _global.Reject = (peer, reason, ids) => RejectIntent(peer, reason, ids);
             // feat/terrain
             _terrain = new TerrainSync(sessions, log);

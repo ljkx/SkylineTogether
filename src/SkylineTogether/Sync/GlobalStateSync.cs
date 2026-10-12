@@ -150,6 +150,10 @@ namespace SkylineTogether.Sync
         /// <summary>Host: whether a peer's role allows a permission (ARCH §5.6).</summary>
         public Func<PeerId, Permission, bool> Allows;
 
+        /// <summary>Client: whether the local role allows a permission (null: allowed). Used to undo a viewer's local
+        /// edits of shared state that no tool gate covers (following citizens), before they are proposed.</summary>
+        public Func<Permission, bool> LocalAllows;
+
         /// <summary>Host: a refused edit; the controller tells the peer and re-sends the listed entities.</summary>
         public Action<PeerId, RejectReason, IReadOnlyList<uint>> Reject;
 
@@ -180,14 +184,14 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>Host: permission check of one channel proposal; refuses it (and re-sends the state) when not allowed.</summary>
-        private bool Permitted(PeerId peer, uint channel, Permission needed)
+        private bool Permitted(PeerId peer, uint channel, Permission needed, byte[] payload)
         {
             if (Allows == null || Allows(peer, needed)) return true;
             _log.Info(LogCategory.Replication, "global state: " + peer + " may not change " + ChannelName(channel));
             // the channel's state goes out again, so the refused prediction is corrected (fees, loan and policies
             // live on entities the host scans anyway)
             if (channel == GlobalChannel.Tax || channel == GlobalChannel.Budget || channel == GlobalChannel.Name || channel == GlobalChannel.CityName) _send.MarkDirty(channel);
-            Reject?.Invoke(peer, RejectReason.NoPermission, Array.Empty<uint>());
+            Reject?.Invoke(peer, RejectReason.NoPermission, RefusedIds(channel, payload));
             return false;
         }
 
@@ -412,7 +416,7 @@ namespace SkylineTogether.Sync
                 Actions?.ApplyProposal(peer, payload);
                 return;
             }
-            if (!Permitted(peer, channel, RequiredPermission(channel))) return;
+            if (!Permitted(peer, channel, RequiredPermission(channel), payload)) return;
             if (ApplyPanelProposal(peer, channel, payload)) return; // w3/audit: followed citizens
             if (channel == GlobalChannel.Tax)
             {
@@ -515,6 +519,9 @@ namespace SkylineTogether.Sync
             if (channel == GlobalChannel.Tax || channel == GlobalChannel.Budget || channel == GlobalChannel.Fee || channel == GlobalChannel.Loan) return Permission.Economy;
             if (channel == GlobalChannel.Policy) return Permission.Policies;
             if (channel == GlobalChannel.Name || channel == GlobalChannel.CityName) return Permission.Names;
+            // polish: the followed-citizen list is shared city state (50 slots, life-path entries), so viewers may not
+            // change it; following is a cosmetic, city-wide choice like names
+            if (channel == FollowChannel) return Permission.Names;
             return Permission.None;
         }
 
