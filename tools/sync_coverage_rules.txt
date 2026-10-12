@@ -4,7 +4,7 @@
 #   pattern: a full type name (exact), optionally qualified "system:" or "component:", or a prefix ending in "*".
 #            First match wins: qualified exact, exact, then the longest prefix.
 #   status:  structure, presence, scan, values, keyed, global, actions, statistics, cellmap, terrain, water, movers,
-#            icons, clock, derived, snapshot, local, transient, other-work, excluded, gap (see the script).
+#            icons, clock, derived, snapshot, local, transient, agents, hostonly, excluded, gap (see the script).
 # Families (FamilyClassifier/FamilyRules): which entities a component lives on decides its path. Structure entities
 # (nets, objects, areas, routes, water sources, mod entities, and since w3/audit events) send every serializable
 # component in their structure records; values of non-structure types also travel on the attention values stream.
@@ -56,11 +56,11 @@ system:Game.Simulation.NaturalResourceSystem | cellmap | CellMapSync | natural r
 system:Game.Simulation.NoisePollutionSystem | cellmap | CellMapSync | noise map
 system:Game.Simulation.PlanetarySystem | clock | runs on every peer (PreCulling) | sun and moon from the replicated date and time
 system:Game.Simulation.PopulationToGridSystem | cellmap | CellMapSync | population map
-system:Game.Simulation.ProcessingCompanySystem | snapshot | host-only input | produced-resource totals feed only unlock requirements, which the host evaluates (unlock channel)
+system:Game.Simulation.ProcessingCompanySystem | hostonly | host-only input | produced-resource totals feed only unlock requirements, which the host evaluates (unlock channel)
 system:Game.Simulation.ProductionChainDataSystem | snapshot | - | serializes nothing
 system:Game.Simulation.ProductionSpecializationSystem | values | City SpecializationBonus (structure value scan) | its queue is host-internal input; Serialize drains the queue, so it must never be mirrored as a blob
 system:Game.Simulation.ResidentialDemandSystem | global | blob "Demand.Residential" | demand bars
-system:Game.Simulation.ResourceAvailabilitySystem | snapshot | host-only cursor | round-robin cursor of the host's availability update; results travel as net values
+system:Game.Simulation.ResourceAvailabilitySystem | hostonly | host-only cursor | round-robin cursor of the host's availability update; results travel as net values
 system:Game.Simulation.ServiceFeeSystem | global | custom channel "Fees.Collected" (1 s) | w3/audit fix: the fee cache the budget panel's fee income is computed from (CollectedCityServiceFeeData on service prefabs, which do not replicate); the fee queue is host-internal
 system:Game.Simulation.SimulationSystem | clock | follower clock (frame index, speed) | ARCH 6.1
 system:Game.Simulation.SnowSystem | local | cosmetic allow-list | snow cover is simulated locally for visuals (ARCH 2.4)
@@ -69,10 +69,10 @@ system:Game.Simulation.TaxSystem | global | GlobalChannel.Tax (both ways) | tax 
 system:Game.Simulation.TelecomCoverageSystem | cellmap | CellMapSync | telecom map
 system:Game.Simulation.TerrainAttractivenessSystem | cellmap | CellMapSync | terrain attractiveness map
 system:Game.Simulation.TerrainSystem | terrain | TerrainSync (heightmap tiles, stamps) | terrain
-system:Game.Simulation.TradeSystem | snapshot | host-only input | trade balances feed company trade costs on the host only; companies are agents
+system:Game.Simulation.TradeSystem | hostonly | host-only input | trade balances feed company trade costs on the host only; companies are agents
 system:Game.Simulation.TrafficAmbienceSystem | cellmap | CellMapSync | traffic ambience map
-system:Game.Simulation.TransportLineSystem | snapshot | host-only input | maximum transport speeds used by the host's vehicle AIs
-system:Game.Simulation.TransportUsageTrackSystem | snapshot | host-only input | transport usage feeds unlock requirements (host); results travel on the unlock channel
+system:Game.Simulation.TransportLineSystem | hostonly | host-only input | maximum transport speeds used by the host's vehicle AIs
+system:Game.Simulation.TransportUsageTrackSystem | hostonly | host-only input | transport usage feeds unlock requirements (host); results travel on the unlock channel
 system:Game.Simulation.WaterPipeFlowSystem | derived | flow graph topology rebuilt on every peer | flow values: see the runtime table
 system:Game.Simulation.WaterStatisticsSystem | global | blob "Water.Statistics" (1 s) | w3/audit fix: water panel
 system:Game.Simulation.WaterSystem | water | WaterSync | water surface, sources, sea level
@@ -107,7 +107,7 @@ Game.Simulation.CollectedServiceBuildingBudgetData | derived | CityServiceBudget
 Game.Simulation.Creditworthiness | scan | City entity value scan (1 s) | loan panel
 Game.Simulation.Loan | scan | City entity value scan + GlobalChannel.Loan (both ways) | loan
 Game.Simulation.ServiceBudgetData | global | GlobalChannel.Budget (both ways) | service budgets
-Game.Simulation.FloodCounterData | snapshot | host-only counter | flood bookkeeping of the host's water danger systems; floods arrive as events
+Game.Simulation.FloodCounterData | hostonly | host-only counter | flood bookkeeping of the host's water danger systems; floods arrive as events
 Game.Simulation.WaterSourceData | water | WaterSource family (structure) | water sources
 Game.Simulation.UpdateFrame | movers | spawn bundle (host UpdateFrame) / prefab archetype | shared component; set on spawn
 Game.Simulation.MaintenanceConsumer | values | attention values | on buildings and nets
@@ -125,24 +125,24 @@ Game.Simulation.BatteryChargeNode | derived | flow graph | derived topology
 Game.Simulation.BatteryDischargeNode | derived | flow graph | derived topology
 Game.Simulation.ConnectedFlowEdge | derived | flow graph | derived topology
 Game.Simulation.TradeNode | derived | flow graph | derived topology
-Game.Simulation.Dispatched | other-work | service requests (TransientAgent family) | requests and dispatch are host simulation
-Game.Simulation.ServiceDispatch | other-work | service requests (TransientAgent family) | host simulation; vehicles' targets travel with the movers
-Game.Simulation.ServiceRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.EvacuationRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.FireRescueRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.GarbageCollectionRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.GarbageTransferRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.GoodsDeliveryRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.HealthcareRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.MailTransferRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.MaintenanceRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.PoliceEmergencyRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.PolicePatrolRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.PostVanRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.PrisonerTransportRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.RandomTrafficRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.TaxiRequest | other-work | TransientAgent family | host simulation
-Game.Simulation.TransportVehicleRequest | other-work | TransientAgent family | host simulation
+Game.Simulation.Dispatched | hostonly | service requests (TransientAgent family) | requests and dispatch are host simulation
+Game.Simulation.ServiceDispatch | hostonly | service requests (TransientAgent family) | host simulation; vehicles' targets travel with the movers
+Game.Simulation.ServiceRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.EvacuationRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.FireRescueRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.GarbageCollectionRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.GarbageTransferRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.GoodsDeliveryRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.HealthcareRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.MailTransferRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.MaintenanceRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.PoliceEmergencyRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.PolicePatrolRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.PostVanRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.PrisonerTransportRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.RandomTrafficRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.TaxiRequest | hostonly | TransientAgent family | host simulation
+Game.Simulation.TransportVehicleRequest | hostonly | TransientAgent family | host simulation
 
 # ---- city singleton (City entity, scanned every second) ---------------------------------------------------------------
 Game.City.* | scan | City entity value scan (1 s, change-driven) | money, loan, XP, milestone, population, tourism, danger level, modifiers
@@ -179,12 +179,12 @@ Game.Buildings.Condemned | presence | structure codec + presence watch | condemn
 Game.Buildings.RescueTarget | presence | structure codec + presence watch | targets of disaster rescue
 Game.Buildings.PropertyOnMarket | presence | structure codec + presence watch, values by attention | property market
 Game.Buildings.PropertyToBeOnMarket | presence | structure codec + presence watch | property market
-Game.Buildings.PropertyRenter | other-work | agent replication (households, companies) | renters are agents
-Game.Buildings.Renter | other-work | data on buildings; renters are agents | ARCH 4.2.4
-Game.Buildings.Occupant | other-work | data on buildings; occupants are citizens | ARCH 4.2.4
-Game.Buildings.Patient | other-work | data on buildings; patients are citizens | ARCH 4.2.4
-Game.Buildings.Student | other-work | data on buildings; students are citizens | ARCH 4.2.4
-Game.Buildings.StudentsRemoved | other-work | marker of student removal (citizens) | host simulation
+Game.Buildings.PropertyRenter | agents | agent replication (households, companies) | renters are agents
+Game.Buildings.Renter | agents | data on buildings; renters are agents | ARCH 4.2.4
+Game.Buildings.Occupant | agents | data on buildings; occupants are citizens | ARCH 4.2.4
+Game.Buildings.Patient | agents | data on buildings; patients are citizens | ARCH 4.2.4
+Game.Buildings.Student | agents | data on buildings; students are citizens | ARCH 4.2.4
+Game.Buildings.StudentsRemoved | agents | marker of student removal (citizens) | host simulation
 Game.Buildings.Signature | structure | structure codec | signature marker
 Game.Buildings.CityEffectProvider | structure | structure codec | marker
 Game.Buildings.LocalEffectProvider | structure | structure codec | marker
@@ -305,7 +305,7 @@ Game.Routes.TaxiStand | keyed | stop state by key | stops
 Game.Routes.ConnectedRoute | keyed | data on stops (ARCH 4.2.4) | stop links
 Game.Routes.RouteVehicle | scan | data on routes (ARCH 4.2.4) | vehicles of a line
 Game.Routes.CurrentRoute | movers | mover forward reference | vehicles
-Game.Routes.DispatchedRequest | other-work | service requests | host simulation
+Game.Routes.DispatchedRequest | hostonly | service requests | host simulation
 Game.Routes.CurveElement | derived | SegmentCurveSystem from host path state | derived
 Game.Routes.SubRoute | derived | on every peer | derived
 Game.Routes.HiddenRoute | local | per-player overlay | masked out of replication
@@ -316,7 +316,7 @@ Game.Routes.TakeoffLocation | structure | structure codec | airports
 # ---- pathfinding ------------------------------------------------------------------------------------------------------
 Game.Pathfind.PathElement | scan | route segments: host path state (lanes as keys); movers: on demand | ARCH 4.11.3
 Game.Pathfind.PathInformation | scan | route segments: host path state | ARCH 4.11.3
-Game.Pathfind.PathInformations | other-work | pathfinding of agents | host simulation
+Game.Pathfind.PathInformations | hostonly | pathfinding of agents | host simulation
 Game.Pathfind.PathOwner | movers | mover state | vehicles and creatures
 Game.Pathfind.CoverageElement | derived | coverage pathfinding | derived
 
@@ -329,25 +329,31 @@ Game.Events.AccidentSite | presence | structure codec + presence watch | w3/audi
 Game.Events.FacingWeather | presence | structure codec + presence watch | w3/audit fix
 Game.Events.SpectatorSite | presence | structure codec + presence watch | w3/audit fix
 Game.Events.InvolvedInAccident | movers | mover discrete state | vehicles and creatures in an accident
-Game.Events.AttendingEvent | other-work | citizens | agent state
+Game.Events.AttendingEvent | agents | citizens | agent state
 Game.Events.HotspotFrame | derived | EventSync writes the frames from the replicated hotspot | w3/audit fix: never saved; EventInterpolateSystem indexes it unchecked
 Game.Events.EventJournalEntry | scan | host-only Event family | w3/audit fix: the event journal; EventJournalSystem keeps the list and callbacks on clients
 Game.Events.EventJournalData | scan | host-only Event family | w3/audit fix
 Game.Events.EventJournalCityEffect | scan | host-only Event family | w3/audit fix
 Game.Events.EventJournalPending | scan | host-only Event family | w3/audit fix
 Game.Events.EventJournalCompleted | scan | host-only Event family | w3/audit fix
-Game.Events.FindingEventParticipants | other-work | meetings of citizens | agent state
+Game.Events.FindingEventParticipants | agents | meetings of citizens | agent state
 Game.Triggers.* | scan | host-only Event family: structure codec + value scan | w3/audit fix: chirps and life-path events; CreateChirpSystem gated on clients
 Game.Triggers.ChirpLink | structure | structure codec (buffer on linked entities) | chirp references of buildings
-Game.Triggers.LifePathEntry | other-work | on followed citizens | agent state
+Game.Triggers.LifePathEntry | agents | on followed citizens | agent state
 Game.Triggers.RadioEvent | local | radio is per player | -
 
-# ---- agents (another branch) ------------------------------------------------------------------------------------------
-Game.Citizens.* | other-work | agent replication | citizens, households, pets, meetings
-Game.Companies.* | other-work | agent replication | companies
+# ---- agents (AgentSync, branch w3/agents, merged) ---------------------------------------------------------------------
+Game.Citizens.* | agents | agent replication | citizens, households, pets
+Game.Citizens.SchoolSeeker | hostonly | TransientAgent family; references arrive as null | school search bookkeeping
+Game.Citizens.LookingForPartner | hostonly | TransientAgent family | partner search bookkeeping
+Game.Citizens.CoordinatedMeeting | hostonly | TransientAgent family | meeting bookkeeping
+Game.Citizens.CoordinatedMeetingAttendee | hostonly | TransientAgent family | meeting bookkeeping
+Game.Citizens.Followed | actions | channel "Follow" (client deltas, host LifePathEventSystem.FollowCitizen) + agent replication | w3/audit fix: the followed list is part of the city and shared
+Game.Companies.* | agents | agent replication | companies
 Game.Companies.WorkProvider | values | attention values (service buildings) | worker capacity of service buildings
-Game.Companies.Employee | other-work | data on buildings; employees are citizens | ARCH 4.2.4
-Game.Agents.* | other-work | agent replication | seekers, tax payers, moving away
+Game.Companies.Employee | agents | data on buildings; employees are citizens | ARCH 4.2.4
+Game.Agents.* | agents | agent replication (components of households and citizens) | tax payers, moving away, property seekers
+Game.Agents.JobSeeker | hostonly | TransientAgent family; references to it arrive as null | job search bookkeeping; the resulting jobs replicate with the agents
 
 # ---- movers -----------------------------------------------------------------------------------------------------------
 Game.Vehicles.* | movers | mover channel | vehicles (ARCH 2.3)
@@ -356,7 +362,7 @@ Game.Creatures.* | movers | mover channel | residents, pets, wildlife
 Game.Creatures.OwnedCreature | derived | reference systems | -
 Game.Creatures.CreatureSpawner | structure | structure codec | spawner marker on objects
 Game.Creatures.AmbienceEmitter | structure | structure codec | marker on objects
-Game.Creatures.Domesticated | other-work | pets of households | agent state
+Game.Creatures.Domesticated | agents | pets of households | agent state
 
 # ---- notifications ----------------------------------------------------------------------------------------------------
 Game.Notifications.* | icons | IconSync (per-owner icon sets) | every warning and problem indicator
@@ -368,7 +374,7 @@ Game.Rendering.MeshColorPalette | local | per-player palette (ACTION-COVERAGE ro
 Game.Rendering.InterpolatedTransform | derived | rendering; EventSync sets it for weather phenomena | -
 
 # ---- remaining namespaces ---------------------------------------------------------------------------------------------
-Game.Economy.Resources | values | attention values (buildings); agents: other work; movers: mover allow-list | stored resources
+Game.Economy.Resources | values | attention values (buildings); agents: agent replication; movers: mover allow-list | stored resources
 Game.Economy.ResourceInfo | snapshot | resource prefabs | prefab data
 Game.Policies.Policy | global | GlobalChannel.Policy (Modify events) + structure codec | policies of the city, districts, buildings, lines
 Game.Effects.EnabledEffect | derived | EffectControlSystem on every peer | from replicated state
