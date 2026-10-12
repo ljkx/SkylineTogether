@@ -449,6 +449,15 @@ namespace SkylineTogether.Sync
 
         private void HostApplyStamps(PeerId peer, ByteReader r, double now)
         {
+            // final review: proposals, global channels and actions check the role; terrain strokes did not, so a viewer
+            // could terraform the host's city (the client-side viewer gate is comfort only). Its replica is corrected by
+            // the tile audit.
+            SessionHost host = _sessions.Host;
+            if (peer != PeerId.Host && host != null && !RolePermissions.Allows(host.GetRole(peer), Permission.Terraform))
+            {
+                WarnOnce("terraform." + peer.Value, peer + " may not terraform (role); its terrain strokes are ignored");
+                return;
+            }
             _stampScratch.Clear();
             TerrainMessage.ReadStamps(r, _stampScratch);
             _forward.Clear();

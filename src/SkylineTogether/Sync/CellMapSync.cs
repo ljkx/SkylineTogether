@@ -465,6 +465,10 @@ namespace SkylineTogether.Sync
             if (IsHost)
             {
                 if (h.Type != CellMapMessage.TypePatch || c.PaintMask == null) return;
+                // final review: resource painting is a terrain tool brush; a peer without the right is ignored (the
+                // periodic per-peer audit gives its replica the host's tiles back)
+                SessionHost host = _sessions.Host;
+                if (peer != PeerId.Host && host != null && !RolePermissions.Allows(host.GetRole(peer), Permission.Terraform)) return;
                 CellMapMessage.ReadPatch(r, layout, out int x0, out int y0, out int w, out int hgt, ref _patchCells);
                 c.CopyOut(c.Current);
                 int changed = CellMapMessage.MergeMasked(layout, c.Current, x0, y0, w, hgt, _patchCells, c.PaintMask);
