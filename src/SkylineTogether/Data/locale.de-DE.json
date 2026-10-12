@@ -116,6 +116,8 @@
   "st.ui.players.title": "Spieler",
   "st.ui.players.count": "{N} / {MAX}",
   "st.ui.players.kick": "Entfernen",
+  "st.ui.players.makeViewer": "Nur zuschauen",
+  "st.ui.players.makeBuilder": "Bauen erlauben",
   "st.ui.players.kickConfirm": "Sicher?",
   "st.ui.players.state.Handshaking": "verbindet…",
   "st.ui.players.state.WaitingForSnapshot": "wartet auf die Stadt…",

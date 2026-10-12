@@ -57,6 +57,31 @@ namespace SkylineTogether.Core.Sync
         MoverState = 21,
         /// <summary>Host → client: a mover disappeared.</summary>
         MoverDespawn = 22,
+
+        // ---- gameplay branch (w2/gameplay; kinds 80-89 are reserved for it): proposal validation and results ----
+
+        /// <summary>
+        /// Host → client: the number of this structural broadcast (<see cref="AuthoredLedger"/>), the last record of every
+        /// host epoch batch; a client states the newest number it applied as the base of its proposals (conflict check).
+        /// </summary>
+        Epoch = 80,
+        /// <summary>Client → host: sequence number, base epoch and flags of the proposal in this batch (ARCH §5.4.1).</summary>
+        ProposalHeader = 81,
+        /// <summary>Host → client (originator only): the result of a proposal; rejected ones are rolled back by the resend that follows.</summary>
+        ProposalResult = 82,
+    }
+
+    /// <summary>What a proposal batch contains (<see cref="SyncRecordKind.ProposalHeader"/>).</summary>
+    [Flags]
+    public enum ProposalFlags : byte
+    {
+        None = 0,
+        /// <summary>A vanilla tool apply (stage B/C capture).</summary>
+        ToolApply = 1,
+        /// <summary>Un-applied changes of a direct-write tool from another mod (Move It, Zoning Toolkit, ...).</summary>
+        DirectTool = 2,
+        /// <summary>Deletions made through the UI (district, service upgrade, line) outside any tool.</summary>
+        UiDelete = 4,
     }
 
     /// <summary>What a client asks the host for.</summary>
@@ -147,6 +172,18 @@ namespace SkylineTogether.Core.Sync
         /// <summary>For <see cref="SyncRecordKind.MoverSpawn"/> and <see cref="SyncRecordKind.MoverState"/> (movers branch).</summary>
         public MoverRecord Mover;
 
+        // ---- gameplay branch ----
+        /// <summary><see cref="SyncRecordKind.Epoch"/>: the broadcast number.</summary>
+        public uint EpochNumber;
+        /// <summary><see cref="SyncRecordKind.ProposalHeader"/>, <see cref="SyncRecordKind.ProposalResult"/>: the proposal's sequence number.</summary>
+        public uint Seq;
+        /// <summary><see cref="SyncRecordKind.ProposalHeader"/>: the newest host epoch the client had applied.</summary>
+        public uint BaseEpoch;
+        /// <summary><see cref="SyncRecordKind.ProposalHeader"/>: what the proposal contains.</summary>
+        public ProposalFlags ProposalFlags;
+        /// <summary><see cref="SyncRecordKind.ProposalResult"/>: <see cref="RejectReason.None"/> for an accepted proposal.</summary>
+        public RejectReason Reason;
+
         public override string ToString() => Kind + " #" + NetId + (Components.Count > 0 ? " (" + Components.Count + " components)" : "");
     }
 
@@ -235,6 +272,7 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.Request:
                 case SyncRecordKind.Global:
                 case SyncRecordKind.RequestIds:
+                case SyncRecordKind.ProposalHeader:
                     return true;
                 default:
                     return false;
@@ -488,6 +526,35 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            // ---- gameplay branch ----
+
+            /// <summary>Host: stamps this structural broadcast with its epoch number.</summary>
+            public void Epoch(uint epoch)
+            {
+                _w.WriteByte((byte)SyncRecordKind.Epoch);
+                _w.WriteVarUInt32(epoch);
+                _count++;
+            }
+
+            /// <summary>Client: the header of the proposal in this batch.</summary>
+            public void ProposalHeader(uint seq, uint baseEpoch, ProposalFlags flags)
+            {
+                _w.WriteByte((byte)SyncRecordKind.ProposalHeader);
+                _w.WriteVarUInt32(seq);
+                _w.WriteVarUInt32(baseEpoch);
+                _w.WriteByte((byte)flags);
+                _count++;
+            }
+
+            /// <summary>Host → originator: the result of proposal <paramref name="seq"/>.</summary>
+            public void ProposalResult(uint seq, RejectReason reason)
+            {
+                _w.WriteByte((byte)SyncRecordKind.ProposalResult);
+                _w.WriteVarUInt32(seq);
+                _w.WriteVarUInt32((ushort)reason);
+                _count++;
+            }
+
             /// <summary>The finished batch bytes (valid until the next write).</summary>
             public ArraySegment<byte> Finish()
             {
@@ -685,6 +752,22 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.MoverDespawn:
                     rec.NetId = r.ReadVarUInt32();
                     return rec;
+                case SyncRecordKind.Epoch:
+                    rec.EpochNumber = r.ReadVarUInt32();
+                    return rec;
+                case SyncRecordKind.ProposalHeader:
+                    rec.Seq = r.ReadVarUInt32();
+                    rec.BaseEpoch = r.ReadVarUInt32();
+                    rec.ProposalFlags = (ProposalFlags)r.ReadByte();
+                    return rec;
+                case SyncRecordKind.ProposalResult:
+                {
+                    rec.Seq = r.ReadVarUInt32();
+                    uint reason = r.ReadVarUInt32();
+                    if (reason > ushort.MaxValue) throw new DecodeException("proposal result reason " + reason);
+                    rec.Reason = (RejectReason)reason;
+                    return rec;
+                }
                 default:
                     throw new DecodeException("unknown sync record kind " + (byte)rec.Kind);
             }

@@ -117,6 +117,8 @@
     "st.ui.players.title",
     "st.ui.players.count",
     "st.ui.players.kick",
+    "st.ui.players.makeViewer",
+    "st.ui.players.makeBuilder",
     "st.ui.players.kickConfirm",
     "st.ui.players.state.Handshaking",
     "st.ui.players.state.WaitingForSnapshot",

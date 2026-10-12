@@ -214,7 +214,7 @@ const triggerNames = new Set(triggers.map((t) => t[1]));
 for (const t of triggerNames) if (!csTriggers.has(t)) fail("trigger the C# side does not provide: " + t);
 for (const t of triggers) if (t[0] !== "skylineTogether") fail("trigger outside the group: " + t[0]);
 console.log("triggers used: " + [...triggerNames].sort().join(", "));
-for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends", "toggleNetHud", "writeDiagnostics"]) {
+for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends", "toggleNetHud", "writeDiagnostics", "toggleRole"]) {
   if (!triggerNames.has(t)) fail("no UI path fires the trigger " + t);
 }
 

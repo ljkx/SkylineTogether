@@ -186,6 +186,8 @@ const EN = {
   "st.ui.players.title": "Players",
   "st.ui.players.count": "{N} / {MAX}",
   "st.ui.players.kick": "Kick",
+  "st.ui.players.makeViewer": "Make viewer",
+  "st.ui.players.makeBuilder": "Make builder",
   "st.ui.players.kickConfirm": "Sure?",
   "st.ui.players.state.Handshaking": "connecting…",
   "st.ui.players.state.WaitingForSnapshot": "waiting for the city…",
@@ -897,6 +899,9 @@ function PlayerRow(p) {
           : null
     ),
     !pl.host && !joining ? h("div", { style: { display: "flex", alignItems: "center", marginLeft: "8rem" } }, h(PingBars, { ping: pl.ping }), h("div", { style: { color: T.dim, fontSize: FS.xs, marginLeft: "5rem", width: "44rem" } }, t("st.ui.players.ping", { N: pl.ping }))) : null,
+    s.mode === "Hosting" && !pl.host && !joining // gameplay branch: viewers watch, builders build
+      ? h(Btn, { small: true, kind: "flat", style: { marginLeft: "8rem" }, onClick: function () { send("toggleRole", pl.id); } }, pl.role === "viewer" ? t("st.ui.players.makeBuilder") : t("st.ui.players.makeViewer"))
+      : null,
     s.mode === "Hosting" && !pl.host
       ? h(Btn, { small: true, kind: confirm.armed ? "danger" : "flat", style: { marginLeft: "8rem" }, onClick: function () { confirm.run(function () { send("kick", pl.id); }); } }, confirm.armed ? t("st.ui.players.kickConfirm") : t("st.ui.players.kick"))
       : null

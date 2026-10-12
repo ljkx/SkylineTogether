@@ -116,6 +116,8 @@
   "st.ui.players.title": "Players",
   "st.ui.players.count": "{N} / {MAX}",
   "st.ui.players.kick": "Kick",
+  "st.ui.players.makeViewer": "Make viewer",
+  "st.ui.players.makeBuilder": "Make builder",
   "st.ui.players.kickConfirm": "Sure?",
   "st.ui.players.state.Handshaking": "connecting…",
   "st.ui.players.state.WaitingForSnapshot": "waiting for the city…",

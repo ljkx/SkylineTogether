@@ -46,6 +46,8 @@ namespace SkylineTogether.UI
             AddBinding(new TriggerBinding(Group, "leave", () => Mod.Sessions?.Leave()));
             AddBinding(new TriggerBinding<string>(Group, "chat", text => Mod.Sessions?.SendChat(text)));
             AddBinding(new TriggerBinding<int>(Group, "kick", peer => Mod.Sessions?.Kick((byte)Math.Max(0, Math.Min(255, peer)))));
+            // gameplay branch: builder ↔ viewer
+            AddBinding(new TriggerBinding<int>(Group, "toggleRole", peer => Mod.Sessions?.ToggleRole((byte)Math.Max(0, Math.Min(255, peer)))));
             AddBinding(new TriggerBinding<string, string, string>(Group, "saveHostSettings", (name, session, password) =>
             {
                 if (Mod.Settings == null) return;
