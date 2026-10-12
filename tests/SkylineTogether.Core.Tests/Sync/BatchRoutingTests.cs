@@ -81,6 +81,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 SyncRecordKind.MoverSpawn, SyncRecordKind.MoverState, SyncRecordKind.MoverDespawn, SyncRecordKind.Epoch, SyncRecordKind.ProposalResult,
                 SyncRecordKind.ModSettings, // mod compatibility: the host's mod settings
                 SyncRecordKind.MoverAgents, // w3/agents: the agents a mover refers to
+                SyncRecordKind.ReplayHashes, SyncRecordKind.ReplayMembers, SyncRecordKind.ReplayCheckpoint, // solo testing: checkpoints for the recorder
             };
             foreach (SyncRecordKind k in fromClient) Assert.True(SyncBatch.AcceptedFromClient(k), k.ToString());
             foreach (SyncRecordKind k in hostOnly) Assert.False(SyncBatch.AcceptedFromClient(k), k.ToString());

@@ -88,6 +88,31 @@ namespace SkylineTogether.Core.Sync
         ProposalHeader = 81,
         /// <summary>Host → client (originator only): the result of a proposal; rejected ones are rolled back by the resend that follows.</summary>
         ProposalResult = 82,
+
+        // ---- solo testing (record/replay verdict, ARCH §13.5; kinds 160-169 are reserved for it) ----
+
+        /// <summary>
+        /// Host → the recorder peer only: the integrity hash of every bound entity of one bucket at a verification
+        /// checkpoint (<see cref="SyncRecord.Seq"/> = checkpoint), ordered after every record it covers.
+        /// </summary>
+        ReplayHashes = 160,
+        /// <summary>
+        /// Host → the recorder peer only: the members of one entity's integrity hash and that hash, written when the hash
+        /// changed since the previous checkpoint (a replay names the differing components with it).
+        /// </summary>
+        ReplayMembers = 161,
+        /// <summary>
+        /// Host → the recorder peer only: a verification checkpoint begins or ends (<see cref="ReplayCheckpointPhase"/>);
+        /// the end carries the summary (<c>CheckpointSummary</c>: line rows, icon digests, global-state hashes).
+        /// </summary>
+        ReplayCheckpoint = 162,
+    }
+
+    /// <summary>Which end of a verification checkpoint a <see cref="SyncRecordKind.ReplayCheckpoint"/> marks (solo testing).</summary>
+    public enum ReplayCheckpointPhase : byte
+    {
+        Begin = 1,
+        End = 2,
     }
 
     /// <summary>What a proposal batch contains (<see cref="SyncRecordKind.ProposalHeader"/>).</summary>
@@ -221,6 +246,10 @@ namespace SkylineTogether.Core.Sync
         public ProposalFlags ProposalFlags;
         /// <summary><see cref="SyncRecordKind.ProposalResult"/>: <see cref="RejectReason.None"/> for an accepted proposal.</summary>
         public RejectReason Reason;
+
+        // ---- solo testing ----
+        /// <summary><see cref="SyncRecordKind.ReplayCheckpoint"/>: begin or end (the checkpoint number is <see cref="Seq"/>).</summary>
+        public ReplayCheckpointPhase CheckpointPhase;
 
         public override string ToString() => Kind + " #" + NetId + (Components.Count > 0 ? " (" + Components.Count + " components)" : "");
     }
@@ -638,6 +667,55 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            // ---- solo testing (record/replay verdict) ----
+
+            /// <summary>The integrity hashes of one bucket at checkpoint <paramref name="checkpoint"/> (<see cref="SyncRecordKind.ReplayHashes"/>).</summary>
+            public void ReplayHashes(uint checkpoint, uint bucket, IReadOnlyList<EntityHash> hashes)
+            {
+                if (hashes.Count > MaxIdsPerRecord) throw new ArgumentException("too many entity hashes", nameof(hashes));
+                _w.WriteByte((byte)SyncRecordKind.ReplayHashes);
+                _w.WriteVarUInt32(checkpoint);
+                _w.WriteVarUInt32(bucket);
+                _w.WriteVarUInt32((uint)hashes.Count);
+                for (int i = 0; i < hashes.Count; i++)
+                {
+                    _w.WriteVarUInt32(hashes[i].NetId);
+                    _w.WriteUInt64(hashes[i].Hash);
+                }
+                _count++;
+            }
+
+            /// <summary>One entity's integrity hash and its members (<see cref="SyncRecordKind.ReplayMembers"/>).</summary>
+            public void ReplayMembers(uint netId, Family family, ulong hash, IReadOnlyList<ComponentHash> members)
+            {
+                if (members.Count > MaxComponents) throw new ArgumentException("too many members", nameof(members));
+                _w.WriteByte((byte)SyncRecordKind.ReplayMembers);
+                _w.WriteVarUInt32(netId);
+                _w.WriteByte((byte)family);
+                _w.WriteUInt64(hash);
+                _w.WriteVarUInt32((uint)members.Count);
+                for (int i = 0; i < members.Count; i++)
+                {
+                    _w.WriteUInt64(members[i].TypeHash);
+                    _w.WriteUInt64(members[i].ValueHash);
+                    _w.WriteByte((byte)members[i].State);
+                }
+                _count++;
+            }
+
+            /// <summary>The begin or end of a checkpoint with an opaque summary (<see cref="SyncRecordKind.ReplayCheckpoint"/>).</summary>
+            public void ReplayCheckpoint(uint checkpoint, ReplayCheckpointPhase phase, uint frame, byte[] payload, int offset, int count)
+            {
+                if (count < 0 || count > MaxPayloadBytes) throw new ArgumentException("checkpoint summary of " + count + " bytes", nameof(count));
+                _w.WriteByte((byte)SyncRecordKind.ReplayCheckpoint);
+                _w.WriteVarUInt32(checkpoint);
+                _w.WriteByte((byte)phase);
+                _w.WriteUInt32(frame);
+                _w.WriteVarUInt32((uint)count);
+                if (count > 0) _w.WriteBytes(payload, offset, count);
+                _count++;
+            }
+
             /// <summary>The finished batch bytes (valid until the next write).</summary>
             public ArraySegment<byte> Finish()
             {
@@ -876,6 +954,42 @@ namespace SkylineTogether.Core.Sync
                     uint reason = r.ReadVarUInt32();
                     if (reason > ushort.MaxValue) throw new DecodeException("proposal result reason " + reason);
                     rec.Reason = (RejectReason)reason;
+                    return rec;
+                }
+                case SyncRecordKind.ReplayHashes:
+                {
+                    rec.Seq = r.ReadVarUInt32();
+                    rec.Bucket = r.ReadVarUInt32();
+                    uint n = ReadCount(r, MaxIdsPerRecord, 9, "checkpoint hashes");
+                    rec.Hashes = new List<EntityHash>((int)n);
+                    for (uint i = 0; i < n; i++) rec.Hashes.Add(new EntityHash(r.ReadVarUInt32(), r.ReadUInt64()));
+                    return rec;
+                }
+                case SyncRecordKind.ReplayMembers:
+                {
+                    rec.NetId = r.ReadVarUInt32();
+                    rec.Family = (Family)r.ReadByte();
+                    rec.Hash = r.ReadUInt64();
+                    uint n = ReadCount(r, MaxComponents, 17, "checkpoint members");
+                    rec.ComponentHashes = new List<ComponentHash>((int)n);
+                    for (uint i = 0; i < n; i++)
+                    {
+                        var m = new ComponentHash(r.ReadUInt64(), r.ReadUInt64(), (ComponentHashState)r.ReadByte());
+                        if (m.State > ComponentHashState.Presence) throw new DecodeException("unknown member state " + (byte)m.State);
+                        rec.ComponentHashes.Add(m);
+                    }
+                    return rec;
+                }
+                case SyncRecordKind.ReplayCheckpoint:
+                {
+                    rec.Seq = r.ReadVarUInt32();
+                    rec.CheckpointPhase = (ReplayCheckpointPhase)r.ReadByte();
+                    if (rec.CheckpointPhase != ReplayCheckpointPhase.Begin && rec.CheckpointPhase != ReplayCheckpointPhase.End) throw new DecodeException("unknown checkpoint phase " + (byte)rec.CheckpointPhase);
+                    rec.Frame = r.ReadUInt32();
+                    uint n = r.ReadVarUInt32();
+                    if (n > MaxPayloadBytes || n > (uint)r.Remaining) throw new DecodeException("checkpoint summary of " + n + " bytes");
+                    rec.Payload = new byte[n];
+                    if (n > 0) r.ReadBytes(rec.Payload, 0, (int)n);
                     return rec;
                 }
                 default:
