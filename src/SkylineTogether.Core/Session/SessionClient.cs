@@ -13,6 +13,12 @@ namespace SkylineTogether.Core.Session
         public ulong SteamId;
         public string Password = "";
         public double ConnectTimeoutSeconds = 30;
+        /// <summary>Longest wait for the host's snapshot after the welcome (the host saves the city first).</summary>
+        public double SnapshotWaitTimeoutSeconds = 300;
+        /// <summary>The download is abandoned when no chunk arrived for this long.</summary>
+        public double DownloadStallTimeoutSeconds = 120;
+        /// <summary>Longest wait for the host's "live" after the city loaded.</summary>
+        public double LiveWaitTimeoutSeconds = 120;
     }
 
     public enum ClientState
@@ -62,6 +68,8 @@ namespace SkylineTogether.Core.Session
         private double _lastProgressSent;
         private double _lastHaveSent;
         private float _loadProgress;
+        private double _lastChunkAt;
+        private double _loadedAt = -1;
         private bool _disposed;
         private Action<Envelope> _appMessage;
 
@@ -121,6 +129,38 @@ namespace SkylineTogether.Core.Session
         /// <summary>The client is live: the city is loaded and buffered messages are about to be delivered.</summary>
         public event Action BecameLive;
 
+        /// <summary>
+        /// Another player's presence (relayed by the host, which set <see cref="PresenceMessage.From"/>), only while
+        /// live; never the local player's own. The instance is new for every call.
+        /// </summary>
+        public event Action<PresenceMessage> PresenceReceived;
+
+        /// <summary>Link numbers of the connection to the host.</summary>
+        public SessionNetStats GetNetStats()
+        {
+            if (_connection == null || _channel == null || State == ClientState.Ended) return new SessionNetStats { PingMs = -1 };
+            ConnectionStats c = _connection.GetStats();
+            return new SessionNetStats
+            {
+                PingMs = c.PingMs,
+                InBytesPerSecond = Math.Max(0f, c.InBytesPerSecond),
+                OutBytesPerSecond = Math.Max(0f, c.OutBytesPerSecond),
+                QueuedBytes = _channel.Outbox.QueuedBytes,
+                Connections = 1,
+            };
+        }
+
+        /// <summary>Sends the local player's presence to the host (unreliable, live only); false when not sent.</summary>
+        public bool SendPresence(PresenceMessage presence)
+        {
+            if (presence == null || State != ClientState.Live || _channel == null) return false;
+            presence.From = LocalPeer;
+            _body.Reset();
+            PresenceMessage.Write(_body, presence);
+            _channel.SendUnreliable(MessageKind.Presence, _body);
+            return true;
+        }
+
         public void Connect(Endpoint endpoint)
         {
             if (State != ClientState.Idle) throw new InvalidOperationException("already connecting");
@@ -150,6 +190,23 @@ namespace SkylineTogether.Core.Session
                 End(State == ClientState.Connecting ? "The host did not answer. Check the address or Steam ID and that the host is hosting." : "The host did not finish the handshake.");
                 return;
             }
+            // join watchdogs: a host that never sends the city (or never answers the load) must not leave the player
+            // waiting forever; the load itself is local and has no time limit
+            if (State == ClientState.WaitingForSnapshot && now - _stateSince > _options.SnapshotWaitTimeoutSeconds)
+            {
+                End("The host did not send the city in time. Try joining again.");
+                return;
+            }
+            if (State == ClientState.Downloading && now - _lastChunkAt > _options.DownloadStallTimeoutSeconds)
+            {
+                End("The city download stalled (nothing received for " + (int)_options.DownloadStallTimeoutSeconds + " s). Try joining again.");
+                return;
+            }
+            if (State == ClientState.Loading && _loadedAt >= 0 && now - _loadedAt > _options.LiveWaitTimeoutSeconds)
+            {
+                End("The host did not confirm the join after the city loaded. Try joining again.");
+                return;
+            }
             if (State == ClientState.Downloading && _receiver != null && _receiver.ResendRequested && now - _lastHaveSent > 0.5)
             {
                 SendHave();
@@ -158,7 +215,8 @@ namespace SkylineTogether.Core.Session
             {
                 _lastProgressSent = now;
                 _payload.Reset();
-                _payload.WriteSingle(JoinProgress);
+                if (State == ClientState.Downloading) SessionPayloads.WriteLoadProgress(_payload, JoinPhase.Downloading, _receiver != null ? _receiver.Fraction : 0f);
+                else SessionPayloads.WriteLoadProgress(_payload, JoinPhase.Loading, _loadProgress);
                 SendControl(ControlKind.LoadProgress, _payload);
             }
             _channel?.Pump();
@@ -284,7 +342,17 @@ namespace SkylineTogether.Core.Session
                     _reader.Reset(settings, 0, settings.Length);
                     Session = settings.Length > 0 ? SessionPayloads.ReadSessionInfo(_reader) : new SessionInfo();
                     _log.Info(LogCategory.Session, "welcomed to \"" + Session.SessionName + "\" as " + LocalPeer);
+                    // the city load stalls this game's main thread (and the host's while it saves): longer keepalive
+                    ConnectionTimeouts.Apply(_connection, joining: true, _log);
                     SetState(ClientState.WaitingForSnapshot);
+                    return;
+                }
+                case MessageKind.Presence:
+                {
+                    // cosmetic and unreliable: never buffered, dropped until the city is ours
+                    if (State != ClientState.Live) return;
+                    PresenceMessage m = PresenceMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
+                    if (m.From != LocalPeer) PresenceReceived?.Invoke(m);
                     return;
                 }
                 case MessageKind.Control:
@@ -292,6 +360,7 @@ namespace SkylineTogether.Core.Session
                     return;
                 case MessageKind.BlobChunk:
                     if (_receiver == null || State != ClientState.Downloading) return;
+                    _lastChunkAt = _clock.Seconds;
                     _receiver.OnChunk(e.Body, e.BodyOffset, e.BodyCount);
                     if (_receiver.IsFailed)
                     {
@@ -408,6 +477,7 @@ namespace SkylineTogether.Core.Session
                 End("Could not prepare the city download: " + ex.Message);
                 return;
             }
+            _lastChunkAt = _clock.Seconds;
             SetState(ClientState.Downloading);
             _payload.Reset();
             SendControl(ControlKind.ReadyForSnapshot, _payload);
@@ -452,6 +522,7 @@ namespace SkylineTogether.Core.Session
             else
             {
                 _loadProgress = 1f;
+                _loadedAt = _clock.Seconds;
                 _log.Info(LogCategory.Join, "city loaded; waiting for the host");
             }
         }
@@ -459,6 +530,13 @@ namespace SkylineTogether.Core.Session
         private void GoLive()
         {
             if (State != ClientState.Loading) return;
+            if (_loadedAt < 0)
+            {
+                // only the host's answer to our LoadDone may make us live; anything else is a protocol error
+                _log.Warn(LogCategory.Protocol, "the host sent \"live\" before the city finished loading; ignored");
+                return;
+            }
+            ConnectionTimeouts.Apply(_connection, joining: false, _log);
             SetState(ClientState.Live);
             BecameLive?.Invoke();
             while (_buffered.Count > 0 && State == ClientState.Live)

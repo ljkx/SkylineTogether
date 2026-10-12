@@ -36,9 +36,13 @@ namespace SkylineTogether.Core.Tests.Session
             Directory.CreateDirectory(_dir);
         }
 
+        /// <summary>When set, snapshots are not delivered (the host keeps "saving the city").</summary>
+        public bool Hold;
+
         public void RequestSnapshot(Action<SnapshotReady> onReady, Action<string> onFailed)
         {
             Requests++;
+            if (Hold) return;
             uint id = _next++;
             string path = Path.Combine(_dir, id + ".save");
             File.WriteAllBytes(path, Data);
@@ -105,17 +109,42 @@ namespace SkylineTogether.Core.Tests.Session
             Host.Start();
         }
 
-        public (SessionClient Client, FakeLoader Loader, FakeInfo Info) AddClient(string name, string password = "", Action<FakeInfo> tweak = null, Action<FakeLoader> tweakLoader = null)
+        /// <summary>The transport of each client, in the order of <see cref="Clients"/>.</summary>
+        public readonly List<LoopbackTransport> ClientTransports = new List<LoopbackTransport>();
+
+        public (SessionClient Client, FakeLoader Loader, FakeInfo Info) AddClient(string name, string password = "", Action<FakeInfo> tweak = null, Action<FakeLoader> tweakLoader = null, ulong steamId = 0)
         {
             var info = new FakeInfo();
             tweak?.Invoke(info);
             var loader = new FakeLoader();
             tweakLoader?.Invoke(loader);
-            LoopbackTransport t = HostTransport.CreateClient(new PeerIdentity((ulong)(1000 + Clients.Count), "loop:" + name, name));
-            var client = new SessionClient(t, info, loader, new ClientOptions { PlayerName = name, Password = password, SteamId = (ulong)(1000 + Clients.Count) }, Clock, Log);
+            ulong id = steamId != 0 ? steamId : (ulong)(1000 + Clients.Count);
+            LoopbackTransport t = HostTransport.CreateClient(new PeerIdentity(id, "loop:" + name, name));
+            var client = new SessionClient(t, info, loader, new ClientOptions { PlayerName = name, Password = password, SteamId = id }, Clock, Log);
             client.Connect(new Endpoint());
             Clients.Add((client, loader, info));
+            ClientTransports.Add(t);
             return (client, loader, info);
+        }
+
+        /// <summary>Advances time and ticks only the host (the clients' games are stalled or gone).</summary>
+        public void RunHostOnly(double seconds, double step = 0.5)
+        {
+            for (double t = 0; t < seconds; t += step)
+            {
+                Clock.Advance(step);
+                Host.Tick();
+            }
+        }
+
+        /// <summary>Advances time and ticks only the given client (the host stopped answering).</summary>
+        public void RunClientOnly(SessionClient client, double seconds, double step = 0.5)
+        {
+            for (double t = 0; t < seconds; t += step)
+            {
+                Clock.Advance(step);
+                client.Tick();
+            }
         }
 
         public void Run(int frames = 200)

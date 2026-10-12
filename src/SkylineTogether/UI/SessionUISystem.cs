@@ -41,9 +41,93 @@ namespace SkylineTogether.UI
                 if (Mod.Settings == null) return;
                 Mod.Settings.PlayerName = (name ?? "").Trim();
                 Mod.Settings.SessionName = (session ?? "").Trim();
-                Mod.Settings.HostPassword = password ?? "";
+                // review fix: the panel's password field starts empty ("unchanged"), and saving it (also on Join)
+                // used to wipe the stored host password; the panel now sends KeepPassword for an untouched field
+                if (password != KeepPassword) Mod.Settings.HostPassword = password ?? "";
                 Mod.Settings.ApplyAndSave();
             }));
+
+            // presence branch: network line, remote players' name tags and activities, diagnostics
+            AddUpdateBinding(new GetterValueBinding<string>(Group, "net", BuildNet));
+            AddUpdateBinding(new GetterValueBinding<string>(Group, "presence", BuildPresence));
+            AddBinding(new TriggerBinding(Group, "writeDiagnostics", SkylineTogether.Settings.SkylineTogetherSettings.WriteDiagnostics));
+            AddBinding(new TriggerBinding(Group, "toggleNetHud", () =>
+            {
+                if (Mod.Settings == null) return;
+                Mod.Settings.ShowNetworkHud = !Mod.Settings.ShowNetworkHud;
+                Mod.Settings.ApplyAndSave();
+            }));
+        }
+
+        /// <summary>The password value the panel sends when its field was left untouched.</summary>
+        public const string KeepPassword = "\u0001keep";
+
+        private string _net = "{}";
+        private double _netAt = double.NegativeInfinity;
+        private string _presence = "{\"tags\":[]}";
+        private int _presenceVersion = -1;
+        private double _presenceAt = double.NegativeInfinity;
+
+        /// <summary>The network HUD line, refreshed twice a second: <c>{show, text}</c>.</summary>
+        private string BuildNet()
+        {
+            SessionManager s = Mod.Sessions;
+            bool show = Mod.Settings != null && Mod.Settings.ShowNetworkHud;
+            if (s == null) return _net;
+            double now = s.Clock.Seconds;
+            if (now - _netAt < 0.5) return _net;
+            _netAt = now;
+            string text = "";
+            if (s.Host != null || s.Client != null)
+            {
+                SessionNetStats n = s.Host != null ? s.Host.GetNetStats() : s.Client.GetNetStats();
+                text = (n.PingMs >= 0 ? "ping " + n.PingMs.ToString(CultureInfo.InvariantCulture) + " ms · " : "")
+                       + "in " + (n.InBytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture) + " KB/s · out "
+                       + (n.OutBytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture) + " KB/s"
+                       + (n.QueuedBytes > 64 * 1024 ? " · queued " + (n.QueuedBytes / 1024).ToString(CultureInfo.InvariantCulture) + " KB" : "");
+            }
+            var sb = new StringBuilder(128);
+            sb.Append('{');
+            Prop(sb, "show", show).Append(',');
+            Prop(sb, "text", text);
+            sb.Append('}');
+            _net = sb.ToString();
+            return _net;
+        }
+
+        /// <summary>
+        /// Remote players for the name tags and the panel, at most 20 times a second:
+        /// <c>{tags: [{id, name, color, x, y, on, activity}]}</c> with x, y as fractions of the screen.
+        /// </summary>
+        private string BuildPresence()
+        {
+            Presence.PresenceController p = Mod.Presence;
+            SessionManager s = Mod.Sessions;
+            if (p == null || s == null) return _presence;
+            double now = s.Clock.Seconds;
+            if (p.TagsVersion == _presenceVersion || now - _presenceAt < 0.05) return _presence;
+            _presenceVersion = p.TagsVersion;
+            _presenceAt = now;
+            var sb = new StringBuilder(256);
+            sb.Append("{\"tags\":[");
+            bool first = true;
+            foreach (Presence.PresenceTag t in p.Tags)
+            {
+                if (!first) sb.Append(',');
+                first = false;
+                sb.Append('{');
+                Prop(sb, "id", (int)t.Peer).Append(',');
+                Prop(sb, "name", t.Name ?? "").Append(',');
+                Prop(sb, "color", t.Color ?? "#ffffff").Append(',');
+                Prop(sb, "x", t.ScreenX).Append(',');
+                Prop(sb, "y", t.ScreenY).Append(',');
+                Prop(sb, "on", t.OnScreen).Append(',');
+                Prop(sb, "activity", t.Activity ?? "");
+                sb.Append('}');
+            }
+            sb.Append("]}");
+            _presence = sb.ToString();
+            return _presence;
         }
 
         private string BuildState()
@@ -74,6 +158,7 @@ namespace SkylineTogether.UI
             Prop(sb, "sessionNameSetting", Mod.Settings?.SessionName ?? "").Append(',');
             Prop(sb, "hasPassword", !string.IsNullOrEmpty(Mod.Settings?.HostPassword)).Append(',');
             Prop(sb, "joinTarget", Mod.Settings?.JoinTarget ?? "").Append(',');
+            Prop(sb, "keepPassword", KeepPassword).Append(',');
             Prop(sb, "lastEnd", s.LastEndReason ?? "").Append(',');
 
             string status = "";
@@ -83,6 +168,17 @@ namespace SkylineTogether.UI
             {
                 sessionName = s.Host.Options.SessionName;
                 status = s.Host.HoldSimulation ? "A player is joining – the game is paused until they are in." : "Hosting";
+                // presence branch: name who is joining and how far they are (the player list shows it per player too)
+                if (s.Host.HoldSimulation)
+                {
+                    foreach (PlayerInfo p in s.Host.GetPlayers())
+                    {
+                        if (p.State == PlayerState.Live) continue;
+                        string phase = p.State == PlayerState.Downloading ? "downloading the city" : p.State == PlayerState.Loading ? "loading the city" : "waiting for the host's save";
+                        status += " " + p.Name + ": " + phase + (p.State == PlayerState.Downloading || p.State == PlayerState.Loading
+                            ? " " + ((int)(p.Progress * 100)).ToString(CultureInfo.InvariantCulture) + " %" : "") + ".";
+                    }
+                }
             }
             else if (s.Client != null)
             {

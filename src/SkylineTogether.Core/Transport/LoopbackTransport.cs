@@ -135,6 +135,12 @@ namespace SkylineTogether.Core.Transport
             get { lock (_network.Lock) return _connections.Count; }
         }
 
+        /// <summary>A snapshot of this transport's open connections (incoming and outgoing), for tests.</summary>
+        public IConnection[] GetConnections()
+        {
+            lock (_network.Lock) return _connections.ToArray();
+        }
+
         /// <summary>Events waiting for the next <see cref="Poll"/>.</summary>
         public int PendingEvents
         {

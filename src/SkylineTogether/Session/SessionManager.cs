@@ -162,6 +162,7 @@ namespace SkylineTogether.Session
                 Notify("Load or start a city first, then host it.");
                 return;
             }
+            SessionHost created = null;
             try
             {
                 string name = PlayerName;
@@ -177,6 +178,7 @@ namespace SkylineTogether.Session
                     Listen = new ListenOptions { VirtualPort = VirtualPort, AllowIp = _settings.AllowDirectConnections, IpPort = _settings.DirectPort, MaxConnections = Math.Max(2, _settings.MaxPlayers) },
                 };
                 var host = new SessionHost(transport, _info, _snapshots, options, _clock, _log);
+                created = host;
                 host.ChatReceived += AddChat;
                 host.PlayersChanged += () => _playersVersion++;
                 host.SpeedRequested += (peer, speed) =>
@@ -197,6 +199,18 @@ namespace SkylineTogether.Session
             catch (Exception ex)
             {
                 _log.Error(LogCategory.Session, "hosting failed", ex);
+                if (Host == null)
+                {
+                    // review fix: Start() failed (no listen socket), so the transport's Steam callback and poll group leaked
+                    try
+                    {
+                        created?.Dispose();
+                    }
+                    catch (Exception)
+                    {
+                        // best effort
+                    }
+                }
                 StopHost(null);
                 Notify("Could not start hosting: " + ex.Message);
             }
@@ -206,7 +220,14 @@ namespace SkylineTogether.Session
         {
             if (!CanJoin)
             {
-                Notify(string.IsNullOrWhiteSpace(_settings.JoinTarget) ? "Enter the host's Steam ID or address first." : "Already in a session.");
+                // review fix: say why (a joiner whose game is still loading used to be told "Already in a session")
+                string why;
+                if (InSession) why = "Already in a session. Leave it first.";
+                else if (!SteamAvailable) why = "Steam is not available. Start the game through Steam and log in.";
+                else if (string.IsNullOrWhiteSpace(_settings.JoinTarget)) why = "Enter the host's Steam ID or address first.";
+                else if (GameManager.instance != null && GameManager.instance.isGameLoading) why = "Your game is still loading. Wait until it has finished, then join.";
+                else why = "Joining is not possible right now.";
+                Notify(why);
                 return;
             }
             Endpoint endpoint;
@@ -237,9 +258,16 @@ namespace SkylineTogether.Session
             catch (Exception ex)
             {
                 _log.Error(LogCategory.Session, "joining failed", ex);
-                Client?.Dispose();
-                Client = null;
                 Notify("Could not join: " + ex.Message);
+                // review fix: listeners saw ClientStarted, so they must also see SessionEnded (and the loader is reset)
+                if (Client != null)
+                {
+                    Client.Dispose();
+                    Client = null;
+                    _loader.Dispose();
+                    _playersVersion++;
+                    SessionEnded?.Invoke();
+                }
             }
         }
 
@@ -277,6 +305,7 @@ namespace SkylineTogether.Session
             _main.Drain();
             try
             {
+                SteamSocketsTransport.PumpDeferredCloses(); // presence branch: listen sockets of ended sessions linger briefly
                 Host?.Tick();
                 if (Client != null)
                 {
@@ -337,6 +366,7 @@ namespace SkylineTogether.Session
             {
                 _log.Warn(LogCategory.Session, "stopping the host failed", ex);
             }
+            _snapshots.ReleaseAll(); // review fix: no snapshot temp file outlives the session
             LastEndReason = reason;
             _playersVersion++;
             SessionEnded?.Invoke();

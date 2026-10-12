@@ -125,6 +125,21 @@ namespace SkylineTogether.Core.Session
             };
         }
 
+        /// <summary><see cref="ControlKind.LoadProgress"/>: f32 fraction of the current phase (0..1) | u8 <see cref="JoinPhase"/>.</summary>
+        public static void WriteLoadProgress(ByteWriter w, JoinPhase phase, float fraction)
+        {
+            w.WriteSingle(float.IsNaN(fraction) ? 0f : Math.Max(0f, Math.Min(1f, fraction)));
+            w.WriteByte((byte)phase);
+        }
+
+        /// <summary>Reads <see cref="WriteLoadProgress"/>; the fraction is clamped to 0..1 and unknown phases read as loading.</summary>
+        public static JoinPhase ReadLoadProgress(ByteReader r, out float fraction)
+        {
+            float value = r.ReadSingle();
+            fraction = float.IsNaN(value) ? 0f : Math.Max(0f, Math.Min(1f, value));
+            return r.ReadByte() == (byte)JoinPhase.Downloading ? JoinPhase.Downloading : JoinPhase.Loading;
+        }
+
         public static void WriteText(ByteWriter w, string text) => MessageFields.WriteText(w, text, 1024);
 
         public static string ReadText(ByteReader r) => MessageFields.ReadText(r, 1024, "text");

@@ -7,7 +7,7 @@ namespace SkylineTogether.Core.Transport
     /// the owner's <see cref="LoopbackNetwork"/>; the public members delegate to the owner, which takes it.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
-    internal sealed class LoopbackConnection : IConnection
+    internal sealed class LoopbackConnection : IConnection, IConnectionTimeouts
     {
         internal readonly LoopbackTransport Owner;
 
@@ -56,6 +56,14 @@ namespace SkylineTogether.Core.Transport
         public void Close(int reason, string text, bool linger)
         {
             Owner.CloseConnection(this, reason, text, linger);
+        }
+
+        /// <summary>Recorded only (the loopback network never times out), so tests can check what the session set.</summary>
+        public int ConnectedTimeoutMilliseconds { get; private set; }
+
+        public void SetConnectedTimeout(int milliseconds)
+        {
+            ConnectedTimeoutMilliseconds = milliseconds;
         }
 
         public override string ToString()

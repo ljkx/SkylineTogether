@@ -9,6 +9,7 @@ using Game.Simulation;
 using Unity.Entities;
 using SkylineTogether.Core;
 using SkylineTogether.Diagnostics;
+using SkylineTogether.Presence;
 using SkylineTogether.Session;
 using SkylineTogether.Settings;
 using SkylineTogether.Sync;
@@ -36,6 +37,9 @@ namespace SkylineTogether
 
         public static SyncController Sync { get; private set; }
 
+        /// <summary>Remote presence (cursors, tools, name tags; presence branch).</summary>
+        public static PresenceController Presence { get; private set; }
+
         private static GameObject _driver;
 
         public void OnLoad(UpdateSystem updateSystem)
@@ -61,6 +65,7 @@ namespace SkylineTogether
 
                 Sessions = new SessionManager(Settings, log);
                 Sync = new SyncController(Sessions, log);
+                Presence = new PresenceController(Sessions, log); // presence branch
 
                 // identity: saved into every save (join snapshots included) by the game's own system serializer
                 updateSystem.UpdateAt<NetIdSystem>(SystemUpdatePhase.MainLoop);
@@ -76,6 +81,9 @@ namespace SkylineTogether
                 // speed authority right before the simulation consumes the speed (R05 §8)
                 updateSystem.UpdateBefore<SpeedAuthoritySystem, SimulationSystem>(SystemUpdatePhase.LateUpdate);
                 updateSystem.UpdateAt<SessionUISystem>(SystemUpdatePhase.UIUpdate);
+
+                // presence branch: remote cursors drawn into the overlay buffer right before it renders (ARCH K15)
+                updateSystem.UpdateBefore<PresenceSystem, Game.Rendering.OverlayRenderSystem>(SystemUpdatePhase.Rendering);
 
                 if (_driver == null)
                 {
@@ -104,6 +112,7 @@ namespace SkylineTogether
                 Log?.Warn(LogCategory.Session, "leaving the session on exit failed", ex);
             }
             Sessions = null;
+            Presence = null;
             Settings?.UnregisterInOptionsUI();
             Settings = null;
             if (_driver != null) UnityEngine.Object.Destroy(_driver);

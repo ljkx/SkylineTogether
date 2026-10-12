@@ -23,6 +23,7 @@ namespace SkylineTogether.Settings
                 { _s.GetOptionGroupLocaleID(SkylineTogetherSettings.HostGroup), "Hosting" },
                 { _s.GetOptionGroupLocaleID(SkylineTogetherSettings.JoinGroup), "Joining" },
                 { _s.GetOptionGroupLocaleID(SkylineTogetherSettings.SessionGroup), "Session" },
+                { _s.GetOptionGroupLocaleID(SkylineTogetherSettings.DiagnosticsGroup), "Diagnostics" },
             };
             Add(d, nameof(SkylineTogetherSettings.PlayerName), "Player name", "The name other players see. Empty: your Steam name.");
             Add(d, nameof(SkylineTogetherSettings.SessionName), "Session name", "Shown to players who join. Empty: \"<your name>'s city\".");
@@ -36,6 +37,8 @@ namespace SkylineTogether.Settings
             Add(d, nameof(SkylineTogetherSettings.HostButton), "Host this city", "Open the city you are playing to other players. Load or start a city first.");
             Add(d, nameof(SkylineTogetherSettings.JoinButton), "Join", "Connect to the host above and load their city.");
             Add(d, nameof(SkylineTogetherSettings.LeaveButton), "Leave session", "Disconnect (as host: end the session for everyone).");
+            Add(d, nameof(SkylineTogetherSettings.ShowNetworkHud), "Show network line", "Show ping and network traffic (KB/s in and out) in the Skyline Together panel.");
+            Add(d, nameof(SkylineTogetherSettings.WriteDiagnosticsButton), "Write diagnostics", "Write a text file with the session state, players, network numbers, versions, mods and recent log lines next to the game's log. Send it along when you report a problem. Passwords and chat are not included.");
             return d;
         }
 
