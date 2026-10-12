@@ -49,6 +49,10 @@ namespace SkylineTogether.Sync
         // feat/terrain: terrain and water sync (self-contained; they follow the session events themselves)
         private readonly TerrainSync _terrain;
         private readonly WaterSync _water;
+        // w2/simvals: simulation values by attention (+ time-aligned panels), cell maps, statistics history (self-contained)
+        private readonly AttentionValues _simValues;
+        private readonly CellMapSync _cellMaps;
+        private readonly StatisticsSync _statistics;
         private EntityCodec _codec;
         private NetIdSystem _ids;
         private SimulationSystem _simulation;
@@ -88,6 +92,9 @@ namespace SkylineTogether.Sync
             _water = new WaterSync(sessions, log);
             _terrain.HeightsChanged += _water.MarkHot;
             Integrity = new IntegritySync(sessions, log); // feat/integrity
+            _simValues = new AttentionValues(sessions, log); // w2/simvals
+            _cellMaps = new CellMapSync(sessions, log) { PeerTopics = _simValues.PeerTopics };
+            _statistics = new StatisticsSync(sessions, log);
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -113,7 +120,7 @@ namespace SkylineTogether.Sync
                 string s = _ids.BoundCount + " objects in sync";
                 if (_inbox.Count > 0) s += ", " + _inbox.Count + " updates queued";
                 if (_pendingZones.Count > 0) s += ", " + _pendingZones.Count + " zone blocks pending";
-                foreach (string env in new[] { _terrain.Status, _water.Status }) // feat/terrain
+                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status }) // feat/terrain, w2/simvals
                 {
                     if (env.Length > 0) s += ", " + env;
                 }
@@ -143,6 +150,7 @@ namespace SkylineTogether.Sync
             _ids = world.GetOrCreateSystemManaged<NetIdSystem>();
             _codec = new EntityCodec(world, _ids, _log);
             Integrity.Attach(_codec, _ids); // feat/integrity
+            _simValues.Attach(_codec, _ids); // w2/simvals
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             _tools = world.GetOrCreateSystemManaged<ToolSystem>();
             _zones = world.GetOrCreateSystemManaged<ZoneSystem>();
@@ -308,6 +316,8 @@ namespace SkylineTogether.Sync
             // feat/terrain: received stamps and heightmap/water tiles (independent of the entity stream)
             _terrain.ApplyIncoming();
             _water.ApplyIncoming();
+            _cellMaps.ApplyIncoming(); // w2/simvals: host merges paint patches, clients write map tiles
+            _statistics.ApplyIncoming();
             if (_codec == null) return;
             if (!IsHost && !IsLiveClient)
             {
@@ -335,6 +345,8 @@ namespace SkylineTogether.Sync
                 }
             }
             RetryZones();
+            // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
+            if (!IsHost) _simValues.ApplyIncoming();
             // client: what the appliers wrote becomes the baseline, so it is never proposed back
             if (!IsHost) _global.AfterApply();
         }
@@ -438,6 +450,7 @@ namespace SkylineTogether.Sync
         public void OnToolApply()
         {
             _terrain.OnToolApply(); // feat/terrain: brush stamps, on the host and on clients
+            _cellMaps.OnToolApply(); // w2/simvals: resource brushes (ore, oil, fertility, groundwater)
             if (!IsLiveClient) return;
             EntityManager em = _codec.EntityManager;
             _toolApplied = true;
@@ -467,8 +480,11 @@ namespace SkylineTogether.Sync
             // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
             _terrain.CaptureOutgoing();
             _water.CaptureOutgoing();
+            _cellMaps.CaptureOutgoing(); // w2/simvals: host map tiles, client paint patches
+            _statistics.CaptureOutgoing();
             if (_codec == null) return;
             if (IsHost) CaptureHost(now);
+            if (IsHost) _simValues.CaptureOutgoing(now); // w2/simvals: attention values and inspection samples
             else if (IsLiveClient) CaptureClient(now);
             if (IsLiveClient) Integrity.ClientFrameEnd(now); // feat/integrity: integrity requests, icon digest
             _toolApplied = false;
