@@ -80,7 +80,7 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    system.Enabled = wasEnabled;
+                    SystemSwitch.Restore(system, wasEnabled);
                 }
                 catch (Exception)
                 {
@@ -113,8 +113,7 @@ namespace SkylineTogether.Sync
                 _log.Debug(LogCategory.Gate, "gated system not created: " + name);
                 return false;
             }
-            _disabled.Add((system, system.Enabled));
-            system.Enabled = false;
+            _disabled.Add((system, SystemSwitch.TurnOff(system)));
             if (route) _routeSystems.Add(system);
             return true;
         }

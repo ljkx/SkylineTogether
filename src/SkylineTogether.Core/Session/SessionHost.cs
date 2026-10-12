@@ -343,6 +343,19 @@ namespace SkylineTogether.Core.Session
             return lines;
         }
 
+        /// <summary>
+        /// Movers branch: the raw send side of a live peer, for engines that write complete envelopes themselves
+        /// (the motion encoder, ARCH §4.9.3); null when the peer is unknown or not live.
+        /// </summary>
+        public IPeerOutput GetPeerOutput(PeerId peer)
+        {
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Admitted && p.Id == peer && p.State == PlayerState.Live) return p.Channel.Outbox;
+            }
+            return null;
+        }
+
         public void SendChat(string text)
         {
             text = ProtocolText.Truncate(ProtocolText.Sanitize(text ?? ""), Limits.MaxChatChars).Trim();

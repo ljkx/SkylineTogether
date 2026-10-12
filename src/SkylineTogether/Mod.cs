@@ -40,6 +40,12 @@ namespace SkylineTogether
         /// <summary>Remote presence (cursors, tools, name tags; presence branch).</summary>
         public static PresenceController Presence { get; private set; }
 
+        /// <summary>Movers branch: the client's follower clock.</summary>
+        public static FollowerClock Clock { get; private set; }
+
+        /// <summary>Movers branch: vehicle and creature replication.</summary>
+        public static MoverSync Movers { get; private set; }
+
         private static GameObject _driver;
 
         public void OnLoad(UpdateSystem updateSystem)
@@ -66,6 +72,9 @@ namespace SkylineTogether
                 Sessions = new SessionManager(Settings, log);
                 Sync = new SyncController(Sessions, log);
                 Presence = new PresenceController(Sessions, log); // presence branch
+                // movers branch: follower clock (time runs, gameplay simulation off) and mover replication
+                Clock = new FollowerClock(Sessions, log);
+                Movers = new MoverSync(Sessions, log);
 
                 // identity: saved into every save (join snapshots included) by the game's own system serializer
                 updateSystem.UpdateAt<NetIdSystem>(SystemUpdatePhase.MainLoop);
@@ -79,6 +88,12 @@ namespace SkylineTogether
                 updateSystem.UpdateBefore<SyncBindSystem, SaveGameSystem>(SystemUpdatePhase.MainLoop);
                 // feat/integrity: client icons are host data; filter local producers right before IconCommandSystem
                 updateSystem.UpdateBefore<IconAuthorityFilterSystem, Game.Notifications.IconCommandSystem>(SystemUpdatePhase.ModificationEnd);
+
+                // movers branch: host capture before SaveGameSystem, client apply after the structure apply, client
+                // motion writer after PrepareRendering and before PreCullingSystem reads the frames
+                updateSystem.UpdateBefore<MoverCaptureSystem, SaveGameSystem>(SystemUpdatePhase.MainLoop);
+                updateSystem.UpdateAfter<MoverApplySystem, SyncApplySystem>(SystemUpdatePhase.MainLoop);
+                updateSystem.UpdateBefore<MoverWriteSystem, Game.Rendering.PreCullingSystem>(SystemUpdatePhase.PreCulling);
 
                 // speed authority right before the simulation consumes the speed (R05 §8)
                 updateSystem.UpdateBefore<SpeedAuthoritySystem, SimulationSystem>(SystemUpdatePhase.LateUpdate);

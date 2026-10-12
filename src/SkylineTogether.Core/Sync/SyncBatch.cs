@@ -48,6 +48,15 @@ namespace SkylineTogether.Core.Sync
         IconControl = 45,
         /// <summary>Host → client: the UI-level line rows (<c>LineStateReport.WriteRows</c>).</summary>
         LineRows = 46,
+
+        // ---- movers branch (ARCH §4.9; kinds 20-29 are reserved for it): existence of vehicles and creatures ----
+
+        /// <summary>Host → client: a mover appeared (<see cref="MoverRecord"/>).</summary>
+        MoverSpawn = 20,
+        /// <summary>Host → client: a mover's discrete state or pinned pose changed (<see cref="MoverRecord"/>).</summary>
+        MoverState = 21,
+        /// <summary>Host → client: a mover disappeared.</summary>
+        MoverDespawn = 22,
     }
 
     /// <summary>What a client asks the host for.</summary>
@@ -135,6 +144,8 @@ namespace SkylineTogether.Core.Sync
         public SyncRef Owner;
         public List<SyncIcon> Icons;
         public IconControlMode IconMode;
+        /// <summary>For <see cref="SyncRecordKind.MoverSpawn"/> and <see cref="SyncRecordKind.MoverState"/> (movers branch).</summary>
+        public MoverRecord Mover;
 
         public override string ToString() => Kind + " #" + NetId + (Components.Count > 0 ? " (" + Components.Count + " components)" : "");
     }
@@ -412,6 +423,24 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            /// <summary>A mover spawn or state record (movers branch, ARCH §4.9).</summary>
+            public void Mover(SyncRecordKind kind, uint netId, MoverRecord mover)
+            {
+                if (kind != SyncRecordKind.MoverSpawn && kind != SyncRecordKind.MoverState) throw new ArgumentException("not a mover record kind", nameof(kind));
+                _w.WriteByte((byte)kind);
+                _w.WriteVarUInt32(netId);
+                MoverRecordCodec.Write(_w, mover);
+                _count++;
+            }
+
+            /// <summary>A mover despawn record (movers branch).</summary>
+            public void MoverDespawn(uint netId)
+            {
+                _w.WriteByte((byte)SyncRecordKind.MoverDespawn);
+                _w.WriteVarUInt32(netId);
+                _count++;
+            }
+
             /// <summary>The finished batch bytes (valid until the next write).</summary>
             public ArraySegment<byte> Finish()
             {
@@ -601,6 +630,14 @@ namespace SkylineTogether.Core.Sync
                     r.ReadBytes(rec.Payload, 0, (int)n);
                     return rec;
                 }
+                case SyncRecordKind.MoverSpawn:
+                case SyncRecordKind.MoverState:
+                    rec.NetId = r.ReadVarUInt32();
+                    rec.Mover = MoverRecordCodec.Read(r);
+                    return rec;
+                case SyncRecordKind.MoverDespawn:
+                    rec.NetId = r.ReadVarUInt32();
+                    return rec;
                 default:
                     throw new DecodeException("unknown sync record kind " + (byte)rec.Kind);
             }
