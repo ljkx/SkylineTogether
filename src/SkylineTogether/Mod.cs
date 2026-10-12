@@ -86,6 +86,8 @@ namespace SkylineTogether
                 updateSystem.UpdateBefore<SyncCaptureSystem, PrepareCleanUpSystem>(SystemUpdatePhase.MainLoop);
                 updateSystem.UpdateBefore<SyncToolApplySystem>(SystemUpdatePhase.ApplyTool);
                 updateSystem.UpdateBefore<SyncBindSystem, SaveGameSystem>(SystemUpdatePhase.MainLoop);
+                // gameplay branch: viewers' tools never apply (no-predict gate, right before ToolOutputSystem)
+                updateSystem.UpdateBefore<ViewerGateSystem, Game.Tools.ToolOutputSystem>(SystemUpdatePhase.ToolUpdate);
                 // feat/integrity: client icons are host data; filter local producers right before IconCommandSystem
                 updateSystem.UpdateBefore<IconAuthorityFilterSystem, Game.Notifications.IconCommandSystem>(SystemUpdatePhase.ModificationEnd);
 

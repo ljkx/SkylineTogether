@@ -75,6 +75,8 @@ namespace SkylineTogether.Core.Session
             public double LastPingSent;
             public uint PingSequence;
             public bool Admitted;
+            /// <summary>gameplay branch: the player's role (ARCH §5.6); the host toggles builder ↔ viewer in the panel.</summary>
+            public SessionRole Role = SessionRole.Builder;
         }
 
         private static readonly long JoinerQueueLimitBytes = new OutboxConfig().DisconnectQueuedBytes;
@@ -194,7 +196,7 @@ namespace SkylineTogether.Core.Session
             foreach (Peer p in _peers.Values)
             {
                 if (!p.Admitted) continue;
-                list.Add(new PlayerInfo { Id = p.Id, Name = p.Name, SteamId = p.SteamId, Role = SessionRole.Builder, State = p.State, PingMs = p.PingMs, Progress = Progress(p) });
+                list.Add(new PlayerInfo { Id = p.Id, Name = p.Name, SteamId = p.SteamId, Role = p.Role, State = p.State, PingMs = p.PingMs, Progress = Progress(p) });
             }
             list.Sort((a, b) => a.Id.Value.CompareTo(b.Id.Value));
             return list;
@@ -371,6 +373,42 @@ namespace SkylineTogether.Core.Session
             _payload.Reset();
             SessionPayloads.WriteText(_payload, text);
             BroadcastControl(ControlKind.Toast, _payload, live: false);
+        }
+
+        /// <summary>gameplay branch: a player's role changed (<see cref="SetRole"/>).</summary>
+        public event Action<PeerId, SessionRole> RoleChanged;
+
+        /// <summary>The role of an admitted peer (<see cref="SessionRole.Host"/> for the host itself, Viewer for unknown peers).</summary>
+        public SessionRole GetRole(PeerId id)
+        {
+            if (id == PeerId.Host) return SessionRole.Host;
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Admitted && p.Id == id) return p.Role;
+            }
+            return SessionRole.Viewer;
+        }
+
+        /// <summary>
+        /// Sets a peer's role (builder, co-host or viewer; the host role cannot be given). The player list carries it to
+        /// every client, whose own role decides whether its tools predict (viewer: no-predict gate). False when the
+        /// peer is unknown or the role is not assignable.
+        /// </summary>
+        public bool SetRole(PeerId id, SessionRole role)
+        {
+            if (role == SessionRole.Host || id == PeerId.Host) return false;
+            foreach (Peer p in _peers.Values)
+            {
+                if (!p.Admitted || p.Id != id) continue;
+                if (p.Role == role) return true;
+                p.Role = role;
+                _playersDirty = true;
+                _log.Info(LogCategory.Session, p.Name + " is now a " + role.ToString().ToLowerInvariant());
+                SystemMessage(p.Name + " is now a " + role.ToString().ToLowerInvariant() + ".");
+                RoleChanged?.Invoke(id, role);
+                return true;
+            }
+            return false;
         }
 
         public void Kick(PeerId id, string reason)
@@ -649,7 +687,7 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
                 case ControlKind.SpeedRequest:
-                    if (p.State != PlayerState.Live) return;
+                    if (p.State != PlayerState.Live || !RolePermissions.Allows(p.Role, Permission.Speed)) return;
                     _reader.Reset(payload, 0, payload.Length);
                     SpeedRequested?.Invoke(p.Id, SessionPayloads.ReadSpeed(_reader));
                     return;
@@ -720,8 +758,8 @@ namespace SkylineTogether.Core.Session
             {
                 SessionId = _sessionId,
                 AssignedPeer = p.Id,
-                Role = SessionRole.Builder,
-                Permissions = Permission.All,
+                Role = p.Role,
+                Permissions = RolePermissions.Of(p.Role),
                 SessionSettings = _payload.ToArray(),
                 HostNonce = new byte[0],
                 EnabledSysEntries = new uint[0],

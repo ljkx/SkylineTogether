@@ -90,6 +90,9 @@ namespace SkylineTogether.Core.Session
 
         public PeerId LocalPeer { get; private set; }
 
+        /// <summary>gameplay branch: this player's role (from the welcome, then from every player list the host sends).</summary>
+        public SessionRole LocalRole { get; private set; } = SessionRole.Builder;
+
         public SessionInfo Session { get; private set; }
 
         public SpeedState Speed { get; private set; } = new SpeedState { Speed = 1, Paused = true, Held = true };
@@ -338,6 +341,7 @@ namespace SkylineTogether.Core.Session
                 {
                     WelcomeMessage w = WelcomeMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
                     LocalPeer = w.AssignedPeer;
+                    LocalRole = w.Role;
                     byte[] settings = w.SessionSettings ?? Array.Empty<byte>();
                     _reader.Reset(settings, 0, settings.Length);
                     Session = settings.Length > 0 ? SessionPayloads.ReadSessionInfo(_reader) : new SessionInfo();
@@ -427,6 +431,10 @@ namespace SkylineTogether.Core.Session
                 }
                 case ControlKind.Players:
                     _players = SessionPayloads.ReadPlayers(_reader);
+                    foreach (PlayerInfo p in _players)
+                    {
+                        if (p.Id == LocalPeer) LocalRole = p.Role;
+                    }
                     PlayersChanged?.Invoke();
                     return;
                 case ControlKind.SpeedChanged:

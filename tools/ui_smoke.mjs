@@ -67,7 +67,7 @@ for (const [name, c] of Object.entries(cases)) {
 }
 if (unknownBindings.size > 0) { failed++; console.log("FAIL bindings the C# side does not provide:", [...unknownBindings].join(", ")); }
 const triggerNames = new Set(triggers.map((t) => t[1]));
-const provided = new Set(["host", "join", "leave", "chat", "kick", "saveHostSettings", "writeDiagnostics", "toggleNetHud"]);
+const provided = new Set(["host", "join", "leave", "chat", "kick", "toggleRole", "saveHostSettings", "writeDiagnostics", "toggleNetHud"]);
 for (const t of triggerNames) if (!provided.has(t)) { failed++; console.log("FAIL trigger the C# side does not provide:", t); }
 console.log("triggers used:", [...triggerNames].join(", "));
 process.exit(failed ? 1 : 0);

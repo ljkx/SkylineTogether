@@ -298,6 +298,15 @@ namespace SkylineTogether.Session
 
         public void Kick(byte peer) => Host?.Kick(new PeerId(peer), "Removed by the host");
 
+        /// <summary>gameplay branch: the host toggles a player between builder and viewer (ARCH §5.6).</summary>
+        public void ToggleRole(byte peer)
+        {
+            SessionHost host = Host;
+            if (host == null || peer == 0) return;
+            var id = new PeerId(peer);
+            host.SetRole(id, RolePermissions.Toggle(host.GetRole(id)));
+        }
+
         // ---------------------------------------------------------------- frame
 
         public void Tick()

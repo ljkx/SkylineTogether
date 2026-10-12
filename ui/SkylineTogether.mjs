@@ -255,7 +255,18 @@ function Players(props) {
           p.name + (p.you ? " (you)" : ""),
           doing[p.id] && doing[p.id].activity ? h("div", { style: { color: C.dim, fontSize: "12px" } }, doing[p.id].activity) : null
         ),
-        h("div", { style: { color: C.dim, fontSize: "12px", marginRight: "8px" } }, stateText(p)),
+        h("div", { style: { color: C.dim, fontSize: "12px", marginRight: "8px" } }, stateText(p) + (p.role === "Viewer" ? " · viewer" : "")),
+        s.mode === "Hosting" && !p.host
+          ? h(
+              Button,
+              {
+                kind: "secondary",
+                style: { height: "22px", padding: "0 8px", marginTop: 0, marginRight: "4px" },
+                onClick: function () { api.trigger(GROUP, "toggleRole", p.id); }
+              },
+              p.role === "Viewer" ? "Make builder" : "Make viewer"
+            )
+          : null,
         s.mode === "Hosting" && !p.host
           ? h(Button, { kind: "secondary", style: { height: "22px", padding: "0 8px", marginTop: 0 }, onClick: function () { api.trigger(GROUP, "kick", p.id); } }, "Kick")
           : null
