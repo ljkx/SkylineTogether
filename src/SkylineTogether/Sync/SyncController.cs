@@ -104,6 +104,8 @@ namespace SkylineTogether.Sync
         private readonly AttentionValues _simValues;
         private readonly CellMapSync _cellMaps;
         private readonly StatisticsSync _statistics;
+        // w3/agents: citizens, households, pets and companies (existence here, values and attention there)
+        private readonly AgentSync _agents;
         // gameplay branch: UI intents, host validation (ARCH §5.4-5.6), conflicts, build order
         private readonly ActionSync _actions;
         private readonly AuthoredLedger _ledger = new AuthoredLedger();
@@ -216,6 +218,7 @@ namespace SkylineTogether.Sync
             _simValues = new AttentionValues(sessions, log); // w2/simvals
             _cellMaps = new CellMapSync(sessions, log) { PeerTopics = _simValues.PeerTopics };
             _statistics = new StatisticsSync(sessions, log);
+            _agents = new AgentSync(sessions, log); // w3/agents
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
             _mayCreate = MayCreate;
@@ -264,7 +267,7 @@ namespace SkylineTogether.Sync
                     if (deferred > 0) s += ", " + deferred + " values waiting (slow link)";
                     if (_ids.Ids.QuarantinedCount > 0) s += ", " + _ids.Ids.QuarantinedCount + " ids in quarantine";
                 }
-                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status }) // feat/terrain, w2/simvals
+                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status, _agents.Status }) // feat/terrain, w2/simvals, w3/agents
                 {
                     if (env.Length > 0) s += ", " + env;
                 }
@@ -318,6 +321,7 @@ namespace SkylineTogether.Sync
                 lines.Add("apply acks: received " + t.Received + ", applied through " + t.AppliedThrough + ", held " + t.HeldCount + ", last ack " + _lastAckSent
                           + "; ledger base epoch " + _baseEpoch);
             }
+            _agents.Describe(lines); // w3/agents
             Perf.Counters.Describe(Perf.Now, lines);
         }
 
@@ -335,6 +339,7 @@ namespace SkylineTogether.Sync
             _watcher = new Compat.ModStateWatcher(_codec, _ids, _log);
             Integrity.Attach(_codec, _ids); // feat/integrity
             _simValues.Attach(_codec, _ids); // w2/simvals
+            _agents.Attach(_codec, _ids); // w3/agents
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             _tools = world.GetOrCreateSystemManaged<ToolSystem>();
             _zones = world.GetOrCreateSystemManaged<ZoneSystem>();
@@ -380,6 +385,9 @@ namespace SkylineTogether.Sync
                 _inbox.Enqueue(new Inbound { Peer = peer, Data = copy, IsAck = e.Kind == MessageKind.ApplyAck });
                 Perf.Counters.AddBytes(Perf.ReceivedBytes, e.BodyCount, Perf.Now);
             };
+            // w3/agents: decided once per session, before the city is bound (agents are bound with everything else)
+            FamilyClassifier.AgentsReplicated = Features.Agents.IsAvailable;
+            if (!FamilyClassifier.AgentsReplicated) _log.Warn(LogCategory.Replication, "agents are not replicated in this session (feature unavailable); clients keep their snapshot's citizens");
             BindCity();
             // mod compatibility: untagged mod state is compared from here on; every mod setting goes out once
             _modSettings.Reset();
@@ -398,6 +406,7 @@ namespace SkylineTogether.Sync
             _wasClient = true;
             _lastAckSent = -1;
             _ids.Authority = false;
+            FamilyClassifier.AgentsReplicated = false; // w3/agents: the host decides; a client applies what arrives
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Epoch) return;
@@ -434,6 +443,7 @@ namespace SkylineTogether.Sync
             _dependencies.Clear();
             _missingNotified = false;
             _wasClient = false; // (the id tables are cleared below for host and client alike)
+            FamilyClassifier.AgentsReplicated = false; // w3/agents
             if (_ids != null)
             {
                 // nobody can address a quarantined id any more
@@ -533,7 +543,7 @@ namespace SkylineTogether.Sync
                 foreach (Entity e in entities)
                 {
                     Family family = _codec.Families.Classify(em, e);
-                    if (!FamilyClassifier.IsReplicated(family) && family != Family.Singleton) continue;
+                    if (!FamilyClassifier.IsHostReplicated(family) && family != Family.Singleton) continue; // w3/agents: agents too
                     if (_ids.GetNetId(e) != 0) continue;
                     if (_ids.BindNew(e, family) != 0) bound++;
                 }
@@ -542,7 +552,7 @@ namespace SkylineTogether.Sync
             {
                 entities.Dispose();
             }
-            _log.Info(LogCategory.Replication, "host session start: " + prefabs + " prefabs, " + _ids.BoundCount + " bindings (" + bound + " new"
+            _log.Info(LogCategory.Replication, "host session start: " + prefabs + " prefabs, " + _ids.BoundCount + " bindings (" + _ids.CountOf(Family.Agent) + " agents, " + bound + " new"
                                                + (renumbered > 0 ? ", " + renumbered + " renumbered" : "") + "); " + _ids.Ids.Describe());
             PrimeBuildOrders(em);
         }
@@ -746,6 +756,8 @@ namespace SkylineTogether.Sync
             RetryZones();
             // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
             if (!IsHost) _simValues.ApplyIncoming();
+            // w3/agents (client): agent values once the structure batches that spawn them are applied
+            if (!IsHost && Features.Agents.IsAvailable) _agents.ApplyIncoming(_inbox.Count);
             // client: what the appliers wrote becomes the baseline, so it is never proposed back
             if (!IsHost)
             {
@@ -1253,14 +1265,14 @@ namespace SkylineTogether.Sync
                 foreach (ArchetypeChunk chunk in chunks)
                 {
                     bool known = _codec.Families.TryClassifyArchetype(chunk.Archetype, out Family chunkFamily);
-                    if (known && !FamilyClassifier.IsReplicated(chunkFamily)) continue; // lanes, blocks, movers, agents...
+                    if (known && !FamilyClassifier.IsHostReplicated(chunkFamily)) continue; // lanes, blocks, movers... (w3/agents: agents are bound)
                     NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
                     for (int i = 0; i < entities.Length; i++)
                     {
                         Entity e = entities[i];
                         if (_ids.GetNetId(e) != 0) continue;
                         Family family = known ? chunkFamily : _codec.Families.Classify(em, e);
-                        if (FamilyClassifier.IsReplicated(family)) _ids.BindNew(e, family);
+                        if (FamilyClassifier.IsHostReplicated(family)) _ids.BindNew(e, family);
                     }
                 }
             }
@@ -1395,6 +1407,7 @@ namespace SkylineTogether.Sync
                         {
                             CaptureClient(now);
                             SafeCall("action capture", () => _actions.ClientCapture(_appliedThisFrame)); // gameplay branch
+                            if (Features.Agents.IsAvailable) _agents.ClientFrameEnd(now); // w3/agents: refresh requests
                         }
                     }
                     if (Features.Integrity.IsAvailable)
@@ -1511,7 +1524,7 @@ namespace SkylineTogether.Sync
                         // (lanes, movers, citizens, icons, ...) are skipped without touching their entities
                         bool known = _codec.Families.TryClassifyArchetype(chunk.Archetype, out Family chunkFamily);
                         bool subElements = _subElementFrame && deleted && (chunkFamily == Family.Lane || chunkFamily == Family.PrefabSubObject);
-                        if (known && chunkFamily != Family.ZoneBlock && !subElements && !FamilyClassifier.IsReplicated(chunkFamily)) continue;
+                        if (known && chunkFamily != Family.ZoneBlock && !subElements && !FamilyClassifier.IsHostReplicated(chunkFamily)) continue;
                         bool created = chunk.Has<Game.Common.Created>();
                         bool hasPrefab = chunk.Has<PrefabRef>();
                         NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
@@ -1535,6 +1548,8 @@ namespace SkylineTogether.Sync
                 Family family = _codec.Families.Classify(em, e);
                 if (FamilyClassifier.IsReplicated(family)) WriteHostEntity(em, e, family, _ids.GetNetId(e), em.HasComponent<Game.Common.Created>(e), em.HasComponent<PrefabRef>(e));
             }
+            // w3/agents: the agent scan slice, key-link changes and the co-captured owners of this frame's agent changes
+            _agents.HostCapture(_batch, _writtenThisFrame, _writeAgent ?? (_writeAgent = WriteAgentRecord));
             // mod compatibility: the dependencies all of the above needed, untagged mod state, and its dependencies
             WriteDependencies(_writtenThisFrame);
             SafeCall("mod state capture", () => CaptureModChanges(now, _writtenThisFrame, true));
@@ -1572,7 +1587,10 @@ namespace SkylineTogether.Sync
             long deferred = Perf.Start();
             FlushDeferred(now, dt);
             Perf.Stop(Perf.Deferred, deferred);
+            _agents.HostStream(now); // w3/agents: owner buffers, then each peer's agents by attention (after the batch)
         }
+
+        private AgentSync.RecordWriter _writeAgent;
 
         private void CaptureHostEntity(EntityManager em, Entity e, Family family, bool deleted, bool created, bool hasPrefab)
         {
@@ -1586,11 +1604,17 @@ namespace SkylineTogether.Sync
                 _actions.NoteSubElementDeleted(e); // gameplay branch: replayed on clients by key
                 return;
             }
+            if (family == Family.Agent)
+            {
+                if (FamilyClassifier.AgentsReplicated) CaptureHostAgent(em, e, deleted, created, hasPrefab); // w3/agents
+                return;
+            }
             if (!FamilyClassifier.IsReplicated(family)) return;
             uint id = _ids.GetNetId(e);
             if (deleted)
             {
                 if (id == 0) return;
+                if (family == Family.Object) _agents.OnOwnerDespawned(em, e); // w3/agents: its renters, workers, students
                 _batch.Despawn(id);
                 _ids.Unbind(id, despawnSent: true);
                 _shadow.Remove(id);
@@ -1599,6 +1623,45 @@ namespace SkylineTogether.Sync
                 return;
             }
             WriteHostEntity(em, e, family, id, created, hasPrefab);
+        }
+
+        /// <summary>
+        /// w3/agents: births, arrivals and new companies are spawned (their owners' reverse buffers follow in the same batch,
+        /// <see cref="AgentSync"/>), deaths and departures despawned; any other tag only moves the agent to the front of the
+        /// value scan (agents change all the time, their values are budgeted per peer).
+        /// </summary>
+        private void CaptureHostAgent(EntityManager em, Entity e, bool deleted, bool created, bool hasPrefab)
+        {
+            uint id = _ids.GetNetId(e);
+            if (deleted)
+            {
+                if (id == 0) return;
+                _agents.OnDespawned(id, e);
+                _batch.Despawn(id);
+                _ids.Unbind(id, despawnSent: true);
+                _ledger.Forget(id);
+                DropDeferred(id, DeferredClass.Upsert);
+                return;
+            }
+            if (created || id == 0)
+            {
+                if (_writtenThisFrame.Contains(e)) return;
+                WriteHostEntity(em, e, Family.Agent, id, true, hasPrefab);
+                uint bound = _ids.GetNetId(e);
+                if (bound != 0) _agents.OnSpawned(bound, e);
+                return;
+            }
+            _agents.Touch(id);
+        }
+
+        /// <summary>w3/agents: an agent's full record into the frame's broadcast batch (key-link changes, co-captured owners).</summary>
+        private void WriteAgentRecord(Entity e, uint id, SyncRecordKind kind)
+        {
+            EntityManager em = _codec.EntityManager;
+            if (em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
+            _codec.WriteEntity(_batch, kind, id, Family.Agent, e);
+            _writtenThisFrame.Add(e);
+            DropDeferred(id, DeferredClass.Upsert);
         }
 
         private void WriteHostEntity(EntityManager em, Entity e, Family family, uint id, bool created, bool hasPrefab)
@@ -1739,7 +1802,7 @@ namespace SkylineTogether.Sync
                 if (e == Entity.Null) continue;
                 Family f = _ids.GetFamily((uint)id);
                 if (f == Family.Prefab) continue;
-                if (routesOnly ? !(f == Family.Route || f == Family.Waypoint || f == Family.Segment) : !FamilyClassifier.IsReplicated(f)) continue;
+                if (routesOnly ? !(f == Family.Route || f == Family.Waypoint || f == Family.Segment) : !FamilyClassifier.IsHostReplicated(f)) continue;
                 if (!em.Exists(e)) continue;
                 o.Queue.Mark((uint)id, DeferredClass.Upsert, now);
                 n++;

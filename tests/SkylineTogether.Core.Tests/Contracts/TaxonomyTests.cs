@@ -58,7 +58,9 @@ namespace SkylineTogether.Core.Tests.Contracts
             }
             // branch-owned ranges (merge coordination): w2/ids owns 60-64, w2/simvals owns 65-69
             Pin((MessageKind.ApplyAck, 60), (MessageKind.SimValues, 65), (MessageKind.CellMaps, 66), (MessageKind.Statistics, 67));
-            Assert.Equal(sequential.Length + 4, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
+            // w3/agents owns 90-94
+            Pin((MessageKind.AgentValues, 90), (MessageKind.AgentRefresh, 91));
+            Assert.Equal(sequential.Length + 6, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
         }
 
         [Test]

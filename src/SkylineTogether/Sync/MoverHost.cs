@@ -54,6 +54,8 @@ namespace SkylineTogether.Sync
             public uint Vehicle;
             public uint Route;
             public float3 Sent;
+            /// <summary>w3/agents: the agent links last sent (citizen or pet, keeper, owner).</summary>
+            public MoverAgentLinks Links;
         }
 
         private sealed class PeerView
@@ -250,7 +252,10 @@ namespace SkylineTogether.Sync
                             bound++;
                         }
                         MoverRecord rec = Describe(em, e);
-                        if (rec != null) _movers[id] = Remember(rec);
+                        if (rec == null) continue;
+                        HostMover known = Remember(rec);
+                        known.Links = Links(em, e); // the snapshot carries them
+                        _movers[id] = known;
                     }
                     catch (Exception ex)
                     {
@@ -316,7 +321,9 @@ namespace SkylineTogether.Sync
                         if (id == 0 || rec == null) continue;
                         ForgetInterest(id); // w2/ids: a reused id never inherits an old mover's interest
                         _batch.Mover(SyncRecordKind.MoverSpawn, id, rec);
-                        _movers[id] = Remember(rec);
+                        HostMover created = Remember(rec);
+                        _movers[id] = created;
+                        WriteLinks(em, e, id, created, true); // w3/agents: right behind the spawn, same batch
                     }
                     catch (Exception ex)
                     {
@@ -348,11 +355,18 @@ namespace SkylineTogether.Sync
                             if (id == 0) continue;
                         }
                         bool knownMover = _movers.TryGetValue(id, out HostMover known);
-                        if (knownMover && SameState(em, e, known)) continue;
+                        if (knownMover && SameState(em, e, known))
+                        {
+                            WriteLinks(em, e, id, known, false); // w3/agents
+                            continue;
+                        }
                         MoverRecord rec = Describe(em, e);
                         if (rec == null) continue;
                         _batch.Mover(known == null ? SyncRecordKind.MoverSpawn : SyncRecordKind.MoverState, id, rec);
-                        _movers[id] = Remember(rec);
+                        HostMover now = Remember(rec);
+                        now.Links = known?.Links;
+                        _movers[id] = now;
+                        WriteLinks(em, e, id, now, known == null);
                     }
                     catch (Exception ex)
                     {
@@ -410,6 +424,7 @@ namespace SkylineTogether.Sync
                 if (!_movers.TryGetValue(id, out HostMover known)) continue;
                 Entity e = _ids.GetEntity(id);
                 if (e == Entity.Null || !em.Exists(e) || !em.HasComponent<Transform>(e)) continue;
+                WriteLinks(em, e, id, known, false); // w3/agents: a keeper or owner changed without a tag
                 float3 p = em.GetComponentData<Transform>(e).m_Position;
                 if (math.distancesq(p, known.Sent) < RefreshDistance * RefreshDistance) continue;
                 try
@@ -417,13 +432,47 @@ namespace SkylineTogether.Sync
                     MoverRecord rec = Describe(em, e);
                     if (rec == null) continue;
                     _batch.Mover(SyncRecordKind.MoverState, id, rec);
-                    _movers[id] = Remember(rec);
+                    HostMover now = Remember(rec);
+                    now.Links = known.Links;
+                    _movers[id] = now;
                     sent++;
                 }
                 catch (Exception ex)
                 {
                     _log.Debug(LogCategory.Replication, "mover refresh failed: " + ex.Message);
                 }
+            }
+        }
+
+        /// <summary>
+        /// w3/agents: the agents a mover refers to (the citizen of a pedestrian, the household pet of an animal, the keeper
+        /// and the owner of a vehicle) as net ids; unbound targets are 0 and are sent once they are bound.
+        /// </summary>
+        private MoverAgentLinks Links(EntityManager em, Entity e)
+        {
+            var links = new MoverAgentLinks();
+            if (em.HasComponent<Game.Creatures.Resident>(e)) links.Agent = _ids.GetNetId(em.GetComponentData<Game.Creatures.Resident>(e).m_Citizen);
+            else if (em.HasComponent<Game.Creatures.Pet>(e)) links.Agent = _ids.GetNetId(em.GetComponentData<Game.Creatures.Pet>(e).m_HouseholdPet);
+            if (em.HasComponent<Game.Vehicles.PersonalCar>(e)) links.Keeper = _ids.GetNetId(em.GetComponentData<Game.Vehicles.PersonalCar>(e).m_Keeper);
+            if (em.HasComponent<Vehicle>(e) && em.HasComponent<Owner>(e)) links.Owner = _ids.GetNetId(em.GetComponentData<Owner>(e).m_Owner);
+            return links;
+        }
+
+        /// <summary>w3/agents: writes the mover's agent links when they differ from the last ones sent (always after a spawn).</summary>
+        private void WriteLinks(EntityManager em, Entity e, uint id, HostMover known, bool spawn)
+        {
+            if (known == null) return;
+            try
+            {
+                MoverAgentLinks links = Links(em, e);
+                if (spawn ? links.IsEmpty : links.SameAs(known.Links)) return;
+                if (!spawn && known.Links == null && links.IsEmpty) return;
+                _batch.MoverAgents(id, links);
+                known.Links = links;
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Replication, "mover agent links failed: " + ex.Message);
             }
         }
 

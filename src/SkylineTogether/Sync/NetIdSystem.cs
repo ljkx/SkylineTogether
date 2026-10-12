@@ -49,6 +49,7 @@ namespace SkylineTogether.Sync
         private NativeList<byte> _family;
         private int _bound;
         private readonly IdIndexSet _scanned = new IdIndexSet();
+        private readonly IdIndexSet _agents = new IdIndexSet();
         private readonly int[] _familyCounts = new int[FamilyCount];
         private readonly List<uint> _pendingDespawns = new List<uint>();
         private bool _warnedExhausted;
@@ -71,6 +72,9 @@ namespace SkylineTogether.Sync
 
         /// <summary>Bound ids of the value-scanned families (<see cref="FamilyClassifier.IsScanned"/>).</summary>
         public IdIndexSet ScannedIds => _scanned;
+
+        /// <summary>w3/agents: bound ids of the agent family (the host's rolling agent scan).</summary>
+        public IdIndexSet AgentIds => _agents;
 
         /// <summary>Bound ids per family (diagnostics).</summary>
         public int CountOf(Family family) => (int)family < FamilyCount ? _familyCounts[(int)family] : 0;
@@ -112,6 +116,7 @@ namespace SkylineTogether.Sync
             _writer.Add(default(Entity));
             _bound = 0;
             _scanned.Clear();
+            _agents.Clear();
             Array.Clear(_familyCounts, 0, _familyCounts.Length);
             _pendingDespawns.Clear();
             Ids.Clear();
@@ -228,12 +233,14 @@ namespace SkylineTogether.Sync
         {
             if ((int)family < FamilyCount) _familyCounts[(int)family]++;
             if (FamilyClassifier.IsScanned(family)) _scanned.Add(id);
+            if (family == Family.Agent && id < (1u << 28)) _agents.Add(id);
         }
 
         private void RemoveFromIndexes(uint id, Family family)
         {
             if ((int)family < FamilyCount && _familyCounts[(int)family] > 0) _familyCounts[(int)family]--;
             _scanned.Remove(id);
+            _agents.Remove(id);
         }
 
         private void UnbindEntityIndex(Entity e)
@@ -343,6 +350,7 @@ namespace SkylineTogether.Sync
                 }
                 _bound = 0;
                 _scanned.Clear();
+                _agents.Clear();
                 Array.Clear(_familyCounts, 0, _familyCounts.Length);
                 Ids.Clear();
                 for (int i = 0; i < ids.Count; i++)

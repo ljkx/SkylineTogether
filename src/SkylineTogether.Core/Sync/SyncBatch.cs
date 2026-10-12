@@ -68,6 +68,15 @@ namespace SkylineTogether.Core.Sync
         EnabledBits = 110,
         /// <summary>Host → client: the host's values of simulation-relevant mod settings (the host's rules for everyone).</summary>
         ModSettings = 111,
+
+        // ---- w3/agents (merge coordination: kinds 120-129 are reserved for it) ----
+
+        /// <summary>
+        /// Host → client, inside a movers batch right after the mover's record: the agents the mover refers to
+        /// (<see cref="MoverAgentLinks"/>: the citizen of a pedestrian, the household pet of an animal, the keeper and owner
+        /// of a vehicle).
+        /// </summary>
+        MoverAgents = 120,
         // ---- gameplay branch (w2/gameplay; kinds 80-89 are reserved for it): proposal validation and results ----
 
         /// <summary>
@@ -194,6 +203,8 @@ namespace SkylineTogether.Core.Sync
         public IconControlMode IconMode;
         /// <summary>For <see cref="SyncRecordKind.MoverSpawn"/> and <see cref="SyncRecordKind.MoverState"/> (movers branch).</summary>
         public MoverRecord Mover;
+        /// <summary>For <see cref="SyncRecordKind.MoverAgents"/> (w3/agents, with <see cref="NetId"/> = the mover).</summary>
+        public MoverAgentLinks AgentLinks;
         /// <summary>For <see cref="SyncRecordKind.EnabledBits"/> (with <see cref="NetId"/>): the components' enabled states.</summary>
         public List<SyncEnabledBit> EnabledBits;
         /// <summary>For <see cref="SyncRecordKind.ModSettings"/>: mod, key and invariant value of each setting.</summary>
@@ -281,7 +292,8 @@ namespace SkylineTogether.Core.Sync
         public static bool IsMoverBatch(byte[] data, int offset, int count)
         {
             byte kind = FirstRecordKind(data, offset, count);
-            return kind == (byte)SyncRecordKind.MoverSpawn || kind == (byte)SyncRecordKind.MoverState || kind == (byte)SyncRecordKind.MoverDespawn;
+            return kind == (byte)SyncRecordKind.MoverSpawn || kind == (byte)SyncRecordKind.MoverState || kind == (byte)SyncRecordKind.MoverDespawn
+                   || kind == (byte)SyncRecordKind.MoverAgents; // w3/agents
         }
 
         /// <summary>
@@ -557,6 +569,16 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            /// <summary>w3/agents: the agents a mover refers to (<see cref="SyncRecordKind.MoverAgents"/>).</summary>
+            public void MoverAgents(uint netId, MoverAgentLinks links)
+            {
+                if (links == null) throw new ArgumentNullException(nameof(links));
+                _w.WriteByte((byte)SyncRecordKind.MoverAgents);
+                _w.WriteVarUInt32(netId);
+                MoverAgentLinksCodec.Write(_w, links);
+                _count++;
+            }
+
             /// <summary>The enabled states of an entity's enableable components (<see cref="SyncRecordKind.EnabledBits"/>).</summary>
             public void EnabledBits(uint netId, IReadOnlyList<SyncEnabledBit> bits)
             {
@@ -812,6 +834,10 @@ namespace SkylineTogether.Core.Sync
                     return rec;
                 case SyncRecordKind.MoverDespawn:
                     rec.NetId = r.ReadVarUInt32();
+                    return rec;
+                case SyncRecordKind.MoverAgents:
+                    rec.NetId = r.ReadVarUInt32();
+                    rec.AgentLinks = MoverAgentLinksCodec.Read(r);
                     return rec;
                 case SyncRecordKind.EnabledBits:
                 {

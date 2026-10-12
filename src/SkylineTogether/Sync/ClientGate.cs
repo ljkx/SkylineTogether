@@ -39,6 +39,12 @@ namespace SkylineTogether.Sync
             "Game.AutoSaveSystem",
             // feat/integrity: writes nothing but warning icons, which come from the host (D11, IconSync)
             "Game.Net.ConnectionWarningSystem",
+            // w3/agents: cascades the host sends itself (every despawn, every changed reverse buffer, ARCH 4.2.6)
+            "Game.Citizens.HouseholdAndCitizenRemoveSystem",
+            "Game.Citizens.HouseholdPetRemoveSystem",
+            "Game.Simulation.RemovedSystem",
+            "Game.Buildings.SchoolUpdatedSystem",
+            "Game.Events.AddHealthProblemSystem",
         };
 
         /// <summary>Line systems: off on clients except inside a route-tool preview window.</summary>
