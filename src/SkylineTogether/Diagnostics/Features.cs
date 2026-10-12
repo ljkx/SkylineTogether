@@ -49,6 +49,12 @@ namespace SkylineTogether.Diagnostics
         /// <summary>w2/simvals: attention values, inspection samples, resource/pollution cell maps, city statistics.</summary>
         public static readonly FeatureHealth SimValues = Registry.Add("simvals", "city statistics and maps", false);
 
+        /// <summary>
+        /// w3/agents: citizens, households, pets and companies (existence, values, reverse buffers, the agents of movers).
+        /// Fallback: they stay as in the join snapshot (panels show stale residents, workers and households).
+        /// </summary>
+        public static readonly FeatureHealth Agents = Registry.Add("agents", "citizens and companies", false);
+
         /// <summary>Gameplay branch: player actions outside the tools (dev tree, map tiles, milestones, UI writes).</summary>
         public static readonly FeatureHealth Actions = Registry.Add("actions", "player actions sync", false);
 

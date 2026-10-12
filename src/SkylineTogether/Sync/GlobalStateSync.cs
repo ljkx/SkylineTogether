@@ -413,6 +413,7 @@ namespace SkylineTogether.Sync
                 return;
             }
             if (!Permitted(peer, channel, RequiredPermission(channel))) return;
+            if (ApplyPanelProposal(peer, channel, payload)) return; // w3/audit: followed citizens
             if (channel == GlobalChannel.Tax)
             {
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
@@ -747,6 +748,7 @@ namespace SkylineTogether.Sync
             Guard("loan", DetectLoan);
             Guard("names", () => DetectNames(now));
             Guard("city name", DetectCityName);
+            Guard("followed citizens", DetectFollowed); // w3/audit
         }
 
         private void DetectTax(double now)
@@ -865,6 +867,7 @@ namespace SkylineTogether.Sync
                 if (_loanPending.HasValue) Put(w, GlobalChannel.Loan, GlobalPayload.WriteInts(GlobalPayloadMode.Delta, new[] { new KeyValuePair<uint, int>(0, _loanPending.Value) }));
                 if (_policyPending.Count > 0) Put(w, GlobalChannel.Policy, GlobalPayload.WritePolicies(GlobalPayloadMode.Delta, _policyPending));
                 if (_namePending.Count > 0) Put(w, GlobalChannel.Name, GlobalPayload.WriteStrings(GlobalPayloadMode.Delta, new List<KeyValuePair<uint, string>>(_namePending)));
+                FlushFollowed(w); // w3/audit
                 if (_cityNamePending != null && !string.IsNullOrWhiteSpace(_cityNamePending))
                 {
                     Put(w, GlobalChannel.CityName, GlobalPayload.WriteStrings(GlobalPayloadMode.Delta, new[] { new KeyValuePair<uint, string>(0, _cityNamePending) }));
@@ -912,6 +915,7 @@ namespace SkylineTogether.Sync
                 _stringScratch.Clear();
                 if (ReadNames(_stringScratch)) Copy(_stringScratch, _nameBase);
                 _cityNameBase = _config.cityName ?? "";
+                RebaselineFollowed(); // w3/audit
             });
         }
 

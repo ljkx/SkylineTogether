@@ -87,6 +87,11 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<(Entity, bool), Archetypes> _archetypes = new Dictionary<(Entity, bool), Archetypes>();
         private readonly List<(ComponentSystemBase System, bool WasEnabled)> _gated = new List<(ComponentSystemBase, bool)>();
         private readonly List<Entity> _lights = new List<Entity>();
+        // w3/agents: agent links whose citizen, pet, keeper or owner is not bound here yet (retried for a few seconds)
+        private readonly Dictionary<uint, (MoverAgentLinks Links, double Until)> _pendingLinks = new Dictionary<uint, (MoverAgentLinks, double)>();
+        private readonly List<uint> _linkScratch = new List<uint>();
+        private const double LinkRetrySeconds = 5.0;
+        private long _linksApplied;
         private readonly ByteWriter _report = new ByteWriter(64);
         private readonly ViewReport _view = new ViewReport();
         private readonly HashSet<ComponentType> _skipTypes = new HashSet<ComponentType>
@@ -126,6 +131,8 @@ namespace SkylineTogether.Sync
         {
             _active = false;
             _pendingLive = false;
+            _pendingLinks.Clear(); // w3/agents
+            _linksApplied = 0;
             _batches.Clear();
             _motion.Clear();
             _stager = new MotionClientStager();
@@ -244,6 +251,7 @@ namespace SkylineTogether.Sync
                 }
             }
             if (n > 0) _applyBudget.EndFrame(Perf.Stop(Perf.MoverApply, start));
+            if (_pendingLinks.Count > 0) RetryLinks(em);
         }
 
         private void GoLive(EntityManager em)
@@ -377,6 +385,7 @@ namespace SkylineTogether.Sync
                             Entity e = _ids.GetEntity(r.NetId);
                             _ids.Unbind(r.NetId);
                             _force.Remove(r.NetId);
+                            _pendingLinks.Remove(r.NetId); // w3/agents
                             if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) break;
                             em.AddComponent<Deleted>(e);
                             _despawned++;
@@ -390,16 +399,139 @@ namespace SkylineTogether.Sync
                 }
             }
             // states and references after every entity of the batch exists (layouts, riders)
+            HashSet<Entity> created = null;
             foreach ((Entity e, MoverRecord rec, bool isNew) in touched)
             {
                 try
                 {
                     if (em.Exists(e)) ApplyState(em, e, rec, isNew);
+                    if (isNew) (created ?? (created = new HashSet<Entity>())).Add(e);
                 }
                 catch (Exception ex)
                 {
                     _log.Debug(LogCategory.Replication, "mover state failed: " + ex.Message);
                 }
+            }
+            // w3/agents: the agents of the movers (vanilla reference systems pick them up for movers created this frame)
+            foreach (SyncRecord r in records)
+            {
+                if (r.Kind != SyncRecordKind.MoverAgents || r.AgentLinks == null) continue;
+                try
+                {
+                    Entity e = _ids.GetEntity(r.NetId);
+                    if (e == Entity.Null || !em.Exists(e)) continue;
+                    if (ApplyLinks(em, e, r.AgentLinks, created != null && created.Contains(e))) _pendingLinks.Remove(r.NetId);
+                    else _pendingLinks[r.NetId] = (r.AgentLinks, UnityEngine.Time.realtimeSinceStartupAsDouble + LinkRetrySeconds);
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(LogCategory.Replication, "mover agent links failed: " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>
+        /// w3/agents: writes a mover's agent links (<c>Resident.m_Citizen</c>, <c>Pet.m_HouseholdPet</c>,
+        /// <c>PersonalCar.m_Keeper</c>, a vehicle's <c>Owner</c>). Unresolved targets are left alone; returns false when one
+        /// is still missing (retried). For a mover created in this frame the vanilla reference systems derive the reverse
+        /// links (the citizen's <c>CurrentTransport</c>, the owner's <c>OwnedVehicle</c>); later owner changes keep the
+        /// owner's vehicle list in step here.
+        /// </summary>
+        private bool ApplyLinks(EntityManager em, Entity e, MoverAgentLinks links, bool isNew)
+        {
+            bool complete = true;
+            Entity agent = ResolveLink(em, links.Agent, ref complete);
+            Entity keeper = ResolveLink(em, links.Keeper, ref complete);
+            Entity owner = ResolveLink(em, links.Owner, ref complete);
+            if (links.Agent == 0 || agent != Entity.Null)
+            {
+                if (em.HasComponent<Game.Creatures.Resident>(e))
+                {
+                    Game.Creatures.Resident resident = em.GetComponentData<Game.Creatures.Resident>(e);
+                    if (resident.m_Citizen != agent)
+                    {
+                        resident.m_Citizen = agent;
+                        em.SetComponentData(e, resident);
+                    }
+                }
+                else if (em.HasComponent<Game.Creatures.Pet>(e))
+                {
+                    Game.Creatures.Pet pet = em.GetComponentData<Game.Creatures.Pet>(e);
+                    if (pet.m_HouseholdPet != agent)
+                    {
+                        pet.m_HouseholdPet = agent;
+                        em.SetComponentData(e, pet);
+                    }
+                }
+            }
+            if ((links.Keeper == 0 || keeper != Entity.Null) && em.HasComponent<Game.Vehicles.PersonalCar>(e))
+            {
+                Game.Vehicles.PersonalCar car = em.GetComponentData<Game.Vehicles.PersonalCar>(e);
+                if (car.m_Keeper != keeper)
+                {
+                    car.m_Keeper = keeper;
+                    em.SetComponentData(e, car);
+                }
+            }
+            if ((links.Owner == 0 || owner != Entity.Null) && em.HasComponent<Vehicle>(e) && em.HasComponent<Owner>(e))
+            {
+                Owner current = em.GetComponentData<Owner>(e);
+                if (current.m_Owner != owner)
+                {
+                    if (!isNew)
+                    {
+                        SetOwnedVehicle(em, current.m_Owner, e, false);
+                        SetOwnedVehicle(em, owner, e, true);
+                    }
+                    em.SetComponentData(e, new Owner(owner));
+                }
+            }
+            if (complete) _linksApplied++;
+            return complete;
+        }
+
+        private Entity ResolveLink(EntityManager em, uint id, ref bool complete)
+        {
+            if (id == 0) return Entity.Null;
+            Entity e = _ids.GetEntity(id);
+            if (e != Entity.Null && em.Exists(e) && !em.HasComponent<Deleted>(e)) return e;
+            complete = false;
+            return Entity.Null;
+        }
+
+        private static void SetOwnedVehicle(EntityManager em, Entity owner, Entity vehicle, bool add)
+        {
+            if (owner == Entity.Null || !em.Exists(owner) || !em.HasBuffer<OwnedVehicle>(owner)) return;
+            DynamicBuffer<OwnedVehicle> list = em.GetBuffer<OwnedVehicle>(owner);
+            for (int i = list.Length - 1; i >= 0; i--)
+            {
+                if (list[i].m_Vehicle != vehicle) continue;
+                if (add) return;
+                list.RemoveAt(i);
+            }
+            if (add) list.Add(new OwnedVehicle(vehicle));
+        }
+
+        private void RetryLinks(EntityManager em)
+        {
+            double now = UnityEngine.Time.realtimeSinceStartupAsDouble;
+            _linkScratch.Clear();
+            _linkScratch.AddRange(_pendingLinks.Keys);
+            foreach (uint id in _linkScratch)
+            {
+                (MoverAgentLinks links, double until) = _pendingLinks[id];
+                Entity e = _ids.GetEntity(id);
+                bool done;
+                try
+                {
+                    done = e == Entity.Null || !em.Exists(e) || ApplyLinks(em, e, links, false);
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(LogCategory.Replication, "mover agent links retry failed: " + ex.Message);
+                    done = true;
+                }
+                if (done || now > until) _pendingLinks.Remove(id);
             }
         }
 
@@ -838,6 +970,7 @@ namespace SkylineTogether.Sync
             _view.CamY = Finite(position.y);
             _view.CamZ = Finite(position.z);
             AttentionValues.Instance?.FillViewReport(_view); // w2/simvals: selected entity and infoview topics
+            AgentSync.Instance?.FillViewReport(_view); // w3/agents: the followed entity (follow camera)
             _report.Reset();
             ViewReport.Write(_report, _view);
             client.SendToHost(MessageKind.View, _report.Buffer, 0, _report.Length);
@@ -852,6 +985,6 @@ namespace SkylineTogether.Sync
         private static float Finite(float v) => float.IsNaN(v) || float.IsInfinity(v) ? 0f : v;
 
         /// <summary>One line for diagnostics.</summary>
-        public string Status => _active ? "movers +" + _spawned + " -" + _despawned + ", " + _stager.AssignedCount + " in motion" : "";
+        public string Status => _active ? "movers +" + _spawned + " -" + _despawned + ", " + _stager.AssignedCount + " in motion" + (_linksApplied > 0 ? ", " + _linksApplied + " agent links" : "") : "";
     }
 }

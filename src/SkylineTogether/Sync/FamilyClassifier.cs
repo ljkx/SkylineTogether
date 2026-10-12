@@ -227,6 +227,23 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>
+        /// w3/agents: true while the host replicates agents (citizens, households, pets, companies) in this session; set by
+        /// <see cref="AgentSync"/> at host session start when <c>Features.Agents</c> is available, false otherwise and on
+        /// clients (a client applies whatever the host sends, it never decides).
+        /// </summary>
+        public static bool AgentsReplicated { get; set; }
+
+        /// <summary>w3/agents: the agent family (ARCH §3.2 rule 16, class A).</summary>
+        public static bool IsAgent(Family family) => family == Family.Agent;
+
+        /// <summary>
+        /// w3/agents: families the host binds, captures and streams: the replicated structure families plus agents while
+        /// <see cref="AgentsReplicated"/>. Agents are host-owned: <see cref="IsReplicated"/> stays false for them, so a
+        /// client can never propose, edit or delete one (proposal validation, client capture, rollbacks).
+        /// </summary>
+        public static bool IsHostReplicated(Family family) => IsReplicated(family) || (family == Family.Agent && AgentsReplicated);
+
         /// <summary>Families whose values the host scans periodically (they change without update tags).</summary>
         public static bool IsScanned(Family family) => family == Family.Route || family == Family.Waypoint || family == Family.Segment || family == Family.Singleton || family == Family.Event;
 

@@ -200,6 +200,9 @@ namespace SkylineTogether.Sync
             // w3/audit: events and chirps keep their values when they name an entity that does not replicate (a citizen
             // sender, a household target): that reference travels as null instead of dropping the whole component
             _ws.NullRefs = LenientRefs(family);
+            // w3/agents: references of agents to transient agents (job and school seekers, meetings), service requests and
+            // icons never replicate; they travel as null so the values beside them are not lost (as simulation values do)
+            bool lenient = family == Family.Agent;
             try
             {
                 for (int i = 0; i < handlers.Length; i++)
@@ -210,7 +213,9 @@ namespace SkylineTogether.Sync
                         if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
                         continue;
                     }
-                    if (TrySerialize(h, e, out int length)) w.AddComponent(h.Hash, h.Kind, _managedScratch, 0, length);
+                    int length;
+                    bool ok = lenient && h.Kind == SyncComponentKind.Data ? TrySerializeSim(h, e, out length) : TrySerialize(h, e, out length);
+                    if (ok) w.AddComponent(h.Hash, h.Kind, _managedScratch, 0, length);
                     else if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
                 }
             }
@@ -385,7 +390,10 @@ namespace SkylineTogether.Sync
         public bool TryHashValue(TypeHandler h, Entity e, out ulong hash)
         {
             hash = 0;
-            if (h == null || h.Kind == SyncComponentKind.Presence || !TrySerialize(h, e, out int length)) return false;
+            if (h == null || h.Kind == SyncComponentKind.Presence) return false;
+            // w3/agents: reverse buffers are compared as multisets (ARCH 4.2.4)
+            if (h.TryHashAsSet(EntityManager, e, _ids, out hash)) return true;
+            if (!TrySerialize(h, e, out int length)) return false;
             int head = _payload.Length;
             hash = Core.Hashing.XxHash64.Hash(_managedScratch, head, length - head);
             foreach (DerivedKey k in _ws.UsedKeys)
@@ -969,6 +977,8 @@ namespace SkylineTogether.Sync
             {
                 (SyncRecord r, Entity e) = _targets[t];
                 if (r.Kind == SyncRecordKind.Values) continue;
+                // w3/agents: nothing derives from agents; Updated on them would only wake systems for nothing
+                if (r.Family == Family.Agent) continue;
                 _touch.Add(e);
                 if (r.Family == Family.NetEdge || r.Family == Family.NetNode) Closure(e, _touch);
             }
@@ -1224,6 +1234,10 @@ namespace SkylineTogether.Sync
                         return em.HasComponent<LifePathEventData>(prefab) ? em.GetComponentData<LifePathEventData>(prefab).m_ChirpArchetype : default;
                     }
                     return em.HasComponent<EventData>(prefab) ? em.GetComponentData<EventData>(prefab).m_Archetype : default;
+                case Family.Agent:
+                    // w3/agents: citizens, households, pets and companies are created from the ArchetypeData of their
+                    // prefab, exactly as BirthSystem, HouseholdSpawnSystem and the company spawn systems create them
+                    return em.HasComponent<ArchetypeData>(prefab) ? em.GetComponentData<ArchetypeData>(prefab).m_Archetype : default;
                 default:
                     return default;
             }

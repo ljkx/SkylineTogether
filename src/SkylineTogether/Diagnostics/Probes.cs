@@ -160,6 +160,18 @@ namespace SkylineTogether.Diagnostics
             ProbeTypeNames("P-FAMILY", Features.Replication, FamilyClassifier.MarkerTypeNames, systems: false);
             ProbeTypeNames("P-TYPES", Features.Replication, TypeHandlers.ExcludedTypeNames, systems: false);
             ProbeTypeNames("P-HASH", Features.Integrity, IntegrityHasher.StructuralTypeNames, systems: false);
+            ProbeTypeNames("P-HASH", Features.Integrity, IntegrityHasher.AgentTypeNames, systems: false);
+            ProbeTypeNames("P-AGENTS", Features.Agents, AgentSync.TypeNames, systems: false); // w3/agents
+            ProbeTypeNames("P-AGENTS", Features.Agents, new[] { AgentSync.CitizenRerollSystemName }, systems: true);
+            Safe("P-AGENTS-CORE", Features.Agents, "agent archetypes and household links", () =>
+            {
+                // without these the agents cannot be created on clients or their memberships cannot be named
+                foreach (string name in new[] { "Game.Prefabs.ArchetypeData", "Game.Citizens.HouseholdMember", "Game.Citizens.HouseholdCitizen", "Game.Buildings.PropertyRenter" })
+                {
+                    if (typeof(Game.Common.Owner).Assembly.GetType(name, false) == null) return name + " not found";
+                }
+                return null;
+            });
             ProbeSteam();
             if (world) ProbeWorld();
             if (_uiResult != null)

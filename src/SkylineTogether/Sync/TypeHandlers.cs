@@ -33,6 +33,16 @@ namespace SkylineTogether.Sync
         {
         }
 
+        /// <summary>
+        /// w3/agents: an order-insensitive hash of a reference list (reverse buffers, ARCH §4.2.4); false for every other
+        /// type and when an element cannot be named on the other peer.
+        /// </summary>
+        public virtual bool TryHashAsSet(EntityManager em, Entity e, NetIdSystem ids, out ulong hash)
+        {
+            hash = 0;
+            return false;
+        }
+
         public override string ToString() => Name;
     }
 
@@ -138,6 +148,91 @@ namespace SkylineTogether.Sync
     }
 
     /// <summary>
+    /// w3/agents: reverse buffers the save format marks as derived (<c>IEmptySerializable</c>) but which only simulation
+    /// systems (off on clients) maintain during play (ARCH §4.2.4, K5): building <c>Renter</c> and <c>Student</c>,
+    /// household <c>HouseholdCitizen</c> and <c>HouseholdAnimal</c>. They travel as lists of net ids in the host's order;
+    /// an element the reader cannot resolve yet (a member spawned in a later batch) is left out, and the integrity hash
+    /// treats the list as a multiset (<see cref="TryHashAsSet"/>), because a loaded save rebuilds them in chunk order.
+    /// While agents are not replicated their elements have no net id, so the codec sends the buffer as presence only, as
+    /// before.
+    /// </summary>
+    internal abstract class EntityRefListHandler<T> : TypeHandler where T : unmanaged, IBufferElementData
+    {
+        private const int MaxElements = 1 << 16;
+
+        protected abstract Entity Get(T element);
+
+        protected abstract T Make(Entity entity);
+
+        public override void Write(EntityManager em, Entity e, NetWriter w)
+        {
+            DynamicBuffer<T> buffer = em.GetBuffer<T>(e, true);
+            w.Write(buffer.Length);
+            for (int i = 0; i < buffer.Length; i++) w.Write(Get(buffer[i]));
+        }
+
+        public override void Read(EntityManager em, Entity e, NetReader r)
+        {
+            r.Read(out int count);
+            if (count < 0 || count > MaxElements) throw new DecodeException(Name + ": list of " + count + " entries");
+            var items = new Entity[count];
+            for (int i = 0; i < count; i++) r.Read(out items[i]);
+            DynamicBuffer<T> buffer = em.GetBuffer<T>(e);
+            buffer.Clear();
+            for (int i = 0; i < count; i++)
+            {
+                if (items[i] != Entity.Null) buffer.Add(Make(items[i]));
+            }
+        }
+
+        public override bool TryHashAsSet(EntityManager em, Entity e, NetIdSystem ids, out ulong hash)
+        {
+            hash = 0;
+            if (!em.HasBuffer<T>(e)) return false;
+            DynamicBuffer<T> buffer = em.GetBuffer<T>(e, true);
+            var acc = new Core.Hashing.SetHash.Accumulator();
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                Entity member = Get(buffer[i]);
+                if (member == Entity.Null) continue;
+                uint id = ids.GetNetId(member);
+                if (id == 0) return false; // not nameable on the other peer: presence only, exactly as the codec sends it
+                acc.Add(id);
+            }
+            hash = acc.Value;
+            return true;
+        }
+    }
+
+    internal sealed class RenterListHandler : EntityRefListHandler<Game.Buildings.Renter>
+    {
+        protected override Entity Get(Game.Buildings.Renter element) => element.m_Renter;
+
+        protected override Game.Buildings.Renter Make(Entity entity) => new Game.Buildings.Renter { m_Renter = entity };
+    }
+
+    internal sealed class HouseholdCitizenListHandler : EntityRefListHandler<Game.Citizens.HouseholdCitizen>
+    {
+        protected override Entity Get(Game.Citizens.HouseholdCitizen element) => element.m_Citizen;
+
+        protected override Game.Citizens.HouseholdCitizen Make(Entity entity) => new Game.Citizens.HouseholdCitizen(entity);
+    }
+
+    internal sealed class HouseholdAnimalListHandler : EntityRefListHandler<Game.Citizens.HouseholdAnimal>
+    {
+        protected override Entity Get(Game.Citizens.HouseholdAnimal element) => element.m_HouseholdPet;
+
+        protected override Game.Citizens.HouseholdAnimal Make(Entity entity) => new Game.Citizens.HouseholdAnimal(entity);
+    }
+
+    internal sealed class StudentListHandler : EntityRefListHandler<Game.Buildings.Student>
+    {
+        protected override Entity Get(Game.Buildings.Student element) => element.m_Student;
+
+        protected override Game.Buildings.Student Make(Entity entity) => new Game.Buildings.Student(entity);
+    }
+
+    /// <summary>
     /// Which component types replicate and how (ARCH §3.6): every type the save format persists. <c>ISerializable</c>
     /// data and buffers travel as data; zero-size types and <c>IEmptySerializable</c> types (derived data such as
     /// geometry) as presence. Shared, managed, chunk and cleanup components never travel, nor do the few tool-local
@@ -217,6 +312,11 @@ namespace SkylineTogether.Sync
             TypeHandler special = null;
             if (type == typeof(Game.Routes.RouteWaypoint)) special = new RouteWaypointsHandler();
             else if (type == typeof(Game.Routes.RouteSegment)) special = new RouteSegmentsHandler();
+            // w3/agents: reverse buffers replicated as data (K5)
+            else if (type == typeof(Game.Buildings.Renter)) special = new RenterListHandler();
+            else if (type == typeof(Game.Citizens.HouseholdCitizen)) special = new HouseholdCitizenListHandler();
+            else if (type == typeof(Game.Citizens.HouseholdAnimal)) special = new HouseholdAnimalListHandler();
+            else if (type == typeof(Game.Buildings.Student)) special = new StudentListHandler();
             if (special != null)
             {
                 special.Kind = SyncComponentKind.Buffer;
@@ -224,6 +324,7 @@ namespace SkylineTogether.Sync
                 special.Type = ComponentType.ReadWrite(index);
                 special.Hash = TypeManager.GetTypeInfo(index).StableTypeHash;
                 special.Name = type.FullName;
+                special.FromMod = false;
                 return special;
             }
             bool serializable = typeof(ISerializable).IsAssignableFrom(type);

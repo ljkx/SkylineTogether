@@ -38,6 +38,12 @@ namespace SkylineTogether.Sync
         private const int MaxChirpLinks = 512;
         private const int MaxLinksPerChirp = 16;
 
+        private Game.Triggers.LifePathEventSystem _lifePath;
+        private EntityQuery _followedQuery;
+        private bool _hasFollowedQuery;
+        private readonly HashSet<uint> _followedBase = new HashSet<uint>();
+        private readonly HashSet<uint> _followedNow = new HashSet<uint>();
+        private readonly Dictionary<uint, int> _followPending = new Dictionary<uint, int>();
         private ServiceFeeSystem _feeSystem;
         private CityProductionStatisticSystem _production;
         private MailAccumulationSystem _mail;
@@ -90,6 +96,20 @@ namespace SkylineTogether.Sync
             _mail = _world.GetOrCreateSystemManaged<MailAccumulationSystem>();
             _climate = _world.GetOrCreateSystemManaged<ClimateSystem>();
             _chirpLinks = _world.GetOrCreateSystemManaged<ChirpLinkSystem>();
+            _lifePath = _world.GetOrCreateSystemManaged<Game.Triggers.LifePathEventSystem>();
+            try
+            {
+                _followedQuery = _world.EntityManager.CreateEntityQuery(new EntityQueryDesc
+                {
+                    All = new[] { ComponentType.ReadOnly<Game.Citizens.Followed>() },
+                    None = new[] { ComponentType.ReadOnly<Game.Common.Deleted>(), ComponentType.ReadOnly<Game.Tools.Temp>() },
+                });
+                _hasFollowedQuery = true;
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Replication, "following citizens will stay local", ex);
+            }
             AddCustom("Production.Statistic", 2.0, WriteProduction, ReadProduction);
             AddCustom("Fees.Collected", 1.0, WriteCollectedFees, ReadCollectedFees, () =>
             {
@@ -322,6 +342,81 @@ namespace SkylineTogether.Sync
         {
             _chirpNames = new Dictionary<uint, ReceivedChirp>();
             _chirpPending.Clear();
+            _followedBase.Clear();
+            _followPending.Clear();
+        }
+
+        // ------------------------------------------------------------------ followed citizens (player action)
+
+        /// <summary>The "Follow" channel: client deltas (citizen net id → 1 follow, 0 unfollow). The followed list is part of
+        /// the city (50 citizens, life-path entries), so it is shared: the host follows through the vanilla
+        /// <c>LifePathEventSystem</c> and agent replication brings <c>Followed</c> and the life path to everyone.</summary>
+        private static readonly uint FollowChannel = GlobalChannel.Id("Follow");
+
+        private void ReadFollowed(HashSet<uint> into)
+        {
+            into.Clear();
+            if (!_hasFollowedQuery || _followedQuery.IsEmptyIgnoreFilter) return;
+            NativeArray<Entity> citizens = _followedQuery.ToEntityArray(Allocator.Temp);
+            try
+            {
+                foreach (Entity c in citizens)
+                {
+                    uint id = _ids.GetNetId(c);
+                    if (id != 0) into.Add(id);
+                }
+            }
+            finally
+            {
+                citizens.Dispose();
+            }
+        }
+
+        private void DetectFollowed()
+        {
+            ReadFollowed(_followedNow);
+            foreach (uint id in _followedNow)
+            {
+                if (!_followedBase.Contains(id)) _followPending[id] = 1;
+            }
+            foreach (uint id in _followedBase)
+            {
+                if (!_followedNow.Contains(id)) _followPending[id] = 0;
+            }
+            _followedBase.Clear();
+            _followedBase.UnionWith(_followedNow);
+        }
+
+        private void RebaselineFollowed()
+        {
+            ReadFollowed(_followedBase);
+        }
+
+        private void FlushFollowed(SyncBatch.Writer w)
+        {
+            if (_followPending.Count == 0) return;
+            var list = new List<KeyValuePair<uint, int>>(_followPending);
+            list.Sort((a, b) => a.Key.CompareTo(b.Key));
+            Put(w, FollowChannel, GlobalPayload.WriteInts(GlobalPayloadMode.Delta, list));
+            _followPending.Clear();
+        }
+
+        /// <summary>Host: a client's channel proposal handled here; false for every other channel.</summary>
+        private bool ApplyPanelProposal(PeerId peer, uint channel, byte[] payload)
+        {
+            if (channel != FollowChannel) return false;
+            var entries = new List<KeyValuePair<uint, int>>();
+            if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, entries), peer, channel)) return true;
+            EntityManager em = _world.EntityManager;
+            foreach (KeyValuePair<uint, int> e in entries)
+            {
+                Entity citizen = _ids.GetEntity(e.Key);
+                if (!Live(em, citizen) || !em.HasComponent<Game.Citizens.Citizen>(citizen)) continue;
+                bool followed = em.HasComponent<Game.Citizens.Followed>(citizen);
+                if (e.Value != 0 && !followed) _lifePath.FollowCitizen(citizen);
+                else if (e.Value == 0 && followed) _lifePath.UnfollowCitizen(citizen);
+            }
+            return true;
         }
 
         /// <summary>

@@ -236,7 +236,79 @@ namespace SkylineTogether.Sync
         {
             EntityManager em = EntityManager;
             if (!em.Exists(e)) return true;
-            return em.HasComponent<Game.Simulation.ServiceRequest>(e) || em.HasComponent<Game.Notifications.Icon>(e);
+            if (em.HasComponent<Game.Simulation.ServiceRequest>(e) || em.HasComponent<Game.Notifications.Icon>(e)) return true;
+            // w3/agents: transient agents (seekers, meetings) never replicate (ARCH 2.2, A-low: references tolerate staleness)
+            return em.HasComponent<Game.Agents.JobSeeker>(e) || em.HasComponent<Game.Citizens.SchoolSeeker>(e)
+                   || em.HasComponent<Game.Citizens.LookingForPartner>(e) || em.HasComponent<Game.Citizens.CoordinatedMeeting>(e);
+        }
+
+        /// <summary>
+        /// w3/agents: appends the given components of an entity to a <see cref="SimValueMessage"/> (the reverse buffers of
+        /// an owner after a membership change). Returns the number of components written (0: nothing was appended).
+        /// </summary>
+        public int WriteValueSubset(ByteWriter w, uint netId, Family family, Entity e, IReadOnlyList<TypeHandler> handlers)
+        {
+            EntityManager em = EntityManager;
+            int start = w.Length;
+            int countPosition = SimValueMessage.BeginEntity(w, netId, family);
+            int n = 0;
+            for (int i = 0; i < handlers.Count; i++)
+            {
+                TypeHandler h = handlers[i];
+                if (h == null || h.Kind == SyncComponentKind.Presence || !em.HasComponent(e, h.Type)) continue;
+                if (!TrySerializeSim(h, e, out int length)) continue;
+                SimValueMessage.AddComponent(w, h.Hash, h.Kind, _managedScratch, 0, length);
+                n++;
+            }
+            if (n == 0)
+            {
+                SimValueMessage.DropEntity(w, start);
+                return 0;
+            }
+            SimValueMessage.EndEntity(w, countPosition, n);
+            return n;
+        }
+
+        /// <summary>
+        /// w3/agents, client: writes decoded agent value records (<c>MessageKind.AgentValues</c>) into the bound entities,
+        /// without tags. Only simulation-value types are written (never prefab, owner or seed; never movers). Ids whose
+        /// values held a reference that did not resolve yet are added to <paramref name="unresolved"/>. Returns the
+        /// entities written.
+        /// </summary>
+        public List<Entity> ApplyAgentValues(byte[] data, int offset, int count, List<SyncRecord> records, ApplyResult result, List<uint> unresolved)
+        {
+            var written = new List<Entity>();
+            if (records == null || records.Count == 0) return written;
+            if (_batch.Length < count)
+            {
+                _batch.Dispose();
+                _batch = new NativeArray<byte>(Math.Max(count, _batch.Length * 2), Allocator.Persistent);
+            }
+            NativeArray<byte>.Copy(data, offset, _batch, 0, count);
+            EntityManager em = EntityManager;
+            foreach (SyncRecord r in records)
+            {
+                Entity e = _ids.GetEntity(r.NetId);
+                if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e) || _ids.GetFamily(r.NetId) == Family.Mover)
+                {
+                    result.Skipped++;
+                    continue;
+                }
+                bool any = false, missing = false;
+                foreach (SyncComponent c in r.Components)
+                {
+                    TypeHandler h = TypeHandlers.GetByHash(c.TypeHash);
+                    if (h == null || h.Kind != c.Kind || !IsSimValueType(h, false) || !em.HasComponent(e, h.Type)) continue;
+                    ReadComponent(h, e, c, offset, data, result);
+                    missing |= _rs.Unresolved;
+                    any = true;
+                }
+                if (missing) unresolved?.Add(r.NetId);
+                if (!any) continue;
+                result.Values++;
+                written.Add(e);
+            }
+            return written;
         }
 
         /// <summary>

@@ -46,6 +46,14 @@ namespace SkylineTogether.Core
         /// <see cref="Fields.CellMapMessage"/>).</summary>
         CellMaps = 66,
         /// <summary>City statistics history (<see cref="Sync.StatisticsMessage"/>), host → client.</summary>
-        Statistics = 67
+        Statistics = 67,
+
+        // w3/agents (merge coordination: this branch owns 90-94)
+        /// <summary>Values of citizens, households, pets and companies, streamed by attention, plus the reverse buffers of
+        /// their owners after a membership change (<see cref="Sync.SimValueMessage"/> format), host → client.</summary>
+        AgentValues = 90,
+        /// <summary>Client → host: agents whose values referenced something not yet known here; the host re-sends them
+        /// (<see cref="Sync.AgentRefreshMessage"/>).</summary>
+        AgentRefresh = 91
     }
 }

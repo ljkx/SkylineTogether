@@ -22,6 +22,8 @@ namespace SkylineTogether.Diagnostics
         public const string MotionSample = "motion sample";
         public const string MoverApply = "mover apply";
         public const string MotionWrite = "motion write";
+        public const string AgentScan = "agent scan";
+        public const string AgentApply = "agent apply";
 
         // channel names (bytes per second, host: summed over the peers it was sent to)
         public const string StructureBytes = "structure";
@@ -30,6 +32,7 @@ namespace SkylineTogether.Diagnostics
         public const string IntegrityBytes = "integrity";
         public const string MoverBytes = "movers";
         public const string MotionBytes = "motion";
+        public const string AgentBytes = "agents";
         public const string ProposalBytes = "proposals";
         public const string ReceivedBytes = "received";
 

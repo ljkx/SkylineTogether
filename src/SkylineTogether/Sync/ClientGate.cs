@@ -44,6 +44,12 @@ namespace SkylineTogether.Sync
             // w3/audit: chirps come from the host; local triggers (weather, policies, tools) would add chirps of their own
             // (EventSync empties the creation queue while this is off)
             "Game.Triggers.CreateChirpSystem",
+            // w3/agents: cascades the host sends itself (every despawn, every changed reverse buffer, ARCH 4.2.6)
+            "Game.Citizens.HouseholdAndCitizenRemoveSystem",
+            "Game.Citizens.HouseholdPetRemoveSystem",
+            "Game.Simulation.RemovedSystem",
+            "Game.Buildings.SchoolUpdatedSystem",
+            "Game.Events.AddHealthProblemSystem",
         };
 
         /// <summary>Line systems: off on clients except inside a route-tool preview window.</summary>

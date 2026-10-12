@@ -26,6 +26,11 @@ namespace SkylineTogether.Sync
     /// the client records which types each received record carried as presence only (<see cref="OnRecord"/>) and hashes
     /// them as presence too, whatever its local value. Entities that came with the join snapshot have no record; their
     /// values are the host's own, so both sides resolve (or fail to resolve) the same references.</item>
+    /// <item><b>Agents</b> (w3/agents: citizens, households, pets, companies): existence plus the key links listed in
+    /// <see cref="AgentTypeNames"/>: household membership both ways, the reverse lists compared as multisets. Their
+    /// values (happiness, money, workplace, property, ...) stream by attention and lag legitimately; the citizen prefab
+    /// is left out as well, because a load re-rolls it (<c>Game.Serialization.CitizenSystem</c>, gated on clients but not
+    /// worth a repair storm if the gate is missing).</item>
     /// <item><b>Derived references</b> (lanes, station stops) are reduced to kind, owner and prefab
     /// (<see cref="EntityCodec.TryHashValue"/>): each peer regenerates them with its own index and rounding.</item>
     /// </list>
@@ -53,6 +58,15 @@ namespace SkylineTogether.Sync
             "Game.Areas.Area",
         };
 
+        /// <summary>w3/agents: the key links verified on agents (types this game lacks are skipped).</summary>
+        public static readonly string[] AgentTypeNames =
+        {
+            "Game.Citizens.HouseholdMember",
+            "Game.Citizens.HouseholdPet",
+            "Game.Citizens.HouseholdCitizen",
+            "Game.Citizens.HouseholdAnimal",
+        };
+
         /// <summary>Components never verified on line families.</summary>
         private static readonly HashSet<string> NotVerified = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -69,6 +83,8 @@ namespace SkylineTogether.Sync
         private readonly HashSet<ulong> _recordTypes = new HashSet<ulong>();
         private readonly List<ulong> _masked = new List<ulong>();
         private List<TypeHandler> _structural;
+        private List<TypeHandler> _agentKeys;
+        private readonly Dictionary<EntityArchetype, TypeHandler[]> _agentMembers = new Dictionary<EntityArchetype, TypeHandler[]>();
         private readonly Dictionary<EntityArchetype, TypeHandler[]> _lineMembers = new Dictionary<EntityArchetype, TypeHandler[]>();
         private readonly Dictionary<EntityArchetype, TypeHandler[]> _structuralMembers = new Dictionary<EntityArchetype, TypeHandler[]>();
 
@@ -82,7 +98,7 @@ namespace SkylineTogether.Sync
         public int MaskedEntities => _presenceOnly.Count;
 
         /// <summary>Families the verification covers: the replicated ones (prefabs and singletons are not entities of the city).</summary>
-        public static bool IsVerified(Family family) => FamilyClassifier.IsReplicated(family) && !FamilyClassifier.IsHostOnly(family);
+        public static bool IsVerified(Family family) => (FamilyClassifier.IsReplicated(family) && !FamilyClassifier.IsHostOnly(family)) || family == Family.Agent;
 
         /// <summary>Families whose every replicated value is verified (value-scanned by the host).</summary>
         public static bool HashesAllValues(Family family) => family == Family.Route || family == Family.Waypoint || family == Family.Segment;
@@ -111,10 +127,11 @@ namespace SkylineTogether.Sync
             // w2/ids perf pass: the members of an archetype are cached (no type enumeration or name lookup per entity)
             EntityArchetype archetype = em.GetChunk(e).Archetype;
             bool all = HashesAllValues(family);
-            Dictionary<EntityArchetype, TypeHandler[]> cache = all ? _lineMembers : _structuralMembers;
+            bool agent = family == Family.Agent;
+            Dictionary<EntityArchetype, TypeHandler[]> cache = agent ? _agentMembers : all ? _lineMembers : _structuralMembers;
             if (!cache.TryGetValue(archetype, out TypeHandler[] members))
             {
-                members = BuildMembers(archetype, all);
+                members = agent ? Filter(_codec.HandlersOf(archetype), AgentKeys()) : BuildMembers(archetype, all);
                 cache[archetype] = members;
             }
             for (int i = 0; i < members.Length; i++) output.Add(Member(members[i], e, mask));
@@ -160,11 +177,24 @@ namespace SkylineTogether.Sync
             return false;
         }
 
-        private List<TypeHandler> Structural()
+        private static TypeHandler[] Filter(TypeHandler[] present, List<TypeHandler> wanted)
         {
-            if (_structural != null) return _structural;
-            _structural = new List<TypeHandler>();
-            foreach (string name in StructuralTypeNames)
+            var list = new List<TypeHandler>(wanted.Count);
+            foreach (TypeHandler h in wanted)
+            {
+                if (Array.IndexOf(present, h) >= 0) list.Add(h);
+            }
+            return list.ToArray();
+        }
+
+        private List<TypeHandler> AgentKeys() => _agentKeys ?? (_agentKeys = Resolve(AgentTypeNames));
+
+        private List<TypeHandler> Structural() => _structural ?? (_structural = Resolve(StructuralTypeNames));
+
+        private List<TypeHandler> Resolve(string[] names)
+        {
+            var result = new List<TypeHandler>();
+            foreach (string name in names)
             {
                 Type type = FamilyClassifier.FindType(name);
                 TypeHandler h = null;
@@ -173,10 +203,10 @@ namespace SkylineTogether.Sync
                     TypeIndex index = TypeManager.GetTypeIndex(type);
                     if (index != TypeIndex.Null) h = TypeHandlers.Get(index);
                 }
-                if (h == null) _log.Debug(LogCategory.Integrity, "structural type not verified (not found or not replicated): " + name);
-                else _structural.Add(h);
+                if (h == null) _log.Debug(LogCategory.Integrity, "type not verified (not found or not replicated): " + name);
+                else result.Add(h);
             }
-            return _structural;
+            return result;
         }
 
         /// <summary>
