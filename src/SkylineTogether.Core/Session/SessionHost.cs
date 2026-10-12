@@ -467,7 +467,8 @@ namespace SkylineTogether.Core.Session
                     if (p.Hello != null) return;
                     if (HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount) != ProtocolVersion.Current)
                     {
-                        Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Host: " + ProtocolVersion.Current + ". Update both games to the same mod version.");
+                        Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Host: " + ProtocolVersion.Current + ". Update both games to the same mod version.",
+                            new MismatchReport { Kind = "protocol", HostProtocol = ProtocolVersion.Current.ToString(System.Globalization.CultureInfo.InvariantCulture), ClientProtocol = HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount).ToString(System.Globalization.CultureInfo.InvariantCulture) });
                         return;
                     }
                     p.Hello = HelloMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
@@ -665,20 +666,22 @@ namespace SkylineTogether.Core.Session
             HandshakeDigests theirs = p.Hello.Digests;
             if (theirs.ModBuild != mine.ModBuild)
             {
-                Refuse(p, RefuseReason.Mismatch, "Skyline Together builds differ. Both players need exactly the same mod version.");
+                Refuse(p, RefuseReason.Mismatch, "Skyline Together builds differ. Both players need exactly the same mod version.", new MismatchReport { Kind = "build" });
                 return;
             }
             if (!string.Equals(theirs.GameVersion, mine.GameVersion, StringComparison.Ordinal))
             {
-                Refuse(p, RefuseReason.Mismatch, "Game versions differ (host " + mine.GameVersion + ", you " + theirs.GameVersion + "). Update both games.");
+                Refuse(p, RefuseReason.Mismatch, "Game versions differ (host " + mine.GameVersion + ", you " + theirs.GameVersion + "). Update both games.",
+                    new MismatchReport { Kind = "game", HostGameVersion = mine.GameVersion, ClientGameVersion = theirs.GameVersion });
                 return;
             }
             if (_options.RequireSameMods)
             {
-                string diff = SessionPayloads.CompareMods(_info.BuildManifest(false).Mods, p.Manifest.Mods);
+                MismatchReport diff = MismatchReport.CompareMods(_info.BuildManifest(false).Mods, p.Manifest.Mods);
                 if (diff != null)
                 {
-                    Refuse(p, RefuseReason.Mismatch, "Your mods differ from the host's. " + diff);
+                    // the detail text is cut at 1024 characters; the report carries the complete lists for the UI
+                    Refuse(p, RefuseReason.Mismatch, "Your mods differ from the host's. " + diff.Describe(), diff);
                     return;
                 }
             }
@@ -904,11 +907,13 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        private void Refuse(Peer p, RefuseReason reason, string detail)
+        private void Refuse(Peer p, RefuseReason reason, string detail, MismatchReport report = null)
         {
             _log.Info(LogCategory.Session, "refused " + p.Name + " (" + reason + "): " + detail);
             _body.Reset();
-            RefuseMessage.Write(_body, new RefuseMessage { Reason = reason, Detail = ProtocolText.Truncate(detail, RefuseMessage.MaxDetailChars) });
+            byte[] encoded = MismatchReport.Encode(report);
+            if (encoded != null && encoded.Length > RefuseMessage.MaxMismatchReportBytes) encoded = null;
+            RefuseMessage.Write(_body, new RefuseMessage { Reason = reason, Detail = ProtocolText.Truncate(detail, RefuseMessage.MaxDetailChars), MismatchReport = encoded });
             p.Channel.Send(MessageKind.Refuse, _body);
             Remove(p, 0, "refused: " + reason, true);
         }

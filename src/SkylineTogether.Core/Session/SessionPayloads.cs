@@ -145,40 +145,6 @@ namespace SkylineTogether.Core.Session
         public static string ReadText(ByteReader r) => MessageFields.ReadText(r, 1024, "text");
 
         /// <summary>Builds a readable comparison of two mod lists, or null when they match.</summary>
-        public static string CompareMods(IReadOnlyList<ModEntry> host, IReadOnlyList<ModEntry> client)
-        {
-            var hostByName = new Dictionary<string, ModEntry>(StringComparer.OrdinalIgnoreCase);
-            foreach (ModEntry m in host) hostByName[Key(m)] = m;
-            var clientByName = new Dictionary<string, ModEntry>(StringComparer.OrdinalIgnoreCase);
-            foreach (ModEntry m in client) clientByName[Key(m)] = m;
-            var missing = new List<string>();
-            var extra = new List<string>();
-            var version = new List<string>();
-            foreach (KeyValuePair<string, ModEntry> h in hostByName)
-            {
-                if (!clientByName.TryGetValue(h.Key, out ModEntry c)) missing.Add(h.Value.ToString());
-                else if (!string.Equals(h.Value.Version ?? "", c.Version ?? "", StringComparison.Ordinal)
-                         || (!string.IsNullOrEmpty(h.Value.DllHash) && !string.IsNullOrEmpty(c.DllHash)
-                             && !string.Equals(h.Value.DllHash, c.DllHash, StringComparison.OrdinalIgnoreCase)))
-                {
-                    version.Add((h.Value.Name ?? "?") + " (host " + (h.Value.Version ?? "?") + ", you " + (c.Version ?? "?") + ")");
-                }
-            }
-            foreach (KeyValuePair<string, ModEntry> c in clientByName)
-            {
-                if (!hostByName.ContainsKey(c.Key)) extra.Add(c.Value.ToString());
-            }
-            if (missing.Count == 0 && extra.Count == 0 && version.Count == 0) return null;
-            missing.Sort(StringComparer.OrdinalIgnoreCase);
-            extra.Sort(StringComparer.OrdinalIgnoreCase);
-            version.Sort(StringComparer.OrdinalIgnoreCase);
-            var sb = new System.Text.StringBuilder();
-            if (missing.Count > 0) sb.Append("Missing (enable these): ").Append(string.Join(", ", missing)).Append(". ");
-            if (extra.Count > 0) sb.Append("Not on host (disable these): ").Append(string.Join(", ", extra)).Append(". ");
-            if (version.Count > 0) sb.Append("Different version: ").Append(string.Join(", ", version)).Append('.');
-            return sb.ToString().Trim();
-        }
-
-        private static string Key(ModEntry m) => !string.IsNullOrEmpty(m.PlatformId) ? "id:" + m.PlatformId : "name:" + (m.Name ?? "");
+        public static string CompareMods(IReadOnlyList<ModEntry> host, IReadOnlyList<ModEntry> client) => MismatchReport.CompareMods(host, client)?.Describe();
     }
 }
