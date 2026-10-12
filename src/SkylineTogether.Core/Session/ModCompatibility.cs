@@ -106,7 +106,7 @@ namespace SkylineTogether.Core.Session
             foreach (KeyValuePair<string, ModEntry> h in hostByKey)
             {
                 clientByKey.TryGetValue(h.Key, out ModEntry c);
-                bool local = IsLocal(h.Value, c);
+                bool local = IsLocalPair(h.Value, c);
                 if (c == null)
                 {
                     if (local) result.IgnoredLocal.Add(h.Value + " (host only)");
@@ -124,7 +124,7 @@ namespace SkylineTogether.Core.Session
             foreach (KeyValuePair<string, ModEntry> c in clientByKey)
             {
                 if (hostByKey.ContainsKey(c.Key)) continue;
-                if (IsLocal(null, c.Value)) result.IgnoredLocal.Add(c.Value + " (yours only)");
+                if (IsLocalPair(null, c.Value)) result.IgnoredLocal.Add(c.Value + " (yours only)");
                 else result.Extra.Add(c.Value.ToString());
             }
             result.Missing.Sort(StringComparer.OrdinalIgnoreCase);
@@ -134,7 +134,8 @@ namespace SkylineTogether.Core.Session
             return result;
         }
 
-        private static bool IsLocal(ModEntry a, ModEntry b)
+        /// <summary>True when a mod (host entry, joiner entry; either may be null) never blocks a join.</summary>
+        public static bool IsLocalPair(ModEntry a, ModEntry b)
         {
             if (DefinitelyWorld(a) || DefinitelyWorld(b)) return false;
             return (a != null && Classify(a) == ModClass.LocalOnly) || (b != null && Classify(b) == ModClass.LocalOnly);

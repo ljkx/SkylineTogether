@@ -71,14 +71,14 @@ namespace SkylineTogether.Core.Tests.Sync
             SyncRecordKind[] fromClient =
             {
                 SyncRecordKind.Spawn, SyncRecordKind.Upsert, SyncRecordKind.Values, SyncRecordKind.Despawn, SyncRecordKind.ZoneCells,
-                SyncRecordKind.Cost, SyncRecordKind.Request, SyncRecordKind.Global, SyncRecordKind.RequestIds,
+                SyncRecordKind.Cost, SyncRecordKind.Request, SyncRecordKind.Global, SyncRecordKind.RequestIds, SyncRecordKind.ProposalHeader,
                 SyncRecordKind.EnabledBits, // mod compatibility: enabled bits of a proposed entity
             };
             SyncRecordKind[] hostOnly =
             {
                 SyncRecordKind.Prefab, SyncRecordKind.IdRange, SyncRecordKind.Clock, SyncRecordKind.BucketDigest, SyncRecordKind.EntityHashes,
                 SyncRecordKind.EntityExplain, SyncRecordKind.IconSet, SyncRecordKind.IconControl, SyncRecordKind.LineRows,
-                SyncRecordKind.MoverSpawn, SyncRecordKind.MoverState, SyncRecordKind.MoverDespawn,
+                SyncRecordKind.MoverSpawn, SyncRecordKind.MoverState, SyncRecordKind.MoverDespawn, SyncRecordKind.Epoch, SyncRecordKind.ProposalResult,
                 SyncRecordKind.ModSettings, // mod compatibility: the host's mod settings
             };
             foreach (SyncRecordKind k in fromClient) Assert.True(SyncBatch.AcceptedFromClient(k), k.ToString());

@@ -1,3 +1,4 @@
+using SkylineTogether.Core;
 using UnityEngine;
 
 namespace SkylineTogether.Session
@@ -11,6 +12,15 @@ namespace SkylineTogether.Session
         private void Update()
         {
             Mod.Sessions?.Tick();
+            try
+            {
+                Mod.Toasts?.Tick();
+                Mod.Invites?.Tick();
+            }
+            catch (System.Exception ex)
+            {
+                Mod.Log?.Error(LogCategory.Ui, "toasts or Steam invites failed", ex);
+            }
         }
 
         private void OnApplicationQuit()

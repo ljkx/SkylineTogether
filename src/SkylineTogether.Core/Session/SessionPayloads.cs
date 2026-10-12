@@ -144,14 +144,7 @@ namespace SkylineTogether.Core.Session
 
         public static string ReadText(ByteReader r) => MessageFields.ReadText(r, 1024, "text");
 
-        /// <summary>
-        /// Builds a readable comparison of two mod lists, or null when nothing blocks the join. Mods that only affect
-        /// their own player (UI, tooltips, icons, overlays, statistics panels; <see cref="ModCompatibility"/>) never
-        /// block, whether one side lacks them or the versions differ.
-        /// </summary>
-        public static string CompareMods(IReadOnlyList<ModEntry> host, IReadOnlyList<ModEntry> client)
-        {
-            return ModCompatibility.Compare(host, client).RefusalText();
-        }
+        /// <summary>Builds a readable comparison of two mod lists, or null when they match.</summary>
+        public static string CompareMods(IReadOnlyList<ModEntry> host, IReadOnlyList<ModEntry> client) => MismatchReport.CompareMods(host, client)?.Describe();
     }
 }

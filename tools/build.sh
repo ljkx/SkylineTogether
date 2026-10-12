@@ -108,7 +108,9 @@ if [ "$UI_CHECKS" = 1 ] && [ -f ui/SkylineTogether.mjs ]; then
   if command -v node >/dev/null 2>&1; then
     step "UI module checks"
     node --check ui/SkylineTogether.mjs || fail "node --check ui/SkylineTogether.mjs"
-    if [ -f tools/UiSmoke/smoke.mjs ]; then
+    if [ -f tools/ui_smoke.mjs ]; then
+      node tools/ui_smoke.mjs || fail "UI smoke check"
+    elif [ -f tools/UiSmoke/smoke.mjs ]; then
       node tools/UiSmoke/smoke.mjs || fail "UI smoke check"
     fi
   else

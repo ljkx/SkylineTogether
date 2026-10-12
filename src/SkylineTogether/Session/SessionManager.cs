@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Colossal.PSI.Common;
 using Colossal.Serialization.Entities;
 using Game;
 using Game.PSI;
 using Game.SceneFlow;
+using Game.UI.Localization;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Net;
 using SkylineTogether.Settings;
@@ -20,6 +23,20 @@ namespace SkylineTogether.Session
         Hosting,
         Joining,
         Client
+    }
+
+    /// <summary>Why the last client session ended, for the joiner's error screen (kept until dismissed or the next join).</summary>
+    public sealed class SessionEndInfo
+    {
+        /// <summary>Changes for every new end (the UI hides a screen it dismissed by this number).</summary>
+        public int Seq;
+        public ClientEndKind Kind;
+        public RefuseReason Refuse;
+        /// <summary>The reason as text (often the host's English detail).</summary>
+        public string Text;
+        public MismatchReport Report;
+        /// <summary>What the player tried to join (Steam ID or address).</summary>
+        public string Target;
     }
 
     /// <summary>
@@ -41,7 +58,11 @@ namespace SkylineTogether.Session
         private readonly SnapshotLoader _loader;
         private readonly Core.Testing.StopwatchClock _clock = new Core.Testing.StopwatchClock();
         private readonly List<ChatEntry> _chat = new List<ChatEntry>();
+        private readonly List<long> _chatSeq = new List<long>();
+        private static long _chatCounter;
         private int _chatVersion;
+        private int _endSeq;
+        private string _joinTarget;
         private SpeedState _speedRequest;
         private bool _hasSpeedRequest;
         private int _playersVersion;
@@ -88,7 +109,16 @@ namespace SkylineTogether.Session
         /// <summary>Why the last session ended (shown until the next one starts).</summary>
         public string LastEndReason { get; private set; }
 
+        /// <summary>The joiner's last session end worth a screen (refusal, error, kick), or null.</summary>
+        public SessionEndInfo LastEnd { get; private set; }
+
         public IReadOnlyList<ChatEntry> Chat => _chat;
+
+        /// <summary>A number per chat line that never repeats, also across sessions (the chat overlay fades by it).</summary>
+        public long ChatSeqAt(int index) => index >= 0 && index < _chatSeq.Count ? _chatSeq[index] : -1;
+
+        /// <summary>The Steam ID or address of the current or last join.</summary>
+        public string JoinTarget => _joinTarget ?? "";
 
         public int ChatVersion => _chatVersion;
 
@@ -159,7 +189,7 @@ namespace SkylineTogether.Session
         {
             if (!CanHost)
             {
-                Notify("Load or start a city first, then host it.");
+                Notify(LocaleSource.Resolve("st.toast.hostNeedsCity"), ProgressState.Warning);
                 return;
             }
             SessionHost created = null;
@@ -189,12 +219,17 @@ namespace SkylineTogether.Session
                 host.Start();
                 Host = host;
                 LastEndReason = null;
-                _chat.Clear();
-                _chatVersion++;
-                AddChat(new ChatEntry { IsSystem = true, Text = "You are hosting \"" + options.SessionName + "\". Friends can join with your Steam ID " + LocalSteamId.ToString(CultureInfo.InvariantCulture)
-                                                               + (transport.ListeningIpPort > 0 ? " or your IP address and port " + transport.ListeningIpPort : "") + "." });
+                LastEnd = null;
+                ClearChat();
+                string steamId = LocalSteamId.ToString(CultureInfo.InvariantCulture);
+                AddChat(new ChatEntry
+                {
+                    IsSystem = true,
+                    Text = LocaleSource.Resolve("st.chat.hostingStarted", "SESSION", options.SessionName, "ID", steamId)
+                           + (transport.ListeningIpPort > 0 ? " " + LocaleSource.Resolve("st.chat.hostingDirect", "PORT", transport.ListeningIpPort.ToString(CultureInfo.InvariantCulture)) : ""),
+                });
                 HostStarted?.Invoke(host);
-                Notify("Hosting started. Share your Steam ID: " + LocalSteamId.ToString(CultureInfo.InvariantCulture));
+                Notify(LocaleSource.Resolve("st.toast.hostingStarted", "SESSION", options.SessionName, "ID", steamId), ProgressState.Complete);
             }
             catch (Exception ex)
             {
@@ -212,7 +247,7 @@ namespace SkylineTogether.Session
                     }
                 }
                 StopHost(null);
-                Notify("Could not start hosting: " + ex.Message);
+                Notify(LocaleSource.Resolve("st.toast.hostFailed", "ERROR", ex.Message), ProgressState.Failed);
             }
         }
 
@@ -222,12 +257,12 @@ namespace SkylineTogether.Session
             {
                 // review fix: say why (a joiner whose game is still loading used to be told "Already in a session")
                 string why;
-                if (InSession) why = "Already in a session. Leave it first.";
-                else if (!SteamAvailable) why = "Steam is not available. Start the game through Steam and log in.";
-                else if (string.IsNullOrWhiteSpace(_settings.JoinTarget)) why = "Enter the host's Steam ID or address first.";
-                else if (GameManager.instance != null && GameManager.instance.isGameLoading) why = "Your game is still loading. Wait until it has finished, then join.";
-                else why = "Joining is not possible right now.";
-                Notify(why);
+                if (InSession) why = LocaleSource.Resolve("st.toast.join.inSession");
+                else if (!SteamAvailable) why = LocaleSource.Resolve("st.toast.join.noSteam");
+                else if (string.IsNullOrWhiteSpace(_settings.JoinTarget)) why = LocaleSource.Resolve("st.toast.join.noTarget");
+                else if (GameManager.instance != null && GameManager.instance.isGameLoading) why = LocaleSource.Resolve("st.toast.join.loading");
+                else why = LocaleSource.Resolve("st.toast.join.other");
+                Notify(why, ProgressState.Warning);
                 return;
             }
             Endpoint endpoint;
@@ -237,7 +272,7 @@ namespace SkylineTogether.Session
             }
             catch (ArgumentException ex)
             {
-                Notify(ex.Message);
+                Notify(ex.Message, ProgressState.Warning);
                 return;
             }
             try
@@ -246,19 +281,20 @@ namespace SkylineTogether.Session
                 var client = new SessionClient(transport, _info, _loader, new ClientOptions { PlayerName = PlayerName, SteamId = LocalSteamId, Password = _settings.JoinPassword ?? "" }, _clock, _log);
                 client.ChatReceived += AddChat;
                 client.PlayersChanged += () => _playersVersion++;
-                client.ToastReceived += Notify;
+                client.ToastReceived += text => Notify(text);
                 client.StateChanged += () => OnClientStateChanged(client);
                 Client = client;
                 LastEndReason = null;
-                _chat.Clear();
-                _chatVersion++;
+                LastEnd = null;
+                _joinTarget = _settings.JoinTarget;
+                ClearChat();
                 ClientStarted?.Invoke(client);
                 client.Connect(endpoint);
             }
             catch (Exception ex)
             {
                 _log.Error(LogCategory.Session, "joining failed", ex);
-                Notify("Could not join: " + ex.Message);
+                Notify(LocaleSource.Resolve("st.toast.joinFailed", "ERROR", ex.Message), ProgressState.Failed);
                 // review fix: listeners saw ClientStarted, so they must also see SessionEnded (and the loader is reset)
                 if (Client != null)
                 {
@@ -281,6 +317,24 @@ namespace SkylineTogether.Session
             }
         }
 
+        /// <summary>Joins the last target again (the error screen's retry), with a new password unless it is <paramref name="keep"/>.</summary>
+        public void RetryJoin(string password, string keep)
+        {
+            if (password != keep)
+            {
+                _settings.JoinPassword = password ?? "";
+                _settings.ApplyAndSave();
+            }
+            LastEnd = null;
+            StartJoining();
+        }
+
+        /// <summary>The player closed the error screen.</summary>
+        public void ClearLastEnd()
+        {
+            LastEnd = null;
+        }
+
         public void SendChat(string text)
         {
             if (Host != null) Host.SendChat(text);
@@ -297,6 +351,15 @@ namespace SkylineTogether.Session
         }
 
         public void Kick(byte peer) => Host?.Kick(new PeerId(peer), "Removed by the host");
+
+        /// <summary>gameplay branch: the host toggles a player between builder and viewer (ARCH §5.6).</summary>
+        public void ToggleRole(byte peer)
+        {
+            SessionHost host = Host;
+            if (host == null || peer == 0) return;
+            var id = new PeerId(peer);
+            host.SetRole(id, RolePermissions.Toggle(host.GetRole(id)));
+        }
 
         // ---------------------------------------------------------------- frame
 
@@ -336,7 +399,7 @@ namespace SkylineTogether.Session
         {
             if (client != Client) return;
             _playersVersion++;
-            if (client.State == ClientState.Live) Notify("Joined \"" + client.Session?.SessionName + "\". Have fun!");
+            // the "joined" toast comes from SessionToasts (it replaces the join progress toast)
         }
 
         private void EndClient()
@@ -345,11 +408,21 @@ namespace SkylineTogether.Session
             if (client == null) return;
             Client = null;
             LastEndReason = client.EndReason;
+            LastEnd = client.EndKind == ClientEndKind.Left || client.EndKind == ClientEndKind.None ? null : new SessionEndInfo
+            {
+                Seq = ++_endSeq,
+                Kind = client.EndKind,
+                Refuse = client.RefusedFor,
+                Text = client.EndReason,
+                Report = client.EndReport,
+                Target = _joinTarget,
+            };
             client.Dispose();
             _loader.Dispose();
             _playersVersion++;
             if (!string.IsNullOrEmpty(LastEndReason)) AddChat(new ChatEntry { IsSystem = true, Text = LastEndReason });
-            Notify(LastEndReason ?? "Disconnected.");
+            Notify(string.IsNullOrEmpty(LastEndReason) ? LocaleSource.Resolve("st.toast.disconnected") : LastEndReason,
+                client.EndKind == ClientEndKind.Left ? ProgressState.Complete : ProgressState.Warning);
             RaiseSessionEnded();
         }
 
@@ -420,21 +493,65 @@ namespace SkylineTogether.Session
         private void AddChat(ChatEntry entry)
         {
             _chat.Add(entry);
-            if (_chat.Count > MaxChatLines) _chat.RemoveRange(0, _chat.Count - MaxChatLines);
+            _chatSeq.Add(++_chatCounter);
+            if (_chat.Count > MaxChatLines)
+            {
+                _chat.RemoveRange(0, _chat.Count - MaxChatLines);
+                _chatSeq.RemoveRange(0, _chatSeq.Count - MaxChatLines);
+            }
             _chatVersion++;
         }
 
-        public static void Notify(string text)
+        private void ClearChat()
+        {
+            _chat.Clear();
+            _chatSeq.Clear();
+            _chatVersion++;
+        }
+
+        /// <summary>
+        /// A toast in the game's notification list (top left), removed again after <paramref name="seconds"/>. Title and
+        /// text are values, not localization ids (review fix: plain strings became ids, and the toasts never went away).
+        /// </summary>
+        public static void Notify(string text, ProgressState? state = null, string id = null, float seconds = 7f)
         {
             try
             {
-                NotificationSystem.Push("SkylineTogether." + Guid.NewGuid().ToString("N").Substring(0, 6), title: "Skyline Together", text: text);
+                string identifier = id ?? "SkylineTogether." + Guid.NewGuid().ToString("N").Substring(0, 8);
+                NotificationSystem.Pop(identifier, seconds, title: LocalizedString.Value(LocaleSource.Resolve("st.toast.title")), text: LocalizedString.Value(text ?? ""),
+                    progressState: state, progress: state == ProgressState.Complete ? 100 : (int?)null);
             }
             catch (Exception)
             {
                 // the notification UI may not exist yet (very early in boot)
             }
             Mod.Log?.Info(LogCategory.Ui, "notification: " + text);
+        }
+
+        /// <summary>A toast that stays (with progress) until <see cref="Notify"/> or <see cref="Unnotify"/> uses the same id.</summary>
+        public static void NotifyProgress(string id, string text, int? percent)
+        {
+            try
+            {
+                NotificationSystem.Push(id, title: LocalizedString.Value(LocaleSource.Resolve("st.toast.title")), text: LocalizedString.Value(text ?? ""),
+                    progressState: percent.HasValue ? ProgressState.Progressing : ProgressState.Indeterminate, progress: percent);
+            }
+            catch (Exception)
+            {
+                // the notification UI may not exist yet
+            }
+        }
+
+        public static void Unnotify(string id)
+        {
+            try
+            {
+                if (NotificationSystem.Exist(id)) NotificationSystem.Pop(id);
+            }
+            catch (Exception)
+            {
+                // the notification UI may not exist
+            }
         }
 
         /// <summary>Parses a Steam ID (digits) or <c>host[:port]</c>.</summary>

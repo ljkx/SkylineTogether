@@ -5,6 +5,7 @@ using Game.Prefabs;
 using Game.Simulation;
 using Game.Tools;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Identity;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Sync;
@@ -49,6 +50,25 @@ namespace SkylineTogether.Sync
         // feat/terrain: terrain and water sync (self-contained; they follow the session events themselves)
         private readonly TerrainSync _terrain;
         private readonly WaterSync _water;
+        // w2/simvals: simulation values by attention (+ time-aligned panels), cell maps, statistics history (self-contained)
+        private readonly AttentionValues _simValues;
+        private readonly CellMapSync _cellMaps;
+        private readonly StatisticsSync _statistics;
+        // gameplay branch: UI intents, host validation (ARCH §5.4-5.6), conflicts, build order
+        private readonly ActionSync _actions;
+        private readonly AuthoredLedger _ledger = new AuthoredLedger();
+        // direct-write tools may propose every frame; the limit only stops floods (violations kick, ARCH §5.6)
+        private readonly ProposalRateLimiter _rate = new ProposalRateLimiter(120, 240);
+        private readonly ViolationTracker _violations = new ViolationTracker();
+        private BuildOrderAllocator _buildOrders = new BuildOrderAllocator();
+        /// <summary>Host: entities a proposal or intent wrote this frame, with their author (ledger, capture).</summary>
+        private readonly Dictionary<Entity, byte> _authoredThisFrame = new Dictionary<Entity, byte>();
+        /// <summary>Host: entities changed without a tag (intents, host UI direct writes) that the capture must stream.</summary>
+        private readonly HashSet<Entity> _forceCapture = new HashSet<Entity>();
+        private Game.Tools.GenerateEdgesSystem _generateEdges;
+        private uint _baseEpoch;
+        private uint _seq;
+        private bool _subElementFrame;
         private EntityCodec _codec;
         private NetIdSystem _ids;
         private SimulationSystem _simulation;
@@ -83,11 +103,29 @@ namespace SkylineTogether.Sync
             _log = log;
             _gate = new ClientGate(log);
             _global = new GlobalStateSync(log);
+            // gameplay branch: semantic intents beside the global channels; both report refusals here (rollback)
+            _actions = new ActionSync(log)
+            {
+                Touch = (e, peer) =>
+                {
+                    _authoredThisFrame[e] = peer.Value;
+                    _forceCapture.Add(e);
+                },
+                Reject = (peer, reason, ids) => RejectIntent(peer, reason, ids),
+                Allows = Allows,
+                LocalPeer = () => _sessions.Client?.LocalPeer ?? PeerId.Host,
+            };
+            _global.Actions = _actions;
+            _global.Allows = Allows;
+            _global.Reject = (peer, reason, ids) => RejectIntent(peer, reason, ids);
             // feat/terrain
             _terrain = new TerrainSync(sessions, log);
             _water = new WaterSync(sessions, log);
             _terrain.HeightsChanged += _water.MarkHot;
             Integrity = new IntegritySync(sessions, log); // feat/integrity
+            _simValues = new AttentionValues(sessions, log); // w2/simvals
+            _cellMaps = new CellMapSync(sessions, log) { PeerTopics = _simValues.PeerTopics };
+            _statistics = new StatisticsSync(sessions, log);
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -113,7 +151,7 @@ namespace SkylineTogether.Sync
                 string s = _ids.BoundCount + " objects in sync";
                 if (_inbox.Count > 0) s += ", " + _inbox.Count + " updates queued";
                 if (_pendingZones.Count > 0) s += ", " + _pendingZones.Count + " zone blocks pending";
-                foreach (string env in new[] { _terrain.Status, _water.Status }) // feat/terrain
+                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status }) // feat/terrain, w2/simvals
                 {
                     if (env.Length > 0) s += ", " + env;
                 }
@@ -143,6 +181,7 @@ namespace SkylineTogether.Sync
             _ids = world.GetOrCreateSystemManaged<NetIdSystem>();
             _codec = new EntityCodec(world, _ids, _log);
             Integrity.Attach(_codec, _ids); // feat/integrity
+            _simValues.Attach(_codec, _ids); // w2/simvals
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             _tools = world.GetOrCreateSystemManaged<ToolSystem>();
             _zones = world.GetOrCreateSystemManaged<ZoneSystem>();
@@ -165,6 +204,8 @@ namespace SkylineTogether.Sync
             });
             _frameIndex = typeof(SimulationSystem).GetProperty("frameIndex", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             _global.Attach(world, _codec, _ids);
+            _actions.Attach(world, _codec, _ids); // gameplay branch
+            _generateEdges = world.GetOrCreateSystemManaged<Game.Tools.GenerateEdgesSystem>();
             return true;
         }
 
@@ -174,7 +215,14 @@ namespace SkylineTogether.Sync
             host.PeerJoining += OnPeerJoining;
             host.PeerLeft += peer => _peerRanges.Remove(peer.Value);
             host.PeerLeft += Integrity.OnPeerLeft; // feat/integrity
+            host.PeerLeft += peer =>
+            {
+                // gameplay branch
+                _rate.Forget(peer.Value);
+                _violations.Forget(peer.Value);
+            };
             Integrity.Reset();
+            ResetGameplay();
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Proposal) return;
@@ -193,6 +241,7 @@ namespace SkylineTogether.Sync
             _pool.Clear();
             Integrity.Reset(); // feat/integrity
             _shadow.Clear();
+            ResetGameplay();
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Epoch) return;
@@ -238,6 +287,30 @@ namespace SkylineTogether.Sync
             _toolApplied = false;
             _toolCost = 0;
             _global.Reset();
+            ResetGameplay();
+        }
+
+        /// <summary>gameplay branch: forgets ledger, limits, sequence numbers and intent baselines (session start or end).</summary>
+        private void ResetGameplay()
+        {
+            _actions.Reset();
+            _ledger.Clear();
+            _rate.Clear();
+            _violations.Clear();
+            _authoredThisFrame.Clear();
+            _forceCapture.Clear();
+            _baseEpoch = 0;
+            _seq = 0;
+            _subElementFrame = false;
+            _buildOrders = new BuildOrderAllocator();
+        }
+
+        /// <summary>Host: whether <paramref name="peer"/>'s role allows <paramref name="needed"/> (ARCH §5.6).</summary>
+        private bool Allows(PeerId peer, Permission needed)
+        {
+            SessionHost host = _sessions.Host;
+            if (host == null || peer == PeerId.Host) return true;
+            return RolePermissions.Allows(host.GetRole(peer), needed);
         }
 
         /// <summary>Mod unload: frees the codec's native buffers and serialization contexts (they are persistent).</summary>
@@ -278,6 +351,31 @@ namespace SkylineTogether.Sync
                 entities.Dispose();
             }
             _log.Info(LogCategory.Replication, "host session start: " + prefabs + " prefabs, " + _ids.BoundCount + " bindings (" + bound + " new)");
+            PrimeBuildOrders(em);
+        }
+
+        /// <summary>gameplay branch: the build-order allocator starts above every live edge (ARCH §5.4.3).</summary>
+        private void PrimeBuildOrders(EntityManager em)
+        {
+            try
+            {
+                using (EntityQuery q = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Net.BuildOrder>()))
+                {
+                    NativeArray<Game.Net.BuildOrder> orders = q.ToComponentDataArray<Game.Net.BuildOrder>(Allocator.Temp);
+                    try
+                    {
+                        foreach (Game.Net.BuildOrder b in orders) _buildOrders.Observe(b.m_Start, b.m_End);
+                    }
+                    finally
+                    {
+                        orders.Dispose();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Replication, "reading the city's build orders failed", ex);
+            }
         }
 
         private void OnPeerJoining(PeerId peer)
@@ -288,9 +386,12 @@ namespace SkylineTogether.Sync
             (uint start, uint count) = _ids.Ids.Grant();
             AddRange(peer, start, count);
             w.IdRange(start, count);
+            // gameplay branch: the joiner's snapshot contains every epoch up to now, so its proposals start from here
+            w.Epoch(_ledger.LastBroadcast);
             Send(peer, w);
             _log.Info(LogCategory.Replication, peer + ": sent " + w.RecordCount + " prefab/range records");
             _global.ResendAll(); // the joiner gets every global channel with the next capture
+            _actions.ResendUnlocks();
         }
 
         private void AddRange(PeerId peer, uint start, uint count)
@@ -308,6 +409,8 @@ namespace SkylineTogether.Sync
             // feat/terrain: received stamps and heightmap/water tiles (independent of the entity stream)
             _terrain.ApplyIncoming();
             _water.ApplyIncoming();
+            _cellMaps.ApplyIncoming(); // w2/simvals: host merges paint patches, clients write map tiles
+            _statistics.ApplyIncoming();
             if (_codec == null) return;
             if (!IsHost && !IsLiveClient)
             {
@@ -315,7 +418,11 @@ namespace SkylineTogether.Sync
                 return;
             }
             // client: local global-state edits are detected before host data can overwrite them
-            if (!IsHost) _global.BeforeApply();
+            if (!IsHost)
+            {
+                SafeCall("action detection", _actions.BeforeApply); // gameplay branch: dev tree, map tiles
+                _global.BeforeApply();
+            }
             int n = 0;
             while (_inbox.Count > 0 && n++ < MaxBatchesPerFrame)
             {
@@ -335,8 +442,26 @@ namespace SkylineTogether.Sync
                 }
             }
             RetryZones();
+            // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
+            if (!IsHost) _simValues.ApplyIncoming();
             // client: what the appliers wrote becomes the baseline, so it is never proposed back
-            if (!IsHost) _global.AfterApply();
+            if (!IsHost)
+            {
+                _global.AfterApply();
+                SafeCall("milestones", _actions.AfterApply); // gameplay branch
+            }
+        }
+
+        private void SafeCall(string what, Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(LogCategory.Replication, what + " failed", ex);
+            }
         }
 
         private void ApplyFromHost(byte[] data)
@@ -355,11 +480,46 @@ namespace SkylineTogether.Sync
         private void ApplyProposal(PeerId peer, byte[] data)
         {
             _peerRanges.TryGetValue(peer.Value, out var ranges);
+            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length);
+            // gameplay branch: validation (ARCH §5.4.1); a refused proposal is rolled back on its originator by a resend
+            ProposalFacts facts = Facts(records, out uint seq, out uint baseEpoch);
+            bool isGlobal = SyncBatch.FirstRecordKind(data, 0, data.Length) == (byte)SyncRecordKind.Global;
+            if ((facts.EntityCount > 0 || facts.HasCost || isGlobal) && !_rate.TryTake(peer.Value, _sessions.Clock.Seconds))
+            {
+                RejectProposal(peer, seq, RejectReason.RateLimited, records);
+                ServeRequests(peer, records);
+                return;
+            }
+            if (facts.EntityCount > 0 || facts.HasCost)
+            {
+                RejectReason reason = Validate(peer, records, facts, baseEpoch, ranges);
+                if (reason != RejectReason.None)
+                {
+                    RejectProposal(peer, seq, reason, records);
+                    ServeRequests(peer, records);
+                    return;
+                }
+            }
+            List<BuildOrderRange> touchedEdges = TouchedEdgeBuildOrders(records);
             ApplyResult r = _codec.Apply(data, 0, data.Length, (id, family) => ranges != null && ClientIdPool.InRanges(ranges, id) && FamilyClassifier.IsReplicated(family));
+            RebaseBuildOrders(r.SpawnedEntities, touchedEdges);
+            foreach (SyncRecord rec in records)
+            {
+                if (rec.Kind != SyncRecordKind.Spawn && rec.Kind != SyncRecordKind.Upsert) continue;
+                Entity written = _ids.GetEntity(rec.NetId);
+                if (written != Entity.Null) _authoredThisFrame[written] = peer.Value;
+            }
             ApplyZoneRecords(data);
             _global.Apply(data, peer, true);
             if (r.HasCost && r.Cost != 0) ChargeCity(r.Cost);
-            foreach (SyncRecord rec in SyncBatch.Read(data, 0, data.Length))
+            ServeRequests(peer, records);
+            LastApply = peer + ": " + r;
+            if (r.Problems.Count > 0) _log.Info(LogCategory.Replication, peer + " proposal problems: " + string.Join("; ", r.Problems));
+        }
+
+        private void ServeRequests(PeerId peer, List<SyncRecord> records)
+        {
+            foreach (SyncRecord rec in records)
             {
                 if (rec.Kind == SyncRecordKind.RequestIds) Integrity.OnPeerRequest(peer, rec); // feat/integrity
                 if (rec.Kind != SyncRecordKind.Request) continue;
@@ -376,8 +536,246 @@ namespace SkylineTogether.Sync
                     Resend(peer, rec.Request == SyncRequest.ResendRoutes);
                 }
             }
-            LastApply = peer + ": " + r;
-            if (r.Problems.Count > 0) _log.Info(LogCategory.Replication, peer + " proposal problems: " + string.Join("; ", r.Problems));
+        }
+
+        // ================================================================== gameplay branch: host validation and rollback
+
+        private static ProposalFacts Facts(List<SyncRecord> records, out uint seq, out uint baseEpoch)
+        {
+            var f = new ProposalFacts();
+            seq = 0;
+            // a proposal without a header (older client) skips the conflict check
+            baseEpoch = uint.MaxValue;
+            foreach (SyncRecord r in records)
+            {
+                switch (r.Kind)
+                {
+                    case SyncRecordKind.Spawn: f.Spawns++; break;
+                    case SyncRecordKind.Upsert:
+                    case SyncRecordKind.Values: f.Upserts++; break;
+                    case SyncRecordKind.Despawn: f.Despawns++; break;
+                    case SyncRecordKind.ZoneCells: f.ZoneBlocks++; break;
+                    case SyncRecordKind.Cost:
+                        f.HasCost = true;
+                        f.Cost += r.Amount;
+                        break;
+                    case SyncRecordKind.ProposalHeader:
+                        seq = r.Seq;
+                        baseEpoch = r.BaseEpoch;
+                        f.Flags = r.ProposalFlags;
+                        break;
+                }
+            }
+            return f;
+        }
+
+        /// <summary>
+        /// ARCH §5.4.1 rules 1-4 and 7 over the host's world: permission of the sender's role, size, existence and
+        /// conflicts of every entity the proposal edits or deletes, id ranges of its creations, and money.
+        /// </summary>
+        private RejectReason Validate(PeerId peer, List<SyncRecord> records, in ProposalFacts facts, uint baseEpoch, List<(uint Start, uint Count)> ranges)
+        {
+            if (!Allows(peer, ProposalRules.Required(facts))) return RejectReason.NoPermission;
+            RejectReason size = ProposalRules.CheckSize(facts);
+            if (size != RejectReason.None) return size;
+            EntityManager em = _codec.EntityManager;
+            var spawned = new HashSet<uint>();
+            foreach (SyncRecord r in records)
+            {
+                if (r.Kind == SyncRecordKind.Spawn) spawned.Add(r.NetId);
+            }
+            foreach (SyncRecord r in records)
+            {
+                switch (r.Kind)
+                {
+                    case SyncRecordKind.Spawn:
+                    {
+                        Entity existing = _ids.GetEntity(r.NetId);
+                        bool bound = existing != Entity.Null && em.Exists(existing);
+                        if (!bound && (ranges == null || !ClientIdPool.InRanges(ranges, r.NetId))) return RejectReason.Invalid;
+                        if (bound && _ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
+                        break;
+                    }
+                    case SyncRecordKind.Upsert:
+                    case SyncRecordKind.Values:
+                    {
+                        if (spawned.Contains(r.NetId)) break;
+                        Entity e = _ids.GetEntity(r.NetId);
+                        // edited meanwhile deleted by somebody else (or never committed: a refused earlier proposal)
+                        if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return RejectReason.Conflict;
+                        if (!FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId))) return RejectReason.Invalid;
+                        if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
+                        break;
+                    }
+                    case SyncRecordKind.Despawn:
+                    {
+                        Entity e = _ids.GetEntity(r.NetId);
+                        if (e == Entity.Null || !em.Exists(e)) break; // already gone: nothing to delete
+                        if (!FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId))) return RejectReason.Invalid;
+                        if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
+                        break;
+                    }
+                }
+            }
+            Entity city = _city.City;
+            if (facts.HasCost && city != Entity.Null && em.HasComponent<Game.City.PlayerMoney>(city))
+            {
+                Game.City.PlayerMoney money = em.GetComponentData<Game.City.PlayerMoney>(city);
+                RejectReason cost = ProposalRules.CheckCost(facts, money.money, money.m_Unlimited);
+                if (cost != RejectReason.None) return cost;
+            }
+            return RejectReason.None;
+        }
+
+        /// <summary>
+        /// Host: refuses a proposal and rolls it back on its originator (ARCH §5.5.2): a result record, then every entity
+        /// the proposal touched in the host's state (alive: full record; unknown here: despawn, which removes the
+        /// client's predicted creations) and the host's cells of every zone block it painted.
+        /// </summary>
+        private void RejectProposal(PeerId peer, uint seq, RejectReason reason, List<SyncRecord> records)
+        {
+            var ids = new List<uint>();
+            var zones = new List<ZoneBlockKey>();
+            foreach (SyncRecord r in records)
+            {
+                switch (r.Kind)
+                {
+                    case SyncRecordKind.Spawn:
+                    case SyncRecordKind.Upsert:
+                    case SyncRecordKind.Values:
+                    case SyncRecordKind.Despawn:
+                        ids.Add(r.NetId);
+                        break;
+                    case SyncRecordKind.ZoneCells:
+                        zones.Add(r.Block);
+                        break;
+                }
+            }
+            _log.Info(LogCategory.Replication, peer + ": refused proposal " + seq + " (" + reason + "; " + ids.Count + " entities, " + zones.Count + " zone blocks)");
+            SendRollback(peer, seq, reason, ids, zones);
+            CountViolation(peer, reason);
+        }
+
+        /// <summary>Host: refuses an intent or global-state edit (rollback of its targets; seq 0).</summary>
+        private void RejectIntent(PeerId peer, RejectReason reason, IReadOnlyList<uint> ids)
+        {
+            if (_codec == null || !IsHost) return;
+            SendRollback(peer, 0, reason, ids ?? Array.Empty<uint>(), null);
+            CountViolation(peer, reason);
+        }
+
+        private void CountViolation(PeerId peer, RejectReason reason)
+        {
+            if (!ViolationTracker.IsViolation(reason) || !_violations.Record(peer.Value, _sessions.Clock.Seconds)) return;
+            _log.Warn(LogCategory.Replication, peer + ": too many invalid or flooding proposals; kicking");
+            _violations.Forget(peer.Value);
+            _sessions.Host?.Kick(peer, "Too many invalid changes were sent to the host.");
+        }
+
+        private void SendRollback(PeerId peer, uint seq, RejectReason reason, IReadOnlyList<uint> ids, List<ZoneBlockKey> zones)
+        {
+            EntityManager em = _codec.EntityManager;
+            var w = new SyncBatch.Writer();
+            w.ProposalResult(seq, reason);
+            var seen = new HashSet<uint>();
+            foreach (uint id in ids)
+            {
+                if (id == 0 || !seen.Add(id)) continue;
+                try
+                {
+                    Entity e = _ids.GetEntity(id);
+                    Family family = _ids.GetFamily(id);
+                    bool alive = e != Entity.Null && em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e);
+                    if (!alive)
+                    {
+                        w.Despawn(id);
+                    }
+                    else if (FamilyClassifier.IsReplicated(family))
+                    {
+                        if (em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, w);
+                        _codec.WriteEntity(w, SyncRecordKind.Upsert, id, family, e);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn(LogCategory.Replication, peer + ": rolling back #" + id + " failed", ex);
+                }
+                if (w.RecordCount >= 512)
+                {
+                    Send(peer, w);
+                    w = new SyncBatch.Writer();
+                }
+            }
+            if (zones != null)
+            {
+                foreach (ZoneBlockKey key in zones)
+                {
+                    Entity block = FindBlock(key);
+                    if (block != Entity.Null) WriteZoneBlock(w, block, true);
+                }
+            }
+            if (!w.IsEmpty) Send(peer, w);
+        }
+
+        /// <summary>Host: the build orders of the existing edges a proposal edits or deletes (read before the apply).</summary>
+        private List<BuildOrderRange> TouchedEdgeBuildOrders(List<SyncRecord> records)
+        {
+            var list = new List<BuildOrderRange>();
+            EntityManager em = _codec.EntityManager;
+            foreach (SyncRecord r in records)
+            {
+                if (r.Kind != SyncRecordKind.Upsert && r.Kind != SyncRecordKind.Despawn) continue;
+                Entity e = _ids.GetEntity(r.NetId);
+                if (e == Entity.Null || !em.Exists(e) || !em.HasComponent<Game.Net.BuildOrder>(e)) continue;
+                Game.Net.BuildOrder b = em.GetComponentData<Game.Net.BuildOrder>(e);
+                list.Add(new BuildOrderRange(b.m_Start, b.m_End));
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Host: re-bases the build orders of a client's fresh edges onto the host counter (ARCH §5.4.3), so zone-block
+        /// priority and node-lane order are identical on every peer; edges split from host edges keep their inherited
+        /// sub-ranges. The committed edges then advance vanilla's counter themselves (<c>UpdateBuildOrderJob</c>).
+        /// </summary>
+        private void RebaseBuildOrders(List<Entity> spawned, List<BuildOrderRange> touchedEdges)
+        {
+            if (spawned.Count == 0) return;
+            try
+            {
+                EntityManager em = _codec.EntityManager;
+                var edges = new List<Entity>();
+                var ranges = new List<BuildOrderRange>();
+                foreach (Entity e in spawned)
+                {
+                    if (!em.Exists(e) || !em.HasComponent<Game.Net.Edge>(e) || !em.HasComponent<Game.Net.BuildOrder>(e)) continue;
+                    Game.Net.BuildOrder b = em.GetComponentData<Game.Net.BuildOrder>(e);
+                    edges.Add(e);
+                    ranges.Add(new BuildOrderRange(b.m_Start, b.m_End));
+                }
+                if (edges.Count == 0) return;
+                // the apply's structural changes completed every job, so the counter is readable on the main thread
+                uint counter = 0;
+                try
+                {
+                    if (_generateEdges != null) counter = _generateEdges.GetBuildOrder().value;
+                }
+                catch (Exception)
+                {
+                    counter = 0; // a job still owns it: the allocator's own maximum is used
+                }
+                int n = BuildOrderPlanner.RebaseFresh(_buildOrders, ranges, touchedEdges, counter);
+                if (n == 0) return;
+                for (int i = 0; i < edges.Count; i++)
+                {
+                    em.SetComponentData(edges[i], new Game.Net.BuildOrder { m_Start = ranges[i].Start, m_End = ranges[i].End });
+                }
+                _log.Debug(LogCategory.Replication, "re-based the build order of " + n + " committed edge(s); next " + _buildOrders.Next);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Replication, "re-basing build orders failed (zoning priority may differ)", ex);
+            }
         }
 
         private void ChargeCity(long cost)
@@ -438,7 +836,9 @@ namespace SkylineTogether.Sync
         public void OnToolApply()
         {
             _terrain.OnToolApply(); // feat/terrain: brush stamps, on the host and on clients
-            if (!IsLiveClient) return;
+            _cellMaps.OnToolApply(); // w2/simvals: resource brushes (ore, oil, fertility, groundwater)
+            // gameplay branch: the host records its own tool's originals too (authored changes, conflict ledger)
+            if (_codec == null || (!IsLiveClient && !IsHost)) return;
             EntityManager em = _codec.EntityManager;
             _toolApplied = true;
             using (EntityQuery temps = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Tools.Temp>()))
@@ -448,7 +848,8 @@ namespace SkylineTogether.Sync
                 {
                     foreach (Game.Tools.Temp t in values)
                     {
-                        _toolCost += t.m_Cost;
+                        // exactly what ToolApplySystem charges (ToolApplySystem.cs:59-66): cancelled temps are free
+                        if ((t.m_Flags & Game.Tools.TempFlags.Cancel) == 0) _toolCost += t.m_Cost;
                         if (t.m_Original != Entity.Null) _toolOriginals.Add(t.m_Original);
                     }
                 }
@@ -467,27 +868,53 @@ namespace SkylineTogether.Sync
             // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
             _terrain.CaptureOutgoing();
             _water.CaptureOutgoing();
+            _cellMaps.CaptureOutgoing(); // w2/simvals: host map tiles, client paint patches
+            _statistics.CaptureOutgoing();
             if (_codec == null) return;
-            if (IsHost) CaptureHost(now);
-            else if (IsLiveClient) CaptureClient(now);
+            // gameplay branch: the bulldozer's sub-element mode deletes derived props and fences (no net ids)
+            _subElementFrame = _toolApplied && _tools.activeTool is BulldozeToolSystem bulldozer && bulldozer.actualMode != BulldozeToolSystem.Mode.MainElements;
+            if (IsHost)
+            {
+                // the host player's own direct UI writes (historical, vehicles, districts, colours) become captures
+                SafeCall("host action watch", () => _actions.HostWatch(new HashSet<Entity>(_authoredThisFrame.Keys)));
+                CaptureHost(now);
+                _simValues.CaptureOutgoing(now); // w2/simvals: attention values and inspection samples
+            }
+            else if (IsLiveClient)
+            {
+                CaptureClient(now);
+                SafeCall("action capture", () => _actions.ClientCapture(_appliedThisFrame)); // gameplay branch
+            }
             if (IsLiveClient) Integrity.ClientFrameEnd(now); // feat/integrity: integrity requests, icon digest
             _toolApplied = false;
             _toolCost = 0;
             _toolOriginals.Clear();
-            CaptureGlobal();
+            CaptureGlobal(now);
+            _authoredThisFrame.Clear();
+            _forceCapture.Clear();
         }
 
         /// <summary>
         /// Global state (<see cref="GlobalStateSync"/>), in a batch of its own after the entity batch (so names of new
         /// entities resolve): the host's changed channels to everyone, a client's UI edits to the host.
         /// </summary>
-        private void CaptureGlobal()
+        private void CaptureGlobal(double now)
         {
             try
             {
                 _globalBatch.Reset();
-                if (IsHost) _global.HostCapture(_globalBatch);
-                else if (IsLiveClient) _global.ClientCapture(_globalBatch);
+                if (IsHost)
+                {
+                    // gameplay branch: executors that need EndFrameBarrier run here (after AllowBarrier<EndFrameBarrier>)
+                    SafeCall("late intents", _actions.RunLate);
+                    _global.HostCapture(_globalBatch);
+                    _actions.HostCapture(_globalBatch, now);
+                }
+                else if (IsLiveClient)
+                {
+                    _global.ClientCapture(_globalBatch);
+                    _actions.ClientFlush(_globalBatch);
+                }
                 if (_globalBatch.IsEmpty) return;
                 if (IsHost)
                 {
@@ -507,6 +934,7 @@ namespace SkylineTogether.Sync
         {
             EntityManager em = _codec.EntityManager;
             _batch.Reset();
+            var written = new HashSet<Entity>();
             NativeArray<Entity> changed = _changed.ToEntityArray(Allocator.Temp);
             try
             {
@@ -515,7 +943,12 @@ namespace SkylineTogether.Sync
                     Family family = _codec.Families.Classify(em, e);
                     if (family == Family.ZoneBlock)
                     {
-                        if (!em.HasComponent<Game.Common.Deleted>(e)) WriteZoneBlock(e);
+                        if (!em.HasComponent<Game.Common.Deleted>(e)) WriteZoneBlock(_batch, e, false);
+                        continue;
+                    }
+                    if (_subElementFrame && (family == Family.PrefabSubObject || family == Family.Lane) && em.HasComponent<Game.Common.Deleted>(e))
+                    {
+                        _actions.NoteSubElementDeleted(e); // gameplay branch: replayed on clients by key
                         continue;
                     }
                     if (!FamilyClassifier.IsReplicated(family)) continue;
@@ -526,23 +959,23 @@ namespace SkylineTogether.Sync
                         _batch.Despawn(id);
                         _ids.Unbind(id);
                         _shadow.Remove(id);
+                        _ledger.Forget(id);
                         continue;
                     }
-                    SyncRecordKind kind = em.HasComponent<Game.Common.Created>(e) ? SyncRecordKind.Spawn : SyncRecordKind.Upsert;
-                    if (id == 0)
-                    {
-                        id = _ids.Ids.Allocate();
-                        _ids.Bind(e, id, family);
-                        kind = SyncRecordKind.Spawn;
-                    }
-                    if (em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
-                    _codec.WriteEntity(_batch, kind, id, family, e);
-                    if (FamilyClassifier.IsScanned(family)) _shadow[id] = _codec.HashEntity(e, true);
+                    WriteHostEntity(em, e, family, id);
+                    written.Add(e);
                 }
             }
             finally
             {
                 changed.Dispose();
+            }
+            // gameplay branch: entities that intents or the host's own UI changed without any tag
+            foreach (Entity e in _forceCapture)
+            {
+                if (written.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                Family family = _codec.Families.Classify(em, e);
+                if (FamilyClassifier.IsReplicated(family)) WriteHostEntity(em, e, family, _ids.GetNetId(e));
             }
             ScanValues(now);
             if (now - _lastClock >= ClockInterval)
@@ -551,7 +984,29 @@ namespace SkylineTogether.Sync
                 _batch.Clock(_simulation.frameIndex);
             }
             Integrity.HostCapture(now, _batch, _sessions.Host?.LivePeerCount ?? 0); // feat/integrity: digests, icons, line rows
-            if (!_batch.IsEmpty) Broadcast(_batch);
+            if (!_batch.IsEmpty)
+            {
+                // gameplay branch: the epoch number goes last, so the first-record routing of batches is unchanged
+                _batch.Epoch(_ledger.Advance());
+                Broadcast(_batch);
+            }
+        }
+
+        private void WriteHostEntity(EntityManager em, Entity e, Family family, uint id)
+        {
+            SyncRecordKind kind = em.HasComponent<Game.Common.Created>(e) ? SyncRecordKind.Spawn : SyncRecordKind.Upsert;
+            if (id == 0)
+            {
+                id = _ids.Ids.Allocate();
+                _ids.Bind(e, id, family);
+                kind = SyncRecordKind.Spawn;
+            }
+            if (em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
+            _codec.WriteEntity(_batch, kind, id, family, e);
+            if (FamilyClassifier.IsScanned(family)) _shadow[id] = _codec.HashEntity(e, true);
+            // gameplay branch: authored changes (committed proposals and intents, the host player's tool) for conflicts
+            if (_authoredThisFrame.TryGetValue(e, out byte author)) _ledger.MarkAuthored(id, author);
+            else if (em.HasComponent<Game.Common.Applied>(e) || _toolOriginals.Contains(e)) _ledger.MarkAuthored(id, PeerId.Host.Value);
         }
 
         /// <summary>
@@ -616,6 +1071,27 @@ namespace SkylineTogether.Sync
             _log.Info(LogCategory.Replication, peer + ": resent " + n + (routesOnly ? " line entities" : " entities"));
         }
 
+        /// <summary>
+        /// gameplay branch: a deletion the vanilla UI makes outside any tool (R10 D1-D3: <c>ActionsSection.OnDelete</c>
+        /// for districts, service upgrades and lines, <c>UpgradesSection.OnDelete</c>, the transport overview's delete).
+        /// Entities removed together with their owner are the owner's business.
+        /// </summary>
+        private static bool IsUiDeletion(EntityManager em, Entity e, Family family)
+        {
+            if (em.HasComponent<Game.Common.Owner>(e))
+            {
+                Entity owner = em.GetComponentData<Game.Common.Owner>(e).m_Owner;
+                if (owner != Entity.Null && em.Exists(owner) && em.HasComponent<Game.Common.Deleted>(owner)) return false;
+            }
+            switch (family)
+            {
+                case Family.Route: return em.HasComponent<Game.Routes.TransportLine>(e) || em.HasComponent<Game.Routes.WorkRoute>(e);
+                case Family.Area: return em.HasComponent<Game.Areas.District>(e);
+                case Family.Object: return em.HasComponent<Game.Buildings.ServiceUpgrade>(e);
+                default: return false;
+            }
+        }
+
         private void CaptureClient(double now)
         {
             EntityManager em = _codec.EntityManager;
@@ -631,7 +1107,10 @@ namespace SkylineTogether.Sync
             // write the world directly (Move It), so only those make un-applied changes count as the player's edits
             bool localTool = _tools.activeTool != null && !(_tools.activeTool is DefaultToolSystem)
                              && _tools.activeTool.GetType().Assembly != typeof(DefaultToolSystem).Assembly;
-            if (!_toolApplied && !localTool) return;
+            bool toolPath = _toolApplied || localTool;
+            // gameplay branch: deletions from the UI (district, service upgrade, line: R10 D1-D3) happen outside any
+            // tool; outside a tool path only those are proposed, every other local deletion waits for the host
+            ProposalFlags flags = _toolApplied ? ProposalFlags.ToolApply : localTool ? ProposalFlags.DirectTool : ProposalFlags.None;
             _batch.Reset();
             NativeArray<Entity> changed = _changed.ToEntityArray(Allocator.Temp);
             try
@@ -639,10 +1118,16 @@ namespace SkylineTogether.Sync
                 foreach (Entity e in changed)
                 {
                     if (_appliedThisFrame.Contains(e)) continue;
+                    if (!toolPath && !em.HasComponent<Game.Common.Deleted>(e)) continue;
                     Family family = _codec.Families.Classify(em, e);
                     if (family == Family.ZoneBlock)
                     {
-                        if (_toolApplied && !em.HasComponent<Game.Common.Deleted>(e)) WriteZoneBlock(e);
+                        if (_toolApplied && !em.HasComponent<Game.Common.Deleted>(e)) WriteZoneBlock(_batch, e, false);
+                        continue;
+                    }
+                    if (_subElementFrame && (family == Family.PrefabSubObject || family == Family.Lane) && em.HasComponent<Game.Common.Deleted>(e))
+                    {
+                        _actions.NoteSubElementDeleted(e); // gameplay branch: sent as derived keys (intent)
                         continue;
                     }
                     if (!FamilyClassifier.IsReplicated(family)) continue;
@@ -650,6 +1135,11 @@ namespace SkylineTogether.Sync
                     if (em.HasComponent<Game.Common.Deleted>(e))
                     {
                         if (id == 0) continue;
+                        if (!toolPath)
+                        {
+                            if (!IsUiDeletion(em, e, family)) continue;
+                            flags |= ProposalFlags.UiDelete;
+                        }
                         _batch.Despawn(id);
                         _ids.Unbind(id);
                         _shadow.Remove(id);
@@ -682,6 +1172,8 @@ namespace SkylineTogether.Sync
                 changed.Dispose();
             }
             if (_toolCost != 0) _batch.Cost(_toolCost);
+            // gameplay branch: sequence, base epoch and kind of the proposal (host validation, rollback)
+            if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
             if (_pool.ShouldRequestMore()) _batch.Request(SyncRequest.MoreIds);
             if (!_batch.IsEmpty)
             {
@@ -714,7 +1206,8 @@ namespace SkylineTogether.Sync
 
         // ================================================================== zone cells (keyed state on derived blocks)
 
-        private void WriteZoneBlock(Entity block)
+        /// <summary>Zone cells of a block as a keyed record; <paramref name="force"/> also writes an empty fresh block (rollback).</summary>
+        private void WriteZoneBlock(SyncBatch.Writer w, Entity block, bool force)
         {
             EntityManager em = _codec.EntityManager;
             if (!em.HasComponent<Game.Common.Owner>(block) || !em.HasComponent<Game.Zones.Block>(block) || !em.HasBuffer<Game.Zones.Cell>(block)) return;
@@ -731,11 +1224,11 @@ namespace SkylineTogether.Sync
                 // review fix: only the host allocates ids. A client's EnsurePrefab allocated from its local counter
                 // (the host's high-water mark at snapshot time), which the host has long handed to new entities and
                 // movers since; the host then rebound that id to the zone prefab and lost the entity's binding
-                zones[i] = IsHost ? _codec.EnsurePrefab(prefab, _batch) : _ids.GetNetId(prefab);
+                zones[i] = IsHost ? _codec.EnsurePrefab(prefab, w) : _ids.GetNetId(prefab);
                 any |= zones[i] != 0;
             }
-            if (!any && em.HasComponent<Game.Common.Created>(block)) return; // a fresh empty block: nothing to tell
-            _batch.ZoneCells(BlockKey(owner, em.GetComponentData<Game.Zones.Block>(block)), zones);
+            if (!any && !force && em.HasComponent<Game.Common.Created>(block)) return; // a fresh empty block: nothing to tell
+            w.ZoneCells(BlockKey(owner, em.GetComponentData<Game.Zones.Block>(block)), zones);
         }
 
         private static ZoneBlockKey BlockKey(uint owner, Game.Zones.Block b)
@@ -755,12 +1248,41 @@ namespace SkylineTogether.Sync
         private void ApplyZoneRecords(byte[] data)
         {
             double now = _sessions.Clock.Seconds;
+            bool fromHost = !IsHost;
             foreach (SyncRecord r in SyncBatch.Read(data, 0, data.Length))
             {
+                // gameplay branch: the host's epoch numbers (conflict base) and proposal results (rollback toast)
+                if (fromHost && r.Kind == SyncRecordKind.Epoch)
+                {
+                    _baseEpoch = r.EpochNumber;
+                    continue;
+                }
+                if (fromHost && r.Kind == SyncRecordKind.ProposalResult)
+                {
+                    OnProposalResult(r);
+                    continue;
+                }
                 if (r.Kind != SyncRecordKind.ZoneCells) continue;
                 if (!TryApplyZone(r.Block, r.ZoneIds)) _pendingZones.Add(new PendingZone { Key = r.Block, Zones = r.ZoneIds, Until = now + 3.0 });
             }
         }
+
+        /// <summary>Client: the host refused one of this player's proposals; the resend in the same batch rolled it back.</summary>
+        private void OnProposalResult(SyncRecord r)
+        {
+            if (r.Reason == RejectReason.None) return;
+            string text = "The host undid your last change: " + ProposalRules.Describe(r.Reason) + ".";
+            _log.Info(LogCategory.Replication, "proposal " + r.Seq + " rejected (" + r.Reason + ")");
+            double now = _sessions.Clock.Seconds;
+            // one toast per reason and second, however many proposals were in flight
+            if (r.Reason == _lastToastReason && now - _lastToast < 1.0) return;
+            _lastToastReason = r.Reason;
+            _lastToast = now;
+            SessionManager.Notify(text);
+        }
+
+        private RejectReason _lastToastReason;
+        private double _lastToast = double.NegativeInfinity;
 
         private void RetryZones()
         {
@@ -781,24 +1303,7 @@ namespace SkylineTogether.Sync
         private bool TryApplyZone(ZoneBlockKey key, uint[] zones)
         {
             EntityManager em = _codec.EntityManager;
-            Entity owner = _ids.GetEntity(key.OwnerNetId);
-            if (owner == Entity.Null || !em.Exists(owner) || !em.HasBuffer<Game.Zones.SubBlock>(owner)) return false;
-            DynamicBuffer<Game.Zones.SubBlock> blocks = em.GetBuffer<Game.Zones.SubBlock>(owner, true);
-            Entity best = Entity.Null;
-            long bestDistance = 64L * 64L + 1;
-            for (int i = 0; i < blocks.Length; i++)
-            {
-                Entity b = blocks[i].m_SubBlock;
-                if (!em.HasComponent<Game.Zones.Block>(b) || em.HasComponent<Game.Common.Deleted>(b)) continue;
-                ZoneBlockKey k = BlockKey(key.OwnerNetId, em.GetComponentData<Game.Zones.Block>(b));
-                if (k.SizeX != key.SizeX || k.SizeY != key.SizeY || Math.Abs(k.DirX - key.DirX) > 8 || Math.Abs(k.DirZ - key.DirZ) > 8) continue;
-                long d = k.DistanceSquared(key);
-                if (d < bestDistance)
-                {
-                    bestDistance = d;
-                    best = b;
-                }
-            }
+            Entity best = FindBlock(key);
             if (best == Entity.Null || !em.HasBuffer<Game.Zones.Cell>(best)) return false;
             DynamicBuffer<Game.Zones.Cell> cells = em.GetBuffer<Game.Zones.Cell>(best);
             if (cells.Length != zones.Length) return false;
@@ -817,6 +1322,31 @@ namespace SkylineTogether.Sync
             if (!em.HasComponent<Game.Common.Updated>(best)) em.AddComponent<Game.Common.Updated>(best);
             _appliedThisFrame.Add(best);
             return true;
+        }
+
+        /// <summary>The live zone block of a key: same owner edge, size and direction, nearest position within 1 m.</summary>
+        private Entity FindBlock(ZoneBlockKey key)
+        {
+            EntityManager em = _codec.EntityManager;
+            Entity owner = _ids.GetEntity(key.OwnerNetId);
+            if (owner == Entity.Null || !em.Exists(owner) || !em.HasBuffer<Game.Zones.SubBlock>(owner)) return Entity.Null;
+            DynamicBuffer<Game.Zones.SubBlock> blocks = em.GetBuffer<Game.Zones.SubBlock>(owner, true);
+            Entity best = Entity.Null;
+            long bestDistance = 64L * 64L + 1;
+            for (int i = 0; i < blocks.Length; i++)
+            {
+                Entity b = blocks[i].m_SubBlock;
+                if (!em.HasComponent<Game.Zones.Block>(b) || em.HasComponent<Game.Common.Deleted>(b)) continue;
+                ZoneBlockKey k = BlockKey(key.OwnerNetId, em.GetComponentData<Game.Zones.Block>(b));
+                if (k.SizeX != key.SizeX || k.SizeY != key.SizeY || Math.Abs(k.DirX - key.DirX) > 8 || Math.Abs(k.DirZ - key.DirZ) > 8) continue;
+                long d = k.DistanceSquared(key);
+                if (d < bestDistance)
+                {
+                    bestDistance = d;
+                    best = b;
+                }
+            }
+            return best;
         }
 
         // ================================================================== sending

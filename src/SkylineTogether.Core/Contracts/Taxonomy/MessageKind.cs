@@ -31,6 +31,16 @@ namespace SkylineTogether.Core
         /// (<see cref="Sync.TerrainMessage"/>), host ↔ client.</summary>
         Terrain = 20,
         /// <summary>Water correction tiles (ARCH §4.10.10, <see cref="Sync.WaterMessage"/>), host → client.</summary>
-        Water = 21
+        Water = 21,
+
+        // w2/simvals (merge coordination: this branch owns 65-69)
+        /// <summary>Attention-driven simulation values and time-aligned inspection samples (ARCH D5, §4.7.9, §4.8;
+        /// <see cref="Sync.SimValueMessage"/>), host → client.</summary>
+        SimValues = 65,
+        /// <summary>Cell-map tiles host → client and resource-paint patches client → host (ARCH §4.10.8;
+        /// <see cref="Fields.CellMapMessage"/>).</summary>
+        CellMaps = 66,
+        /// <summary>City statistics history (<see cref="Sync.StatisticsMessage"/>), host → client.</summary>
+        Statistics = 67
     }
 }

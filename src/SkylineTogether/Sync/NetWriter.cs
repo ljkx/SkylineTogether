@@ -33,6 +33,11 @@ namespace SkylineTogether.Sync
         public NativeArray<Entity> Table;
         /// <summary>Builds a derived key for an unbound entity; null disables keys.</summary>
         public KeyBuilder Keys;
+        /// <summary>
+        /// w2/simvals: unbound references this predicate accepts are written as null instead of making the value
+        /// unresolved (simulation values that point at service requests, <c>EntityCodec.SimValues</c>); null = off.
+        /// </summary>
+        public System.Func<Entity, bool> NullRefs;
         /// <summary>Derived keys referenced by the component being written, in order of first use.</summary>
         public readonly System.Collections.Generic.List<DerivedKey> UsedKeys = new System.Collections.Generic.List<DerivedKey>();
         private readonly System.Collections.Generic.Dictionary<Entity, int> _keyIndex = new System.Collections.Generic.Dictionary<Entity, int>();
@@ -116,6 +121,11 @@ namespace SkylineTogether.Sync
             int key = _state.KeyFor(value);
             if (key < 0)
             {
+                if (_state.NullRefs != null && _state.NullRefs(value))
+                {
+                    _inner.Write(-1); // reads back as Entity.Null (NetReader, BinaryReader)
+                    return true;
+                }
                 _state.Unresolved = true;
                 _state.UnresolvedEntities.Add(value); // mod compatibility: candidates for dependency binding
                 return false;
