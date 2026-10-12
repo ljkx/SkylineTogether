@@ -101,7 +101,7 @@ namespace SkylineTogether.Sync
         private ushort[] _tileBuffer = new ushort[TileSize * TileSize];
         private int _generation;
         private bool _gpuSupported;
-        private long _tilesSent, _tilesApplied, _stampsReplayed;
+        private long _tilesSent, _tilesApplied, _stampsReplayed, _skippedEarlyStamps;
 
         private enum JobKind
         {
@@ -151,7 +151,8 @@ namespace SkylineTogether.Sync
             {
                 if (!IsHost && !IsLiveClient) return "";
                 if (_tilesSent == 0 && _tilesApplied == 0 && _stampsReplayed == 0) return "";
-                return IsHost ? "terrain: " + _tilesSent + " tiles sent" : "terrain: " + _tilesApplied + " tiles applied";
+                return IsHost ? "terrain: " + _tilesSent + " tiles sent"
+                    : "terrain: " + _tilesApplied + " tiles applied" + (_skippedEarlyStamps > 0 ? ", " + _skippedEarlyStamps + " stroke replays skipped while joining" : "");
             }
         }
 
@@ -180,6 +181,13 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Terrain) return;
+                // polish: a joiner still waiting for the city skips stroke replays (the snapshot or the host's settled
+                // tiles carry their result; a replay on top of the snapshot would apply a stroke twice)
+                if (client.State != ClientState.Live && !TerrainMessage.KeepBeforeLive(e.Body, e.BodyOffset, e.BodyCount))
+                {
+                    _skippedEarlyStamps++;
+                    return;
+                }
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 _inbox.Enqueue((PeerId.Host, copy));
@@ -204,7 +212,7 @@ namespace SkylineTogether.Sync
             _localStrokeUntil = 0;
             _remoteStampAt = double.NegativeInfinity;
             _nextAudit = 0;
-            _tilesSent = _tilesApplied = _stampsReplayed = 0;
+            _tilesSent = _tilesApplied = _stampsReplayed = _skippedEarlyStamps = 0;
             try
             {
                 _uploads?.Dispose();

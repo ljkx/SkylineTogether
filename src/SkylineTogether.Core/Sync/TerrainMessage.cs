@@ -115,6 +115,25 @@ namespace SkylineTogether.Core.Sync
             return (TerrainMessageType)type;
         }
 
+        /// <summary>
+        /// polish: whether a client keeps a terrain message that arrives before it is live in the city (still waiting
+        /// for, downloading or loading the snapshot). Stamps are dropped: those from before the snapshot are in it
+        /// already and a replay would apply them twice; those after it are covered by the host's settled tiles, which
+        /// are absolute and kept (as are manifests). Malformed bodies are kept and refused later by the normal decode.
+        /// </summary>
+        public static bool KeepBeforeLive(byte[] body, int offset, int count)
+        {
+            if (body == null || count < 2) return true;
+            try
+            {
+                return ReadHeader(new ByteReader(body, offset, count)) != TerrainMessageType.Stamps;
+            }
+            catch (DecodeException)
+            {
+                return true;
+            }
+        }
+
         // ------------------------------------------------------------------ stamps
 
         public static void WriteStamps(ByteWriter w, PeerId origin, IReadOnlyList<TerrainStamp> stamps)
