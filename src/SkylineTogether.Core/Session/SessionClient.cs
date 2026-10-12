@@ -485,7 +485,7 @@ namespace SkylineTogether.Core.Session
                     if (State == ClientState.Live && _buffered.Count == 0)
                     {
                         if (e.Kind == MessageKind.Epoch) ApplyAcks.OnReceived(); // w2/ids
-                        _appMessage?.Invoke(e);
+                        DeliverApp(e);
                     }
                     else if (State != ClientState.Ended)
                     {
@@ -643,12 +643,50 @@ namespace SkylineTogether.Core.Session
             ConnectionTimeouts.Apply(_connection, joining: false, _log);
             WasLive = true;
             SetState(ClientState.Live);
-            BecameLive?.Invoke();
+            // final review: one throwing listener used to stop GoLive here: the later listeners (gate, clock, movers)
+            // never ran and the buffered messages stayed queued, so every later message was queued behind them and the
+            // client stayed "live" without applying anything. Each listener and each delivery is isolated now.
+            Action live = BecameLive;
+            if (live != null)
+            {
+                foreach (Delegate d in live.GetInvocationList())
+                {
+                    try
+                    {
+                        ((Action)d)();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(LogCategory.Session, "a \"became live\" listener failed", ex);
+                    }
+                }
+            }
             while (_buffered.Count > 0 && State == ClientState.Live)
             {
                 Buffered b = _buffered.Dequeue();
                 if (b.Kind == MessageKind.Epoch) ApplyAcks.OnReceived(); // w2/ids
-                _appMessage?.Invoke(new Envelope { Kind = b.Kind, Body = b.Body, BodyOffset = 0, BodyCount = b.Body.Length });
+                DeliverApp(new Envelope { Kind = b.Kind, Body = b.Body, BodyOffset = 0, BodyCount = b.Body.Length });
+            }
+        }
+
+        /// <summary>
+        /// Hands an application message to every <see cref="AppMessage"/> listener; a listener that throws is logged and
+        /// never keeps the message from the others (or ends the session as a protocol error).
+        /// </summary>
+        private void DeliverApp(Envelope e)
+        {
+            Action<Envelope> handlers = _appMessage;
+            if (handlers == null) return;
+            foreach (Delegate d in handlers.GetInvocationList())
+            {
+                try
+                {
+                    ((Action<Envelope>)d)(e);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(LogCategory.Session, "handling a " + e.Kind + " message failed", ex);
+                }
             }
         }
 

@@ -304,6 +304,32 @@ namespace SkylineTogether.Core.Tests.Session
         }
 
         [Test]
+        public void AThrowingListenerNeverStopsGoingLiveOrTheMessageFlow()
+        {
+            // final review: one failing "became live" listener left the buffered messages queued for good
+            var rig = new SessionRig();
+            var (client, loader, _) = rig.AddClient("Anna", tweakLoader: l => l.Defer = true);
+            bool laterListener = false;
+            client.BecameLive += () => throw new InvalidOperationException("broken listener");
+            client.BecameLive += () => laterListener = true;
+            var got = new List<byte>();
+            client.AppMessage += e => throw new InvalidOperationException("broken handler");
+            client.AppMessage += e => got.Add(e.Body[e.BodyOffset]);
+            rig.Run(5);
+            for (byte i = 0; i < 5; i++) rig.Host.Broadcast(MessageKind.Epoch, new[] { i }, 0, 1);
+            rig.Run(200);
+            loader.Finish();
+            rig.Run(10);
+            Assert.Equal(ClientState.Live, client.State, client.EndReason);
+            Assert.True(laterListener, "the listeners after the failing one ran");
+            Assert.Equal(5, got.Count, "the buffered messages were all delivered");
+            rig.Host.Broadcast(MessageKind.Epoch, new byte[] { 42 }, 0, 1);
+            rig.Run(2);
+            Assert.Equal(6, got.Count, "live messages still flow");
+            Assert.Equal((byte)42, got[5]);
+        }
+
+        [Test]
         public void LargeReplicationMessagesAreFragmented()
         {
             var rig = new SessionRig();
