@@ -21,6 +21,36 @@ namespace SkylineTogether.Core.Session
         public double LiveWaitTimeoutSeconds = 120;
     }
 
+    /// <summary>
+    /// Why a client session ended (<see cref="SessionClient.EndKind"/>): the game layer decides from it whether an
+    /// automatic rejoin makes sense (<see cref="RejoinController"/>).
+    /// </summary>
+    public enum ClientEndKind
+    {
+        /// <summary>The session has not ended.</summary>
+        None,
+        /// <summary>The local player left (or cancelled the join).</summary>
+        Left,
+        /// <summary>The host could not be reached (no answer, refused at the transport level). Retryable.</summary>
+        Unreachable,
+        /// <summary>An established connection dropped or timed out. Retryable.</summary>
+        Lost,
+        /// <summary>The join failed in a way a new attempt can fix (stalled download, damaged file, busy loader). Retryable.</summary>
+        JoinFailed,
+        /// <summary>The host refused, but only for now (an earlier attempt of ours is still registered). Retryable.</summary>
+        RefusedTemporarily,
+        /// <summary>The host refused for a reason a retry cannot fix (versions, mods, password, full).</summary>
+        Refused,
+        /// <summary>The host ended the session (it left the city, quit or stopped hosting).</summary>
+        HostEnded,
+        /// <summary>The host removed this player.</summary>
+        Kicked,
+        /// <summary>This game could not load the host's city.</summary>
+        LoadFailed,
+        /// <summary>The host sent data this version cannot read.</summary>
+        ProtocolError,
+    }
+
     public enum ClientState
     {
         Idle,
@@ -87,6 +117,24 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>Why the session ended (shown to the player), once <see cref="State"/> is <see cref="ClientState.Ended"/>.</summary>
         public string EndReason { get; private set; }
+
+        /// <summary>How the session ended (<see cref="ClientEndKind.None"/> until it did).</summary>
+        public ClientEndKind EndKind { get; private set; }
+
+        /// <summary>
+        /// True once this client started loading the host's city: from then on the local world is (or is becoming) the
+        /// host's city, so an unexpected end leaves the player in a copy of it rather than where they came from.
+        /// </summary>
+        public bool EnteredCity { get; private set; }
+
+        /// <summary>True once this client was live.</summary>
+        public bool WasLive { get; private set; }
+
+        /// <summary>True for end kinds an automatic rejoin can fix.</summary>
+        public static bool IsRetryable(ClientEndKind kind)
+        {
+            return kind == ClientEndKind.Unreachable || kind == ClientEndKind.Lost || kind == ClientEndKind.JoinFailed || kind == ClientEndKind.RefusedTemporarily;
+        }
 
         public PeerId LocalPeer { get; private set; }
 
@@ -169,7 +217,7 @@ namespace SkylineTogether.Core.Session
             _connection = _transport.Connect(endpoint);
             if (_connection == null)
             {
-                End("Could not start the connection to " + endpoint + ".");
+                End("Could not start the connection to " + endpoint + ".", ClientEndKind.Unreachable);
             }
         }
 
@@ -187,24 +235,25 @@ namespace SkylineTogether.Core.Session
             double now = _clock.Seconds;
             if ((State == ClientState.Connecting || State == ClientState.Handshaking) && now - _stateSince > _options.ConnectTimeoutSeconds)
             {
-                End(State == ClientState.Connecting ? "The host did not answer. Check the address or Steam ID and that the host is hosting." : "The host did not finish the handshake.");
+                End(State == ClientState.Connecting ? "The host did not answer. Check the address or Steam ID and that the host is hosting." : "The host did not finish the handshake.",
+                    State == ClientState.Connecting ? ClientEndKind.Unreachable : ClientEndKind.Lost);
                 return;
             }
             // join watchdogs: a host that never sends the city (or never answers the load) must not leave the player
             // waiting forever; the load itself is local and has no time limit
             if (State == ClientState.WaitingForSnapshot && now - _stateSince > _options.SnapshotWaitTimeoutSeconds)
             {
-                End("The host did not send the city in time. Try joining again.");
+                End("The host did not send the city in time. Try joining again.", ClientEndKind.JoinFailed);
                 return;
             }
             if (State == ClientState.Downloading && now - _lastChunkAt > _options.DownloadStallTimeoutSeconds)
             {
-                End("The city download stalled (nothing received for " + (int)_options.DownloadStallTimeoutSeconds + " s). Try joining again.");
+                End("The city download stalled (nothing received for " + (int)_options.DownloadStallTimeoutSeconds + " s). Try joining again.", ClientEndKind.JoinFailed);
                 return;
             }
             if (State == ClientState.Loading && _loadedAt >= 0 && now - _loadedAt > _options.LiveWaitTimeoutSeconds)
             {
-                End("The host did not confirm the join after the city loaded. Try joining again.");
+                End("The host did not confirm the join after the city loaded. Try joining again.", ClientEndKind.JoinFailed);
                 return;
             }
             if (State == ClientState.Downloading && _receiver != null && _receiver.ResendRequested && now - _lastHaveSent > 0.5)
@@ -256,7 +305,7 @@ namespace SkylineTogether.Core.Session
                 _payload.Reset();
                 SendControl(ControlKind.Disconnecting, _payload);
             }
-            End("You left the session.");
+            End("You left the session.", ClientEndKind.Left);
         }
 
         public void Dispose()
@@ -298,9 +347,11 @@ namespace SkylineTogether.Core.Session
         void ITransportEventSink.OnDisconnected(IConnection connection, int reason, string text)
         {
             if (connection != _connection || State == ClientState.Ended) return;
-            End(State == ClientState.Connecting
+            bool connecting = State == ClientState.Connecting;
+            End(connecting
                 ? "Could not connect to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString() : text) + ")."
-                : "Lost the connection to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString() : text) + ").");
+                : "Lost the connection to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString() : text) + ").",
+                connecting ? ClientEndKind.Unreachable : ClientEndKind.Lost);
         }
 
         void ITransportEventSink.OnMessage(IConnection connection, Lane lane, byte[] buffer, int offset, int count)
@@ -314,7 +365,7 @@ namespace SkylineTogether.Core.Session
             catch (DecodeException ex)
             {
                 _log.Warn(LogCategory.Protocol, "malformed message from the host: " + ex.Message);
-                End("The host sent data this version cannot read (" + ex.Message + ").");
+                End("The host sent data this version cannot read (" + ex.Message + ").", ClientEndKind.ProtocolError);
             }
             catch (Exception ex)
             {
@@ -331,7 +382,8 @@ namespace SkylineTogether.Core.Session
                 case MessageKind.Refuse:
                 {
                     RefuseMessage r = RefuseMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
-                    End(string.IsNullOrEmpty(r.Detail) ? "The host refused the connection (" + r.Reason + ")." : r.Detail);
+                    End(string.IsNullOrEmpty(r.Detail) ? "The host refused the connection (" + r.Reason + ")." : r.Detail,
+                        r.Reason == RefuseReason.HostPreparing ? ClientEndKind.RefusedTemporarily : ClientEndKind.Refused);
                     return;
                 }
                 case MessageKind.Welcome:
@@ -364,7 +416,7 @@ namespace SkylineTogether.Core.Session
                     _receiver.OnChunk(e.Body, e.BodyOffset, e.BodyCount);
                     if (_receiver.IsFailed)
                     {
-                        End("The city download failed: " + _receiver.FailureReason);
+                        End("The city download failed: " + _receiver.FailureReason, ClientEndKind.JoinFailed);
                         return;
                     }
                     if (_receiver.IsComplete) OnDownloadComplete();
@@ -411,7 +463,7 @@ namespace SkylineTogether.Core.Session
                     PasswordChallengeMessage ch = PasswordChallengeMessage.Decode(payload, 0, payload.Length);
                     if (string.IsNullOrEmpty(_options.Password))
                     {
-                        End("This session needs a password. Enter it in the Join settings and try again.");
+                        End("This session needs a password. Enter it in the Join settings and try again.", ClientEndKind.Refused);
                         return;
                     }
                     _body.Reset();
@@ -443,10 +495,10 @@ namespace SkylineTogether.Core.Session
                     GoLive();
                     return;
                 case ControlKind.Kick:
-                    End("The host removed you from the session: " + SessionPayloads.ReadText(_reader));
+                    End("The host removed you from the session: " + SessionPayloads.ReadText(_reader), ClientEndKind.Kicked);
                     return;
                 case ControlKind.SessionEnd:
-                    End(SessionPayloads.ReadText(_reader));
+                    End(SessionPayloads.ReadText(_reader), ClientEndKind.HostEnded);
                     return;
                 default:
                     return;
@@ -474,7 +526,7 @@ namespace SkylineTogether.Core.Session
             catch (Exception ex)
             {
                 _log.Error(LogCategory.Join, "could not prepare the download", ex);
-                End("Could not prepare the city download: " + ex.Message);
+                End("Could not prepare the city download: " + ex.Message, ClientEndKind.LoadFailed);
                 return;
             }
             _lastChunkAt = _clock.Seconds;
@@ -490,10 +542,11 @@ namespace SkylineTogether.Core.Session
             SendHave();
             if (!_receiver.VerifyDigest())
             {
-                End("The downloaded city is damaged (checksum mismatch). Try joining again.");
+                End("The downloaded city is damaged (checksum mismatch). Try joining again.", ClientEndKind.JoinFailed);
                 return;
             }
             CloseTarget();
+            EnteredCity = true;
             SetState(ClientState.Loading);
             _log.Info(LogCategory.Join, "download complete; loading the city");
             try
@@ -517,7 +570,9 @@ namespace SkylineTogether.Core.Session
             _channel?.Pump();
             if (!outcome.Success)
             {
-                End("Loading the host's city failed: " + (outcome.FailureDetail ?? outcome.FailureKey ?? "unknown error"));
+                // "busy": this game was still loading another city (e.g. an earlier attempt's); a retry can succeed
+                End("Loading the host's city failed: " + (outcome.FailureDetail ?? outcome.FailureKey ?? "unknown error"),
+                    outcome.FailureKey == "busy" ? ClientEndKind.JoinFailed : ClientEndKind.LoadFailed);
             }
             else
             {
@@ -537,6 +592,7 @@ namespace SkylineTogether.Core.Session
                 return;
             }
             ConnectionTimeouts.Apply(_connection, joining: false, _log);
+            WasLive = true;
             SetState(ClientState.Live);
             BecameLive?.Invoke();
             while (_buffered.Count > 0 && State == ClientState.Live)
@@ -593,10 +649,11 @@ namespace SkylineTogether.Core.Session
             StateChanged?.Invoke();
         }
 
-        private void End(string reason)
+        private void End(string reason, ClientEndKind kind)
         {
             if (State == ClientState.Ended) return;
             EndReason = reason;
+            EndKind = kind;
             _log.Info(LogCategory.Session, "session ended: " + reason);
             CloseTarget();
             _buffered.Clear();

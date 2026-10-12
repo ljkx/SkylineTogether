@@ -331,6 +331,31 @@ namespace SkylineTogether.Core.Transport
             }
         }
 
+        /// <summary>
+        /// Test hook: the link of <paramref name="connection"/> (one of this transport's) fails as on a network
+        /// timeout. Messages still in flight in either direction are lost. Each end that is notified gets a
+        /// <see cref="TransportCloseReason.Timeout"/> disconnect at its next poll; an end that is not notified keeps
+        /// "sending" into the void (its messages are dropped) until a later call notifies it, the way one side of a real
+        /// link often times out long after the other.
+        /// </summary>
+        public void Sever(IConnection connection, bool notifyThisSide = true, bool notifyOtherSide = true, string text = "timed out")
+        {
+            if (!(connection is LoopbackConnection local) || local.Owner != this) throw new ArgumentException("not a connection of this transport", nameof(connection));
+            lock (_network.Lock)
+            {
+                SeverEnd(local, notifyThisSide, text);
+                if (local.Remote != null) SeverEnd(local.Remote, notifyOtherSide, text);
+            }
+        }
+
+        private static void SeverEnd(LoopbackConnection end, bool notify, string text)
+        {
+            end.DiscardUndelivered = true;
+            if (!notify || end.LocallyClosed || end.RemotelyClosed) return;
+            end.RemotelyClosed = true;
+            end.Owner._events.Enqueue(new LoopbackEvent { Kind = EventKind.Disconnected, Connection = end, Reason = TransportCloseReason.Timeout, Text = text });
+        }
+
         internal void CloseConnection(LoopbackConnection connection, int reason, string text, bool linger)
         {
             lock (_network.Lock)

@@ -44,6 +44,16 @@ namespace SkylineTogether.Core.Follower
         private double _anchorFrame;
         private double _anchorTime;
         private double _rate;
+        private double _lastSampleTime;
+
+        /// <summary>
+        /// The estimate advances at most this long past the latest sample (seconds; infinite by default). A host that
+        /// stalls (an autosave, a join snapshot, a hitch) sends no samples and its simulation does not advance either;
+        /// without the cap the follower would run ahead of it for the whole stall and then crawl back at
+        /// <see cref="DownwardGain"/>. After a gap longer than the cap, the next late sample re-anchors the estimate at
+        /// once (the extrapolation was only a guess).
+        /// </summary>
+        public double MaxExtrapolationSeconds { get; set; } = double.PositiveInfinity;
 
         /// <summary>True once a sample arrived.</summary>
         public bool HasEstimate { get; private set; }
@@ -62,6 +72,7 @@ namespace SkylineTogether.Core.Follower
             _anchorFrame = 0;
             _anchorTime = 0;
             _rate = 0;
+            _lastSampleTime = 0;
         }
 
         /// <summary>Changes the advance rate; the estimate is re-anchored so it stays continuous.</summary>
@@ -83,10 +94,13 @@ namespace SkylineTogether.Core.Follower
             {
                 _anchorFrame = hostFrame;
                 _anchorTime = now;
+                _lastSampleTime = now;
                 HasEstimate = true;
                 return;
             }
             double predicted = Estimate(now);
+            bool afterStall = now - _lastSampleTime > MaxExtrapolationSeconds;
+            _lastSampleTime = Math.Max(_lastSampleTime, now);
             // the difference in wrapping uint arithmetic (frames wrap after ~2.3 years of play at speed 1)
             uint predictedFrame = unchecked((uint)(long)Math.Floor(predicted));
             int diff = unchecked((int)(hostFrame - predictedFrame));
@@ -96,7 +110,7 @@ namespace SkylineTogether.Core.Follower
                 _anchorTime = now;
                 return;
             }
-            double anchor = diff > 0 ? Math.Max(predicted, Math.Floor(predicted) + diff) : predicted + diff * DownwardGain;
+            double anchor = diff > 0 ? Math.Max(predicted, Math.Floor(predicted) + diff) : afterStall ? hostFrame : predicted + diff * DownwardGain;
             if (anchor >= 4294967296.0) anchor -= 4294967296.0;
             _anchorFrame = anchor;
             _anchorTime = now;
@@ -106,7 +120,9 @@ namespace SkylineTogether.Core.Follower
         public double Estimate(double now)
         {
             if (!HasEstimate) return 0;
-            double elapsed = Math.Max(0, now - _anchorTime);
+            double end = now;
+            if (!double.IsInfinity(MaxExtrapolationSeconds)) end = Math.Min(now, Math.Max(_anchorTime, _lastSampleTime + Math.Max(0, MaxExtrapolationSeconds)));
+            double elapsed = Math.Max(0, end - _anchorTime);
             return _anchorFrame + elapsed * _rate;
         }
 
