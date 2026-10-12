@@ -86,7 +86,7 @@ namespace SkylineTogether.Presence
             }
             catch (Exception ex)
             {
-                _log.Warn(LogCategory.Session, "sending presence failed: " + ex.Message);
+                Diagnostics.Guard.Report(Diagnostics.Features.Presence, "sending presence", ex);
             }
         }
 

@@ -359,7 +359,71 @@ function Lobby(props) {
         "Join"
       )
     ),
-    s.lastEnd ? h("div", { style: S.error }, s.lastEnd) : null
+    s.blocked ? h("div", { style: S.error }, "Hosting and joining are unavailable: " + s.blocked) : null,
+    s.lastEnd ? h("div", { style: S.error }, s.lastEnd) : null,
+    h(SelfTest, { state: s })
+  );
+}
+
+// The startup self-test (probes) in one line; write diagnostics for the details.
+function SelfTest(props) {
+  const s = props.state;
+  if (!s.probes) return null;
+  const off = s.probes.indexOf("off:") >= 0;
+  return h(
+    "div",
+    { style: { color: off ? C.warn : C.dim, fontSize: "11px", marginTop: "10px" } },
+    s.probes,
+    h(
+      "span",
+      { style: { color: C.accent, cursor: "pointer", marginLeft: "6px" }, onClick: function () { api.trigger(GROUP, "writeDiagnostics"); } },
+      "details"
+    )
+  );
+}
+
+// A client session ended unexpectedly in the host's city: automatic rejoin, or the player's choice.
+function Recovering(props) {
+  const s = props.state;
+  const r = s.recovery || {};
+  let title;
+  let body = null;
+  let buttons = [];
+  if (r.phase === "Waiting") {
+    title = "Connection lost";
+    body = "Reconnecting in " + (r.seconds || 0) + " s (attempt " + (r.attempt + 1) + " of " + r.max + "). The city is paused until then; changes you make now are not kept.";
+    buttons = [
+      h(Button, { key: "now", onClick: function () { api.trigger(GROUP, "reconnect"); } }, "Reconnect now"),
+      h(Button, { key: "menu", kind: "secondary", onClick: function () { api.trigger(GROUP, "mainMenu"); } }, "Return to main menu"),
+      h(Button, { key: "stay", kind: "secondary", onClick: function () { api.trigger(GROUP, "stayOffline"); } }, "Stay offline (keep a copy)"),
+    ];
+  } else if (r.phase === "Attempting") {
+    title = "Reconnecting (attempt " + r.attempt + " of " + r.max + ")";
+    body = r.attemptStatus || s.status || "";
+    buttons = [h(Button, { key: "cancel", kind: "secondary", onClick: function () { api.trigger(GROUP, "cancelReconnect"); } }, "Cancel")];
+  } else {
+    title = r.hostEnded ? "The session has ended" : "Not connected";
+    body = r.hostEnded
+      ? "You can return to the main menu, or keep playing an offline copy of the host's city."
+      : "Reconnecting did not work. You can try again, return to the main menu, or keep an offline copy.";
+    if (r.canReconnect) buttons.push(h(Button, { key: "again", onClick: function () { api.trigger(GROUP, "reconnect"); } }, "Reconnect"));
+    buttons.push(h(Button, { key: "menu", kind: r.canReconnect ? "secondary" : null, onClick: function () { api.trigger(GROUP, "mainMenu"); } }, "Return to main menu"));
+    buttons.push(h(Button, { key: "stay", kind: "secondary", onClick: function () { api.trigger(GROUP, "stayOffline"); } }, "Stay offline (keep a copy)"));
+  }
+  return h(
+    "div",
+    null,
+    h(
+      "div",
+      { style: S.section },
+      h("div", { style: { fontWeight: "bold", color: r.phase === "NeedsChoice" ? C.bad : C.warn } }, title),
+      r.reason ? h("div", { style: { color: C.dim, marginTop: "4px" } }, r.reason) : null,
+      h("div", { style: { marginTop: "6px" } }, body),
+      r.phase === "Attempting" ? h("div", { style: S.progressOuter }, h("div", { style: { width: Math.round((s.progress || 0) * 100) + "%", height: "100%", background: C.accent } })) : null,
+      h("div", { style: { display: "flex", flexDirection: "column", marginTop: "8px" } }, buttons)
+    ),
+    h(Players, { state: s }),
+    h(Chat, { state: s, canSend: false })
   );
 }
 
@@ -382,7 +446,8 @@ function Hosting(props) {
     ),
     h(Players, { state: s }),
     h(Chat, { state: s, canSend: true }),
-    h(Button, { kind: "danger", onClick: function () { api.trigger(GROUP, "leave"); } }, "End session")
+    h(Button, { kind: "danger", onClick: function () { api.trigger(GROUP, "leave"); } }, "End session"),
+    h(SelfTest, { state: s })
   );
 }
 
@@ -414,7 +479,8 @@ function Client(props) {
     ),
     h(Players, { state: s }),
     h(Chat, { state: s, canSend: true }),
-    h(Button, { kind: "secondary", onClick: function () { api.trigger(GROUP, "leave"); } }, "Leave session")
+    h(Button, { kind: "secondary", onClick: function () { api.trigger(GROUP, "leave"); } }, "Leave session"),
+    h(SelfTest, { state: s })
   );
 }
 
@@ -424,12 +490,28 @@ function makeRoot(inGame) {
     const [open, setOpen] = React.useState(false);
     const mode = s.mode || "None";
     const count = (s.players || []).length;
-    const dot = mode === "None" ? C.dim : mode === "Joining" ? C.warn : C.good;
+    const recovery = s.recovery || {};
+    // the recovery choice must be seen: open the panel when a session ends unexpectedly
+    React.useEffect(function () {
+      if (mode === "Recovering") setOpen(true);
+    }, [mode, recovery.phase]);
+    const dot = mode === "None" ? C.dim : mode === "Joining" ? C.warn : mode === "Recovering" ? C.bad : C.good;
     let content;
     if (mode === "Hosting") content = h(Hosting, { state: s });
     else if (mode === "Joining") content = h(Joining, { state: s });
     else if (mode === "Client") content = h(Client, { state: s });
+    else if (mode === "Recovering") content = h(Recovering, { state: s });
     else content = h(Lobby, { state: s, inGame: inGame });
+    const label =
+      mode === "None"
+        ? "Multiplayer"
+        : mode === "Joining"
+        ? "Joining…"
+        : mode === "Recovering"
+        ? recovery.phase === "NeedsChoice"
+          ? "Multiplayer · disconnected"
+          : "Reconnecting…"
+        : "Multiplayer · " + count;
     return h(
       "div",
       null,
@@ -438,7 +520,7 @@ function makeRoot(inGame) {
         "div",
         { style: S.toggle, onClick: function () { setOpen(!open); } },
         h("div", { style: merge(S.dot, { background: dot }) }),
-        mode === "None" ? "Multiplayer" : mode === "Joining" ? "Joining…" : "Multiplayer · " + count
+        label
       ),
       open
         ? h(

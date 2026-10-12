@@ -94,7 +94,7 @@ namespace SkylineTogether.Core.Session
                 }
                 else
                 {
-                    CanReconnect = kind == ClientEndKind.ProtocolError || kind == ClientEndKind.LoadFailed;
+                    CanReconnect = kind == ClientEndKind.ProtocolError || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault;
                     Phase = RejoinPhase.NeedsChoice;
                 }
                 return true;
@@ -119,7 +119,7 @@ namespace SkylineTogether.Core.Session
                 Schedule(now);
                 return true;
             }
-            CanReconnect = retryable || kind == ClientEndKind.LoadFailed;
+            CanReconnect = retryable || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault;
             Phase = RejoinPhase.NeedsChoice;
             return true;
         }
@@ -156,6 +156,14 @@ namespace SkylineTogether.Core.Session
             CanReconnect = true;
             Phase = RejoinPhase.Waiting;
             NextAttemptAt = now;
+        }
+
+        /// <summary>Stops automatic attempts and asks the player (e.g. they cancelled a running attempt).</summary>
+        public void AskPlayer(string reason)
+        {
+            Phase = RejoinPhase.NeedsChoice;
+            CanReconnect = true;
+            if (reason != null) Reason = reason;
         }
 
         /// <summary>The player decided (main menu, stay offline) or a new session started: no recovery any more.</summary>

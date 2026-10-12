@@ -204,12 +204,20 @@ namespace SkylineTogether.Net
 
         // ---------------------------------------------------------------- internals
 
+        /// <summary>Steam callback (dispatched by the game's <c>SteamAPI.RunCallbacks</c>): must never throw into it.</summary>
         private void OnStatusChanged(SteamNetConnectionStatusChangedCallback_t e)
         {
-            if (_disposed) return;
-            bool ours = _connections.ContainsKey(e.m_hConn.m_HSteamNetConnection)
-                        || (e.m_info.m_hListenSocket != HSteamListenSocket.Invalid && (e.m_info.m_hListenSocket == _p2pSocket || e.m_info.m_hListenSocket == _ipSocket));
-            if (ours) _statusEvents.Enqueue(e);
+            try
+            {
+                if (_disposed) return;
+                bool ours = _connections.ContainsKey(e.m_hConn.m_HSteamNetConnection)
+                            || (e.m_info.m_hListenSocket != HSteamListenSocket.Invalid && (e.m_info.m_hListenSocket == _p2pSocket || e.m_info.m_hListenSocket == _ipSocket));
+                if (ours) _statusEvents.Enqueue(e);
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Guard.Report(Diagnostics.Features.Steam, "Steam connection callback", ex);
+            }
         }
 
         private void HandleStatus(SteamNetConnectionStatusChangedCallback_t e, ITransportEventSink sink)

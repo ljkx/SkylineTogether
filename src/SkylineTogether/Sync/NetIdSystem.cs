@@ -14,12 +14,26 @@ namespace SkylineTogether.Sync
     /// version)</c>) and <see cref="ReaderTable"/> (index = net id, value = the local entity) plug straight into the
     /// game's <c>BinaryWriter</c>/<c>BinaryReader</c>. The bindings of tracked entities are saved into every save
     /// (the join snapshot included) by the game's own system serializer, so a joiner's freshly loaded entities carry
-    /// the host's ids without any table transfer. Without the mod, the block is skipped by the game.
+    /// the host's ids without any table transfer. Without the mod, the block is skipped by the game
+    /// (<c>ObsoleteSystemSerializer</c> skips it by its size); a save without the block resets the tables
+    /// (<c>SetDefaults</c>).
+    /// <para>
+    /// Single-player safety: the bindings are written only into a join snapshot (<see cref="WritingSnapshot"/>, set by
+    /// <c>SnapshotService</c> around its save); every other save, including the host's own saves and autosaves during a
+    /// session, carries an empty block of 12 bytes. Loaded bindings are kept only by a joining client; anyone else
+    /// reads and drops them. The tables never grow without a session.
+    /// </para>
     /// </summary>
     [FormerlySerializedAs("SkylineTogether.Sync.NetIdSystem, SkylineTogether")]
     public sealed class NetIdSystem : GameSystemBase, IDefaultSerializable, ISerializable, IPostDeserialize
     {
         private const int FormatVersion = 1;
+
+        /// <summary>Net ids above this are treated as corrupt (a bound table of this size would already be ~1 GB).</summary>
+        private const uint MaxNetId = 1u << 26;
+
+        /// <summary>True while the host's join snapshot is being written (the only save that carries the bindings).</summary>
+        public static volatile bool WritingSnapshot;
 
         private NativeList<Entity> _writer;
         private NativeList<Entity> _reader;
@@ -39,9 +53,9 @@ namespace SkylineTogether.Sync
         protected override void OnCreate()
         {
             base.OnCreate();
-            _writer = new NativeList<Entity>(1 << 16, Allocator.Persistent);
-            _reader = new NativeList<Entity>(1 << 16, Allocator.Persistent);
-            _family = new NativeList<byte>(1 << 16, Allocator.Persistent);
+            _writer = new NativeList<Entity>(1024, Allocator.Persistent);
+            _reader = new NativeList<Entity>(1024, Allocator.Persistent);
+            _family = new NativeList<byte>(1024, Allocator.Persistent);
             Clear();
         }
 
@@ -64,6 +78,10 @@ namespace SkylineTogether.Sync
             _writer.Clear();
             _reader.Clear();
             _family.Clear();
+            // a session's tables (one entry per entity of the city) are released when it ends
+            if (_writer.Capacity > 4096) _writer.Capacity = 1024;
+            if (_reader.Capacity > 4096) _reader.Capacity = 1024;
+            if (_family.Capacity > 4096) _family.Capacity = 1024;
             _reader.Add(Entity.Null);
             _family.Add(0);
             _writer.Add(default(Entity));
@@ -164,14 +182,19 @@ namespace SkylineTogether.Sync
 
         public void Serialize<TWriter>(TWriter writer) where TWriter : IWriter
         {
+            bool include = WritingSnapshot && Mod.Sessions?.Host != null && _reader.IsCreated;
             writer.Write(FormatVersion);
-            writer.Write(Ids.Next);
+            writer.Write(include ? Ids.Next : 0u);
             int count = 0;
-            for (int id = 1; id < _reader.Length; id++)
+            if (include)
             {
-                if (_reader[id] != Entity.Null && (Family)_family[id] != Family.Prefab) count++;
+                for (int id = 1; id < _reader.Length; id++)
+                {
+                    if (_reader[id] != Entity.Null && (Family)_family[id] != Family.Prefab) count++;
+                }
             }
             writer.Write(count);
+            if (count == 0) return;
             for (int id = 1; id < _reader.Length; id++)
             {
                 Entity e = _reader[id];
@@ -187,17 +210,20 @@ namespace SkylineTogether.Sync
             // runs inside the deserializer's exclusive entity transaction: containers only
             Clear();
             reader.Read(out int format);
-            if (format != FormatVersion) return;
+            if (format != FormatVersion) return; // a newer build's block: the reader skips the rest (logged by the game)
             reader.Read(out uint next);
             reader.Read(out int count);
+            if (count < 0 || next > MaxNetId) return;
+            // only a client joining the host's session uses the host's ids; any other load reads them and drops them
+            bool keep = Mod.Sessions?.Client != null;
             for (int i = 0; i < count; i++)
             {
                 reader.Read(out Entity e);
                 reader.Read(out uint id);
                 reader.Read(out byte family);
-                if (e != Entity.Null) Bind(e, id, (Family)family);
+                if (keep && e != Entity.Null && id < MaxNetId) Bind(e, id, (Family)family);
             }
-            Ids.Reserve(next > 0 ? next - 1 : 0);
+            if (keep) Ids.Reserve(next > 0 ? next - 1 : 0);
         }
 
         public void SetDefaults(Context context)
@@ -207,8 +233,16 @@ namespace SkylineTogether.Sync
 
         public void PostDeserialize(Context context)
         {
-            int dropped = Prune();
-            Mod.Log?.Info(LogCategory.Replication, "net ids after load: " + _bound + " bound" + (dropped > 0 ? ", " + dropped + " dropped" : ""));
+            try
+            {
+                if (_bound == 0) return;
+                int dropped = Prune();
+                Mod.Log?.Info(LogCategory.Replication, "net ids after load: " + _bound + " bound" + (dropped > 0 ? ", " + dropped + " dropped" : ""));
+            }
+            catch (System.Exception ex)
+            {
+                Diagnostics.Guard.Report(Diagnostics.Features.Replication, "net ids after load", ex);
+            }
         }
     }
 }

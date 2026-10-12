@@ -282,14 +282,14 @@ namespace SkylineTogether.Sync
                     }
                     catch (Exception ex)
                     {
-                        _log.Error(LogCategory.Fields, "applying a terrain message from " + peer + " failed", ex);
+                        Diagnostics.Guard.Report(Diagnostics.Features.Terrain, "applying a terrain message from " + peer, ex);
                     }
                 }
                 if (!IsHost) FlushDeferred(now);
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Fields, "terrain apply failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Terrain, "terrain apply", ex);
             }
         }
 
@@ -307,7 +307,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Fields, "terrain stamp capture failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Terrain, "terrain stamp capture", ex);
             }
         }
 
@@ -334,7 +334,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Fields, "terrain capture failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Terrain, "terrain capture", ex);
             }
         }
 
@@ -634,7 +634,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Warn(LogCategory.Fields, "terrain invalidation after a tile write failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Terrain, "terrain invalidation after a tile write", ex);
             }
         }
 
@@ -709,7 +709,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Warn(LogCategory.Fields, "a terrain change listener failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Water, "a terrain change listener", ex);
             }
         }
 

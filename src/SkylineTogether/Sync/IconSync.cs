@@ -544,14 +544,20 @@ namespace SkylineTogether.Sync
         {
             if (_codec == null || !_clientActive || _iconSystem == null) return;
             _frame++;
-            try
+            if (Diagnostics.Features.Icons.IsAvailable)
             {
-                Filter();
-            }
-            catch (Exception ex)
-            {
-                _filterBroken = true;
-                _log.Warn(LogCategory.Integrity, "icon filter failed; local warning icons may flicker until corrected", ex);
+                try
+                {
+                    Filter();
+                }
+                catch (Exception ex)
+                {
+                    // the queues are left as they were; one failure switches the filter off (local icons are then
+                    // corrected after they appear, by the reconciliation below)
+                    _filterBroken = true;
+                    Diagnostics.Guard.Report(Diagnostics.Features.Icons, "icon filter", ex);
+                    Diagnostics.Guard.Disable(Diagnostics.Features.Icons, "icon filter failed: " + ex.Message);
+                }
             }
             double now = _clock.Seconds;
             if (_fullSyncSince >= 0)
@@ -727,9 +733,9 @@ namespace SkylineTogether.Sync
             if (_filterBroken) return;
             if (!_filterReady)
             {
-                _queuesField = typeof(IconCommandSystem).GetField("m_Queues", BindingFlags.Instance | BindingFlags.NonPublic);
-                _depsField = typeof(IconCommandSystem).GetField("m_Dependencies", BindingFlags.Instance | BindingFlags.NonPublic);
-                if (_queuesField == null || _depsField == null || _queuesField.FieldType != typeof(List<NativeQueue<IconCommandBuffer.Command>>) || _depsField.FieldType != typeof(JobHandle))
+                _queuesField = Diagnostics.Probes.IconQueues;
+                _depsField = Diagnostics.Probes.IconDependencies;
+                if (_queuesField == null || _depsField == null)
                 {
                     _filterBroken = true;
                     _log.Warn(LogCategory.Integrity, "IconCommandSystem queues not found (game update?): local warning icons are corrected after they appear");

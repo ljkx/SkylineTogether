@@ -112,6 +112,22 @@ namespace SkylineTogether.Sync
             public bool Disabled;
         }
 
+        /// <summary>
+        /// The private job handles completed on a client before a channel's state is written (probed at startup,
+        /// <see cref="Diagnostics.Probes"/>).
+        /// </summary>
+        public static readonly (Type Type, string Field)[] ClientJobHandleFields =
+        {
+            (typeof(ResidentialDemandSystem), "m_ReadDependencies"),
+            (typeof(ResidentialDemandSystem), "m_WriteDependencies"),
+            (typeof(CommercialDemandSystem), "m_ReadDependencies"),
+            (typeof(CommercialDemandSystem), "m_WriteDependencies"),
+            (typeof(IndustrialDemandSystem), "m_ReadDependencies"),
+            (typeof(IndustrialDemandSystem), "m_WriteDependencies"),
+            (typeof(CountHouseholdDataSystem), "m_HouseholdDataReadDependencies"),
+            (typeof(CountHouseholdDataSystem), "m_HouseholdDataWriteDependencies"),
+        };
+
         public GlobalStateSync(ILog log)
         {
             _log = log;
@@ -139,7 +155,7 @@ namespace SkylineTogether.Sync
                 _modifyQuery = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Common.Event>(), ComponentType.ReadOnly<Modify>());
                 // the archetype PoliciesUISystem uses for its events (PoliciesUISystem.cs:157)
                 _modifyArchetype = em.CreateArchetype(ComponentType.ReadWrite<Game.Common.Event>(), ComponentType.ReadWrite<Modify>());
-                _namesField = typeof(Game.UI.NameSystem).GetField("m_Names", BindingFlags.Instance | BindingFlags.NonPublic);
+                _namesField = Diagnostics.Probes.NameSystemNames;
                 if (_namesField == null) _log.Warn(LogCategory.Replication, "NameSystem.m_Names not found: custom names will not sync");
 
                 AddBlob<ResidentialDemandSystem>("Demand.Residential", s => { s.GetLowDensityDemandFactors(out JobHandle d); return d; }, "m_ReadDependencies", "m_WriteDependencies");
@@ -167,8 +183,8 @@ namespace SkylineTogether.Sync
             var handles = new List<FieldInfo>();
             foreach (string field in clientHandles)
             {
-                FieldInfo f = typeof(T).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic);
-                if (f != null && f.FieldType == typeof(JobHandle)) handles.Add(f);
+                FieldInfo f = Diagnostics.Probes.JobHandleField(typeof(T), field);
+                if (f != null) handles.Add(f);
                 else _log.Debug(LogCategory.Replication, name + ": job handle " + field + " not found");
             }
             _blobs.Add(new BlobChannel

@@ -74,6 +74,16 @@ namespace SkylineTogether.Diagnostics
             });
             Line(sb, "unity: " + UnityEngine.Application.unityVersion + ", os: " + Environment.OSVersion);
 
+            // ARCH §13.4: what the self-test found and which features are off (and why)
+            Section(sb, "Self-test and features");
+            Safe(sb, () =>
+            {
+                foreach (string l in Probes.ReportLines()) Line(sb, l);
+                string blocked = SessionManager.BlockingReason();
+                Line(sb, "hosting/joining blocked: " + (blocked ?? "no"));
+                Line(sb, "vanilla systems held off by the mod: " + Sync.SystemSwitch.HeldCount);
+            });
+
             Section(sb, "Session");
             if (s == null)
             {
@@ -83,6 +93,12 @@ namespace SkylineTogether.Diagnostics
             {
                 Line(sb, "mode: " + s.Mode + ", steam available: " + SessionManager.SteamAvailable + ", can host: " + s.CanHost + ", can join: " + s.CanJoin);
                 Line(sb, "last end reason: " + (s.LastEndReason ?? "-"));
+                Safe(sb, () =>
+                {
+                    Core.Session.RejoinController r = s.Recovery;
+                    Line(sb, "recovery: " + r.Phase + ", attempt " + r.Attempt + "/" + r.MaxAttempts + ", started by " + r.StartKind + ", can reconnect " + r.CanReconnect
+                             + ", rejoins so far " + r.Rejoins + ", city held " + s.HoldCity + (string.IsNullOrEmpty(r.Reason) ? "" : ", reason: " + r.Reason));
+                });
                 Safe(sb, () => Line(sb, "game mode: " + Game.SceneFlow.GameManager.instance?.gameMode + ", loading: " + Game.SceneFlow.GameManager.instance?.isGameLoading));
                 if (s.Host != null)
                 {
@@ -99,7 +115,7 @@ namespace SkylineTogether.Diagnostics
                     SessionClient c = s.Client;
                     Line(sb, "client state: " + c.State + ", join progress " + c.JoinProgress.ToString("0.00", CultureInfo.InvariantCulture) + ", local peer " + c.LocalPeer
                              + ", session \"" + (c.Session?.SessionName ?? "?") + "\" hosted by " + (c.Session?.HostName ?? "?"));
-                    Line(sb, "speed: " + c.Speed + (c.EndReason != null ? ", end reason: " + c.EndReason : ""));
+                    Line(sb, "speed: " + c.Speed + (c.EndReason != null ? ", end reason: " + c.EndReason + " (" + c.EndKind + ")" : "") + ", entered the city " + c.EnteredCity + ", was live " + c.WasLive);
                     NetLine(sb, c.GetNetStats());
                 }
                 IReadOnlyList<PlayerInfo> players = s.Host != null ? s.Host.GetPlayers() : s.Client?.Players;

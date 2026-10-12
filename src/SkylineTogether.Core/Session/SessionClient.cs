@@ -49,6 +49,9 @@ namespace SkylineTogether.Core.Session
         LoadFailed,
         /// <summary>The host sent data this version cannot read.</summary>
         ProtocolError,
+        /// <summary>This game hit an error that may have left the replica different from the host's city; a rejoin with
+        /// a fresh snapshot repairs it (offered to the player, not automatic: a deterministic fault would loop).</summary>
+        LocalFault,
     }
 
     public enum ClientState
@@ -295,6 +298,20 @@ namespace SkylineTogether.Core.Session
         {
             if (State != ClientState.Live || _channel == null) return false;
             return _channel.Send(kind, body, offset, count);
+        }
+
+        /// <summary>
+        /// Ends the session because this game failed (<see cref="ClientEndKind.LocalFault"/>): tells the host it is
+        /// leaving, like <see cref="Leave"/>, but the game layer offers a rejoin instead of treating it as a choice.
+        /// </summary>
+        public void Abort(string reason)
+        {
+            if (_channel != null && State != ClientState.Ended)
+            {
+                _payload.Reset();
+                SendControl(ControlKind.Disconnecting, _payload);
+            }
+            End(reason ?? "This game hit an error.", ClientEndKind.LocalFault);
         }
 
         /// <summary>Leaves the session politely.</summary>

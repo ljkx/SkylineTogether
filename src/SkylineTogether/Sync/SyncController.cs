@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using Game.Prefabs;
 using Game.Simulation;
 using Game.Tools;
 using SkylineTogether.Core;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Session;
+using SkylineTogether.Core.Diagnostics;
 using SkylineTogether.Core.Sync;
+using SkylineTogether.Diagnostics;
 using SkylineTogether.Session;
 using Unity.Collections;
 using Unity.Entities;
@@ -36,6 +37,8 @@ namespace SkylineTogether.Sync
         private readonly Queue<(PeerId Peer, byte[] Data)> _inbox = new Queue<(PeerId, byte[])>();
         private readonly Dictionary<byte, List<(uint Start, uint Count)>> _peerRanges = new Dictionary<byte, List<(uint, uint)>>();
         private readonly ClientIdPool _pool = new ClientIdPool();
+        // host: failures applying one peer's proposals (rate-limited log; the peer is removed when they keep failing)
+        private readonly Dictionary<byte, FeatureHealth> _proposalHealth = new Dictionary<byte, FeatureHealth>();
         private readonly Dictionary<uint, ulong> _shadow = new Dictionary<uint, ulong>();
         private readonly HashSet<Entity> _appliedThisFrame = new HashSet<Entity>();
         private readonly HashSet<Entity> _toolOriginals = new HashSet<Entity>();
@@ -58,7 +61,6 @@ namespace SkylineTogether.Sync
         private EntityQuery _changed;
         private EntityQuery _tracked;
         private EntityQuery _created;
-        private PropertyInfo _frameIndex;
         private double _lastClock, _lastScan, _lastCity;
         private int _scanCursor;
         private List<uint> _scanIds = new List<uint>();
@@ -67,7 +69,6 @@ namespace SkylineTogether.Sync
         private double _routeWindowUntil;
         private bool _routeWindowOpen;
         private bool _clientLive;
-        private bool _wasClient;
         private bool _disposed;
 
         private struct PendingZone
@@ -91,6 +92,16 @@ namespace SkylineTogether.Sync
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
+        }
+
+        /// <summary>True while hosting or in a client session (any state): the frame-loop systems return at once otherwise.</summary>
+        public static bool SessionActive
+        {
+            get
+            {
+                Session.SessionManager s = Mod.Sessions;
+                return s != null && (s.Host != null || s.Client != null);
+            }
         }
 
         public bool IsHost => _sessions.Host != null;
@@ -163,7 +174,6 @@ namespace SkylineTogether.Sync
                 All = new[] { ComponentType.ReadOnly<Game.Common.Created>() },
                 None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>() },
             });
-            _frameIndex = typeof(SimulationSystem).GetProperty("frameIndex", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             _global.Attach(world, _codec, _ids);
             return true;
         }
@@ -172,7 +182,11 @@ namespace SkylineTogether.Sync
         {
             if (!EnsureWorld()) return;
             host.PeerJoining += OnPeerJoining;
-            host.PeerLeft += peer => _peerRanges.Remove(peer.Value);
+            host.PeerLeft += peer =>
+            {
+                _peerRanges.Remove(peer.Value);
+                _proposalHealth.Remove(peer.Value);
+            };
             host.PeerLeft += Integrity.OnPeerLeft; // feat/integrity
             Integrity.Reset();
             host.AppMessage += (peer, e) =>
@@ -189,7 +203,6 @@ namespace SkylineTogether.Sync
         {
             if (!EnsureWorld()) return;
             _clientLive = false;
-            _wasClient = true;
             _pool.Clear();
             Integrity.Reset(); // feat/integrity
             _shadow.Clear();
@@ -214,12 +227,10 @@ namespace SkylineTogether.Sync
 
         private void OnSessionEnded()
         {
-            if (_wasClient)
-            {
-                // a client's bindings describe the host's city of that session only
-                _ids?.Clear();
-                _wasClient = false;
-            }
+            // a client's bindings describe the host's city of that session only; a host's are rebuilt at the next
+            // session start (BindCity), so keeping them would only grow the tables and the saves (single-player safety)
+            _ids?.Clear();
+            _proposalHealth.Clear();
             _gate.Open();
             Integrity.Reset(); // feat/integrity
             _inbox.Clear();
@@ -304,18 +315,54 @@ namespace SkylineTogether.Sync
         /// <summary>Right after <c>EndFrameBarrier</c> playback, before tools and Modification (R11 §6.2).</summary>
         public void ApplyIncoming()
         {
+            // single player (no session): nothing to do, nothing allocated
+            if (!SessionActive)
+            {
+                if (_inbox.Count > 0) _inbox.Clear();
+                return;
+            }
             _appliedThisFrame.Clear();
             // feat/terrain: received stamps and heightmap/water tiles (independent of the entity stream)
-            _terrain.ApplyIncoming();
-            _water.ApplyIncoming();
-            if (_codec == null) return;
+            if (Features.Terrain.IsAvailable)
+            {
+                try
+                {
+                    _terrain.ApplyIncoming();
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Terrain, "terrain apply", ex);
+                }
+            }
+            if (Features.Water.IsAvailable)
+            {
+                try
+                {
+                    _water.ApplyIncoming();
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Water, "water apply", ex);
+                }
+            }
+            if (_codec == null || !Features.Replication.IsAvailable) return;
             if (!IsHost && !IsLiveClient)
             {
                 if (_sessions.Client == null && _inbox.Count > 0) _inbox.Clear();
                 return;
             }
             // client: local global-state edits are detected before host data can overwrite them
-            if (!IsHost) _global.BeforeApply();
+            if (!IsHost && Features.GlobalState.IsAvailable)
+            {
+                try
+                {
+                    _global.BeforeApply();
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.GlobalState, "global state (before apply)", ex);
+                }
+            }
             int n = 0;
             while (_inbox.Count > 0 && n++ < MaxBatchesPerFrame)
             {
@@ -325,18 +372,52 @@ namespace SkylineTogether.Sync
                     if (IsHost) ApplyProposal(peer, data);
                     else ApplyFromHost(data);
                 }
-                catch (DecodeException ex)
-                {
-                    _log.Warn(LogCategory.Replication, "dropped a malformed batch from " + peer + ": " + ex.Message);
-                }
                 catch (Exception ex)
                 {
-                    _log.Error(LogCategory.Replication, "applying a batch from " + peer + " failed", ex);
+                    ApplyFailed(peer, ex);
+                    if (!Features.Replication.IsAvailable) return; // the session is ending (client: a rejoin repairs it)
                 }
             }
             RetryZones();
             // client: what the appliers wrote becomes the baseline, so it is never proposed back
-            if (!IsHost) _global.AfterApply();
+            if (!IsHost && Features.GlobalState.IsAvailable)
+            {
+                try
+                {
+                    _global.AfterApply();
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.GlobalState, "global state (after apply)", ex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// A batch could not be applied. On a client the replica may now differ from the host's city: failures count
+        /// against replication (critical), so repeated ones end the session and the player is offered a rejoin with a
+        /// fresh snapshot (ARCH D6 "fail into resync"). On the host, one peer's broken proposals never end the
+        /// session: they are logged with a rate limit and the peer is removed once they keep failing.
+        /// </summary>
+        private void ApplyFailed(PeerId peer, Exception ex)
+        {
+            string what = ex is DecodeException ? "decoding a batch from " + peer : "applying a batch from " + peer;
+            if (!IsHost)
+            {
+                Guard.Report(Features.Replication, what, ex);
+                return;
+            }
+            if (!_proposalHealth.TryGetValue(peer.Value, out FeatureHealth health))
+            {
+                _proposalHealth[peer.Value] = health = new FeatureHealth("proposals." + peer.Value, "proposals of " + peer, false);
+            }
+            FailureVerdict v = health.ReportFailure(ex, _sessions.Clock.Seconds);
+            if (v.Log) _log.Warn(LogCategory.Replication, what + " failed" + (v.Suppressed > 0 ? " (" + v.Suppressed + " more not logged)" : "") + ": " + ex.GetType().Name + ": " + ex.Message);
+            if (v.JustTripped)
+            {
+                _log.Error(LogCategory.Replication, peer + ": its changes keep failing on the host; removing it from the session", ex);
+                _sessions.Host?.Kick(peer, "The host could not apply your changes. Join again to get a fresh copy of the city.");
+            }
         }
 
         private void ApplyFromHost(byte[] data)
@@ -346,10 +427,33 @@ namespace SkylineTogether.Sync
             foreach ((uint start, uint count) in r.IdRanges) _pool.Add(start, count);
             if (r.Clock.HasValue) FollowClock(r.Clock.Value);
             ApplyZoneRecords(data);
-            _global.Apply(data, PeerId.Host, false);
+            ApplyGlobal(data, PeerId.Host, false);
             if (r.Spawned + r.Upserted + r.Despawned > 0) LastApply = r.ToString();
             if (r.Problems.Count > 0) _log.Debug(LogCategory.Replication, "apply problems: " + string.Join("; ", r.Problems));
-            Integrity.OnHostBatch(data, _inbox.Count); // feat/integrity: presence masks, digests, icons, line rows
+            if (Features.Integrity.IsAvailable)
+            {
+                try
+                {
+                    Integrity.OnHostBatch(data, _inbox.Count); // feat/integrity: presence masks, digests, icons, line rows
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Integrity, "integrity (host batch)", ex);
+                }
+            }
+        }
+
+        private void ApplyGlobal(byte[] data, PeerId peer, bool proposal)
+        {
+            if (!Features.GlobalState.IsAvailable) return;
+            try
+            {
+                _global.Apply(data, peer, proposal);
+            }
+            catch (Exception ex)
+            {
+                Guard.Report(Features.GlobalState, "global state apply", ex);
+            }
         }
 
         private void ApplyProposal(PeerId peer, byte[] data)
@@ -357,11 +461,21 @@ namespace SkylineTogether.Sync
             _peerRanges.TryGetValue(peer.Value, out var ranges);
             ApplyResult r = _codec.Apply(data, 0, data.Length, (id, family) => ranges != null && ClientIdPool.InRanges(ranges, id) && FamilyClassifier.IsReplicated(family));
             ApplyZoneRecords(data);
-            _global.Apply(data, peer, true);
+            ApplyGlobal(data, peer, true);
             if (r.HasCost && r.Cost != 0) ChargeCity(r.Cost);
             foreach (SyncRecord rec in SyncBatch.Read(data, 0, data.Length))
             {
-                if (rec.Kind == SyncRecordKind.RequestIds) Integrity.OnPeerRequest(peer, rec); // feat/integrity
+                if (rec.Kind == SyncRecordKind.RequestIds && Features.Integrity.IsAvailable)
+                {
+                    try
+                    {
+                        Integrity.OnPeerRequest(peer, rec); // feat/integrity
+                    }
+                    catch (Exception ex)
+                    {
+                        Guard.Report(Features.Integrity, "integrity request of " + peer, ex);
+                    }
+                }
                 if (rec.Kind != SyncRecordKind.Request) continue;
                 if (rec.Request == SyncRequest.MoreIds)
                 {
@@ -396,15 +510,15 @@ namespace SkylineTogether.Sync
         {
             // movers branch: a running follower clock owns frameIndex; the record is one of its samples
             if (FollowerClock.Instance != null && FollowerClock.Instance.OnHostClock(frame)) return;
+            Action<SimulationSystem, uint> set = Probes.SetFrameIndex; // P-CLOCK
+            if (set == null || !Features.Clock.IsAvailable) return;
             try
             {
-                if (_frameIndex != null && _frameIndex.CanWrite) _frameIndex.SetValue(_simulation, frame);
-                else _frameIndex?.GetSetMethod(true)?.Invoke(_simulation, new object[] { frame });
+                set(_simulation, frame);
             }
             catch (Exception ex)
             {
-                _log.Debug(LogCategory.Replication, "clock follow failed: " + ex.Message);
-                _frameIndex = null;
+                Guard.Report(Features.Clock, "following the host's frame", ex);
             }
         }
 
@@ -414,7 +528,7 @@ namespace SkylineTogether.Sync
         /// </summary>
         public void BindCreated()
         {
-            if (_codec == null || !IsHost) return;
+            if (_codec == null || !IsHost || !Features.Replication.IsAvailable) return;
             EntityManager em = _codec.EntityManager;
             NativeArray<Entity> created = _created.ToEntityArray(Allocator.Temp);
             try
@@ -437,8 +551,19 @@ namespace SkylineTogether.Sync
         /// <summary>Called at the start of the ApplyTool phase: the local tool is about to apply its preview.</summary>
         public void OnToolApply()
         {
-            _terrain.OnToolApply(); // feat/terrain: brush stamps, on the host and on clients
-            if (!IsLiveClient) return;
+            if (!SessionActive) return;
+            if (Features.Terrain.IsAvailable)
+            {
+                try
+                {
+                    _terrain.OnToolApply(); // feat/terrain: brush stamps, on the host and on clients
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Terrain, "terrain stamp capture", ex);
+                }
+            }
+            if (!IsLiveClient || !Features.Replication.IsAvailable) return;
             EntityManager em = _codec.EntityManager;
             _toolApplied = true;
             using (EntityQuery temps = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Tools.Temp>()))
@@ -464,17 +589,57 @@ namespace SkylineTogether.Sync
         /// <summary>Just before <c>PrepareCleanUpSystem</c>, after every Modification phase of the frame.</summary>
         public void CaptureOutgoing(double now)
         {
+            if (!SessionActive) return; // single player: nothing to do, nothing allocated
             // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
-            _terrain.CaptureOutgoing();
-            _water.CaptureOutgoing();
+            if (Features.Terrain.IsAvailable)
+            {
+                try
+                {
+                    _terrain.CaptureOutgoing();
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Terrain, "terrain capture", ex);
+                }
+            }
+            if (Features.Water.IsAvailable)
+            {
+                try
+                {
+                    _water.CaptureOutgoing();
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Water, "water capture", ex);
+                }
+            }
             if (_codec == null) return;
-            if (IsHost) CaptureHost(now);
-            else if (IsLiveClient) CaptureClient(now);
-            if (IsLiveClient) Integrity.ClientFrameEnd(now); // feat/integrity: integrity requests, icon digest
-            _toolApplied = false;
-            _toolCost = 0;
-            _toolOriginals.Clear();
-            CaptureGlobal();
+            try
+            {
+                if (Features.Replication.IsAvailable)
+                {
+                    if (IsHost) CaptureHost(now);
+                    else if (IsLiveClient) CaptureClient(now);
+                }
+            }
+            finally
+            {
+                _toolApplied = false;
+                _toolCost = 0;
+                _toolOriginals.Clear();
+            }
+            if (IsLiveClient && Features.Integrity.IsAvailable)
+            {
+                try
+                {
+                    Integrity.ClientFrameEnd(now); // feat/integrity: integrity requests, icon digest
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Integrity, "integrity (client frame end)", ex);
+                }
+            }
+            if (Features.GlobalState.IsAvailable) CaptureGlobal();
         }
 
         /// <summary>
@@ -499,7 +664,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Replication, "global state capture failed", ex);
+                Guard.Report(Features.GlobalState, "global state capture", ex);
             }
         }
 
@@ -550,7 +715,17 @@ namespace SkylineTogether.Sync
                 _lastClock = now;
                 _batch.Clock(_simulation.frameIndex);
             }
-            Integrity.HostCapture(now, _batch, _sessions.Host?.LivePeerCount ?? 0); // feat/integrity: digests, icons, line rows
+            if (Features.Integrity.IsAvailable)
+            {
+                try
+                {
+                    Integrity.HostCapture(now, _batch, _sessions.Host?.LivePeerCount ?? 0); // feat/integrity: digests, icons, line rows
+                }
+                catch (Exception ex)
+                {
+                    Guard.Report(Features.Integrity, "integrity (host capture)", ex);
+                }
+            }
             if (!_batch.IsEmpty) Broadcast(_batch);
         }
 

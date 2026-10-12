@@ -221,7 +221,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Warn(LogCategory.Fields, "marking water tiles failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Water, "marking water tiles", ex);
             }
         }
 
@@ -244,7 +244,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Fields, "water capture failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Water, "water capture", ex);
             }
         }
 
@@ -398,7 +398,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Fields, "water apply failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Water, "water apply", ex);
             }
         }
 

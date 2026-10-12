@@ -193,7 +193,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Integrity, "icon capture failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "icon capture", ex);
             }
             try
             {
@@ -201,7 +201,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Integrity, "line rows failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "line rows", ex);
             }
             if (livePeers <= 0) return; // nobody to verify against
             try
@@ -210,7 +210,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Integrity, "rolling digest failed; restarting the cycle", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "rolling digest (restarting the cycle)", ex);
                 _cursor = 1;
                 _accBucket = uint.MaxValue;
             }
@@ -322,7 +322,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Integrity, peer + ": integrity request " + rec.Request + " failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Integrity, peer + ": integrity request " + rec.Request, ex);
             }
         }
 
@@ -390,7 +390,7 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
-                    _log.Warn(LogCategory.Integrity, peer + ": re-sending #" + id + " failed", ex);
+                    Diagnostics.Guard.Report(Diagnostics.Features.Integrity, peer + ": re-sending #" + id, ex);
                 }
                 if (w.RecordCount >= RecordsPerResponse)
                 {
@@ -496,7 +496,7 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
-                    _log.Warn(LogCategory.Integrity, "integrity record " + r.Kind + " failed", ex);
+                    Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "integrity record " + r.Kind, ex);
                 }
             }
         }
@@ -641,7 +641,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Integrity, "icon check failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "icon check", ex);
             }
             _requests.Reset();
             _due.Clear();

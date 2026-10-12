@@ -106,6 +106,8 @@ namespace SkylineTogether.Session
             gameplay.pausedAfterLoading = true; // in memory only: the first simulated frame must not run ahead of the host
             IsLoading = true;
             SaveGameData data = _data;
+            ILocalAssetDatabase db = _db;
+            string folder = _folder;
             TaskManager.instance.EnqueueTask("SaveLoadGame", async () =>
             {
                 bool ok = false;
@@ -123,8 +125,18 @@ namespace SkylineTogether.Session
                 {
                     gameplay.pausedAfterLoading = pausedBefore;
                     IsLoading = false;
-                    Dispose();
-                    onDone(new LoadOutcome { Success = ok, FailureDetail = ok ? null : error ?? "the game could not load the city (see the game log)" , SlotCoverage = 1f });
+                    // review fix (robust branch): release this load's own database; if a newer download replaced the
+                    // fields meanwhile (a rejoin attempt), Dispose() would have released the newer one instead
+                    if (ReferenceEquals(_data, data)) Dispose();
+                    else Release(db, folder);
+                    try
+                    {
+                        onDone(new LoadOutcome { Success = ok, FailureDetail = ok ? null : error ?? "the game could not load the city (see the game log)", SlotCoverage = 1f });
+                    }
+                    catch (Exception ex)
+                    {
+                        Diagnostics.Guard.Report(Diagnostics.Features.Session, "join load completion", ex);
+                    }
                 });
             }, 1);
         }
@@ -141,27 +153,32 @@ namespace SkylineTogether.Session
                 // the load's completion callback disposes
                 return;
             }
+            ILocalAssetDatabase db = _db;
+            string folder = _folder;
+            _db = null;
+            _data = null;
+            _folder = null;
+            Release(db, folder);
+        }
+
+        private void Release(ILocalAssetDatabase db, string folder)
+        {
             try
             {
-                _db?.Dispose();
+                db?.Dispose();
             }
             catch (Exception ex)
             {
                 _log.Debug(LogCategory.Join, "disposing the join database: " + ex.Message);
             }
-            _db = null;
-            _data = null;
-            if (_folder != null)
+            if (folder == null) return;
+            try
             {
-                try
-                {
-                    if (Directory.Exists(_folder)) Directory.Delete(_folder, true);
-                }
-                catch (Exception ex)
-                {
-                    _log.Debug(LogCategory.Join, "could not delete " + _folder + ": " + ex.Message);
-                }
-                _folder = null;
+                if (Directory.Exists(folder)) Directory.Delete(folder, true);
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Join, "could not delete " + folder + ": " + ex.Message);
             }
         }
 

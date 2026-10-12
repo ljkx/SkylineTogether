@@ -48,6 +48,12 @@ namespace SkylineTogether.Sync
             "Game.Routes.WaypointConnectionSystem",
         };
 
+        /// <summary>The gated system names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>
+        public static IReadOnlyList<string> GatedSystemNames => Gated;
+
+        /// <summary>The line system names (probed at startup).</summary>
+        public static IReadOnlyList<string> RouteSystemNames => RouteSystems;
+
         private readonly ILog _log;
         private readonly List<(ComponentSystemBase System, bool WasEnabled)> _disabled = new List<(ComponentSystemBase, bool)>();
         private readonly List<ComponentSystemBase> _routeSystems = new List<ComponentSystemBase>();

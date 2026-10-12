@@ -495,7 +495,7 @@ namespace SkylineTogether.Sync
                     }
                     catch (Exception ex)
                     {
-                        _log.Warn(LogCategory.Motion, "motion sampling of tick " + _lastSampled + " failed", ex);
+                        Diagnostics.Guard.Report(Diagnostics.Features.Movers, "motion sampling of tick " + _lastSampled, ex);
                     }
                 }
                 _framed.ResetFilter();

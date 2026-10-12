@@ -55,10 +55,14 @@ namespace SkylineTogether.Session
                     {
                         save.stream = stream;
                         save.context = new Context(Purpose.SaveGame, Game.Version.current, Colossal.Hash128.Empty);
+                        // the only save that carries the net id bindings (the "SaveLoadGame" queue runs one save at a
+                        // time, so the host's autosaves and manual saves never see the flag)
+                        Sync.NetIdSystem.WritingSnapshot = true;
                         await save.RunOnce();
                     }
                     finally
                     {
+                        Sync.NetIdSystem.WritingSnapshot = false;
                         stream.Dispose(); // WriteSystem normally disposed it already
                     }
                     var content = new List<string>();

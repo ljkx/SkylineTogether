@@ -39,13 +39,14 @@ namespace SkylineTogether.Sync
     {
         protected override void OnUpdate()
         {
+            if (!SyncController.SessionActive || !Diagnostics.Features.Movers.IsAvailable) return;
             try
             {
                 MoverSync.Instance?.Host.Update();
             }
             catch (Exception ex)
             {
-                Mod.Log?.Error(LogCategory.Replication, "mover capture failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Movers, "mover capture", ex);
             }
         }
     }
@@ -55,13 +56,14 @@ namespace SkylineTogether.Sync
     {
         protected override void OnUpdate()
         {
+            if (!SyncController.SessionActive || !Diagnostics.Features.Movers.IsAvailable) return;
             try
             {
                 MoverSync.Instance?.Client.Apply();
             }
             catch (Exception ex)
             {
-                Mod.Log?.Error(LogCategory.Replication, "mover apply failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Movers, "mover apply", ex);
             }
         }
     }
@@ -71,13 +73,14 @@ namespace SkylineTogether.Sync
     {
         protected override void OnUpdate()
         {
+            if (!SyncController.SessionActive || !Diagnostics.Features.Movers.IsAvailable) return;
             try
             {
                 MoverSync.Instance?.Client.Write();
             }
             catch (Exception ex)
             {
-                Mod.Log?.Error(LogCategory.Motion, "motion write failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Movers, "motion write", ex);
             }
         }
     }

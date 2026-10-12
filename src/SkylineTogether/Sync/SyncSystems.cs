@@ -1,25 +1,27 @@
 using System;
 using Game;
-using SkylineTogether.Core;
+using SkylineTogether.Diagnostics;
 
 namespace SkylineTogether.Sync
 {
     /// <summary>
     /// The single apply point (R11 §6.2): MainLoop, right after <c>EndFrameBarrier</c> playback and before the
     /// raycast, the tools and the Modification phases, so deletions reach <c>OriginalDeletedSystem</c> and
-    /// <c>SubElementDeleteSystem</c> and every derived system sees the tags.
+    /// <c>SubElementDeleteSystem</c> and every derived system sees the tags. Without a session it returns at once.
     /// </summary>
     public sealed class SyncApplySystem : GameSystemBase
     {
         protected override void OnUpdate()
         {
+            SyncController sync = Mod.Sync;
+            if (sync == null || !SyncController.SessionActive) return;
             try
             {
-                Mod.Sync?.ApplyIncoming();
+                sync.ApplyIncoming();
             }
             catch (Exception ex)
             {
-                Mod.Log?.Error(LogCategory.Replication, "apply failed", ex);
+                Guard.Report(Features.Replication, "apply", ex);
             }
         }
     }
@@ -32,29 +34,55 @@ namespace SkylineTogether.Sync
     {
         protected override void OnUpdate()
         {
+            SyncController sync = Mod.Sync;
+            if (sync == null || !SyncController.SessionActive) return;
             try
             {
-                Mod.Sync?.CaptureOutgoing(UnityEngine.Time.realtimeSinceStartupAsDouble);
+                sync.CaptureOutgoing(UnityEngine.Time.realtimeSinceStartupAsDouble);
             }
             catch (Exception ex)
             {
-                Mod.Log?.Error(LogCategory.Replication, "capture failed", ex);
+                Guard.Report(Features.Replication, "capture", ex);
             }
         }
     }
 
-    /// <summary>Host: binds this frame's new entities right before <c>SaveGameSystem</c> (join snapshots).</summary>
+    /// <summary>
+    /// Host: binds this frame's new entities right before <c>SaveGameSystem</c> (join snapshots). On a client it also
+    /// notices a save the player started (the host's city is saved as a local copy) and warns once per save.
+    /// </summary>
     public sealed class SyncBindSystem : GameSystemBase
     {
+        private Game.Serialization.SaveGameSystem _save;
+        private bool _warned;
+
+        protected override void OnCreate()
+        {
+            base.OnCreate();
+            _save = World.GetOrCreateSystemManaged<Game.Serialization.SaveGameSystem>();
+        }
+
         protected override void OnUpdate()
         {
+            SyncController sync = Mod.Sync;
+            if (sync == null || !SyncController.SessionActive) return;
             try
             {
-                Mod.Sync?.BindCreated();
+                sync.BindCreated();
+                bool saving = _save != null && _save.Enabled;
+                if (saving && !_warned)
+                {
+                    _warned = true;
+                    Mod.Sessions?.OnLocalSave();
+                }
+                else if (!saving)
+                {
+                    _warned = false;
+                }
             }
             catch (Exception ex)
             {
-                Mod.Log?.Error(LogCategory.Replication, "bind failed", ex);
+                Guard.Report(Features.Replication, "bind", ex);
             }
         }
     }
@@ -65,13 +93,15 @@ namespace SkylineTogether.Sync
     {
         protected override void OnUpdate()
         {
+            SyncController sync = Mod.Sync;
+            if (sync == null || !SyncController.SessionActive) return;
             try
             {
-                Mod.Sync?.OnToolApply();
+                sync.OnToolApply();
             }
             catch (Exception ex)
             {
-                Mod.Log?.Error(LogCategory.Replication, "tool hook failed", ex);
+                Guard.Report(Features.Replication, "tool hook", ex);
             }
         }
     }

@@ -159,6 +159,9 @@ namespace SkylineTogether.Sync
             "Game.Notifications.IconElement",
         };
 
+        /// <summary>The excluded type names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>
+        public static IEnumerable<string> ExcludedTypeNames => Excluded;
+
         private static readonly Dictionary<int, TypeHandler> ByIndex = new Dictionary<int, TypeHandler>();
         private static readonly Dictionary<ulong, TypeHandler> ByHash = new Dictionary<ulong, TypeHandler>();
         private static readonly HashSet<ulong> UnknownHashes = new HashSet<ulong>();

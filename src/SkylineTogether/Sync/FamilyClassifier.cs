@@ -67,6 +67,15 @@ namespace SkylineTogether.Sync
         private readonly ComponentType _prefabRef;
         private readonly ComponentType _subObject;
 
+        /// <summary>The marker component names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>
+        public static IEnumerable<string> MarkerTypeNames
+        {
+            get
+            {
+                foreach ((string type, FamilyMarker _) in MarkerTypes) yield return type;
+            }
+        }
+
         public FamilyClassifier()
         {
             foreach (var (name, marker) in MarkerTypes)

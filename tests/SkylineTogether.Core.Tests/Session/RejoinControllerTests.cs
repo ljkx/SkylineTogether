@@ -2,6 +2,7 @@ using SkylineTogether.Core.Diagnostics;
 using SkylineTogether.Core.Follower;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Tests.Framework;
+using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Tests.Session
 {
@@ -121,6 +122,48 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.False(SessionClient.IsRetryable(ClientEndKind.Left));
             Assert.False(SessionClient.IsRetryable(ClientEndKind.LoadFailed));
             Assert.False(SessionClient.IsRetryable(ClientEndKind.ProtocolError));
+        }
+
+        [Test]
+        public void AnAbortTellsTheHostAndEndsWithALocalFaultThatOffersAReconnect()
+        {
+            var rig = new SessionRig();
+            var (client, _, _) = rig.AddClient("Anna");
+            rig.Run(200);
+            Assert.Equal(ClientState.Live, client.State, client.EndReason);
+            Assert.True(client.EnteredCity && client.WasLive);
+            client.Abort("replication failed");
+            Assert.Equal(ClientState.Ended, client.State);
+            Assert.Equal(ClientEndKind.LocalFault, client.EndKind);
+            rig.Run(10);
+            Assert.Equal(0, rig.Host.LivePeerCount, "the host saw the player leave at once");
+            RejoinController r = Make();
+            Assert.True(r.OnClientEnded(client.EndKind, client.EndReason, client.EnteredCity, 0));
+            Assert.Equal(RejoinPhase.NeedsChoice, r.Phase, "a local fault is not retried automatically (it could loop)");
+            Assert.True(r.CanReconnect);
+        }
+
+        [Test]
+        public void EndKindsOfTheJoinPath()
+        {
+            var rig = new SessionRig(new HostOptions { Password = "secret" });
+            var (wrong, _, _) = rig.AddClient("Anna", password: "nope");
+            var (none, _, _) = rig.AddClient("Ben");
+            rig.Run(100);
+            Assert.Equal(ClientEndKind.Refused, wrong.EndKind, wrong.EndReason);
+            Assert.Equal(ClientEndKind.Refused, none.EndKind, none.EndReason);
+            Assert.False(wrong.EnteredCity);
+            var (right, _, _) = rig.AddClient("Cleo", password: "secret");
+            rig.Run(200);
+            Assert.Equal(ClientState.Live, right.State, right.EndReason);
+            rig.Host.Kick(right.LocalPeer, "bye");
+            rig.Run(10);
+            Assert.Equal(ClientEndKind.Kicked, right.EndKind);
+            var (left, _, _) = rig.AddClient("Dora", password: "secret");
+            rig.Run(200);
+            left.Leave();
+            Assert.Equal(ClientEndKind.Left, left.EndKind);
+            Assert.Equal(ClientEndKind.None, new SessionClient(LoopbackTransport.CreatePair().client, new FakeInfo(), new FakeLoader(), new ClientOptions(), rig.Clock, rig.Log).EndKind);
         }
 
         // ------------------------------------------------------------------ feature health

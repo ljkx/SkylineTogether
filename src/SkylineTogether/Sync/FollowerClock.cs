@@ -52,12 +52,16 @@ namespace SkylineTogether.Sync
             "Game.Simulation.GameModeGovernmentSubsidiesSystem",
         };
 
+        /// <summary>The cosmetic allow-list's names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>
+        public static IEnumerable<string> CosmeticSystemNames => Cosmetic;
+
         private const int ReassertFrames = 120;
         private const double RescanSeconds = 10.0;
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
-        private readonly FollowerClockModel _model = new FollowerClockModel();
+        // the host's samples stop while it stalls (autosave, join snapshot): hold instead of running ahead of it
+        private readonly FollowerClockModel _model = new FollowerClockModel { MaxExtrapolationSeconds = 1.0 };
         private readonly Dictionary<ComponentSystemBase, bool> _disabled = new Dictionary<ComponentSystemBase, bool>();
         private Action<SimulationSystem, uint> _setFrame;
         private FieldInfo _timer;
@@ -141,7 +145,8 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Probe, "follower clock failed; falling back to the paused client", ex);
+                // one failure is enough: a clock that misbehaves would fight the simulation every frame
+                Diagnostics.Guard.Report(Diagnostics.Features.Clock, "follower clock (falling back to the paused client)", ex);
                 Deactivate();
                 _probeFailed = true;
                 return false;
@@ -199,19 +204,18 @@ namespace SkylineTogether.Sync
         private void Activate(SimulationSystem simulation)
         {
             if (Active || _probeFailed) return;
+            if (!Diagnostics.Features.Clock.IsAvailable)
+            {
+                _probeFailed = true;
+                _log.Warn(LogCategory.Probe, "follower clock unavailable (" + Diagnostics.Features.Clock.UnavailableReason + "); the client stays paused and follows the host's frame");
+                return;
+            }
             try
             {
-                MethodInfo setter = typeof(SimulationSystem).GetProperty("frameIndex", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetSetMethod(true);
-                if (setter == null) throw new MissingMemberException("SimulationSystem.frameIndex setter");
-                _setFrame = (Action<SimulationSystem, uint>)Delegate.CreateDelegate(typeof(Action<SimulationSystem, uint>), setter);
-                _timer = typeof(SimulationSystem).GetField("m_Timer", BindingFlags.Instance | BindingFlags.NonPublic);
-                if (_timer == null || _timer.FieldType != typeof(float))
-                {
-                    _timer = null;
-                    _log.Warn(LogCategory.Probe, "SimulationSystem.m_Timer not found: the follower clock corrects a lead by jumping only");
-                }
+                _setFrame = Diagnostics.Probes.SetFrameIndex ?? throw new MissingMemberException("SimulationSystem.frameIndex setter");
+                _timer = Diagnostics.Probes.SimulationTimer;
                 ProbeBarrier(simulation.World);
-                List<ComponentSystemBase> systems = GameSimulationSystems(simulation.World);
+                List<ComponentSystemBase> systems = Diagnostics.Probes.GameSimulationSystems(simulation.World);
                 if (systems == null) throw new MissingMemberException("UpdateSystem registration lists");
                 _disabled.Clear();
                 Disable(systems);
@@ -289,7 +293,7 @@ namespace SkylineTogether.Sync
             {
                 _lastScan = Now;
                 World world = World.DefaultGameObjectInjectionWorld;
-                List<ComponentSystemBase> systems = world != null ? GameSimulationSystems(world) : null;
+                List<ComponentSystemBase> systems = world != null ? Diagnostics.Probes.GameSimulationSystems(world) : null;
                 if (systems != null)
                 {
                     int before = _disabled.Count;
@@ -303,43 +307,6 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>
-        /// Every system registered in <see cref="SystemUpdatePhase.GameSimulation"/>: the direct registrations
-        /// (<c>UpdateAt/Before/After&lt;T&gt;</c>, list <c>m_Systems</c>) and the ordered ones
-        /// (<c>UpdateBefore/After&lt;T, Other&gt;</c>, map <c>m_RefMap</c>), each a private <c>SystemData</c> with
-        /// <c>m_Phase</c> and <c>m_System</c> (<c>UpdateSystem.cs:15-37, 270-292</c>). Null when a probe fails.
-        /// </summary>
-        private static List<ComponentSystemBase> GameSimulationSystems(World world)
-        {
-            UpdateSystem update = world.GetExistingSystemManaged<UpdateSystem>();
-            if (update == null) return null;
-            const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
-            FieldInfo systemsField = typeof(UpdateSystem).GetField("m_Systems", Flags);
-            FieldInfo mapField = typeof(UpdateSystem).GetField("m_RefMap", Flags);
-            Type dataType = typeof(UpdateSystem).GetNestedType("SystemData", BindingFlags.NonPublic);
-            FieldInfo phaseField = dataType?.GetField("m_Phase", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            FieldInfo systemField = dataType?.GetField("m_System", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (systemsField == null || mapField == null || phaseField == null || systemField == null) return null;
-            if (!(systemsField.GetValue(update) is IList list) || !(mapField.GetValue(update) is IDictionary map)) return null;
-            var result = new List<ComponentSystemBase>();
-            var seen = new HashSet<ComponentSystemBase>();
-            void Collect(IList items)
-            {
-                foreach (object item in items)
-                {
-                    if (item == null || !(phaseField.GetValue(item) is SystemUpdatePhase phase) || phase != SystemUpdatePhase.GameSimulation) continue;
-                    if (systemField.GetValue(item) is ComponentSystemBase system && seen.Add(system)) result.Add(system);
-                }
-            }
-            Collect(list);
-            foreach (DictionaryEntry entry in map)
-            {
-                if (entry.Value is IList children) Collect(children);
-            }
-            // sanity: vanilla registers about 300 systems in this phase; an empty result means the layout changed
-            return result.Count >= 20 ? result : null;
-        }
-
         private void ProbeBarrier(World world)
         {
             _barrierBinding = null;
@@ -347,7 +314,7 @@ namespace SkylineTogether.Sync
             try
             {
                 TimeUISystem time = world.GetExistingSystemManaged<TimeUISystem>();
-                object binding = time != null ? typeof(TimeUISystem).GetField("m_SimulationPausedBarrierBinding", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(time) : null;
+                object binding = time != null ? Diagnostics.Probes.PausedBarrierBinding?.GetValue(time) : null;
                 PropertyInfo observers = binding?.GetType().GetProperty("observerCount", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (observers != null && observers.PropertyType == typeof(int))
                 {

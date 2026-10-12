@@ -1,3 +1,4 @@
+using System;
 using Game;
 using Game.Simulation;
 using SkylineTogether.Core.Session;
@@ -26,14 +27,31 @@ namespace SkylineTogether.Systems
         protected override void OnUpdate()
         {
             SessionManager sessions = Mod.Sessions;
-            if (sessions != null && sessions.Host != null)
+            if (sessions == null) return;
+            if (sessions.Host == null && sessions.Client == null && !_holding && !sessions.HoldCity) return; // single player
+            if (!Diagnostics.Features.Speed.IsAvailable) return;
+            try
             {
-                UpdateHost(sessions);
-                return;
+                if (sessions.Host != null)
+                {
+                    UpdateHost(sessions);
+                    return;
+                }
+                if (_holding) Release();
+                if (sessions.Client != null && sessions.Client.State == ClientState.Live)
+                {
+                    UpdateClient(sessions.Client);
+                }
+                else if (sessions.HoldCity)
+                {
+                    // recovery: the host's city without a session stays paused until the player decides or it rejoins
+                    if (_simulation.selectedSpeed != 0f) _simulation.selectedSpeed = 0f;
+                }
             }
-            if (_holding) Release();
-            if (sessions != null && sessions.Client != null && sessions.Client.State == ClientState.Live) UpdateClient(sessions.Client);
-
+            catch (Exception ex)
+            {
+                Diagnostics.Guard.Report(Diagnostics.Features.Speed, "speed authority", ex);
+            }
         }
 
         private void UpdateHost(SessionManager sessions)

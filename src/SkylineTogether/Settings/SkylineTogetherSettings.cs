@@ -66,7 +66,7 @@ namespace SkylineTogether.Settings
         [SettingsUIDisableByCondition(typeof(SkylineTogetherSettings), nameof(CannotHost))]
         public bool HostButton
         {
-            set => Mod.Sessions?.StartHosting();
+            set => Diagnostics.Guard.RunAlways(Diagnostics.Features.Ui, "Options page: host", () => Mod.Sessions?.StartHosting());
         }
 
         [SettingsUISection(MainSection, SessionGroup)]
@@ -74,7 +74,7 @@ namespace SkylineTogether.Settings
         [SettingsUIDisableByCondition(typeof(SkylineTogetherSettings), nameof(CannotJoin))]
         public bool JoinButton
         {
-            set => Mod.Sessions?.StartJoining();
+            set => Diagnostics.Guard.RunAlways(Diagnostics.Features.Ui, "Options page: join", () => Mod.Sessions?.StartJoining());
         }
 
         [SettingsUISection(MainSection, SessionGroup)]
@@ -82,7 +82,7 @@ namespace SkylineTogether.Settings
         [SettingsUIDisableByCondition(typeof(SkylineTogetherSettings), nameof(NotInSession))]
         public bool LeaveButton
         {
-            set => Mod.Sessions?.Leave();
+            set => Diagnostics.Guard.RunAlways(Diagnostics.Features.Ui, "Options page: leave", () => Mod.Sessions?.Leave());
         }
 
         /// <summary>Shows the network line (ping, KB/s in and out) in the Skyline Together panel.</summary>
@@ -93,7 +93,7 @@ namespace SkylineTogether.Settings
         [SettingsUIButton]
         public bool WriteDiagnosticsButton
         {
-            set => WriteDiagnostics();
+            set => Diagnostics.Guard.RunAlways(Diagnostics.Features.Ui, "Options page: write diagnostics", WriteDiagnostics);
         }
 
         /// <summary>Writes the diagnostics text file next to the log and tells the player where it is.</summary>

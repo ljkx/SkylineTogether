@@ -96,7 +96,8 @@ namespace SkylineTogether.Sync
         {
             int tags = Enum.GetValues(typeof(Game.FormatTags)).Length + 64;
             var context = new Context(purpose, Game.Version.current, Hash128.Empty, tags, Allocator.Persistent);
-            MethodInfo enable = typeof(ContextFormat).GetMethod("EnableTag", BindingFlags.Instance | BindingFlags.NonPublic);
+            // P-CTX (Diagnostics.Probes); when it failed, replication is off and hosting/joining is refused
+            MethodInfo enable = Diagnostics.Probes.ContextEnableTag;
             if (enable != null)
             {
                 object format = context.format; // boxed copy; the bits live in shared unmanaged memory

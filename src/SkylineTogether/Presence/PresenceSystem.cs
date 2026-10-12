@@ -61,7 +61,7 @@ namespace SkylineTogether.Presence
                 _subscribed = presence;
                 presence.SessionChanged += _ranks.Invalidate;
             }
-            if (!presence.Active)
+            if (!presence.Active || !Diagnostics.Features.Presence.IsAvailable)
             {
                 if (_shown.Count > 0 || presence.Tags.Count > 0)
                 {
@@ -80,7 +80,7 @@ namespace SkylineTogether.Presence
             catch (Exception ex)
             {
                 // cosmetic: never let it break the frame
-                Mod.Log?.Warn(LogCategory.Ui, "presence update failed: " + ex.Message);
+                Diagnostics.Guard.Report(Diagnostics.Features.Presence, "presence update", ex);
             }
         }
 

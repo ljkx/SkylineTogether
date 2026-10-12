@@ -54,6 +54,9 @@ namespace SkylineTogether.Sync
             "Game.Routes.BoardingVehicleSystem",
         };
 
+        /// <summary>The mover gate's system names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>
+        public static IReadOnlyList<string> GatedSystemNames => Gated;
+
         private sealed class SlotState
         {
             public NetSlot Slot;
@@ -214,7 +217,7 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
-                    _log.Error(LogCategory.Replication, "applying a mover batch failed", ex);
+                    Diagnostics.Guard.Report(Diagnostics.Features.Movers, "applying a mover batch", ex);
                 }
             }
         }

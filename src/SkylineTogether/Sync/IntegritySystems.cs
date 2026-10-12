@@ -13,13 +13,14 @@ namespace SkylineTogether.Sync
     {
         protected override void OnUpdate()
         {
+            if (!SyncController.SessionActive || !Diagnostics.Features.Integrity.IsAvailable) return;
             try
             {
                 Mod.Sync?.Integrity?.Icons.BeforeIconCommandSystem();
             }
             catch (Exception ex)
             {
-                Mod.Log?.Error(LogCategory.Integrity, "icon authority filter failed", ex);
+                Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "icon authority filter", ex);
             }
         }
     }
