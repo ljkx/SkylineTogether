@@ -24,6 +24,13 @@ namespace SkylineTogether.Core
         BlobChunk,
         BlobHave,
         Ping,
-        Chat
+        Chat,
+
+        // feat/terrain (merge note: renumber here if another branch also appended kinds after Chat)
+        /// <summary>Terrain sync (ARCH §4.10.9): brush stamps, heightmap tiles, tile-hash manifests and tile requests
+        /// (<see cref="Sync.TerrainMessage"/>), host ↔ client.</summary>
+        Terrain = 20,
+        /// <summary>Water correction tiles (ARCH §4.10.10, <see cref="Sync.WaterMessage"/>), host → client.</summary>
+        Water = 21
     }
 }
