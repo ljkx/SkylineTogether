@@ -375,6 +375,11 @@ namespace SkylineTogether.Sync
         private void DetectFollowed()
         {
             ReadFollowed(_followedNow);
+            if (LocalAllows != null && !LocalAllows(RequiredPermission(FollowChannel)))
+            {
+                RevertFollowed();
+                return;
+            }
             foreach (uint id in _followedNow)
             {
                 if (!_followedBase.Contains(id)) _followPending[id] = 1;
@@ -385,6 +390,64 @@ namespace SkylineTogether.Sync
             }
             _followedBase.Clear();
             _followedBase.UnionWith(_followedNow);
+        }
+
+        /// <summary>
+        /// polish: a viewer's client undoes its own follow/unfollow (the host refuses it anyway, see
+        /// <see cref="RequiredPermission"/>), so the shared followed list never diverges locally. The vanilla
+        /// <c>LifePathEventSystem</c> calls are used in reverse; an unfollow already marked the local life-path entries
+        /// deleted, the host's agent replication brings them back with the citizen.
+        /// </summary>
+        private void RevertFollowed()
+        {
+            EntityManager em = _world.EntityManager;
+            bool any = false;
+            foreach (uint id in _followedNow)
+            {
+                if (_followedBase.Contains(id)) continue;
+                Entity c = _ids.GetEntity(id);
+                if (Live(em, c)) _lifePath.UnfollowCitizen(c);
+                any = true;
+            }
+            foreach (uint id in _followedBase)
+            {
+                if (_followedNow.Contains(id)) continue;
+                Entity c = _ids.GetEntity(id);
+                if (Live(em, c) && em.HasComponent<Game.Citizens.Citizen>(c)) _lifePath.FollowCitizen(c);
+                any = true;
+            }
+            if (!any) return;
+            double now = Now;
+            if (now - _lastFollowToast > 5.0)
+            {
+                _lastFollowToast = now;
+                SkylineTogether.Session.SessionManager.Notify(Settings.LocaleSource.Resolve("st.toast.viewerFollow"));
+            }
+        }
+
+        private double _lastFollowToast = double.NegativeInfinity;
+
+        /// <summary>Host: entities to re-send to a peer whose channel proposal was refused (the followed citizens, so a
+        /// client that followed anyway gets the host's state of them back).</summary>
+        private IReadOnlyList<uint> RefusedIds(uint channel, byte[] payload)
+        {
+            if (channel != FollowChannel || payload == null) return Array.Empty<uint>();
+            try
+            {
+                var entries = new List<KeyValuePair<uint, int>>();
+                GlobalPayload.ReadInts(payload, 0, payload.Length, entries);
+                var ids = new List<uint>(Math.Min(entries.Count, 64));
+                foreach (KeyValuePair<uint, int> e in entries)
+                {
+                    if (ids.Count >= 64) break; // a refusal never turns into a large resend
+                    ids.Add(e.Key);
+                }
+                return ids;
+            }
+            catch (Exception)
+            {
+                return Array.Empty<uint>(); // malformed: nothing to correct
+            }
         }
 
         private void RebaselineFollowed()

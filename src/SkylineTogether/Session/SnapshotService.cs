@@ -9,6 +9,7 @@ using Game.Prefabs.Modes;
 using Game.Serialization;
 using Game.Simulation;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Transport;
 using Unity.Entities;
 using ILog = SkylineTogether.Core.ILog;
@@ -18,7 +19,8 @@ namespace SkylineTogether.Session
     /// <summary>
     /// Host side of joining (R12 §4.3): serializes the live city with the game's own <see cref="SaveGameSystem"/> into a
     /// temporary file on the "SaveLoadGame" queue (so it never overlaps an autosave or a manual save). Unlike a normal
-    /// save it writes no package, no preview, no "Continue" entry and does not collect garbage.
+    /// save it writes no package, no preview, no "Continue" entry and does not collect garbage. polish: the prefabs a save
+    /// would store into its package travel in front of the save data (<see cref="JoinAssetTransfer"/>).
     /// </summary>
     public sealed class SnapshotService : ISnapshotProvider
     {
@@ -26,6 +28,9 @@ namespace SkylineTogether.Session
         private readonly MainThreadQueue _main;
         private readonly string _folder;
         private readonly Dictionary<uint, string> _files = new Dictionary<uint, string>();
+
+        /// <summary>polish: the transient database of each snapshot's bundled assets (released with the snapshot).</summary>
+        private readonly Dictionary<uint, Colossal.IO.AssetDatabase.ILocalAssetDatabase> _assets = new Dictionary<uint, Colossal.IO.AssetDatabase.ILocalAssetDatabase>();
         private uint _next = 1;
 
         public SnapshotService(MainThreadQueue main, ILog log)
@@ -51,10 +56,27 @@ namespace SkylineTogether.Session
                 try
                 {
                     var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16);
+                    string[] renderIds = new string[0];
                     try
                     {
+                        var context = new Context(Purpose.SaveGame, Game.Version.current, Colossal.Hash128.Empty);
+                        // polish: package-bundled render prefabs go in front of the save data (JoinAssetTransfer); like
+                        // GameManager.Save this runs before the save and remaps them in the save's context
+                        List<JoinAssetEntry> bundle;
+                        try
+                        {
+                            bundle = JoinAssetTransfer.Export(world, path + ".assets", ref context, _log, out renderIds, out Colossal.IO.AssetDatabase.ILocalAssetDatabase assets);
+                            if (assets != null) _assets[id] = assets;
+                        }
+                        catch (Exception ex)
+                        {
+                            bundle = new List<JoinAssetEntry>();
+                            Diagnostics.Guard.Report(Diagnostics.Features.Session, "join snapshot assets", ex);
+                        }
+                        byte[] prefix = JoinAssetBundle.Write(bundle);
+                        stream.Write(prefix, 0, prefix.Length); // the save appends after it (StreamBinaryWriter, no seeking)
                         save.stream = stream;
-                        save.context = new Context(Purpose.SaveGame, Game.Version.current, Colossal.Hash128.Empty);
+                        save.context = context;
                         // the only save that carries the net id bindings (the "SaveLoadGame" queue runs one save at a
                         // time, so the host's autosaves and manual saves never see the flag)
                         Sync.NetIdSystem.WritingSnapshot = true;
@@ -76,7 +98,7 @@ namespace SkylineTogether.Session
                         ChunkSize = BlobCodec.DefaultChunkBytes,
                         FrameIndex = simulation.frameIndex,
                         GameModeName = modes.currentModeName ?? "",
-                        RenderPrefabIds = new string[0],
+                        RenderPrefabIds = renderIds, // polish: the joiner refuses clearly when it cannot resolve one
                         ReferencedContent = content.ToArray(),
                     };
                     _main.Post(() =>
@@ -102,9 +124,24 @@ namespace SkylineTogether.Session
 
         public void Release(uint snapshotId)
         {
+            ReleaseAssets(snapshotId);
             if (!_files.TryGetValue(snapshotId, out string path)) return;
             _files.Remove(snapshotId);
             TryDelete(path);
+        }
+
+        private void ReleaseAssets(uint snapshotId)
+        {
+            if (!_assets.TryGetValue(snapshotId, out Colossal.IO.AssetDatabase.ILocalAssetDatabase db)) return;
+            _assets.Remove(snapshotId);
+            try
+            {
+                db.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Join, "disposing the snapshot's asset database: " + ex.Message);
+            }
         }
 
         /// <summary>
@@ -114,6 +151,7 @@ namespace SkylineTogether.Session
         public void ReleaseAll()
         {
             foreach (uint id in new List<uint>(_files.Keys)) Release(id);
+            foreach (uint id in new List<uint>(_assets.Keys)) ReleaseAssets(id);
         }
 
         /// <summary>Snapshot files currently kept (diagnostics).</summary>
@@ -126,6 +164,7 @@ namespace SkylineTogether.Session
             {
                 if (!Directory.Exists(_folder)) return;
                 foreach (string f in Directory.GetFiles(_folder)) TryDelete(f);
+                foreach (string d in Directory.GetDirectories(_folder)) Directory.Delete(d, true); // polish: asset folders
             }
             catch (Exception)
             {

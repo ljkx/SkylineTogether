@@ -37,6 +37,75 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
+    /// polish: host limits for the requests a client batch may carry without any entity, cost or global record
+    /// (request-only batches skip the proposal rate limit): more ids (<c>SyncRequest.MoreIds</c>) and full re-sends of
+    /// the lines or of everything (<c>ResendRoutes</c>, <c>ResendAll</c>, each a scan of the whole id table).
+    /// <list type="bullet">
+    /// <item>Ids: a token bucket per peer, and no new grant while the peer still holds <see cref="MaxUnusedIds"/> granted
+    /// ids it has not used (a client asks at <see cref="ClientIdPool.LowWater"/> remaining, so an honest one never
+    /// does). A refused request is dropped; the client asks again with backoff (<see cref="ClientIdPool"/>).</item>
+    /// <item>Re-sends: one bucket per peer for both kinds. A refused re-send is not lost: it is remembered (a full
+    /// re-send covers a lines-only one) and served by <see cref="TakeDeferred"/> once the bucket refills, so the
+    /// route tool's "give me the host's lines back" always arrives.</item>
+    /// </list>
+    /// Main thread only.
+    /// </summary>
+    public sealed class RequestThrottle
+    {
+        /// <summary>Granted-but-unused ids above which a peer gets no further grant.</summary>
+        public const uint MaxUnusedIds = 4 * NetIdAllocator.DefaultGrant;
+
+        private readonly ProposalRateLimiter _ids;
+        private readonly ProposalRateLimiter _resends;
+        private readonly Dictionary<byte, bool> _deferred = new Dictionary<byte, bool>(); // peer -> routes only
+
+        public RequestThrottle(double idsPerSecond = 0.5, double idBurst = 4, double resendsPerSecond = 0.2, double resendBurst = 3)
+        {
+            _ids = new ProposalRateLimiter(idsPerSecond, idBurst);
+            _resends = new ProposalRateLimiter(resendsPerSecond, resendBurst);
+        }
+
+        /// <summary>True when a grant may be made now to a peer that holds <paramref name="unusedHeld"/> unused ids.</summary>
+        public bool TryGrantIds(byte peer, double now, long unusedHeld)
+        {
+            if (unusedHeld >= MaxUnusedIds) return false;
+            return _ids.TryTake(peer, now);
+        }
+
+        /// <summary>True when the re-send may be served now; otherwise it is remembered for <see cref="TakeDeferred"/>.</summary>
+        public bool TryResend(byte peer, bool routesOnly, double now)
+        {
+            if (_resends.TryTake(peer, now)) return true;
+            _deferred[peer] = _deferred.TryGetValue(peer, out bool pendingRoutesOnly) ? pendingRoutesOnly && routesOnly : routesOnly;
+            return false;
+        }
+
+        /// <summary>True when the peer has a remembered re-send and the bucket allows it now (it is then taken).</summary>
+        public bool TakeDeferred(byte peer, double now, out bool routesOnly)
+        {
+            if (!_deferred.TryGetValue(peer, out routesOnly) || !_resends.TryTake(peer, now)) return false;
+            _deferred.Remove(peer);
+            return true;
+        }
+
+        public bool HasDeferred(byte peer) => _deferred.ContainsKey(peer);
+
+        public void Forget(byte peer)
+        {
+            _ids.Forget(peer);
+            _resends.Forget(peer);
+            _deferred.Remove(peer);
+        }
+
+        public void Clear()
+        {
+            _ids.Clear();
+            _resends.Clear();
+            _deferred.Clear();
+        }
+    }
+
+    /// <summary>
     /// Host: counts rejected proposals that indicate abuse or a broken client (rate, size, malformed). Repeated
     /// violations within a window mean the player is kicked (ARCH §5.6, §14.3). Rejections for conflicts, money or
     /// permissions are ordinary game events and never counted.

@@ -59,6 +59,35 @@ namespace SkylineTogether.Sync
             "Game.Routes.WaypointConnectionSystem",
         };
 
+        /// <summary>
+        /// polish: the rest of the route-tool preview pipeline. On a client the preview of a segment is computed as on the
+        /// host (decompiled <c>Game.Common/SystemOrder.cs</c>): the route tool's temp waypoints get their lanes from
+        /// <c>WaypointConnectionSystem</c> (Modification5, gated above), <c>RoutePathSystem</c> (ModificationEnd, gated
+        /// above) enqueues a high-priority <c>PathfindAction</c> with the <c>uint.MaxValue</c> deadline
+        /// (<c>RoutePathSystem.SetupPathfind</c>), <c>PathfindQueueSystem</c> (MainLoop, before) solves it on the client's
+        /// own lane graph, which <c>LanesModifiedSystem</c>/<c>LaneDataSystem</c> (ModificationEnd) keep from the locally
+        /// generated lanes, <c>PathfindResultSystem</c> (MainLoop) writes the path and a <c>PathUpdated</c> event, and
+        /// <c>RoutePathReadySystem</c> (Modification1) and <c>SegmentCurveSystem</c> (Modification5) turn it into the
+        /// curve the overlay draws (<c>Routes.SearchSystem</c> indexes it for snapping). None of these is a
+        /// <c>GameSimulation</c> system, so the follower clock never turns them off, and no gate holds them; the client
+        /// solves no other path queries (simulation queries are all GameSimulation), so the high-priority preview
+        /// actions are not starved. Should anything else (another mod) have turned one off, the window turns it on for
+        /// its duration and back off afterwards, so the preview follows the roads.
+        /// </summary>
+        private static readonly string[] PreviewPipeline =
+        {
+            "Game.Pathfind.PathfindQueueSystem",
+            "Game.Pathfind.PathfindResultSystem",
+            "Game.Pathfind.LanesModifiedSystem",
+            "Game.Pathfind.LaneDataSystem",
+            "Game.Routes.RoutePathReadySystem",
+            "Game.Routes.SegmentCurveSystem",
+            "Game.Routes.SearchSystem",
+        };
+
+        /// <summary>The route preview pipeline's system names (probed at startup).</summary>
+        public static IReadOnlyList<string> PreviewPipelineNames => PreviewPipeline;
+
         /// <summary>The gated system names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>
         public static IReadOnlyList<string> GatedSystemNames => Gated;
 
@@ -68,6 +97,7 @@ namespace SkylineTogether.Sync
         private readonly ILog _log;
         private readonly List<(ComponentSystemBase System, bool WasEnabled)> _disabled = new List<(ComponentSystemBase, bool)>();
         private readonly List<ComponentSystemBase> _routeSystems = new List<ComponentSystemBase>();
+        private readonly List<ComponentSystemBase> _pipelineForced = new List<ComponentSystemBase>();
         private bool _closed;
 
         public ClientGate(ILog log)
@@ -93,6 +123,7 @@ namespace SkylineTogether.Sync
         {
             if (!_closed) return;
             _closed = false;
+            RouteWindowOpen = false;
             foreach ((ComponentSystemBase system, bool wasEnabled) in _disabled)
             {
                 try
@@ -106,14 +137,60 @@ namespace SkylineTogether.Sync
             }
             _disabled.Clear();
             _routeSystems.Clear();
+            ReleasePipeline();
             _log.Info(LogCategory.Gate, "follower gate open");
         }
 
+        /// <summary>True while the route-tool preview window is open.</summary>
+        public bool RouteWindowOpen { get; private set; }
+
         public void SetRouteWindow(bool open)
         {
-            if (!_closed) return;
+            if (!_closed || open == RouteWindowOpen) return;
+            RouteWindowOpen = open;
             foreach (ComponentSystemBase s in _routeSystems) s.Enabled = open;
+            if (open) EnsurePipeline();
+            else ReleasePipeline();
             _log.Debug(LogCategory.Gate, "route preview window " + (open ? "open" : "closed"));
+        }
+
+        /// <summary>polish: turns on, for the window, every preview pipeline system something else turned off.</summary>
+        private void EnsurePipeline()
+        {
+            World world = World.DefaultGameObjectInjectionWorld;
+            if (world == null) return;
+            foreach (string name in PreviewPipeline)
+            {
+                try
+                {
+                    Type type = typeof(Game.Common.Owner).Assembly.GetType(name, false);
+                    ComponentSystemBase system = type == null ? null : world.GetExistingSystemManaged(type);
+                    if (system == null || system.Enabled) continue;
+                    system.Enabled = true;
+                    _pipelineForced.Add(system);
+                    _log.Warn(LogCategory.Gate, name + " was off; on for the route preview window (the preview would not follow the roads)");
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(LogCategory.Gate, "route preview pipeline check of " + name + ": " + ex.Message);
+                }
+            }
+        }
+
+        private void ReleasePipeline()
+        {
+            foreach (ComponentSystemBase system in _pipelineForced)
+            {
+                try
+                {
+                    system.Enabled = false;
+                }
+                catch (Exception)
+                {
+                    // the world may be gone
+                }
+            }
+            _pipelineForced.Clear();
         }
 
         private bool Disable(World world, string name, bool route)

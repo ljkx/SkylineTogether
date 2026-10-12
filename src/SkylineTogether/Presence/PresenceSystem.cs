@@ -33,6 +33,13 @@ namespace SkylineTogether.Presence
         private const float SmoothingPerSecond = 14f;
 
         private readonly Dictionary<byte, float3> _shown = new Dictionary<byte, float3>();
+
+        /// <summary>polish: this frame's tags; <see cref="PresenceController.SetTags"/> copies them only when they changed
+        /// noticeably, so the UI is not rebuilt for every projected frame.</summary>
+        private readonly List<PresenceTag> _tagScratch = new List<PresenceTag>();
+
+        /// <summary>polish: the activity text per peer for its last tool and prefab (no string building per frame).</summary>
+        private readonly Dictionary<byte, (byte Tool, int Prefab, string Text)> _activity = new Dictionary<byte, (byte, int, string)>();
         private readonly PresenceMessage _outgoing = new PresenceMessage { CurveControlPoints = new float[0], Footprints = new float[0] };
         private OverlayRenderSystem _overlay;
         private RaycastSystem _raycast;
@@ -60,12 +67,14 @@ namespace SkylineTogether.Presence
             {
                 _subscribed = presence;
                 presence.SessionChanged += _ranks.Invalidate;
+                presence.SessionChanged += _activity.Clear; // polish: titles come from the rank index
             }
             if (!presence.Active || !Diagnostics.Features.Presence.IsAvailable)
             {
                 if (_shown.Count > 0 || presence.Tags.Count > 0)
                 {
                     _shown.Clear();
+                    _activity.Clear();
                     presence.SetTags(null);
                 }
                 return;
@@ -177,7 +186,8 @@ namespace SkylineTogether.Presence
             float blend = 1f - Mathf.Exp(-SmoothingPerSecond * dt);
 
             IReadOnlyList<PresenceTable.Entry> entries = presence.Table.Entries;
-            var tags = new List<PresenceTag>(entries.Count);
+            List<PresenceTag> tags = _tagScratch;
+            tags.Clear();
             OverlayRenderSystem.Buffer buffer = default;
             bool haveBuffer = false;
             foreach (PresenceTable.Entry e in entries)
@@ -189,7 +199,7 @@ namespace SkylineTogether.Presence
                     Peer = e.Peer.Value,
                     Name = name,
                     Color = PresenceController.CssColor(rgba),
-                    Activity = Activity(e),
+                    Activity = CachedActivity(e),
                 };
                 tags.Add(tag);
                 if (!e.CursorVisible)
@@ -231,6 +241,16 @@ namespace SkylineTogether.Presence
             }
             if (_shown.Count > entries.Count) PruneShown(entries);
             presence.SetTags(tags);
+        }
+
+        private string CachedActivity(PresenceTable.Entry e)
+        {
+            int prefab = e.Prefab.IsNone ? -1 : e.Prefab.Value;
+            byte tool = (byte)e.Tool;
+            if (_activity.TryGetValue(e.Peer.Value, out var c) && c.Tool == tool && c.Prefab == prefab) return c.Text;
+            string text = Activity(e);
+            _activity[e.Peer.Value] = (tool, prefab, text);
+            return text;
         }
 
         private string Activity(PresenceTable.Entry e)

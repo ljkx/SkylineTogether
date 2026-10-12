@@ -466,6 +466,28 @@ namespace SkylineTogether.Core.Sync
             }
         }
 
+        /// <summary>polish: the granted ids of the peer it has not used yet (the request throttle's cap).</summary>
+        public long UnusedCount(byte peer)
+        {
+            if (!_byPeer.TryGetValue(peer, out List<Range> list)) return 0;
+            long unused = 0;
+            foreach (Range r in list)
+            {
+                long used = 0;
+                foreach (ulong word in r.Used) used += PopCount(word);
+                unused += r.Count - used;
+            }
+            return unused;
+        }
+
+        private static int PopCount(ulong v)
+        {
+            v -= (v >> 1) & 0x5555555555555555UL;
+            v = (v & 0x3333333333333333UL) + ((v >> 2) & 0x3333333333333333UL);
+            v = (v + (v >> 4)) & 0x0F0F0F0F0F0F0F0FUL;
+            return (int)((v * 0x0101010101010101UL) >> 56);
+        }
+
         public void Clear() => _byPeer.Clear();
 
         private bool Find(byte peer, uint id, out Range range, out uint offset)
@@ -505,11 +527,33 @@ namespace SkylineTogether.Core.Sync
             }
         }
 
+        /// <summary>First wait for an answer before asking again (seconds); doubles per unanswered request.</summary>
+        public const double RetryFirstSeconds = 3.0;
+
+        /// <summary>The longest wait between two unanswered requests (seconds).</summary>
+        public const double RetryMaxSeconds = 30.0;
+
+        private double _retryAt = double.PositiveInfinity;
+        private double _retryDelay = RetryFirstSeconds;
+
         /// <summary>True once when the pool runs low and no request is outstanding (the caller then asks the host).</summary>
-        public bool ShouldRequestMore()
+        public bool ShouldRequestMore() => ShouldRequestMore(double.NaN);
+
+        /// <summary>
+        /// As <see cref="ShouldRequestMore()"/>; with a clock (<paramref name="now"/>, seconds) an unanswered request is
+        /// repeated with backoff (3, 6, 12, up to 30 s): the host drops requests over its limit (<see cref="RequestThrottle"/>)
+        /// and grants nothing when its id space is exhausted, and without a retry the client would never ask again.
+        /// </summary>
+        public bool ShouldRequestMore(double now)
         {
-            if (_requested || Remaining >= LowWater) return false;
+            if (Remaining >= LowWater) return false;
+            if (_requested)
+            {
+                if (double.IsNaN(now) || now < _retryAt) return false;
+                _retryDelay = Math.Min(RetryMaxSeconds, _retryDelay * 2);
+            }
             _requested = true;
+            _retryAt = double.IsNaN(now) ? double.PositiveInfinity : now + _retryDelay;
             return true;
         }
 
@@ -518,6 +562,8 @@ namespace SkylineTogether.Core.Sync
             if (count == 0) return;
             _ranges.Enqueue((start, count));
             _requested = false;
+            _retryDelay = RetryFirstSeconds;
+            _retryAt = double.PositiveInfinity;
         }
 
         /// <summary>Owner check for the host: is <paramref name="id"/> inside one of the granted ranges?</summary>
@@ -549,6 +595,8 @@ namespace SkylineTogether.Core.Sync
             _ranges.Clear();
             _current = _end = 0;
             _requested = false;
+            _retryDelay = RetryFirstSeconds;
+            _retryAt = double.PositiveInfinity;
         }
     }
 }

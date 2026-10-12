@@ -115,6 +115,10 @@ namespace SkylineTogether.Sync
         private readonly AuthoredLedger _ledger = new AuthoredLedger();
         // direct-write tools may propose every frame; the limit only stops floods (violations kick, ARCH §5.6)
         private readonly ProposalRateLimiter _rate = new ProposalRateLimiter(120, 240);
+
+        /// <summary>polish: limits of request records (more ids, full re-sends), which request-only batches carry past
+        /// <see cref="_rate"/>.</summary>
+        private readonly RequestThrottle _requests = new RequestThrottle();
         private readonly ViolationTracker _violations = new ViolationTracker();
         private BuildOrderAllocator _buildOrders = new BuildOrderAllocator();
         /// <summary>Host: entities a proposal or intent wrote this frame, with their author (ledger, capture).</summary>
@@ -216,6 +220,12 @@ namespace SkylineTogether.Sync
             };
             _global.Actions = _actions;
             _global.Allows = Allows;
+            // polish: a viewer's client undoes its own edits of shared state no tool gate covers (following citizens)
+            _global.LocalAllows = needed =>
+            {
+                SessionClient client = _sessions.Client;
+                return client == null || client.State != ClientState.Live || RolePermissions.Allows(client.LocalRole, needed);
+            };
             _global.Reject = (peer, reason, ids) => RejectIntent(peer, reason, ids);
             // feat/terrain
             _terrain = new TerrainSync(sessions, log);
@@ -352,6 +362,7 @@ namespace SkylineTogether.Sync
             _agents.Attach(_codec, _ids); // w3/agents
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             _tools = world.GetOrCreateSystemManaged<ToolSystem>();
+            _tools.EventToolChanged += OnToolChanged; // polish: the route preview window opens with the tool
             _zones = world.GetOrCreateSystemManaged<ZoneSystem>();
             _city = world.GetOrCreateSystemManaged<CitySystem>();
             EntityManager em = world.EntityManager;
@@ -497,6 +508,7 @@ namespace SkylineTogether.Sync
             _signals.Reset();
             _ledger.Clear();
             _rate.Clear();
+            _requests.Clear();
             _violations.Clear();
             _authoredThisFrame.Clear();
             _forceCapture.Clear();
@@ -538,6 +550,7 @@ namespace SkylineTogether.Sync
                 _log.Debug(LogCategory.Replication, "disposing the codec: " + ex.Message);
             }
             _codec = null; // every entry point checks it (and EnsureWorld refuses after disposal)
+            if (_tools != null) _tools.EventToolChanged -= OnToolChanged; // polish
         }
 
         /// <summary>
@@ -623,6 +636,7 @@ namespace SkylineTogether.Sync
             _proposalHealth.Remove(peer.Value);
             // gameplay branch
             _rate.Forget(peer.Value);
+            _requests.Forget(peer.Value);
             _violations.Forget(peer.Value);
             // w2/ids
             _acks.RemovePeer(peer.Value);
@@ -1022,15 +1036,27 @@ namespace SkylineTogether.Sync
                     }
                 }
                 if (rec.Kind != SyncRecordKind.Request) continue;
+                double now = _sessions.Clock.Seconds;
                 if (rec.Request == SyncRequest.MoreIds)
                 {
+                    // polish: request-only batches skip the proposal rate limit, so grants have their own (and a cap on
+                    // the ids a peer holds unused); a refused request is dropped and the client asks again with backoff
+                    if (!_requests.TryGrantIds(peer.Value, now, _grants.UnusedCount(peer.Value)))
+                    {
+                        _log.Debug(LogCategory.Replication, peer + ": id request over the limit; dropped");
+                        CountViolation(peer, RejectReason.RateLimited);
+                        continue;
+                    }
                     var w = new SyncBatch.Writer();
                     Grant(peer, w);
                     if (!w.IsEmpty) Send(peer, w, Perf.StructureBytes);
                 }
                 else if (rec.Request == SyncRequest.ResendRoutes || rec.Request == SyncRequest.ResendAll)
                 {
-                    Resend(peer, rec.Request == SyncRequest.ResendRoutes);
+                    bool routesOnly = rec.Request == SyncRequest.ResendRoutes;
+                    // polish: a re-send scans the whole id table; over the limit it is deferred (FlushDeferred serves it)
+                    if (_requests.TryResend(peer.Value, routesOnly, now)) Resend(peer, routesOnly);
+                    else _log.Debug(LogCategory.Replication, peer + ": re-send request over the limit; deferred");
                 }
             }
         }
@@ -1847,6 +1873,8 @@ namespace SkylineTogether.Sync
             {
                 PeerOut o = _outList[p];
                 if (!host.TryGetLink(o.Peer, out PeerSendState link) || !link.Live) continue;
+                // polish: a re-send the request limit deferred is served once its bucket refilled
+                if (_requests.HasDeferred(o.Peer.Value) && _requests.TakeDeferred(o.Peer.Value, _sessions.Clock.Seconds, out bool routesOnly)) Resend(o.Peer, routesOnly);
                 if (o.Queue.Count > 0 && Stopwatch.GetTimestamp() - start <= cpuBudget)
                 {
                     int bytes = LinkBudget.DeferredBytes(link.QueuedReliableBytes, link.PendingReliableBytes, link.SendRateBytesPerSecond, dt, _linkConfig);
@@ -2046,7 +2074,7 @@ namespace SkylineTogether.Sync
             if (_toolCost != 0) _batch.Cost(_toolCost);
             // gameplay branch: sequence, base ledger epoch and kind of the proposal (host validation, rollback)
             if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
-            if (_pool.ShouldRequestMore()) _batch.Request(SyncRequest.MoreIds);
+            if (_pool.ShouldRequestMore(_sessions.Clock.Seconds)) _batch.Request(SyncRequest.MoreIds); // polish: retried with backoff
             if (!_batch.IsEmpty)
             {
                 ArraySegment<byte> bytes = _batch.Finish();
@@ -2060,6 +2088,27 @@ namespace SkylineTogether.Sync
         /// route path and waypoint systems run so the preview follows the roads; afterwards the host's line state is
         /// requested again, so no locally derived line state survives.
         /// </summary>
+        /// <summary>
+        /// polish: opens the route preview window in the frame the route tool is selected (<c>ToolSystem.activeTool</c>
+        /// raises <c>EventToolChanged</c>), not at that frame's end capture, so the temp segments the tool creates in its
+        /// first ToolUpdate already get their road-following path from <c>RoutePathSystem</c> (an <c>Updated</c> tag is
+        /// seen once only). Closing stays with <see cref="UpdateRouteWindow"/> (linger, host line re-send).
+        /// </summary>
+        private void OnToolChanged(ToolBaseSystem tool)
+        {
+            try
+            {
+                if (!(tool is RouteToolSystem) || !IsLiveClient || _routeWindowOpen) return;
+                _routeWindowUntil = Perf.Now + RouteWindowLinger; // the capture clock (SyncSystems: realtimeSinceStartup)
+                _routeWindowOpen = true;
+                _gate.SetRouteWindow(true);
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Gate, "route preview window on tool change: " + ex.Message);
+            }
+        }
+
         private void UpdateRouteWindow(double now)
         {
             bool routeTool = _tools.activeTool is RouteToolSystem;

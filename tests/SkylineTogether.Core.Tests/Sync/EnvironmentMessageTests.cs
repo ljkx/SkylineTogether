@@ -278,5 +278,28 @@ namespace SkylineTogether.Core.Tests.Sync
             bytes[bytes.Length - 1] = 0x7F; // tile count far above the limit
             Assert.Throws<DecodeException>(() => WaterMessage.ReadHeader(new ByteReader(bytes, 0, bytes.Length), out _, out _), "count");
         }
+
+        [Test]
+        public void JoinersDropStrokeReplaysButKeepTilesAndManifests()
+        {
+            // polish: stamps that reach a joiner before it is live are in its snapshot already (or covered by the host's
+            // settled tiles); tiles and manifests are absolute and kept
+            var w = new ByteWriter();
+            TerrainMessage.WriteStamps(w, new PeerId(2), new[] { Stamp(1) });
+            byte[] stamps = w.ToArray();
+            Assert.False(TerrainMessage.KeepBeforeLive(stamps, 0, stamps.Length));
+            w.Reset();
+            var grid = new TileGridInfo(128, 128, 64);
+            TerrainMessage.WriteManifest(w, grid, new List<KeyValuePair<TileId, ulong>>());
+            byte[] manifest = w.ToArray();
+            Assert.True(TerrainMessage.KeepBeforeLive(manifest, 0, manifest.Length));
+            w.Reset();
+            int at = TerrainMessage.BeginTiles(w, grid);
+            TerrainMessage.EndTiles(w, at, 0);
+            byte[] tiles = w.ToArray();
+            Assert.True(TerrainMessage.KeepBeforeLive(tiles, 0, tiles.Length));
+            Assert.True(TerrainMessage.KeepBeforeLive(new byte[] { 99, 1 }, 0, 2), "malformed: left to the normal decode");
+            Assert.True(TerrainMessage.KeepBeforeLive(null, 0, 0));
+        }
     }
 }
