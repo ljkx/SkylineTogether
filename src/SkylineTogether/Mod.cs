@@ -46,6 +46,12 @@ namespace SkylineTogether
         /// <summary>Movers branch: vehicle and creature replication.</summary>
         public static MoverSync Movers { get; private set; }
 
+        /// <summary>Steam friends: rich presence "connect", the invite dialog, invite joins.</summary>
+        public static SteamInvites Invites { get; private set; }
+
+        /// <summary>Join, leave and progress toasts.</summary>
+        public static SessionToasts Toasts { get; private set; }
+
         private static GameObject _driver;
 
         public void OnLoad(UpdateSystem updateSystem)
@@ -57,7 +63,7 @@ namespace SkylineTogether
             {
                 Settings = new SkylineTogetherSettings(this);
                 Settings.RegisterInOptionsUI();
-                GameManager.instance.localizationManager.AddSource("en-US", new LocaleEN(Settings));
+                LocaleSource.RegisterAll(Settings); // every embedded Data/locale.<id>.json, English as the fallback
                 AssetDatabase.global.LoadSettings(Name, Settings, new SkylineTogetherSettings(this));
 
                 try
@@ -75,6 +81,8 @@ namespace SkylineTogether
                 // movers branch: follower clock (time runs, gameplay simulation off) and mover replication
                 Clock = new FollowerClock(Sessions, log);
                 Movers = new MoverSync(Sessions, log);
+                Toasts = new SessionToasts(Sessions);
+                Invites = new SteamInvites(Sessions, Settings, log);
 
                 // identity: saved into every save (join snapshots included) by the game's own system serializer
                 updateSystem.UpdateAt<NetIdSystem>(SystemUpdatePhase.MainLoop);
@@ -129,6 +137,16 @@ namespace SkylineTogether
                 Log?.Warn(LogCategory.Session, "leaving the session on exit failed", ex);
             }
             Sessions = null;
+            try
+            {
+                Invites?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Log?.Warn(LogCategory.Session, "clearing the Steam rich presence failed", ex);
+            }
+            Invites = null;
+            Toasts = null;
             // review fix: the codec's persistent native buffers and serialization contexts were never freed
             try
             {
