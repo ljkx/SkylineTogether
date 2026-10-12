@@ -150,6 +150,7 @@
   "st.toast.join.inSession": "Already in a session. Leave it first.",
   "st.toast.join.noSteam": "Steam is not available. Start the game through Steam and log in.",
   "st.toast.join.noTarget": "Enter the host's Steam ID or address first.",
+  "st.toast.join.renderPrefabs": "The host's city uses map or climate assets you do not have ({NAMES}). Subscribe to the host's map on Paradox Mods (or use the same map), then join again.",
   "st.toast.join.loading": "Your game is still loading. Wait until it has finished, then join.",
   "st.toast.join.other": "Joining is not possible right now.",
   "st.toast.join.connecting": "Connecting to the host…",

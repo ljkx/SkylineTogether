@@ -150,6 +150,7 @@
   "st.toast.join.inSession": "Du bist schon in einer Sitzung. Verlasse sie zuerst.",
   "st.toast.join.noSteam": "Steam ist nicht verfügbar. Starte das Spiel über Steam und melde dich an.",
   "st.toast.join.noTarget": "Gib zuerst die Steam-ID oder Adresse des Hosts ein.",
+  "st.toast.join.renderPrefabs": "Die Stadt des Hosts nutzt Karten- oder Klima-Assets, die dir fehlen ({NAMES}). Abonniere die Karte des Hosts bei Paradox Mods (oder nutze dieselbe Karte) und tritt dann erneut bei.",
   "st.toast.join.loading": "Dein Spiel lädt noch. Warte, bis es fertig ist, und tritt dann bei.",
   "st.toast.join.other": "Beitreten ist gerade nicht möglich.",
   "st.toast.join.connecting": "Verbinde mit dem Host…",

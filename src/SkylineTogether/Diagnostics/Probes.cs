@@ -78,6 +78,16 @@ namespace SkylineTogether.Diagnostics
         /// <summary>w3/audit P-CHIRPLINKS: <c>ChirpLinkSystem.m_CachedChirpData</c> (chirp sender and link names); optional.</summary>
         public static FieldInfo ChirpLinkCache { get; private set; }
 
+        /// <summary>polish P-JOINASSETS: the internal <c>PrefabSystem.SavePrefabAssets</c> (what <c>GameManager.Save</c>
+        /// stores into a save package: package-bundled climate, water-render and terrain-render prefabs); optional.</summary>
+        public static SavePrefabAssetsFn SavePrefabAssets { get; private set; }
+
+        /// <summary>polish P-JOINASSETS: <c>PrefabID.m_Hash</c>, for the render prefab ids the joiner checks; optional.</summary>
+        public static FieldInfo PrefabIdHash { get; private set; }
+
+        /// <summary>The signature of <c>PrefabSystem.SavePrefabAssets</c> (<c>PrefabSystem.cs:378</c>).</summary>
+        public delegate Colossal.IO.AssetDatabase.PrefabAsset[] SavePrefabAssetsFn(Game.Prefabs.PrefabSystem system, Colossal.IO.AssetDatabase.ILocalAssetDatabase database, Colossal.IO.AssetDatabase.PrefabAsset[] inputPrefabs, ref Context context);
+
         /// <summary>The latest report as text lines (log and diagnostics).</summary>
         public static IEnumerable<string> ReportLines() => Features.Registry.ReportLines();
 
@@ -152,6 +162,7 @@ namespace SkylineTogether.Diagnostics
             // w3/audit: runtime panel values and chirp names written on clients (GlobalStateSync.Panels)
             Safe("P-MAIL", Features.GlobalState, "MailAccumulationSystem.m_LastAccumulatedMail/m_LastProcessedMail", ProbeMail, warningOnly: true);
             Safe("P-CHIRPLINKS", Features.Events, "ChirpLinkSystem.m_CachedChirpData", ProbeChirpLinks, warningOnly: true);
+            Safe("P-JOINASSETS", Features.Session, "PrefabSystem.SavePrefabAssets, PrefabID.m_Hash", ProbeJoinAssets, warningOnly: true); // polish
             ProbeDemandHandles();
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.GatedSystemNames, systems: true);
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.RouteSystemNames, systems: true);
@@ -292,6 +303,21 @@ namespace SkylineTogether.Diagnostics
             FieldInfo f = typeof(Game.UI.InGame.ChirpLinkSystem).GetField("m_CachedChirpData", Private);
             ChirpLinkCache = f != null && f.FieldType == typeof(Dictionary<Entity, Game.UI.InGame.ChirpLinkSystem.CachedChirpData>) ? f : null;
             return ChirpLinkCache == null ? "not found: chirps of citizens show no sender name on clients" : null;
+        }
+
+        private static string ProbeJoinAssets()
+        {
+            SavePrefabAssets = null;
+            MethodInfo m = typeof(Game.Prefabs.PrefabSystem).GetMethod("SavePrefabAssets", AnyInstance, null,
+                new[] { typeof(Colossal.IO.AssetDatabase.ILocalAssetDatabase), typeof(Colossal.IO.AssetDatabase.PrefabAsset[]), typeof(Context).MakeByRefType() }, null);
+            if (m != null && m.ReturnType == typeof(Colossal.IO.AssetDatabase.PrefabAsset[]))
+            {
+                SavePrefabAssets = (SavePrefabAssetsFn)Delegate.CreateDelegate(typeof(SavePrefabAssetsFn), m);
+            }
+            FieldInfo hash = typeof(Game.Prefabs.PrefabID).GetField("m_Hash", Private);
+            PrefabIdHash = hash != null && hash.FieldType == typeof(Colossal.Hash128) ? hash : null;
+            if (SavePrefabAssets == null) return "SavePrefabAssets not found: joiners need the host's map or save package for its climate and render settings";
+            return PrefabIdHash == null ? "PrefabID.m_Hash not found: joiners do not check the render prefabs before loading" : null;
         }
 
         private static void ProbeDemandHandles()

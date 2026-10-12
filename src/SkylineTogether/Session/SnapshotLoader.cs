@@ -86,16 +86,75 @@ namespace SkylineTogether.Session
         public Stream OpenBlobTarget(SnapshotManifest manifest)
         {
             Dispose();
+            _disposeRequested = false;
             _folder = Path.Combine(_root, Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_folder);
             _db = AssetDatabase.GetTransient(0L, _folder);
             _data = _db.AddAsset<SaveGameData>("SkylineTogetherJoin");
-            return _data.GetWriteStream();
+            // polish: the host's bundled render prefabs arrive in front of the save data (JoinAssetTransfer)
+            _splitter = new JoinBlobSplitter(_data.GetWriteStream());
+            return _splitter;
         }
+
+        private JoinBlobSplitter _splitter;
+        private bool _disposeRequested;
 
         public void BeginLoad(SnapshotManifest manifest, IReadOnlyList<SettingEntry> pushedSettings, Action<LoadOutcome> onDone)
         {
             if (_data == null) throw new InvalidOperationException("no downloaded city to load");
+            List<JoinAssetEntry> bundle = _splitter?.Bundle;
+            bool hasIds = manifest.RenderPrefabIds != null && manifest.RenderPrefabIds.Length > 0;
+            if ((bundle == null || bundle.Count == 0) && !hasIds)
+            {
+                StartLoad(manifest, onDone);
+                return;
+            }
+            // polish: add the host's bundled render prefabs, then check that every render prefab resolves, before the
+            // load (the asset database registration is asynchronous)
+            IsLoading = true;
+            string folder = Path.Combine(_root, "assets-" + Guid.NewGuid().ToString("N"));
+            TaskManager.instance.EnqueueTask("SaveLoadGame", async () =>
+            {
+                try
+                {
+                    await JoinAssetTransfer.Import(bundle, folder, _log);
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn(LogCategory.Join, "join assets: import failed", ex);
+                }
+                _main.Post(() =>
+                {
+                    IsLoading = false;
+                    if (_disposeRequested)
+                    {
+                        // the session ended while the assets were added: no load
+                        _disposeRequested = false;
+                        Dispose();
+                        return;
+                    }
+                    List<string> missing;
+                    try
+                    {
+                        missing = JoinAssetTransfer.MissingRenderPrefabs(manifest.RenderPrefabIds);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warn(LogCategory.Join, "join assets: render prefab check failed; loading anyway", ex);
+                        missing = new List<string>();
+                    }
+                    if (missing.Count > 0)
+                    {
+                        onDone(new LoadOutcome { Success = false, FailureKey = "content", FailureDetail = Settings.LocaleSource.Resolve("st.toast.join.renderPrefabs", "NAMES", string.Join(", ", missing)) });
+                        return;
+                    }
+                    StartLoad(manifest, onDone);
+                });
+            }, 1);
+        }
+
+        private void StartLoad(SnapshotManifest manifest, Action<LoadOutcome> onDone)
+        {
             if (_data.GetAsyncReadDescriptor() == AsyncReadDescriptor.Invalid)
             {
                 onDone(new LoadOutcome { Success = false, FailureDetail = "the downloaded city file is missing" });
@@ -180,6 +239,7 @@ namespace SkylineTogether.Session
         {
             if (IsLoading)
             {
+                _disposeRequested = true; // polish: honoured after the asset import (the load's completion disposes anyway)
                 // the load's completion callback disposes
                 return;
             }
@@ -188,6 +248,7 @@ namespace SkylineTogether.Session
             _db = null;
             _data = null;
             _folder = null;
+            _splitter = null;
             Release(db, folder);
         }
 
