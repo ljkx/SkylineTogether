@@ -93,6 +93,7 @@ namespace SkylineTogether.Core.Session
         private readonly ILog _log;
         private readonly Dictionary<IConnection, Peer> _peers = new Dictionary<IConnection, Peer>();
         private readonly ByteWriter _body = new ByteWriter(4096);
+        private readonly ByteWriter _broadcastEnvelope = new ByteWriter(4096); // perf pass: a broadcast's shared envelope
         private readonly ByteWriter _payload = new ByteWriter(4096);
         private readonly ByteReader _reader = new ByteReader();
         private readonly Random _random = new Random();
@@ -285,13 +286,39 @@ namespace SkylineTogether.Core.Session
             ReleaseSnapshotIfUnused();
         }
 
-        /// <summary>Sends a replication message to every admitted peer (queued for joiners until they are live).</summary>
+        /// <summary>
+        /// Sends a replication message to every admitted peer (queued for joiners until they are live). perf pass: with
+        /// several peers the body is encoded and compressed once and the same envelope is queued for each of them.
+        /// </summary>
         public void Broadcast(MessageKind kind, byte[] body, int offset, int count, Lane lane = Lane.Reliable)
         {
+            Peer first = null;
+            bool shared = false;
             foreach (Peer p in _peers.Values)
             {
-                if (p.Admitted) SendCounted(p, kind, body, offset, count, lane);
+                if (!p.Admitted) continue;
+                if (first == null)
+                {
+                    first = p;
+                    continue;
+                }
+                if (!shared)
+                {
+                    shared = true;
+                    _broadcastEnvelope.Reset();
+                    first.Channel.Encode(kind, body, offset, count, _broadcastEnvelope);
+                    SendEncodedCounted(first, kind, lane);
+                }
+                if (p.Channel.Compression == first.Channel.Compression) SendEncodedCounted(p, kind, lane);
+                else SendCounted(p, kind, body, offset, count, lane);
             }
+            if (first != null && !shared) SendCounted(first, kind, body, offset, count, lane);
+        }
+
+        private void SendEncodedCounted(Peer p, MessageKind kind, Lane lane)
+        {
+            bool ok = p.Channel.SendEncoded(kind, _broadcastEnvelope.Buffer, 0, _broadcastEnvelope.Length, lane);
+            if (ok && kind == MessageKind.Epoch && lane == Lane.Reliable) p.EpochSent++;
         }
 
         public void SendTo(PeerId peer, MessageKind kind, byte[] body, int offset, int count)

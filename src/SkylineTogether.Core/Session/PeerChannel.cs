@@ -45,9 +45,25 @@ namespace SkylineTogether.Core.Session
         {
             _encoded.Reset();
             _codec.Encode(kind, body, offset, count, _encoded);
+            return SendEncoded(kind, _encoded.Buffer, 0, _encoded.Length, lane);
+        }
+
+        /// <summary>The compression this channel encodes with (channels with the same kind encode a body identically).</summary>
+        public CompressionKind Compression => _codec.Compressor?.Kind ?? CompressionKind.None;
+
+        /// <summary>
+        /// perf pass: encodes (and compresses) a body into <paramref name="output"/> exactly as <see cref="Send"/> would, so
+        /// a broadcast encodes once and hands the result to every channel with the same <see cref="Compression"/>
+        /// (<see cref="SendEncoded"/>). The writer is not reset.
+        /// </summary>
+        public void Encode(MessageKind kind, byte[] body, int offset, int count, ByteWriter output) => _codec.Encode(kind, body, offset, count, output);
+
+        /// <summary>Fragments and queues an envelope made by <see cref="Encode"/> (reliable, ordered). False once the connection is closed.</summary>
+        public bool SendEncoded(MessageKind kind, byte[] envelope, int offset, int count, Lane lane = Lane.Reliable)
+        {
             _sendLane = lane;
             _sendOk = true;
-            _fragmenter.Split(kind, _encoded.Buffer, 0, _encoded.Length, _fragment, _emit);
+            _fragmenter.Split(kind, envelope, offset, count, _fragment, _emit);
             return _sendOk;
         }
 

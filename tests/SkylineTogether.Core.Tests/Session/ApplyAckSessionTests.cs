@@ -43,6 +43,53 @@ namespace SkylineTogether.Core.Tests.Session
         }
 
         [Test]
+        public void ABroadcastToSeveralPeersIsEncodedOnceAndArrivesIntactEverywhere()
+        {
+            // perf pass: with two or more peers the host encodes (and compresses, and fragments) the body once
+            var rig = new SessionRig();
+            var (a, _, _) = rig.AddClient("Anna");
+            var (b, _, _) = rig.AddClient("Ben");
+            rig.Run(400);
+            Assert.Equal(ClientState.Live, a.State, a.EndReason);
+            Assert.Equal(ClientState.Live, b.State, b.EndReason);
+            var aGot = new List<byte[]>();
+            var bGot = new List<byte[]>();
+            a.AppMessage += e => { if (e.Kind == MessageKind.Epoch) aGot.Add(Copy(e)); };
+            b.AppMessage += e => { if (e.Kind == MessageKind.Epoch) bGot.Add(Copy(e)); };
+            var big = new byte[300_000]; // compressible and above the fragment threshold
+            for (int i = 0; i < big.Length; i++) big[i] = (byte)(i % 251 < 200 ? i % 7 : i % 251);
+            var small = new byte[] { 1, 2, 3 };
+            var random = new byte[5000];
+            new Random(5).NextBytes(random); // incompressible: sent as is
+            var peers = new List<PeerId>();
+            rig.Host.GetAdmittedPeers(peers);
+            long before0 = rig.Host.GetEpochSent(peers[0]), before1 = rig.Host.GetEpochSent(peers[1]);
+            rig.Host.Broadcast(MessageKind.Epoch, big, 0, big.Length);
+            rig.Host.Broadcast(MessageKind.Epoch, small, 0, small.Length);
+            rig.Host.Broadcast(MessageKind.Epoch, random, 100, 4000);
+            rig.Run(200);
+            foreach (List<byte[]> got in new[] { aGot, bGot })
+            {
+                Assert.Equal(3, got.Count);
+                Assert.Equal(big.Length, got[0].Length);
+                for (int i = 0; i < big.Length; i++) if (got[0][i] != big[i]) Assert.Fail("byte " + i + " differs");
+                Assert.Equal(3, got[1].Length);
+                Assert.Equal((byte)3, got[1][2]);
+                Assert.Equal(4000, got[2].Length);
+                for (int i = 0; i < 4000; i++) if (got[2][i] != random[100 + i]) Assert.Fail("byte " + i + " of the third message differs");
+            }
+            Assert.Equal(before0 + 3, rig.Host.GetEpochSent(peers[0]), "each peer counts every epoch message");
+            Assert.Equal(before1 + 3, rig.Host.GetEpochSent(peers[1]));
+        }
+
+        private static byte[] Copy(Envelope e)
+        {
+            var copy = new byte[e.BodyCount];
+            Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
+            return copy;
+        }
+
+        [Test]
         public void EpochAcksReachTheHostAsReplicationMessages()
         {
             var rig = new SessionRig();
