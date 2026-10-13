@@ -126,6 +126,10 @@ namespace SkylineTogether.Sync
         /// <summary>Host: entities changed without a tag (intents, host UI direct writes) that the capture must stream.</summary>
         private readonly HashSet<Entity> _forceCapture = new HashSet<Entity>();
         private readonly HashSet<Entity> _writtenThisFrame = new HashSet<Entity>();
+        // perf pass: the client capture's per-frame collections, reused
+        private readonly HashSet<Entity> _clientWritten = new HashSet<Entity>();
+        private readonly List<uint> _clientProposed = new List<uint>();
+        private readonly List<Entity> _clientChanged = new List<Entity>();
         private Game.Tools.GenerateEdgesSystem _generateEdges;
         /// <summary>Client: the newest ledger epoch applied (the base of its proposals; not a release frame).</summary>
         private uint _baseEpoch;
@@ -2010,11 +2014,34 @@ namespace SkylineTogether.Sync
             // tool; outside a tool path only those are proposed, every other local deletion waits for the host
             ProposalFlags flags = _toolApplied ? ProposalFlags.ToolApply : localTool ? ProposalFlags.DirectTool : ProposalFlags.None;
             _batch.Reset();
-            var written = new HashSet<Entity>();
-            var proposed = new List<uint>();
+            HashSet<Entity> written = _clientWritten;
+            List<uint> proposed = _clientProposed;
+            written.Clear();
+            proposed.Clear();
             // mod compatibility: mod data entities the proposed values reference get ids from the pool and travel along
             _codec.DependencyBinder = ClientBindDependency;
-            NativeArray<Entity> changed = _changed.ToEntityArray(Allocator.Temp);
+            // perf pass: outside a tool path only deletions count, so whole chunks without Deleted are skipped instead of
+            // copying and testing every tagged entity of the frame (the simulation and the applier tag many each frame)
+            List<Entity> changed = _clientChanged;
+            changed.Clear();
+            if (!_changed.IsEmptyIgnoreFilter)
+            {
+                NativeArray<ArchetypeChunk> chunks = _changed.ToArchetypeChunkArray(Allocator.Temp);
+                try
+                {
+                    EntityTypeHandle entityType = em.GetEntityTypeHandle();
+                    foreach (ArchetypeChunk chunk in chunks)
+                    {
+                        if (!toolPath && !chunk.Has<Game.Common.Deleted>()) continue;
+                        NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
+                        for (int i = 0; i < entities.Length; i++) changed.Add(entities[i]);
+                    }
+                }
+                finally
+                {
+                    chunks.Dispose();
+                }
+            }
             try
             {
                 foreach (Entity e in changed)
@@ -2082,7 +2109,7 @@ namespace SkylineTogether.Sync
             }
             finally
             {
-                changed.Dispose();
+                changed.Clear();
             }
             // mod compatibility: untagged mod state the player changed (components tool, info-panel toggles, Better
             // Bulldozer's removal records), then the dependencies of everything proposed
