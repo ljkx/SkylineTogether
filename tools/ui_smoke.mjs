@@ -1,7 +1,7 @@
 // UI smoke test: renders the module's components with a stub React for many session states, with and without the
 // game's own components (cs2/ui, registry modules), and fails on
 //  - an exception while importing, registering, rendering or running an event handler,
-//  - a binding or trigger name the C# side (src/SkylineTogether/UI/SessionUISystem.cs) does not declare,
+//  - a binding or trigger name the C# side (src/SkylineTogether/UI/*UISystem.cs) does not declare,
 //  - a text key that renders raw (missing from the module's English table),
 //  - English texts that differ from src/SkylineTogether/Data/locale.en-US.json, keys missing in another locale table
 //    or in locale-keys.generated.json,
@@ -16,14 +16,18 @@ let failed = 0;
 const fail = (msg) => { failed++; console.log("FAIL " + msg); };
 
 // ------------------------------------------------------------------------------------------- C# declarations
-// every UI system of the module's group (SessionUISystem, ReplayUISystem for solo testing)
-const cs = read("src/SkylineTogether/UI/SessionUISystem.cs") + "\n" + read("src/SkylineTogether/UI/ReplayUISystem.cs");
-const csBindings = new Set([...cs.matchAll(/GetterValueBinding<string>\(Group, "([^"]+)"/g)].map((m) => m[1]));
+// every UI system of the module's group (SessionUISystem, ReplayUISystem for solo testing, InviteUISystem for Steam
+// invites: its bindings may still be unused by the panel, so only their declaration is checked)
+const cs = read("src/SkylineTogether/UI/SessionUISystem.cs") + "\n" + read("src/SkylineTogether/UI/ReplayUISystem.cs") + "\n" + read("src/SkylineTogether/UI/InviteUISystem.cs");
+const csBindings = new Set([...cs.matchAll(/GetterValueBinding<[^>]+>\(Group, "([^"]+)"/g)].map((m) => m[1]));
 const csTriggers = new Set([...cs.matchAll(/TriggerBinding(?:<[^>]*>)?\(Group, "([^"]+)"/g)].map((m) => m[1]));
 for (const b of ["state", "join", "net", "presence"]) if (!csBindings.has(b)) fail("SessionUISystem lost the binding " + b);
 for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "writeDiagnostics", "toggleNetHud", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends"]) {
   if (!csTriggers.has(t)) fail("SessionUISystem lost the trigger " + t);
 }
+// the invite contract the panel consumes (w6/invites)
+for (const b of ["friends", "overlayAvailable"]) if (!csBindings.has(b)) fail("InviteUISystem lost the binding " + b);
+for (const t of ["inviteFriend", "openInviteOverlay", "refreshFriends"]) if (!csTriggers.has(t)) fail("InviteUISystem lost the trigger " + t);
 
 // ------------------------------------------------------------------------------------------------ stubs
 let values = {};
