@@ -1,0 +1,46 @@
+SKYLINE TOGETHER - HOW TO TEST (build __BUILDID__)
+==================================================
+
+SETUP (both players, 2 minutes)
+1. Close Cities: Skylines II.
+2. Double-click Install.cmd. It installs the mod and prints a "Build id".
+   Both players must see the SAME build id.
+3. First test: turn your Paradox playset off (or use an empty playset) on BOTH PCs, so the mod lists match.
+   Disable the old "CS2 Multiplayer Mod" if you have it.
+4. Have Steam running and be logged in on both PCs.
+
+CONNECT
+Host:   load a city (a copy of a save you don't mind breaking) -> top-left round "Multiplayer" button
+        -> Host tab -> "Host this city" -> "Copy Steam ID" and send it to your friend (or "Invite through Steam").
+Friend: title screen -> "Multiplayer" (below Load Game) -> Join tab -> paste the Steam ID -> Join.
+        You see the download and loading progress; the host's game pauses until you are in.
+
+TEST CHECKLIST (do each step, then both look at the same spot and compare)
+ [ ] 1. Join works; both see each other in the player list and as cursor rings with name tags; chat works (Enter).
+ [ ] 2. Host builds a road and zones it -> friend sees it. Friend builds a road and zones it -> host sees it.
+ [ ] 3. Buildings grow on the zones -> both see the same buildings (wait a minute at speed 3).
+ [ ] 4. Friend places a service building (e.g. school), host deletes something -> both identical.
+ [ ] 5. TRAIN LINE: build two train stations, rails with a deliberate GAP, and a train line through both.
+        Both players: open the line panel -> it must show the same "not connected"/broken segment.
+        Close the gap -> both must show the line connected at the same time.
+ [ ] 6. Friend draws a bus line; host changes its colour/vehicles -> identical on both.
+ [ ] 7. Taxes / budget / a policy changed by the friend -> host sees it, and the other way round.
+ [ ] 8. Speed: friend presses play/speed -> the host's game follows (the host decides).
+ [ ] 9. Terraform a hill (both), paint some ore -> identical.
+ [ ] 10. Traffic: both see cars and pedestrians moving near their camera.
+ [ ] 11. Friend leaves and joins again -> works; city identical.
+ [ ] 12. Later: enable the same gameplay mods on both PCs (Traffic, Move It, Anarchy, ...) and repeat 2-6
+         with them (Move It: move a building; Traffic: lane connections).
+
+IF SOMETHING IS WRONG (or after the session)
+- In the multiplayer panel click "Write diagnostics" (both players).
+- Then double-click Collect-Logs.cmd -> a zip appears on your Desktop. Send both zips plus a short note:
+  which step, what each player saw (screenshots help).
+
+SOLO TEST (host alone, no second PC needed)
+Panel -> "Record test session" -> play 5-10 minutes -> "Stop recording" -> save your city ->
+panel "Solo test" -> pick the recording -> "Replay & verify". The verdict appears in the panel;
+Collect-Logs.cmd includes it.
+
+UNINSTALL
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-SkylineTogether.ps1 -Uninstall
