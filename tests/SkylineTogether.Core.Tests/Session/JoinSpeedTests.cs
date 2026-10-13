@@ -147,6 +147,33 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.True(hashed.DigestMilliseconds >= 0);
         }
 
+        [Test]
+        public void TheReceiverVerifiesTheDigestWhileChunksArriveWithoutReadingBack()
+        {
+            var log = new ListLog(LogLevel.Debug);
+            const long size = 5 * 262144 + 12345;
+            var buffer = new byte[size];
+            SyntheticStream.Fill(77, 0, buffer, 0, buffer.Length);
+            var connection = new FakeConnection();
+            var clock = new ManualClock(1);
+            var outbox = new PeerOutbox(connection, new PeerId(1), new OutboxConfig(), clock, log);
+            var sender = new BlobSender(outbox, log);
+            BlobManifestInfo info = sender.Start(9, new MemoryStream(buffer, false), "snapshot");
+            for (int i = 0; i < 100 && !(sender.IsComplete && outbox.QueuedMessages == 0); i++)
+            {
+                sender.Pump();
+                outbox.Pump();
+            }
+            // a write-only, forward-only target (like the game's asset write stream behind the bundle splitter)
+            var sink = new MemoryStream();
+            var target = new DigestingWriteStream(sink, leaveOpen: true);
+            var receiver = new BlobReceiver(info, target, log);
+            foreach ((Lane _, Delivery _, byte[] data) in connection.SentSnapshot()) Assert.True(receiver.OnChunk(data, 2, data.Length - 2));
+            Assert.True(receiver.IsComplete);
+            Assert.True(receiver.VerifyDigest(), "the running digest matches without reading anything back");
+            Assert.Equal(info.Digest, target.Finish(), "what reached the target is the blob");
+        }
+
         // ------------------------------------------------------------------ session: timings, digest once, reuse
 
         [Test]

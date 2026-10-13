@@ -109,6 +109,13 @@ namespace SkylineTogether.Session
                 StartLoad(manifest, onDone);
                 return;
             }
+            if (bundle == null || bundle.Count == 0)
+            {
+                // loadspeed: nothing to import (the usual case): check the render prefabs now and start the load at once,
+                // instead of a detour over the save/load queue and the next frame
+                if (!RenderPrefabsMissing(manifest, onDone)) StartLoad(manifest, onDone);
+                return;
+            }
             // polish: add the host's bundled render prefabs, then check that every render prefab resolves, before the
             // load (the asset database registration is asynchronous)
             IsLoading = true;
@@ -133,24 +140,31 @@ namespace SkylineTogether.Session
                         Dispose();
                         return;
                     }
-                    List<string> missing;
-                    try
-                    {
-                        missing = JoinAssetTransfer.MissingRenderPrefabs(manifest.RenderPrefabIds);
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Warn(LogCategory.Join, "join assets: render prefab check failed; loading anyway", ex);
-                        missing = new List<string>();
-                    }
-                    if (missing.Count > 0)
-                    {
-                        onDone(new LoadOutcome { Success = false, FailureKey = "content", FailureDetail = Settings.LocaleSource.Resolve("st.toast.join.renderPrefabs", "NAMES", string.Join(", ", missing)) });
-                        return;
-                    }
+                    if (RenderPrefabsMissing(manifest, onDone)) return;
                     StartLoad(manifest, onDone);
                 });
             }, 1);
+        }
+
+        /// <summary>
+        /// True (and the load reported as failed) when a render prefab of the manifest does not resolve here: the joiner
+        /// is refused with a clear text instead of loading <c>[Missing]</c> prefabs.
+        /// </summary>
+        private bool RenderPrefabsMissing(SnapshotManifest manifest, Action<LoadOutcome> onDone)
+        {
+            List<string> missing;
+            try
+            {
+                missing = JoinAssetTransfer.MissingRenderPrefabs(manifest.RenderPrefabIds);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Join, "join assets: render prefab check failed; loading anyway", ex);
+                return false;
+            }
+            if (missing.Count == 0) return false;
+            onDone(new LoadOutcome { Success = false, FailureKey = "content", FailureDetail = Settings.LocaleSource.Resolve("st.toast.join.renderPrefabs", "NAMES", string.Join(", ", missing)) });
+            return true;
         }
 
         private void StartLoad(SnapshotManifest manifest, Action<LoadOutcome> onDone)
