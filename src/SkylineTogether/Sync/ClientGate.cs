@@ -41,9 +41,8 @@ namespace SkylineTogether.Sync
             "Game.Net.ConnectionWarningSystem",
             // w3/audit: event entities come from the host; its initializer would ignite, damage and pick random targets
             "Game.Events.InitializeSystem",
-            // w3/audit: chirps come from the host; local triggers (weather, policies, tools) would add chirps of their own
-            // (EventSync empties the creation queue while this is off)
-            "Game.Triggers.CreateChirpSystem",
+            // CreateChirpSystem is NOT gated: TriggerSystem and LifePathEventSystem write into its queue and the game asserts
+            // that it runs (in-game crash report). ChirpDrainSystem empties the queue right before it, so no local chirps.
             // w3/agents: cascades the host sends itself (every despawn, every changed reverse buffer, ARCH 4.2.6)
             "Game.Citizens.HouseholdAndCitizenRemoveSystem",
             "Game.Citizens.HouseholdPetRemoveSystem",

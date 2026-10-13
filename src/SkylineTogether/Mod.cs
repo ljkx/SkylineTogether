@@ -124,6 +124,8 @@ namespace SkylineTogether
                 updateSystem.UpdateBefore<ViewerGateSystem, Game.Tools.ToolOutputSystem>(SystemUpdatePhase.ToolUpdate);
                 // feat/integrity: client icons are host data; filter local producers right before IconCommandSystem
                 updateSystem.UpdateBefore<IconAuthorityFilterSystem, Game.Notifications.IconCommandSystem>(SystemUpdatePhase.ModificationEnd);
+                // clients: local chirps dropped right before CreateChirpSystem consumes its queue (it stays enabled)
+                updateSystem.UpdateBefore<ChirpDrainSystem, Game.Triggers.CreateChirpSystem>(SystemUpdatePhase.ModificationEnd);
             });
             Step(log, "mover systems", () =>
             {

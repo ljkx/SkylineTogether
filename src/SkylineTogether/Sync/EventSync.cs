@@ -82,7 +82,6 @@ namespace SkylineTogether.Sync
         private EntityCodec _codec;
         private NetIdSystem _ids;
         private SimulationSystem _simulation;
-        private Game.Triggers.CreateChirpSystem _createChirps;
         private EntityQuery _watchQuery;
         private EntityQuery _batchesQuery;
         private EntityQuery _phenomena;
@@ -112,7 +111,6 @@ namespace SkylineTogether.Sync
                 _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
                 _treeType = ComponentType.ReadOnly<Game.Objects.Tree>();
                 _buildingType = ComponentType.ReadOnly<Game.Buildings.Building>();
-                _createChirps = world.GetOrCreateSystemManaged<Game.Triggers.CreateChirpSystem>();
                 var watched = new List<ComponentType>();
                 foreach (string name in WatchedTypeNames)
                 {
@@ -320,7 +318,7 @@ namespace SkylineTogether.Sync
         {
             if (!Attached || !Features.Events.IsAvailable) return;
             Guard("likes", ReadLikes);
-            Guard("chirp queue", DrainChirpQueue);
+            // chirp queue: emptied by ChirpDrainSystem right before CreateChirpSystem (which stays enabled on clients)
         }
 
         /// <summary>Client, after the frame's host data was applied: per-player likes, target lists, hotspot frames.</summary>
@@ -432,18 +430,6 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>
-        /// The gated <c>CreateChirpSystem</c> keeps receiving local trigger results (weather, policies, tools); its queue
-        /// is emptied so nothing piles up. While the system runs (gate open or failed) it consumes the queue itself.
-        /// </summary>
-        private void DrainChirpQueue()
-        {
-            if (_createChirps == null || _createChirps.Enabled) return;
-            NativeQueue<Game.Triggers.ChirpCreationData> queue = _createChirps.GetQueue(out Unity.Jobs.JobHandle deps);
-            deps.Complete();
-            if (queue.IsCreated && queue.Count > 0) queue.Clear();
-        }
-
         private void Guard(string what, Action action)
         {
             try
@@ -454,6 +440,39 @@ namespace SkylineTogether.Sync
             {
                 if (_once.Add(what)) _log.Warn(LogCategory.Replication, "event sync: " + what + " failed", ex);
                 Diagnostics.Guard.Report(Features.Events, "event sync (" + what + ")", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Client, ModificationEnd right before <c>CreateChirpSystem</c>: chirps come from the host, so the chirps that local
+    /// triggers (<c>TriggerSystem</c>, <c>LifePathEventSystem</c>) queued this frame are dropped. The system itself stays
+    /// enabled, because its producers assert that it runs (Game.Triggers.CreateChirpSystem.GetQueue).
+    /// </summary>
+    public sealed class ChirpDrainSystem : Game.GameSystemBase
+    {
+        private Game.Triggers.CreateChirpSystem _createChirps;
+
+        protected override void OnCreate()
+        {
+            base.OnCreate();
+            _createChirps = World.GetOrCreateSystemManaged<Game.Triggers.CreateChirpSystem>();
+        }
+
+        protected override void OnUpdate()
+        {
+            SyncController sync = Mod.Sync;
+            if (sync == null || !SyncController.SessionActive || !sync.IsLiveClient) return;
+            if (_createChirps == null || !_createChirps.Enabled) return; // GetQueue asserts while the system is off
+            try
+            {
+                NativeQueue<Game.Triggers.ChirpCreationData> queue = _createChirps.GetQueue(out Unity.Jobs.JobHandle deps);
+                deps.Complete();
+                if (queue.IsCreated && queue.Count > 0) queue.Clear();
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Guard.Report(Features.Events, "chirp queue", ex);
             }
         }
     }
