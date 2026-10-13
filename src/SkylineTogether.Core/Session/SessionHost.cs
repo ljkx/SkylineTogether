@@ -34,6 +34,12 @@ namespace SkylineTogether.Core.Session
         /// request: nothing was broadcast and the simulation was held or paused at every tick. 0 turns reuse off.
         /// </summary>
         public double SnapshotReuseSeconds = 30;
+        /// <summary>
+        /// loadspeed: snapshot chunks are also pumped from a background thread every 2 ms (<see cref="BackgroundPump"/>),
+        /// so a low frame rate or a frame hitch never leaves the transport idle. Only connections that are
+        /// <see cref="IThreadSafeConnection"/> (Steam) use it; the session's own tick keeps pumping as well.
+        /// </summary>
+        public bool BackgroundPump;
     }
 
     /// <summary>A chat line as the UI shows it.</summary>
@@ -89,6 +95,8 @@ namespace SkylineTogether.Core.Session
             public SessionRole Role = SessionRole.Builder;
             /// <summary>loadspeed: the stage timings of this player's join (from its admission).</summary>
             public JoinTimeline Timeline;
+            /// <summary>loadspeed: the background pump's registration of this peer's snapshot transfer (null without one).</summary>
+            public IDisposable PumpToken;
         }
 
         /// <summary>loadspeed: completed joins kept for the diagnostics and the UI.</summary>
@@ -120,6 +128,7 @@ namespace SkylineTogether.Core.Session
         private bool _snapshotUnchanged;
         private double _snapshotSaveSeconds = double.NaN;
         private readonly List<JoinTimeline> _recentJoins = new List<JoinTimeline>();
+        private BackgroundPump _pump;
         private uint _nextBlobId = 1;
         private bool _playersDirty;
         private double _lastPlayersSent;
@@ -556,6 +565,8 @@ namespace SkylineTogether.Core.Session
             if (_disposed) return;
             _disposed = true;
             foreach (Peer p in _peers.Values) CloseSender(p);
+            _pump?.Dispose();
+            _pump = null;
             _peers.Clear();
             if (_snapshot != null) _snapshots.Release(_snapshot.Manifest.SnapshotId);
             _snapshot = null;
@@ -1087,6 +1098,18 @@ namespace SkylineTogether.Core.Session
                 p.Channel.Pump();
                 p.Sender.Pump();
                 p.Channel.Pump();
+                // loadspeed: and between frames from the background thread (thread-safe transports only)
+                if (_options.BackgroundPump && p.Channel.Connection is IThreadSafeConnection)
+                {
+                    if (_pump == null) _pump = new BackgroundPump(_log, "Skyline Together snapshot pump");
+                    BlobSender sender = p.Sender;
+                    PeerOutbox outbox = p.Channel.Outbox;
+                    p.PumpToken = _pump.Add(() =>
+                    {
+                        sender.Pump();
+                        outbox.Pump();
+                    }, p.Name + "'s snapshot");
+                }
             }
             catch (Exception ex)
             {
@@ -1194,6 +1217,9 @@ namespace SkylineTogether.Core.Session
 
         private static void CloseSender(Peer p)
         {
+            // loadspeed: the background pump stops calling this transfer before it is cancelled and its file closed
+            p.PumpToken?.Dispose();
+            p.PumpToken = null;
             p.Sender?.Cancel();
             p.Sender = null;
             p.SenderStream?.Dispose();

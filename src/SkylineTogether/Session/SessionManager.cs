@@ -296,6 +296,8 @@ namespace SkylineTogether.Session
                     MaxPlayers = Math.Max(2, Math.Min(16, _settings.MaxPlayers)),
                     RequireSameMods = _settings.RequireSameMods,
                     Listen = new ListenOptions { VirtualPort = VirtualPort, AllowIp = _settings.AllowDirectConnections, IpPort = _settings.DirectPort, MaxConnections = Math.Max(2, _settings.MaxPlayers) },
+                    // loadspeed: snapshot chunks are pumped between frames too (Steam connections are thread-safe)
+                    BackgroundPump = true,
                 };
                 var composite = new CompositeTransport(transport); // solo testing: the test recorder attaches here
                 var host = new SessionHost(composite, _info, _snapshots, options, _clock, _log);

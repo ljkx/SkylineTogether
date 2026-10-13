@@ -19,6 +19,9 @@ namespace SkylineTogether.Core.Tests.Session
     {
         public const double Frame = 1 / 60.0;
 
+        /// <summary>loadspeed: the simulated frame time (a slow game ticks the session less often).</summary>
+        public double FrameSeconds = Frame;
+
         public readonly ManualClock Clock = new ManualClock(1000);
         public readonly ListLog Log = new ListLog(LogLevel.Info);
         public readonly FakeInfo Info = new FakeInfo();
@@ -144,13 +147,13 @@ namespace SkylineTogether.Core.Tests.Session
 
         public void Run(double seconds)
         {
-            int frames = (int)Math.Round(seconds / Frame);
+            int frames = (int)Math.Round(seconds / FrameSeconds);
             for (int i = 0; i < frames; i++) Step();
         }
 
         public bool RunUntil(Func<bool> done, double maxSeconds)
         {
-            int frames = (int)Math.Round(maxSeconds / Frame);
+            int frames = (int)Math.Round(maxSeconds / FrameSeconds);
             for (int i = 0; i < frames; i++)
             {
                 if (done()) return true;
@@ -164,7 +167,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void Step()
         {
             _frame++;
-            Clock.Advance(Frame);
+            Clock.Advance(FrameSeconds);
             double now = Clock.Seconds;
             int bytes = BroadcastBytesPerFrame;
             if (BurstEvery > 0 && _frame % BurstEvery == 0) bytes = Math.Max(bytes, BurstBytes);

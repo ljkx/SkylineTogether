@@ -14,13 +14,33 @@ namespace SkylineTogether.Net
     /// <see cref="ITransport"/> over Steam Networking Sockets (R06 §4-5): P2P by Steam ID through Valve's relays (NAT
     /// traversal, encryption) and, optionally, direct IP connections on a UDP port. One poll group receives every
     /// connection's messages; connection-state changes arrive through the game's own <c>SteamAPI.RunCallbacks</c> pump
-    /// and are queued until the next <see cref="Poll"/>. Main thread only.
+    /// and are queued until the next <see cref="Poll"/>. Main thread only, except <see cref="SteamConnection"/>'s
+    /// <c>Send</c> and <c>GetStats</c>, which the host's snapshot pump also calls from its background thread (Steam
+    /// Networking Sockets is thread-safe; <see cref="IThreadSafeConnection"/>).
+    /// <para>
+    /// loadspeed: Steam does not estimate a connection's bandwidth; it sends at <c>SendRateMin/Max</c>, by default a
+    /// fixed 128-256 KiB/s, which made a 100 MB city take minutes over a relay. Every connection now starts at
+    /// 1 MiB/s and a <see cref="SendRateController"/> per connection raises the rate while the link is busy and clean
+    /// and backs off on loss or queueing delay (both limits set to the chosen rate, connection scope). The receive
+    /// buffer (<c>k_ESteamNetworkingConfig_RecvBufferSize</c>, default 1 MiB = four snapshot chunks) is raised to
+    /// 32 MiB, so a joiner whose frame hitches does not drop packets that then have to be resent.
+    /// </para>
     /// </summary>
     public sealed class SteamSocketsTransport : ITransport
     {
         private const int AppCloseReason = 1000; // k_ESteamNetConnectionEnd_App_Generic
         private const int MaxMessagesPerPoll = 256;
         private const double ListenLingerSeconds = 3.0;
+
+        /// <summary>loadspeed: the send buffer per connection (the outbox's <c>OutboxConfig.SendBufferBytes</c> matches it).</summary>
+        private const int SendBufferBytes = 16 << 20;
+
+        /// <summary>loadspeed: <c>k_ESteamNetworkingConfig_RecvBufferSize</c> (47) and its value; newer than this Steamworks.NET's enum.</summary>
+        private const ESteamNetworkingConfigValue RecvBufferSizeKey = (ESteamNetworkingConfigValue)47;
+        private const int RecvBufferBytes = 32 << 20;
+
+        private static readonly SendRateOptions RateOptions = new SendRateOptions();
+        private static bool _recvBufferWarned;
 
         private static readonly List<(HSteamListenSocket Socket, double CloseAt)> DeferredSockets = new List<(HSteamListenSocket, double)>();
         private static readonly System.Diagnostics.Stopwatch DeferredClock = System.Diagnostics.Stopwatch.StartNew();
@@ -96,12 +116,14 @@ namespace SkylineTogether.Net
             SteamNetworkingSockets.SetConnectionPollGroup(handle, _pollGroup);
             var connection = new SteamConnection(this, handle, new PeerIdentity(endpoint.SteamId, endpoint.SteamId != 0 ? null : endpoint.Host + ":" + endpoint.Port, null));
             _connections[handle.m_HSteamNetConnection] = connection;
+            ConfigureNew(connection);
             return connection;
         }
 
         public void Poll(ITransportEventSink sink)
         {
             if (_disposed) return;
+            UpdateSendRates();
             while (_statusEvents.Count > 0 && !_disposed)
             {
                 try
@@ -244,7 +266,9 @@ namespace SkylineTogether.Net
                             return;
                         }
                         SteamNetworkingSockets.SetConnectionPollGroup(e.m_hConn, _pollGroup);
-                        _connections[key] = new SteamConnection(this, e.m_hConn, IdentityOf(e.m_info));
+                        var accepted = new SteamConnection(this, e.m_hConn, IdentityOf(e.m_info));
+                        _connections[key] = accepted;
+                        ConfigureNew(accepted);
                     }
                     return;
                 case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_Connected:
@@ -333,7 +357,10 @@ namespace SkylineTogether.Net
         {
             return new[]
             {
-                Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendBufferSize, 16 << 20),
+                Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendBufferSize, SendBufferBytes),
+                // loadspeed: the starting rate (Steam's default is a fixed 128-256 KiB/s); the controller takes over
+                Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, RateOptions.InitialBytesPerSecond),
+                Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, RateOptions.InitialBytesPerSecond),
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutConnected, 30000),
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutInitial, 20000),
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_IP_AllowWithoutAuth, 1),
@@ -411,6 +438,65 @@ namespace SkylineTogether.Net
             }
         }
 
+        /// <summary>loadspeed: per-connection settings that cannot go into the creation options (newer than this SDK's enum).</summary>
+        private void ConfigureNew(SteamConnection connection)
+        {
+            bool ok = SetInt32(connection, RecvBufferSizeKey, RecvBufferBytes);
+            if (ok)
+            {
+                _log.Debug(LogCategory.Net, connection + ": receive buffer " + RecvBufferBytes + " bytes");
+            }
+            else if (!_recvBufferWarned)
+            {
+                _recvBufferWarned = true;
+                _log.Info(LogCategory.Net, "Steam does not offer the receive buffer setting; the default (1 MiB) applies");
+            }
+        }
+
+        private double _nextRateUpdate;
+
+        /// <summary>loadspeed: runs each connection's send rate controller and applies a changed rate (main thread).</summary>
+        private void UpdateSendRates()
+        {
+            double now = DeferredClock.Elapsed.TotalSeconds;
+            if (now < _nextRateUpdate || _connections.Count == 0) return;
+            _nextRateUpdate = now + 0.1;
+            foreach (SteamConnection c in _connections.Values)
+            {
+                if (c.Closed || !c.Reported) continue;
+                ConnectionStats stats = Stats(c);
+                int before = c.Rate.Rate;
+                if (!c.Rate.Update(now, stats)) continue;
+                int rate = c.Rate.Rate;
+                // the limits are set so that min never exceeds max on the way
+                bool ok = rate > before
+                    ? SetInt32(c, ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, rate) & SetInt32(c, ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, rate)
+                    : SetInt32(c, ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, rate) & SetInt32(c, ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, rate);
+                string line = c + ": send rate " + (before / 1048576.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " -> "
+                              + (rate / 1048576.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " MiB/s (" + c.Rate.LastChange
+                              + ", pending " + (stats.PendingReliableBytes + stats.PendingUnreliableBytes) + " B, ping " + stats.PingMs + " ms)" + (ok ? "" : "; Steam refused it");
+                if (rate < before || !ok) _log.Info(LogCategory.Net, line);
+                else _log.Debug(LogCategory.Net, line);
+            }
+        }
+
+        /// <summary>Sets a connection-scoped Int32 configuration value; false when Steam refuses it.</summary>
+        private unsafe bool SetInt32(SteamConnection connection, ESteamNetworkingConfigValue key, int value)
+        {
+            if (connection.Closed || _disposed) return false;
+            try
+            {
+                int v = value;
+                return SteamNetworkingUtils.SetConfigValue(key, ESteamNetworkingConfigScope.k_ESteamNetworkingConfig_Connection,
+                    new IntPtr(connection.Handle.m_HSteamNetConnection), ESteamNetworkingConfigDataType.k_ESteamNetworkingConfig_Int32, new IntPtr(&v));
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Net, connection + ": setting " + key + " failed: " + ex.Message);
+                return false;
+            }
+        }
+
         internal ConnectionStats Stats(SteamConnection connection)
         {
             if (connection.Closed || _disposed) return default(ConnectionStats);
@@ -427,6 +513,7 @@ namespace SkylineTogether.Net
                 QueueTimeMicroseconds = (long)status.m_usecQueueTime,
                 OutBytesPerSecond = status.m_flOutBytesPerSec,
                 InBytesPerSecond = status.m_flInBytesPerSec,
+                RemoteQuality = status.m_flConnectionQualityRemote,
             };
         }
 
@@ -455,8 +542,11 @@ namespace SkylineTogether.Net
         }
     }
 
-    internal sealed class SteamConnection : IConnection, IConnectionTimeouts
+    internal sealed class SteamConnection : IThreadSafeConnection, IConnectionTimeouts
     {
+        /// <summary>loadspeed: chooses this connection's send rate (main thread, <see cref="SteamSocketsTransport"/>'s poll).</summary>
+        public readonly SendRateController Rate = new SendRateController();
+
         private static int _nextId;
         private readonly SteamSocketsTransport _transport;
 
@@ -490,5 +580,8 @@ namespace SkylineTogether.Net
         }
 
         public override string ToString() => "steam connection " + Id + " (" + Peer + ")";
+
+        /// <summary>loadspeed: this connection's send rate state.</summary>
+        public string DescribeRate() => Rate.ToString();
     }
 }
