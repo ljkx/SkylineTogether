@@ -721,6 +721,9 @@ namespace SkylineTogether.Session
             if (_disposed) return;
             _main.Drain();
             if (!Features.Session.IsAvailable && Host == null && Client == null && !_rejoin.Recovering) return;
+            // perf pass: timed only in a city (the perf frame closes at the end of the in-game capture)
+            bool timed = Host != null || (Client != null && Client.State == ClientState.Live);
+            long start = timed ? Perf.Start() : 0;
             try
             {
                 SteamSocketsTransport.PumpDeferredCloses(); // presence branch: listen sockets of ended sessions linger briefly
@@ -731,6 +734,7 @@ namespace SkylineTogether.Session
                     Client.Tick();
                     if (Client != null && Client.State == ClientState.Ended) EndClient();
                 }
+                if (timed) Perf.Stop(Perf.Network, start);
                 if (Client == null && _rejoin.Recovering)
                 {
                     GameManager game = GameManager.instance;

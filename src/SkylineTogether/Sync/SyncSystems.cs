@@ -70,7 +70,9 @@ namespace SkylineTogether.Sync
             if (sync == null || !SyncController.SessionActive) return;
             try
             {
+                long start = Perf.Start();
                 sync.BindCreated();
+                Perf.Stop(Perf.Bind, start);
                 bool saving = _save != null && _save.Enabled;
                 if (saving && !_warned)
                 {

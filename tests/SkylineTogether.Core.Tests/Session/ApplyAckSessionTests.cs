@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Diagnostics;
@@ -103,6 +104,31 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Contains("ms/frame (apply", compact);
             Assert.Contains("9.8 KB/s", compact);
             Assert.Equal("", new PerfCounters().CompactSummary(0));
+        }
+
+        [Test]
+        public void PerfCountersCountNestedComponentsOnceInTotals()
+        {
+            var perf = new PerfCounters();
+            perf.Nest("scan", "capture");
+            for (int f = 0; f < 10; f++)
+            {
+                perf.AddTime("capture", 3.0);
+                perf.AddTime("scan", 2.0); // part of the capture's 3 ms
+                perf.AddTime("apply", 1.0);
+                perf.EndFrame(f / 60.0);
+            }
+            Assert.Near(4.0, perf.TotalAverageMs, 1e-9, "the nested scan is not added again");
+            Assert.Contains("4.00 ms/frame (capture 3.00)", perf.CompactSummary(1.0));
+            Assert.Contains("scan (in capture)", perf.Summary(1.0));
+            var lines = new List<string>();
+            perf.Describe(1.0, lines);
+            Assert.True(lines.Exists(l => l.StartsWith("time scan (in capture): ", StringComparison.Ordinal)), "the dump names the parent");
+            perf.Clear();
+            perf.AddTime("scan", 2.0);
+            perf.AddTime("capture", 2.5);
+            perf.EndFrame(2.0);
+            Assert.Near(2.5, perf.TotalAverageMs, 1e-9, "nesting survives Clear");
         }
 
         [Test]

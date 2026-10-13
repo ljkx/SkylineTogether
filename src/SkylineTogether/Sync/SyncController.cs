@@ -706,6 +706,7 @@ namespace SkylineTogether.Sync
             // feat/terrain: received stamps and heightmap/water tiles (independent of the entity stream)
             if (Features.Terrain.IsAvailable)
             {
+                long terrain = Perf.Start();
                 try
                 {
                     _terrain.ApplyIncoming();
@@ -714,9 +715,11 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Terrain, "terrain apply", ex);
                 }
+                Perf.Stop(Perf.Terrain, terrain);
             }
             if (Features.Water.IsAvailable)
             {
+                long water = Perf.Start();
                 try
                 {
                     _water.ApplyIncoming();
@@ -725,9 +728,11 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Water, "water apply", ex);
                 }
+                Perf.Stop(Perf.Water, water);
             }
             if (Features.SimValues.IsAvailable)
             {
+                long maps = Perf.Start();
                 try
                 {
                     _cellMaps.ApplyIncoming(); // w2/simvals: host merges paint patches, clients write map tiles
@@ -737,6 +742,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.SimValues, "map tiles and statistics apply", ex);
                 }
+                Perf.Stop(Perf.Maps, maps);
             }
             if (_codec == null || !Features.Replication.IsAvailable) return;
             if (!IsHost && !IsLiveClient)
@@ -838,6 +844,7 @@ namespace SkylineTogether.Sync
             // w3/audit (client): lane signals and signal heads from the host's junction phases
             if (!IsHost && Features.SimValues.IsAvailable)
             {
+                long signals = Perf.Start();
                 try
                 {
                     _signals.Update();
@@ -846,6 +853,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.SimValues, "traffic lights", ex);
                 }
+                Perf.Stop(Perf.Signals, signals);
             }
             // client: what the appliers wrote becomes the baseline, so it is never proposed back
             if (!IsHost)
@@ -1448,6 +1456,7 @@ namespace SkylineTogether.Sync
             // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
             if (Features.Terrain.IsAvailable)
             {
+                long terrain = Perf.Start();
                 try
                 {
                     _terrain.CaptureOutgoing();
@@ -1456,9 +1465,11 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Terrain, "terrain capture", ex);
                 }
+                Perf.Stop(Perf.Terrain, terrain);
             }
             if (Features.Water.IsAvailable)
             {
+                long water = Perf.Start();
                 try
                 {
                     _water.CaptureOutgoing();
@@ -1467,9 +1478,11 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Water, "water capture", ex);
                 }
+                Perf.Stop(Perf.Water, water);
             }
             if (Features.SimValues.IsAvailable)
             {
+                long maps = Perf.Start();
                 try
                 {
                     _cellMaps.CaptureOutgoing(); // w2/simvals: host map tiles, client paint patches
@@ -1479,6 +1492,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.SimValues, "map tiles and statistics capture", ex);
                 }
+                Perf.Stop(Perf.Maps, maps);
             }
             double dt = _lastFrameTime > 0 ? Math.Min(0.25, Math.Max(0.0, now - _lastFrameTime)) : 1.0 / 60.0;
             _lastFrameTime = now;
@@ -1498,6 +1512,7 @@ namespace SkylineTogether.Sync
                             CaptureHost(now, dt);
                             if (Features.SimValues.IsAvailable)
                             {
+                                long simValues = Perf.Start();
                                 try
                                 {
                                     _simValues.CaptureOutgoing(now); // w2/simvals: attention values and inspection samples
@@ -1506,6 +1521,7 @@ namespace SkylineTogether.Sync
                                 {
                                     Guard.Report(Features.SimValues, "attention values and inspection samples", ex);
                                 }
+                                Perf.Stop(Perf.SimValues, simValues);
                             }
                             if (Features.FlowStatus.IsAvailable)
                             {
@@ -1521,8 +1537,10 @@ namespace SkylineTogether.Sync
                         }
                         else if (IsLiveClient)
                         {
+                            long client = Perf.Start();
                             CaptureClient(now);
                             SafeCall("action capture", () => _actions.ClientCapture(_appliedThisFrame)); // gameplay branch
+                            Perf.Stop(Perf.ClientCapture, client);
                             if (Features.Agents.IsAvailable) _agents.ClientFrameEnd(now); // w3/agents: refresh requests
                         }
                     }
@@ -1661,6 +1679,7 @@ namespace SkylineTogether.Sync
             // w3/audit: components the simulation added or removed without a tag (fires, damage, floods, accident sites)
             if (Features.Events.IsAvailable)
             {
+                long watch = Perf.Start();
                 try
                 {
                     _events.HostCollect(now, _forceCapture, _scratchValues);
@@ -1671,6 +1690,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Events, "presence watch", ex);
                 }
+                Perf.Stop(Perf.PresenceWatch, watch);
             }
             // gameplay branch: entities that intents or the host's own UI changed without any tag
             foreach (Entity e in _forceCapture)
