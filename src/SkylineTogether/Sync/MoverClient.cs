@@ -906,12 +906,15 @@ namespace SkylineTogether.Sync
                 s.UpdateFrame = hostFrame;
                 if (e != Entity.Null && em.Exists(e) && em.HasComponent<UpdateFrame>(e)) s.UpdateFrame = em.GetSharedComponent<UpdateFrame>(e).m_Index & 15;
             }
-            if (e == Entity.Null || !em.Exists(e) || !em.HasBuffer<TransformFrame>(e)) return;
+            if (e == Entity.Null) return;
             uint u = s.UpdateFrame;
             uint baseTick = unchecked(render - 32);
             uint f1 = unchecked(baseTick - ((baseTick - u) & 15));
-            bool forced = _force.Remove(slot.Value);
-            if (s.Written && s.F1 == f1 && s.Version == version && !forced) return;
+            // perf pass: most slots were already written for this window (one in sixteen changes per frame); that is decided
+            // before the entity lookups, which only the slots that write need
+            if (s.Written && s.F1 == f1 && s.Version == version && !_force.Contains(slot.Value)) return;
+            if (!em.Exists(e) || !em.HasBuffer<TransformFrame>(e)) return;
+            _force.Remove(slot.Value);
             DynamicBuffer<TransformFrame> ring = em.GetBuffer<TransformFrame>(e);
             if (ring.Length != 4)
             {
