@@ -387,6 +387,15 @@ namespace SkylineTogether.Diagnostics
                 ESteamNetworkingAvailability a = SteamNetworkingUtils.GetRelayNetworkStatus(out SteamRelayNetworkStatus_t _);
                 return a < 0 ? "relay network unavailable (" + a + "); joining by Steam ID may fail, direct IP still works" : null;
             }, warningOnly: true);
+            // w6/invites: the friends list and lobby callbacks (the overlay is checked when the dialog is opened: it may
+            // hook into the game only after this probe ran)
+            Safe("P-FRIENDS", Features.Invites, "Steam friends and lobby callbacks", () =>
+            {
+                if (SteamFriends.GetFriendCount(EFriendFlags.k_EFriendFlagImmediate) < 0) return "the friends list is unavailable";
+                Callback<GameLobbyJoinRequested_t> callback = Callback<GameLobbyJoinRequested_t>.Create(_ => { });
+                callback.Dispose();
+                return null;
+            });
         }
 
         private static bool SteamOk()
