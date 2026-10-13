@@ -73,8 +73,8 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<EntityArchetype, bool> _trees = new Dictionary<EntityArchetype, bool>();
         private ComponentType _treeType;
         private ComponentType _buildingType;
-        private readonly HashSet<uint> _watchedLast = new HashSet<uint>();
-        private readonly HashSet<uint> _watchedNow = new HashSet<uint>();
+        private HashSet<uint> _watchedLast = new HashSet<uint>();
+        private HashSet<uint> _watchedNow = new HashSet<uint>();
         private readonly HashSet<uint> _liked = new HashSet<uint>();
         private readonly HashSet<string> _once = new HashSet<string>();
         private readonly List<uint> _scratchIds = new List<uint>();
@@ -211,8 +211,11 @@ namespace SkylineTogether.Sync
                     if (_watchedNow.Contains(id)) continue;
                     if (Check(em, id, into)) found++;
                 }
-                _watchedLast.Clear();
-                foreach (uint id in _watchedNow) _watchedLast.Add(id);
+                // perf pass: the sets swap roles (the copy cost an add per watched entity four times a second)
+                HashSet<uint> last = _watchedLast;
+                _watchedLast = _watchedNow;
+                _watchedNow = last;
+                _watchedNow.Clear();
             }
             // 3: everything else on a budgeted rolling pass
             if (!_pass.InProgress && now - _lastRefill >= RollingRefillSeconds)
@@ -239,6 +242,7 @@ namespace SkylineTogether.Sync
         {
             int found = 0;
             NativeArray<ArchetypeChunk> chunks = query.ToArchetypeChunkArray(Allocator.Temp);
+            IdIndexSet structure = _ids.StructureIds; // bound ids of the presence-watched families
             try
             {
                 EntityTypeHandle entityType = em.GetEntityTypeHandle();
@@ -250,7 +254,7 @@ namespace SkylineTogether.Sync
                     for (int i = 0; i < entities.Length; i++)
                     {
                         uint id = _ids.GetNetId(entities[i]);
-                        if (id == 0 || !FamilyClassifier.IsPresenceWatched(_ids.GetFamily(id))) continue;
+                        if (id == 0 || !structure.Contains(id)) continue;
                         seen?.Add(id);
                         if (!_sent.Changed(id, signature))
                         {
