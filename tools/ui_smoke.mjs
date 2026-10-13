@@ -115,7 +115,8 @@ mod.default({
 });
 for (const slot of ["Game", "Menu", "GameTopLeft"]) if (!appended[slot]) fail("nothing appended to " + slot);
 if (!extended[MAIN_MENU + "@MainMenuNavigation"]) fail("the main menu entry was not installed");
-if (!extended[MAIN_MENU + "@MainMenuScreen"]) fail("the multiplayer screen was not installed in place of the main menu screen");
+// the vanilla MainMenuScreen must NOT be replaced: in game that rendered nothing (the page is our own layer in "Menu")
+if (extended[MAIN_MENU + "@MainMenuScreen"]) fail("the main menu screen was replaced (renders nothing in game); use the Menu layer");
 if (!smoke.store) fail("the smoke hook is missing");
 
 // ---------------------------------------------------------------------------------------------- renderer
@@ -244,12 +245,14 @@ for (const pass of passes) {
         runHandlers(pass.name + " " + name + " " + slot);
       }
     }
-    // the multiplayer screen (open, per page) and the untouched main menu screen (closed)
+    // the multiplayer page (open, per page) as the Menu layer over the title screen, and closed
     for (const [menuOpen, tab] of [[true, "join"], [true, "host"], [true, "solo"], [false, "join"]]) {
       Object.assign(smoke.store, { menuOpen, tab, dismissedEnd: -1, typing: 0 });
-      try { total += render({ type: extended[MAIN_MENU + "@MainMenuScreen"], props: { focusKey: { debugName: "menu" }, className: "x" }, children: [] }); }
-      catch (e) { fail(pass.name + " " + name + " multiplayer screen: " + (e && e.stack)); }
-      runHandlers(pass.name + " " + name + " multiplayer screen");
+      let nodes = 0;
+      try { nodes = render({ type: appended["Menu"], props: {}, children: [] }); total += nodes; }
+      catch (e) { fail(pass.name + " " + name + " multiplayer page: " + (e && e.stack)); }
+      if (menuOpen && nodes < 20) fail(pass.name + " " + name + " multiplayer page rendered almost nothing (" + nodes + " nodes)");
+      runHandlers(pass.name + " " + name + " multiplayer page");
     }
     try { total += render({ type: extended[MAIN_MENU + "@MainMenuNavigation"], props: { children: [{ type: "a", props: {}, children: [] }, { type: "b", props: {}, children: [] }, { type: "c", props: {}, children: [] }, false, { type: "d", props: {}, children: [] }] }, children: [] }); }
     catch (e) { fail(pass.name + " " + name + " main menu: " + (e && e.stack)); }

@@ -2181,7 +2181,7 @@ function MenuScreenFallback(p) {
   }, []);
   return h(
     "div",
-    { style: merge(S.fill, S.col, { pointerEvents: "auto", color: T.menuText }) },
+    { style: merge(S.fill, S.col, { pointerEvents: "auto", color: "#ffffff", padding: "48rem 64rem 40rem 64rem" }) },
     h(
       "div",
       { style: merge(S.row, { marginBottom: "8rem" }) },
@@ -2190,7 +2190,7 @@ function MenuScreenFallback(p) {
         { style: merge(S.center, { width: "40rem", height: "40rem", marginRight: "12rem", borderRadius: "8rem", cursor: "pointer" }, border("2rem", "#ffffff")), onClick: p.onClose },
         h(Glyph, { src: G.back, size: 20 })
       ),
-      h("div", { style: { fontSize: "40rem", lineHeight: 1.2, fontWeight: "bold", color: T.menuTitle, textTransform: "uppercase" } }, t("st.ui.menu.multiplayer"))
+      h("div", { style: { fontSize: "40rem", lineHeight: 1.2, fontWeight: "bold", color: "#ffffff", textTransform: "uppercase" } }, t("st.ui.menu.multiplayer"))
     ),
     h("div", { style: { flex: 1, position: "relative" } }, h("div", { style: S.fill }, p.children))
   );
@@ -2886,7 +2886,10 @@ export default function register(moduleRegistry) {
     console.warn("SkylineTogether: game components unavailable (" + e + "); using the built-in look");
   }
   menuButtonInstalled = installMainMenuButton(moduleRegistry);
-  menuScreenInstalled = menuButtonInstalled && installMenuScreen(moduleRegistry);
+  // In-game report: replacing the vanilla MainMenuScreen rendered NOTHING after clicking Multiplayer (the vanilla
+  // sub-screen needs context of the real menu screen stack). The multiplayer page is drawn as our own full-screen
+  // layer over the title screen instead (MenuRoot), which is known to render. installMenuScreen stays for later.
+  menuScreenInstalled = false;
   try {
     moduleRegistry.append("GameTopLeft", TopLeftButton);
     topLeftRegistered = true;
