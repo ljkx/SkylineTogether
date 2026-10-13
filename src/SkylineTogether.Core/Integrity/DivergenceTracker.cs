@@ -11,16 +11,28 @@ namespace SkylineTogether.Core.Integrity
     /// <para>
     /// <b>Confirmation.</b> The host hashes its live state, which may be ahead of what it has streamed (scanned values go
     /// out a scan pass later), so one mismatch proves nothing. An entity counts only when it mismatches in two details at
-    /// least <see cref="ConfirmSeconds"/> apart <i>and</i> the client's own hash did not change in between: a client that
-    /// keeps receiving updates is following, a client whose value is stuck while the host's differs has diverged.
+    /// least <see cref="ConfirmSeconds"/> apart (or the per-entity window of <see cref="ConfirmSecondsFor"/>: agents' key
+    /// links reach clients only when the host's rolling agent scan gets to them) <i>and</i> the client's own hash did not
+    /// change in between: a client that keeps receiving updates is following, a client whose value is stuck while the
+    /// host's differs has diverged.
     /// </para>
     /// <para>
     /// <b>Repair and tolerance.</b> A confirmed entity is re-sent (<see cref="Outcome.Repair"/>); its next observation is
     /// at least <see cref="VerifySeconds"/> later and must be confirmed again. After <see cref="RepairsBeforeTolerance"/>
     /// repairs that did not help it is tolerated for <see cref="ToleranceSeconds"/> (logged once with an explanation
     /// request), and while tolerated <see cref="TryGetOverride"/> lets the client count the host's hash in its bucket sums,
-    /// so one stubborn entity cannot keep its bucket mismatching. This is the repair-storm guard; the per-detail cap
-    /// <see cref="MaxRepairsPerDetail"/> and the bound <see cref="MaxTracked"/> keep the cost bounded under mass divergence.
+    /// so one stubborn entity cannot keep its bucket mismatching.
+    /// </para>
+    /// <para>
+    /// <b>Storm guards</b> (crashfix: a real session repaired the same derived areas again and again, because every repair
+    /// matched for a moment, resolved the entry and with it its attempt count, before the client's own geometry system
+    /// regenerated the value): a per-entity repair <i>history</i> outlives the entry for <see cref="HistorySeconds"/>, so
+    /// an entity that keeps coming back waits an exponential backoff (<see cref="BackoffSeconds"/> doubled per earlier
+    /// repair) and is tolerated after <see cref="MaxRepairsInHistory"/> repairs even when each one matched briefly; an
+    /// entity tolerated <see cref="MaxTolerances"/> times is given up for the session (<see cref="Outcome.GivenUp"/>); and
+    /// a global token bucket (<see cref="MaxRepairsPerMinute"/>) bounds the repair rate whatever the cause. The per-detail
+    /// cap <see cref="MaxRepairsPerDetail"/> and the bound <see cref="MaxTracked"/> keep the cost bounded under mass
+    /// divergence.
     /// </para>
     /// Single-threaded (main thread); time is passed in seconds.
     /// </summary>
@@ -30,13 +42,19 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>Two observations of a stuck mismatch must be at least this far apart (seconds).</summary>
         public double ConfirmSeconds = 1.5;
 
+        /// <summary>
+        /// crashfix: an optional per-entity confirmation window (seconds) replacing <see cref="ConfirmSeconds"/>; a value
+        /// not above zero falls back to it. The client gives agents a window longer than the host's agent scan cycle.
+        /// </summary>
+        public Func<uint, double> ConfirmSecondsFor;
+
         /// <summary>A repaired entity is judged again no earlier than this (seconds).</summary>
         public double VerifySeconds = 3.0;
 
         /// <summary>How long a tolerated entity stays masked (seconds).</summary>
         public double ToleranceSeconds = 600;
 
-        /// <summary>Repairs of one entity before it is tolerated.</summary>
+        /// <summary>Repairs of one entity (without a match in between) before it is tolerated.</summary>
         public int RepairsBeforeTolerance = 2;
 
         /// <summary>Repairs one detail may ask for; further confirmed entities wait for the next detail.</summary>
@@ -48,8 +66,30 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>An observation not seen again for this long is forgotten by <see cref="Sweep"/> (seconds).</summary>
         public double ForgetSeconds = 300;
 
+        /// <summary>crashfix: how long an entity's repairs are remembered after its last one (seconds).</summary>
+        public double HistorySeconds = 1800;
+
+        /// <summary>crashfix: repairs within the history after which an entity is tolerated even if each repair matched briefly.</summary>
+        public int MaxRepairsInHistory = 3;
+
+        /// <summary>crashfix: an entity repaired before waits this long times 2^(earlier repairs - 1) since its last repair (seconds).</summary>
+        public double BackoffSeconds = 10;
+
+        /// <summary>crashfix: tolerance periods after which an entity is given up for the session.</summary>
+        public int MaxTolerances = 2;
+
+        /// <summary>crashfix: repairs per minute at most, all entities together (a token bucket with a burst of the same size).</summary>
+        public double MaxRepairsPerMinute = 120;
+
+        /// <summary>crashfix: histories kept at most (further first repairs are not remembered).</summary>
+        public int MaxHistory = 50000;
+
         private readonly Dictionary<uint, Entry> _entries = new Dictionary<uint, Entry>();
+        private readonly Dictionary<uint, History> _history = new Dictionary<uint, History>();
+        private readonly Dictionary<uint, int> _perBucket = new Dictionary<uint, int>();
         private readonly List<uint> _scratch = new List<uint>();
+        private double _budget = double.NaN;
+        private double _budgetAt;
 
         private sealed class Entry
         {
@@ -66,6 +106,13 @@ namespace SkylineTogether.Core.Integrity
             public bool Explained;
         }
 
+        private sealed class History
+        {
+            public int Repairs;
+            public double LastRepair;
+            public int Tolerances;
+        }
+
         /// <summary>What one detail asks the caller to do.</summary>
         public sealed class Outcome
         {
@@ -77,6 +124,12 @@ namespace SkylineTogether.Core.Integrity
 
             /// <summary>Entities tolerated by this detail.</summary>
             public readonly List<uint> NewlyTolerated = new List<uint>();
+
+            /// <summary>crashfix: entities given up for the session by this detail (also in <see cref="NewlyTolerated"/>).</summary>
+            public readonly List<uint> GivenUp = new List<uint>();
+
+            /// <summary>crashfix: repaired entities that were repaired before (candidates for a rate-limited explanation).</summary>
+            public readonly List<uint> Repeated = new List<uint>();
 
             /// <summary>True when the bucket should be detailed again (an observation awaits confirmation or a repair awaits verification).</summary>
             public bool Recheck;
@@ -92,6 +145,8 @@ namespace SkylineTogether.Core.Integrity
                 Repair.Clear();
                 Explain.Clear();
                 NewlyTolerated.Clear();
+                GivenUp.Clear();
+                Repeated.Clear();
                 Recheck = false;
                 RecheckAfter = 0;
                 Matching = 0;
@@ -109,6 +164,9 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>Entities being observed, repaired or tolerated.</summary>
         public int Tracked => _entries.Count;
 
+        /// <summary>crashfix: entities whose repair history is remembered.</summary>
+        public int Histories => _history.Count;
+
         /// <summary>Confirmed mismatches since creation.</summary>
         public long Confirmations { get; private set; }
 
@@ -121,6 +179,15 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>Mismatches ignored because <see cref="MaxTracked"/> entities were tracked.</summary>
         public long Overflow { get; private set; }
 
+        /// <summary>crashfix: confirmed repairs postponed because the global budget was spent.</summary>
+        public long BudgetDeferred { get; private set; }
+
+        /// <summary>crashfix: confirmed repairs postponed by the per-entity backoff.</summary>
+        public long BackedOff { get; private set; }
+
+        /// <summary>crashfix: entities given up for the session.</summary>
+        public long GivenUpCount { get; private set; }
+
         /// <summary>Entities currently tolerated.</summary>
         public int ToleratedCount(double now)
         {
@@ -131,6 +198,9 @@ namespace SkylineTogether.Core.Integrity
             }
             return n;
         }
+
+        /// <summary>crashfix: repairs of the entity remembered in its history (0 when none).</summary>
+        public int RepairsOf(uint netId) => _history.TryGetValue(netId, out History h) ? h.Repairs : 0;
 
         /// <summary>Evaluates one bucket detail: the host's and the client's hashes of the same bucket.</summary>
         public void OnDetail(IReadOnlyList<EntityHash> host, IReadOnlyList<EntityHash> client, double now, Outcome outcome)
@@ -171,6 +241,13 @@ namespace SkylineTogether.Core.Integrity
             outcome.Matching = matching;
         }
 
+        private double ConfirmFor(uint id)
+        {
+            if (ConfirmSecondsFor == null) return ConfirmSeconds;
+            double s = ConfirmSecondsFor(id);
+            return s > 0 ? s : ConfirmSeconds;
+        }
+
         private void Observe(uint id, bool hostPresent, ulong hostHash, bool clientPresent, ulong clientHash, double now, Outcome outcome)
         {
             if (!_entries.TryGetValue(id, out Entry e))
@@ -182,6 +259,7 @@ namespace SkylineTogether.Core.Integrity
                 }
                 e = new Entry();
                 _entries.Add(id, e);
+                AddToBucket(id);
             }
             e.HostPresent = hostPresent;
             e.HostHash = hostHash;
@@ -196,18 +274,19 @@ namespace SkylineTogether.Core.Integrity
             }
             bool stable = e.Rounds > 0 && e.ClientPresent == clientPresent && e.ClientHash == clientHash;
             e.LastSeen = now;
+            double confirm = ConfirmFor(id);
             if (!stable)
             {
                 e.Rounds = 1;
                 e.FirstSeen = now;
                 e.ClientPresent = clientPresent;
                 e.ClientHash = clientHash;
-                outcome.NeedRecheck(ConfirmSeconds);
+                outcome.NeedRecheck(confirm);
                 return;
             }
-            if (now - e.FirstSeen < ConfirmSeconds)
+            if (now - e.FirstSeen < confirm)
             {
-                outcome.NeedRecheck(ConfirmSeconds - (now - e.FirstSeen));
+                outcome.NeedRecheck(confirm - (now - e.FirstSeen));
                 return;
             }
             if (e.Attempts > 0 && now - e.LastRepair < VerifySeconds)
@@ -216,10 +295,29 @@ namespace SkylineTogether.Core.Integrity
                 return;
             }
             Confirmations++;
-            if (e.Attempts >= RepairsBeforeTolerance)
+            _history.TryGetValue(id, out History h);
+            if (h != null && h.Tolerances == 0 && now - h.LastRepair > HistorySeconds)
             {
-                e.ToleratedUntil = now + ToleranceSeconds;
+                _history.Remove(id);
+                h = null;
+            }
+            int earlier = h?.Repairs ?? 0;
+            if (e.Attempts >= RepairsBeforeTolerance || earlier >= MaxRepairsInHistory)
+            {
+                if (h == null)
+                {
+                    h = new History { LastRepair = now };
+                    _history[id] = h;
+                }
+                h.Tolerances++;
+                bool giveUp = h.Tolerances >= MaxTolerances;
+                e.ToleratedUntil = giveUp ? double.MaxValue : now + ToleranceSeconds;
                 outcome.NewlyTolerated.Add(id);
+                if (giveUp)
+                {
+                    GivenUpCount++;
+                    outcome.GivenUp.Add(id);
+                }
                 if (!e.Explained)
                 {
                     e.Explained = true;
@@ -227,24 +325,86 @@ namespace SkylineTogether.Core.Integrity
                 }
                 return;
             }
+            if (earlier > 0 && e.Attempts == 0)
+            {
+                // it matched after an earlier repair and diverged again: exponential backoff
+                double wait = BackoffSeconds * Math.Pow(2, Math.Min(earlier - 1, 10));
+                double since = now - h.LastRepair;
+                if (since < wait)
+                {
+                    BackedOff++;
+                    outcome.NeedRecheck(wait - since);
+                    return;
+                }
+            }
             if (outcome.Repair.Count >= MaxRepairsPerDetail)
             {
                 outcome.NeedRecheck(ConfirmSeconds);
                 return;
             }
+            if (!TakeBudget(now))
+            {
+                BudgetDeferred++;
+                outcome.NeedRecheck(Math.Max(ConfirmSeconds, 60.0 / Math.Max(1, MaxRepairsPerMinute)));
+                return;
+            }
             outcome.Repair.Add(id);
+            if (earlier > 0) outcome.Repeated.Add(id);
             RepairsRequested++;
             e.Attempts++;
             e.LastRepair = now;
             e.Rounds = 0;
+            if (h == null)
+            {
+                if (_history.Count < MaxHistory) _history[id] = new History { Repairs = 1, LastRepair = now };
+            }
+            else
+            {
+                h.Repairs++;
+                h.LastRepair = now;
+            }
             outcome.NeedRecheck(VerifySeconds);
+        }
+
+        private bool TakeBudget(double now)
+        {
+            double cap = Math.Max(1, MaxRepairsPerMinute);
+            if (double.IsNaN(_budget) || now < _budgetAt)
+            {
+                _budget = cap;
+                _budgetAt = now;
+            }
+            _budget = Math.Min(cap, _budget + (now - _budgetAt) * cap / 60.0);
+            _budgetAt = now;
+            if (_budget < 1) return false;
+            _budget -= 1;
+            return true;
+        }
+
+        private void AddToBucket(uint id)
+        {
+            uint bucket = EntityDigest.BucketOf(id);
+            _perBucket.TryGetValue(bucket, out int n);
+            _perBucket[bucket] = n + 1;
+        }
+
+        private void RemoveEntry(uint id)
+        {
+            if (!_entries.Remove(id)) return;
+            uint bucket = EntityDigest.BucketOf(id);
+            if (_perBucket.TryGetValue(bucket, out int n))
+            {
+                if (n <= 1) _perBucket.Remove(bucket);
+                else _perBucket[bucket] = n - 1;
+            }
         }
 
         private void Resolve(uint id)
         {
             if (!_entries.TryGetValue(id, out Entry e)) return;
+            if (e.ToleratedUntil == double.MaxValue) return; // given up for the session
             if (e.Attempts > 0) RepairsSucceeded++;
-            _entries.Remove(id);
+            RemoveEntry(id); // crashfix: the history stays, so a resolved entry no longer resets the repair count
         }
 
         /// <summary>
@@ -253,14 +413,14 @@ namespace SkylineTogether.Core.Integrity
         /// </summary>
         public void OnBucketMatched(uint bucket, double now)
         {
-            if (_entries.Count == 0) return;
+            if (!_perBucket.ContainsKey(bucket)) return;
             uint first = EntityDigest.FirstId(bucket);
             uint last = EntityDigest.LastId(bucket);
             _scratch.Clear();
-            foreach (KeyValuePair<uint, Entry> pair in _entries)
+            for (uint id = first; id <= last && id != 0; id++)
             {
-                if (pair.Key < first || pair.Key > last || pair.Value.ToleratedUntil > now) continue;
-                _scratch.Add(pair.Key);
+                if (_entries.TryGetValue(id, out Entry e) && e.ToleratedUntil <= now) _scratch.Add(id);
+                if (id == uint.MaxValue) break;
             }
             foreach (uint id in _scratch) Resolve(id);
         }
@@ -282,20 +442,20 @@ namespace SkylineTogether.Core.Integrity
             return false;
         }
 
-        /// <summary>True when any tracked entity lies in the bucket (cheap pre-check for overrides).</summary>
-        public bool HasEntriesIn(uint bucket)
+        /// <summary>True when any tracked entity lies in the bucket (O(1); crashfix: was a scan over every entry per digest).</summary>
+        public bool HasEntriesIn(uint bucket) => _perBucket.ContainsKey(bucket);
+
+        /// <summary>
+        /// crashfix: the id was despawned or deleted locally: its observation, tolerance and history no longer describe
+        /// anything (the id may be reused for another entity).
+        /// </summary>
+        public void Forget(uint netId)
         {
-            if (_entries.Count == 0) return false;
-            uint first = EntityDigest.FirstId(bucket);
-            uint last = EntityDigest.LastId(bucket);
-            foreach (uint id in _entries.Keys)
-            {
-                if (id >= first && id <= last) return true;
-            }
-            return false;
+            RemoveEntry(netId);
+            _history.Remove(netId);
         }
 
-        /// <summary>Forgets stale observations and expired tolerances.</summary>
+        /// <summary>Forgets stale observations, expired tolerances and old histories.</summary>
         public void Sweep(double now)
         {
             _scratch.Clear();
@@ -306,10 +466,23 @@ namespace SkylineTogether.Core.Integrity
                 bool stale = e.ToleratedUntil == 0 && now - e.LastSeen > ForgetSeconds;
                 if (expired || stale) _scratch.Add(pair.Key);
             }
-            foreach (uint id in _scratch) _entries.Remove(id);
+            foreach (uint id in _scratch) RemoveEntry(id);
+            _scratch.Clear();
+            foreach (KeyValuePair<uint, History> pair in _history)
+            {
+                // a history with a tolerance counts toward giving up; it is kept as long as the session (bounded by MaxHistory)
+                if (pair.Value.Tolerances == 0 && now - pair.Value.LastRepair > HistorySeconds && !_entries.ContainsKey(pair.Key)) _scratch.Add(pair.Key);
+            }
+            foreach (uint id in _scratch) _history.Remove(id);
         }
 
         /// <summary>Forgets everything (session end); keeps the statistics.</summary>
-        public void Clear() => _entries.Clear();
+        public void Clear()
+        {
+            _entries.Clear();
+            _history.Clear();
+            _perBucket.Clear();
+            _budget = double.NaN;
+        }
     }
 }

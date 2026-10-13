@@ -66,6 +66,7 @@ namespace SkylineTogether.Sync
         private const double RouteWindowLinger = 2.0;
         private const double AckInterval = 0.1;
         private const int ResendChunkRecords = 512;
+        private const int MaxRollbackRecords = 512; // crashfix: full records a rollback writes in its frame
 
         private struct Inbound
         {
@@ -253,6 +254,7 @@ namespace SkylineTogether.Sync
             _flow = new FlowStatusSync(sessions, log) { PeerTopics = _simValues.PeerTopics, InView = _simValues.InView, LocalTopics = () => _simValues.LocalTopics };
             _statistics = new StatisticsSync(sessions, log);
             _agents = new AgentSync(sessions, log); // w3/agents
+            Integrity.TouchAgent = _agents.Touch; // crashfix: agents of a requested bucket are scanned first
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
             _mayCreate = MayCreate;
@@ -384,6 +386,13 @@ namespace SkylineTogether.Sync
                 lines.Add("apply acks: received " + t.Received + ", applied through " + t.AppliedThrough + ", held " + t.HeldCount + ", last ack " + _lastAckSent
                           + "; ledger base epoch " + _baseEpoch);
             }
+            if (_codec != null)
+            {
+                // crashfix: reference safety of the applier and the client's deletion bookkeeping
+                lines.Add("reference safety: " + _codec.UnresolvedSpawnsTotal + " new objects not created (owner/node/parent missing), " + _codec.UnsafeTotal
+                          + " untagged or sanitized for broken net references, " + _codec.DeadReferencesTotal + " references to destroyed/deleted entities dropped; "
+                          + _localDeletes.Count + " local deletions awaiting the host, " + _localDeleteSkips + " stale host records skipped, " + _cascadeUnbinds + " cascade unbinds");
+            }
             _agents.Describe(lines); // w3/agents
             Perf.Counters.Describe(Perf.Now, lines);
         }
@@ -507,6 +516,7 @@ namespace SkylineTogether.Sync
             _watcher?.Stop();
             _modSettings.Reset();
             _holds.Clear();
+            _localDeletes.Clear(); // crashfix
             _dependencies.Clear();
             _missingNotified = false;
             _codec?.ResetSession(); // final review: the missing-asset list is per session
@@ -976,9 +986,13 @@ namespace SkylineTogether.Sync
 
         private void ApplyFromHost(byte[] data)
         {
+            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length); // decoded once for every consumer
+            // crashfix: ids this player deleted locally wait for the host's despawn; a rejected proposal releases its ids
+            // (the rollback in the same message recreates them)
+            if (_localDeletes.Count > 0) UpdateLocalDeletes(records);
             // mod compatibility: records of entities the player is dragging with a direct-write tool wait (edit hold)
             Func<SyncRecord, bool> skip = null;
-            if (_holds.Count > 0)
+            if (_holds.Count > 0 || _localDeletes.Count > 0)
             {
                 double now = _sessions.Clock.Seconds;
                 skip = rec =>
@@ -986,7 +1000,13 @@ namespace SkylineTogether.Sync
                     if (rec.Kind == SyncRecordKind.Despawn)
                     {
                         _holds.Remove(rec.NetId); // a deleted entity is never held (its id may be reused later)
+                        _localDeletes.Remove(rec.NetId);
                         return false;
+                    }
+                    if (_localDeletes.ContainsKey(rec.NetId))
+                    {
+                        _localDeleteSkips++;
+                        return true;
                     }
                     if (!_holds.TryGetValue(rec.NetId, out EditHold hold) || now >= hold.Until) return false;
                     hold.Batch = data;
@@ -994,7 +1014,6 @@ namespace SkylineTogether.Sync
                     return true;
                 };
             }
-            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length); // decoded once for every consumer
             ApplyResult r = _codec.Apply(records, data, 0, data.Length, null, skip);
             // mod compatibility: tell the player once that objects of missing assets are left out (details in the log)
             if (!_missingNotified && _codec.MissingAssets.Count > 0)
@@ -1020,6 +1039,41 @@ namespace SkylineTogether.Sync
                     Guard.Report(Features.Integrity, "integrity (host batch)", ex);
                 }
             }
+        }
+
+        /// <summary>crashfix (client): an entity this player deleted, waiting for the host's despawn.</summary>
+        private struct LocalDelete
+        {
+            public uint Seq;
+            public double Until;
+        }
+
+        private const double LocalDeleteSeconds = 20;
+        private readonly Dictionary<uint, LocalDelete> _localDeletes = new Dictionary<uint, LocalDelete>();
+        private readonly List<uint> _localDeleteScratch = new List<uint>();
+        private long _localDeleteSkips, _cascadeUnbinds;
+
+        /// <summary>
+        /// crashfix (client): expires local deletions the host never answered (after <see cref="LocalDeleteSeconds"/> the
+        /// integrity check takes over) and releases those of proposals this batch reports as rejected.
+        /// </summary>
+        private void UpdateLocalDeletes(List<SyncRecord> records)
+        {
+            double now = _sessions.Clock.Seconds;
+            _localDeleteScratch.Clear();
+            foreach (KeyValuePair<uint, LocalDelete> pair in _localDeletes)
+            {
+                if (now >= pair.Value.Until) _localDeleteScratch.Add(pair.Key);
+            }
+            foreach (SyncRecord r in records)
+            {
+                if (r.Kind != SyncRecordKind.ProposalResult || r.Reason == RejectReason.None) continue;
+                foreach (KeyValuePair<uint, LocalDelete> pair in _localDeletes)
+                {
+                    if (pair.Value.Seq == r.Seq) _localDeleteScratch.Add(pair.Key);
+                }
+            }
+            foreach (uint id in _localDeleteScratch) _localDeletes.Remove(id);
         }
 
         private void ApplyGlobal(byte[] data, PeerId peer, bool proposal)
@@ -1275,6 +1329,8 @@ namespace SkylineTogether.Sync
             var w = new SyncBatch.Writer();
             w.ProposalResult(seq, reason);
             var seen = new HashSet<uint>();
+            int full = 0;
+            _out.TryGetValue(peer.Value, out PeerOut paced);
             foreach (uint id in ids)
             {
                 if (id == 0 || !seen.Add(id)) continue;
@@ -1287,8 +1343,15 @@ namespace SkylineTogether.Sync
                     {
                         w.Despawn(id);
                     }
+                    else if (FamilyClassifier.IsReplicated(family) && full >= MaxRollbackRecords && paced != null)
+                    {
+                        // crashfix (host lag): a refused mass edit (a big bulldoze) re-encoded every entity in one frame;
+                        // beyond the first records the rest goes through the peer's paced queue
+                        paced.Queue.Mark(id, DeferredClass.Upsert, Perf.Now);
+                    }
                     else if (FamilyClassifier.IsReplicated(family))
                     {
+                        full++;
                         if (em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, w);
                         _codec.WriteEntity(w, SyncRecordKind.Upsert, id, family, e);
                     }
@@ -1993,6 +2056,24 @@ namespace SkylineTogether.Sync
             NativeArray<Entity> table = _ids.ReaderTable;
             double now = Perf.Now;
             int n = 0;
+            if (routesOnly)
+            {
+                // crashfix (host lag): lines are value-scanned families with their own index set; walking the whole id
+                // table (every agent of the city) on each route-tool close cost milliseconds per peer
+                IdIndexSet scanned = _ids.ScannedIds;
+                for (int i = 0; i < scanned.Count; i++)
+                {
+                    uint id = scanned[i];
+                    Family f = _ids.GetFamily(id);
+                    if (!(f == Family.Route || f == Family.Waypoint || f == Family.Segment)) continue;
+                    Entity e = _ids.GetEntity(id);
+                    if (e == Entity.Null || !em.Exists(e)) continue;
+                    o.Queue.Mark(id, DeferredClass.Upsert, now);
+                    n++;
+                }
+                _log.Info(LogCategory.Replication, peer + ": re-sending " + n + " line entities (paced by its link)");
+                return;
+            }
             for (int id = 1; id < table.Length; id++)
             {
                 Entity e = table[id];
@@ -2084,8 +2165,10 @@ namespace SkylineTogether.Sync
             {
                 foreach (Entity e in changed)
                 {
-                    if (_appliedThisFrame.Contains(e)) continue;
-                    if (!toolPath && !em.HasComponent<Game.Common.Deleted>(e)) continue;
+                    bool isDeleted = em.HasComponent<Game.Common.Deleted>(e);
+                    // crashfix: an entity the applier touched and the local game then deleted is still a deletion to handle
+                    if (_appliedThisFrame.Contains(e) && !isDeleted) continue;
+                    if (!toolPath && !isDeleted) continue;
                     Family family = _codec.Families.Classify(em, e);
                     // mod compatibility: vehicles, cims and animals a mod tool deleted (Better Bulldozer)
                     if (family == Family.Mover && localTool && em.HasComponent<Game.Common.Deleted>(e))
@@ -2113,12 +2196,27 @@ namespace SkylineTogether.Sync
                         if (id == 0) continue;
                         if (!toolPath)
                         {
-                            if (!IsUiDeletion(em, e, family)) continue;
+                            if (!IsUiDeletion(em, e, family))
+                            {
+                                // crashfix: a cascade of the local game (the owner was despawned: sub-nets, sub-areas,
+                                // upgrades) destroys the entity at the end of this frame. Its binding must not outlive it:
+                                // a later record naming the id would otherwise resolve to a destroyed entity (a dangling
+                                // reference the game's jobs follow unchecked). Not proposed: the host deletes it itself.
+                                _ids.Unbind(id);
+                                _shadow.Remove(id);
+                                Integrity.OnLocalDelete(id);
+                                _cascadeUnbinds++;
+                                continue;
+                            }
                             flags |= ProposalFlags.UiDelete;
                         }
                         _batch.Despawn(id);
                         _ids.Unbind(id);
                         _shadow.Remove(id);
+                        // crashfix: until the host's despawn (or its rollback) arrives, records the host sent before it
+                        // applied this deletion must not bring the entity back (in-flight repairs, upserts)
+                        _localDeletes[id] = new LocalDelete { Seq = _seq + 1, Until = _sessions.Clock.Seconds + LocalDeleteSeconds };
+                        Integrity.OnLocalDelete(id);
                         continue;
                     }
                     bool authored = em.HasComponent<Game.Common.Applied>(e) || _toolOriginals.Contains(e) || (localTool && !_toolApplied);

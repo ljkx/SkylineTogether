@@ -18,6 +18,12 @@ namespace SkylineTogether.Sync
     public sealed class ApplyResult
     {
         public int Spawned, Upserted, Values, Despawned, Skipped, ZoneBlocks;
+        /// <summary>crashfix: spawns not created because a structural reference (owner, edge node, parent) is not here.</summary>
+        public int UnresolvedSpawns;
+        /// <summary>crashfix: components that kept (existing entity) or nulled (new entity) a reference that did not resolve.</summary>
+        public int UnresolvedComponents;
+        /// <summary>crashfix: entities left untagged or sanitized because their net or owner references are broken.</summary>
+        public int UnsafeSkipped;
         public long Cost;
         public bool HasCost;
         public uint? Clock;
@@ -32,6 +38,7 @@ namespace SkylineTogether.Sync
         public void Reset()
         {
             Spawned = Upserted = Values = Despawned = Skipped = ZoneBlocks = 0;
+            UnresolvedSpawns = UnresolvedComponents = UnsafeSkipped = 0;
             Cost = 0;
             HasCost = false;
             Clock = null;
@@ -41,7 +48,8 @@ namespace SkylineTogether.Sync
             SpawnedEntities.Clear();
         }
 
-        public override string ToString() => "+" + Spawned + " ~" + Upserted + " v" + Values + " -" + Despawned + (Skipped > 0 ? " skipped " + Skipped : "") + (ZoneBlocks > 0 ? " zones " + ZoneBlocks : "");
+        public override string ToString() => "+" + Spawned + " ~" + Upserted + " v" + Values + " -" + Despawned + (Skipped > 0 ? " skipped " + Skipped : "") + (ZoneBlocks > 0 ? " zones " + ZoneBlocks : "")
+                                             + (UnresolvedSpawns > 0 ? " unresolved spawns " + UnresolvedSpawns : "") + (UnsafeSkipped > 0 ? " unsafe " + UnsafeSkipped : "");
     }
 
     /// <summary>
@@ -842,6 +850,13 @@ namespace SkylineTogether.Sync
                     _ids.Unbind(r.NetId);
                     e = Entity.Null;
                 }
+                else if (e != Entity.Null && em.HasComponent<Game.Common.Deleted>(e))
+                {
+                    // crashfix: the entity is being deleted this frame; writing it (or creating a twin) would resurrect it
+                    // with references the game's cleanup is about to invalidate
+                    result.Skipped++;
+                    continue;
+                }
                 if (e == Entity.Null)
                 {
                     if (r.Kind != SyncRecordKind.Spawn && r.Kind != SyncRecordKind.Upsert)
@@ -891,33 +906,22 @@ namespace SkylineTogether.Sync
                 _targets.Add((r, e));
             }
 
+            // 1b (crashfix): new entities whose structural references (owner, edge nodes, parent) do not resolve here are
+            // not created: the game's reference systems index them unchecked (SubObjectReferencesSystem, Net.ReferencesSystem)
+            if (_spawned.Count > 0) DropUnresolvableSpawns(offset, data, result);
+
             // 2: reconcile the replicated component set (structural changes)
             for (int t = 0; t < _targets.Count; t++)
             {
                 (SyncRecord r, Entity e) = _targets[t];
                 if (r.Kind == SyncRecordKind.Values) continue;
-                // gameplay branch: a client's edit of an existing entity never touches host-owned state (ARCH §5.2)
-                bool keepHostOwned = proposal && !_spawned.Contains(e);
-                _recordTypes.Clear();
-                for (int c = 0; c < r.Components.Count; c++)
+                try
                 {
-                    TypeHandler h = TypeHandlers.GetByHash(r.Components[c].TypeHash);
-                    if (h == null) continue;
-                    _recordTypes.Add(h.Index.Value);
-                    if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
-                    if (!em.HasComponent(e, h.Type)) em.AddComponent(e, h.Type);
+                    Reconcile(r, e, proposal);
                 }
-                if (r.CompleteSet)
+                catch (Exception ex)
                 {
-                    // the cached list is a snapshot of the archetype before the removals below
-                    TypeHandler[] present = HandlersOf(e);
-                    for (int i = 0; i < present.Length; i++)
-                    {
-                        TypeHandler h = present[i];
-                        if (_recordTypes.Contains(h.Index.Value) || !em.HasComponent(e, h.Type)) continue;
-                        if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
-                        em.RemoveComponent(e, h.Type);
-                    }
+                    result.Problems.Add("#" + r.NetId + " component set: " + ex.Message); // crashfix: one record never stops the batch
                 }
             }
 
@@ -925,35 +929,14 @@ namespace SkylineTogether.Sync
             for (int t = 0; t < _targets.Count; t++)
             {
                 (SyncRecord r, Entity e) = _targets[t];
-                bool path = false;
-                bool keepHostOwned = proposal && !_spawned.Contains(e);
-                for (int c = 0; c < r.Components.Count; c++)
+                try
                 {
-                    SyncComponent comp = r.Components[c];
-                    if (comp.Kind == SyncComponentKind.Presence) continue;
-                    TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
-                    if (h == null || h.Kind == SyncComponentKind.Presence || !em.HasComponent(e, h.Type)) continue;
-                    if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
-                    // gameplay branch: state vanilla keeps beside some values (mesh colour enable bit, line colour events)
-                    Type fixup = FixupType(h);
-                    Game.Routes.Color oldColor = fixup == typeof(Game.Routes.Color) ? em.GetComponentData<Game.Routes.Color>(e) : default;
-                    ReadComponent(h, e, comp, offset, data, result);
-                    if (fixup != null)
-                    {
-                        bool changed = fixup != typeof(Game.Routes.Color) || !SameColor(oldColor, em.GetComponentData<Game.Routes.Color>(e));
-                        try
-                        {
-                            ActionSync.AfterWrite(em, e, fixup, changed, _colorEventArchetype);
-                        }
-                        catch (Exception ex)
-                        {
-                            result.Problems.Add("fix-up of " + h.Name + ": " + ex.Message);
-                        }
-                    }
-                    if (r.Family == Family.Segment && (h == _pathElement || h == _pathInformation)) path = true;
+                    WriteValues(r, e, proposal, offset, data, result);
                 }
-                result.Touched.Add(e);
-                if (path) _pathUpdated.Add(e);
+                catch (Exception ex)
+                {
+                    result.Problems.Add("#" + r.NetId + " values: " + ex.Message);
+                }
             }
 
             // 3b (mod compatibility): enabled bits of enableable components, for the entities written above
@@ -1017,22 +1000,317 @@ namespace SkylineTogether.Sync
                 // other clients)
                 if (!proposal) _ids.Unbind(r.NetId);
                 if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                Family family = _families.Classify(em, e);
-                if (family == Family.NetEdge || family == Family.NetNode) Closure(e, _touch);
-                em.AddComponent<Game.Common.Deleted>(e);
-                _touch.Remove(e);
-                result.Touched.Add(e);
-                result.Despawned++;
+                try
+                {
+                    Family family = _families.Classify(em, e);
+                    if (family == Family.NetEdge || family == Family.NetNode) Closure(e, _touch);
+                    // crashfix: the game's reference systems process a Deleted entity's owner and edge nodes unchecked
+                    if (SanitizeForDelete(em, e)) result.UnsafeSkipped++;
+                    em.AddComponent<Game.Common.Deleted>(e);
+                    _touch.Remove(e);
+                    result.Touched.Add(e);
+                    result.Despawned++;
+                }
+                catch (Exception ex)
+                {
+                    result.Problems.Add("despawn of #" + r.NetId + ": " + ex.Message);
+                }
             }
 
             foreach (Entity e in _touch)
             {
                 if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                // crashfix: Net.ReferencesSystem indexes an Updated edge's nodes and connected nodes unchecked; an edge whose
+                // node is missing here is left untagged (and reported) instead of crashing the game
+                if (!IsNetSafe(em, e))
+                {
+                    result.UnsafeSkipped++;
+                    result.Problems.Add("not re-derived (an edge node is missing): " + e);
+                    continue;
+                }
                 if (!em.HasComponent<Game.Common.Updated>(e)) em.AddComponent<Game.Common.Updated>(e);
                 result.Touched.Add(e);
             }
+            if (result.UnresolvedSpawns > 0 || result.UnsafeSkipped > 0) NoteUnsafe(result);
             for (int i = 0; i < _pathUpdated.Count; i++) SynthesizePathUpdated(_pathUpdated[i]);
             return result;
+        }
+
+        private void Reconcile(SyncRecord r, Entity e, bool proposal)
+        {
+            EntityManager em = EntityManager;
+            {
+                // gameplay branch: a client's edit of an existing entity never touches host-owned state (ARCH §5.2)
+                bool keepHostOwned = proposal && !_spawned.Contains(e);
+                _recordTypes.Clear();
+                for (int c = 0; c < r.Components.Count; c++)
+                {
+                    TypeHandler h = TypeHandlers.GetByHash(r.Components[c].TypeHash);
+                    if (h == null) continue;
+                    _recordTypes.Add(h.Index.Value);
+                    if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
+                    if (!em.HasComponent(e, h.Type)) em.AddComponent(e, h.Type);
+                }
+                if (r.CompleteSet)
+                {
+                    // the cached list is a snapshot of the archetype before the removals below
+                    TypeHandler[] present = HandlersOf(e);
+                    for (int i = 0; i < present.Length; i++)
+                    {
+                        TypeHandler h = present[i];
+                        if (_recordTypes.Contains(h.Index.Value) || !em.HasComponent(e, h.Type)) continue;
+                        if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
+                        em.RemoveComponent(e, h.Type);
+                    }
+                }
+            }
+        }
+
+        private void WriteValues(SyncRecord r, Entity e, bool proposal, int offset, byte[] data, ApplyResult result)
+        {
+            EntityManager em = EntityManager;
+            {
+                bool path = false;
+                bool spawned = _spawned.Contains(e);
+                bool keepHostOwned = proposal && !spawned;
+                for (int c = 0; c < r.Components.Count; c++)
+                {
+                    SyncComponent comp = r.Components[c];
+                    if (comp.Kind == SyncComponentKind.Presence) continue;
+                    TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
+                    if (h == null || h.Kind == SyncComponentKind.Presence || !em.HasComponent(e, h.Type)) continue;
+                    if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
+                    // gameplay branch: state vanilla keeps beside some values (mesh colour enable bit, line colour events)
+                    Type fixup = FixupType(h);
+                    Game.Routes.Color oldColor = fixup == typeof(Game.Routes.Color) ? em.GetComponentData<Game.Routes.Color>(e) : default;
+                    ReadComponent(h, e, comp, offset, data, result, !spawned);
+                    if (fixup != null)
+                    {
+                        bool changed = fixup != typeof(Game.Routes.Color) || !SameColor(oldColor, em.GetComponentData<Game.Routes.Color>(e));
+                        try
+                        {
+                            ActionSync.AfterWrite(em, e, fixup, changed, _colorEventArchetype);
+                        }
+                        catch (Exception ex)
+                        {
+                            result.Problems.Add("fix-up of " + h.Name + ": " + ex.Message);
+                        }
+                    }
+                    if (r.Family == Family.Segment && (h == _pathElement || h == _pathInformation)) path = true;
+                }
+                result.Touched.Add(e);
+                if (path) _pathUpdated.Add(e);
+            }
+        }
+
+        // ================================================================== crashfix: reference safety
+
+        private TypeHandler[] _hardTypes;
+        private readonly Dictionary<Entity, List<Entity>> _spawnRefs = new Dictionary<Entity, List<Entity>>();
+        private readonly Stack<List<Entity>> _refLists = new Stack<List<Entity>>();
+        private readonly HashSet<Entity> _badSpawns = new HashSet<Entity>();
+        private long _unresolvedSpawnsTotal, _unsafeTotal;
+        private double _lastUnsafeLog = double.NegativeInfinity;
+
+        /// <summary>crashfix: spawns skipped because a structural reference did not resolve (session total).</summary>
+        public long UnresolvedSpawnsTotal => _unresolvedSpawnsTotal;
+
+        /// <summary>crashfix: entities left untagged or sanitized because of broken net references (session total).</summary>
+        public long UnsafeTotal => _unsafeTotal;
+
+        /// <summary>crashfix: references the reader dropped because their entity was destroyed or deleted (session total).</summary>
+        public long DeadReferencesTotal => _rs.DeadReferences;
+
+        /// <summary>
+        /// The structural references of a new entity: without them the game's reference systems index nothing
+        /// (<c>SubObjectReferencesSystem</c>: <c>m_SubObjects[owner]</c>; <c>Net.ReferencesSystem</c>: <c>m_Edges[edge.m_Start]</c>;
+        /// attached objects follow their parent).
+        /// </summary>
+        private TypeHandler[] HardTypes()
+        {
+            if (_hardTypes != null) return _hardTypes;
+            var list = new List<TypeHandler>();
+            foreach (TypeHandler h in new[] { TypeHandlers.Get<Game.Common.Owner>(), TypeHandlers.Get<Game.Net.Edge>(), TypeHandlers.Get<Game.Objects.Attached>() })
+            {
+                if (h != null && h.CanProbe) list.Add(h);
+            }
+            _hardTypes = list.ToArray();
+            return _hardTypes;
+        }
+
+        /// <summary>
+        /// Step 1b: new entities of this apply whose owner, edge nodes or parent do not resolve here (unknown id, or bound to
+        /// a destroyed or deleted entity), and the new entities that reference those, are destroyed again before any
+        /// system saw them and their ids unbound; the integrity check asks for them again once their references exist.
+        /// </summary>
+        private void DropUnresolvableSpawns(int offset, byte[] data, ApplyResult result)
+        {
+            TypeHandler[] hard = HardTypes();
+            if (hard.Length == 0) return;
+            _badSpawns.Clear();
+            _spawnRefs.Clear();
+            try
+            {
+                for (int t = 0; t < _targets.Count; t++)
+                {
+                    (SyncRecord r, Entity e) = _targets[t];
+                    if (!_spawned.Contains(e)) continue;
+                    List<Entity> refs = _refLists.Count > 0 ? _refLists.Pop() : new List<Entity>();
+                    refs.Clear();
+                    _spawnRefs[e] = refs;
+                    for (int c = 0; c < r.Components.Count; c++)
+                    {
+                        SyncComponent comp = r.Components[c];
+                        if (comp.Kind != SyncComponentKind.Data) continue;
+                        TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
+                        if (h == null || Array.IndexOf(hard, h) < 0) continue;
+                        _rs.Collect = refs;
+                        bool unresolved;
+                        try
+                        {
+                            unresolved = ProbeComponent(h, comp, offset, data, result);
+                        }
+                        finally
+                        {
+                            _rs.Collect = null;
+                        }
+                        if (unresolved)
+                        {
+                            _badSpawns.Add(e);
+                            result.Problems.Add("#" + r.NetId + " (" + r.Family + ") not created: its " + h.Name + " references something missing here");
+                        }
+                    }
+                }
+                // a new entity whose owner or node is one of the dropped new entities goes too
+                bool changed = _badSpawns.Count > 0;
+                while (changed)
+                {
+                    changed = false;
+                    foreach (KeyValuePair<Entity, List<Entity>> pair in _spawnRefs)
+                    {
+                        if (_badSpawns.Contains(pair.Key)) continue;
+                        foreach (Entity referenced in pair.Value)
+                        {
+                            if (!_badSpawns.Contains(referenced)) continue;
+                            _badSpawns.Add(pair.Key);
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+                if (_badSpawns.Count == 0) return;
+                EntityManager em = EntityManager;
+                for (int t = _targets.Count - 1; t >= 0; t--)
+                {
+                    (SyncRecord r, Entity e) = _targets[t];
+                    if (!_badSpawns.Contains(e)) continue;
+                    _targets.RemoveAt(t);
+                    _spawned.Remove(e);
+                    result.SpawnedEntities.Remove(e);
+                    result.Spawned--;
+                    result.Skipped++;
+                    result.UnresolvedSpawns++;
+                    _unresolvedSpawnsTotal++;
+                    if (_ids.GetEntity(r.NetId) == e) _ids.Unbind(r.NetId);
+                    if (em.Exists(e)) em.DestroyEntity(e); // created by this apply; nothing references it yet
+                }
+            }
+            finally
+            {
+                foreach (List<Entity> refs in _spawnRefs.Values) _refLists.Push(refs);
+                _spawnRefs.Clear();
+                _badSpawns.Clear();
+            }
+        }
+
+        /// <summary>A node an edge may reference: it exists, is not being deleted and has its connected-edge list.</summary>
+        private static bool IsUsableNode(EntityManager em, Entity node)
+        {
+            return node != Entity.Null && em.Exists(node) && em.HasBuffer<Game.Net.ConnectedEdge>(node);
+        }
+
+        /// <summary>
+        /// crashfix: false for an edge whose start, end or connected node is missing here: tagging it would make
+        /// <c>Net.ReferencesSystem</c> index the missing node's <c>ConnectedEdge</c> buffer (a native crash).
+        /// </summary>
+        internal static bool IsNetSafe(EntityManager em, Entity e)
+        {
+            if (!em.HasComponent<Game.Net.Edge>(e)) return true;
+            Game.Net.Edge edge = em.GetComponentData<Game.Net.Edge>(e);
+            if (!IsUsableNode(em, edge.m_Start) || !IsUsableNode(em, edge.m_End)) return false;
+            if (em.HasBuffer<Game.Net.ConnectedNode>(e))
+            {
+                DynamicBuffer<Game.Net.ConnectedNode> nodes = em.GetBuffer<Game.Net.ConnectedNode>(e, true);
+                for (int i = 0; i < nodes.Length; i++)
+                {
+                    if (!IsUsableNode(em, nodes[i].m_Node)) return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// crashfix: before an entity is tagged <c>Deleted</c>, references the game's reference systems would follow
+        /// unchecked are made safe: an owner that no longer exists is removed (<c>SubObjectReferencesSystem</c>,
+        /// <c>ServiceUpgradeReferencesSystem</c>, <c>SubNetReferencesSystem</c> index the owner's buffer), connected nodes
+        /// that are gone are dropped, and an edge node that is gone is replaced by the edge's other node (the reference
+        /// system then removes the edge from that node's list twice, which is harmless); an edge with both nodes gone loses
+        /// its <c>Edge</c> component. True when something had to be changed.
+        /// </summary>
+        internal static bool SanitizeForDelete(EntityManager em, Entity e)
+        {
+            bool changed = false;
+            if (em.HasComponent<Game.Common.Owner>(e))
+            {
+                Entity owner = em.GetComponentData<Game.Common.Owner>(e).m_Owner;
+                if (owner != Entity.Null && !em.Exists(owner))
+                {
+                    em.RemoveComponent<Game.Common.Owner>(e);
+                    changed = true;
+                }
+            }
+            if (em.HasBuffer<Game.Net.ConnectedNode>(e))
+            {
+                DynamicBuffer<Game.Net.ConnectedNode> nodes = em.GetBuffer<Game.Net.ConnectedNode>(e);
+                for (int i = nodes.Length - 1; i >= 0; i--)
+                {
+                    if (IsUsableNode(em, nodes[i].m_Node)) continue;
+                    nodes.RemoveAt(i);
+                    changed = true;
+                }
+            }
+            if (em.HasComponent<Game.Net.Edge>(e))
+            {
+                Game.Net.Edge edge = em.GetComponentData<Game.Net.Edge>(e);
+                bool start = IsUsableNode(em, edge.m_Start), end = IsUsableNode(em, edge.m_End);
+                if (!start || !end)
+                {
+                    changed = true;
+                    if (start) edge.m_End = edge.m_Start;
+                    else if (end) edge.m_Start = edge.m_End;
+                    if (start || end) em.SetComponentData(e, edge);
+                    else em.RemoveComponent<Game.Net.Edge>(e);
+                }
+            }
+            return changed;
+        }
+
+        private void NoteUnsafe(ApplyResult result)
+        {
+            _unsafeTotal += result.UnsafeSkipped;
+            double now = UnityEngine.Time.realtimeSinceStartupAsDouble;
+            if (now - _lastUnsafeLog < 10) return;
+            _lastUnsafeLog = now;
+            var sample = new List<string>();
+            foreach (string p in result.Problems)
+            {
+                if (sample.Count >= 4) break;
+                if (p.Contains("not created") || p.Contains("not re-derived")) sample.Add(p);
+            }
+            _log.Info(LogCategory.Replication, "reference safety: " + result.UnresolvedSpawns + " new object(s) not created (owner/node/parent missing here), "
+                                               + result.UnsafeSkipped + " left untagged or sanitized (session: " + _unresolvedSpawnsTotal + " not created, "
+                                               + _unsafeTotal + " unsafe, " + _rs.DeadReferences + " dead references dropped)"
+                                               + (sample.Count > 0 ? ": " + string.Join("; ", sample) : ""));
         }
 
         private void ResolveHandlers()
@@ -1107,12 +1385,30 @@ namespace SkylineTogether.Sync
 
         private static bool SameColor(Game.Routes.Color a, Game.Routes.Color b) => a.m_Color.r == b.m_Color.r && a.m_Color.g == b.m_Color.g && a.m_Color.b == b.m_Color.b && a.m_Color.a == b.m_Color.a;
 
-        private void ReadComponent(TypeHandler h, Entity e, in SyncComponent c, int batchOffset, byte[] data, ApplyResult result)
+        private void ReadComponent(TypeHandler h, Entity e, in SyncComponent c, int batchOffset, byte[] data, ApplyResult result, bool keepOnUnresolved = true)
+        {
+            ReadOrProbe(h, e, c, batchOffset, data, result, keepOnUnresolved, false);
+        }
+
+        /// <summary>
+        /// crashfix: deserializes a data component without writing it; true when one of its references does not resolve
+        /// here (unknown, destroyed or deleted). <see cref="NetReaderState.Collect"/> receives the resolved references.
+        /// </summary>
+        private bool ProbeComponent(TypeHandler h, in SyncComponent c, int batchOffset, byte[] data, ApplyResult result)
+        {
+            return ReadOrProbe(h, Entity.Null, c, batchOffset, data, result, true, true);
+        }
+
+        private bool ReadOrProbe(TypeHandler h, Entity e, in SyncComponent c, int batchOffset, byte[] data, ApplyResult result, bool keepOnUnresolved, bool probe)
         {
             ByteReader keys = _keyReader;
             keys.Reset(data, c.Offset, c.Count);
             _rs.Keys.Clear();
             _rs.Unresolved = false;
+            // crashfix: references to destroyed or deleted entities resolve to nothing; an existing entity keeps its value
+            _rs.CheckLiveness = true;
+            _rs.EntityManager = EntityManager;
+            _rs.KeepOnUnresolved = keepOnUnresolved;
             try
             {
                 uint keyCount = keys.ReadVarUInt32();
@@ -1137,16 +1433,24 @@ namespace SkylineTogether.Sync
                 _rs.Table = _ids.ReaderTable;
                 var inner = default(BinaryReader);
                 inner.Initialize(_readContext, _batch, _position, _rs.Table);
+                if (probe)
+                {
+                    h.Probe(new NetReader(inner, _rs));
+                    return _rs.Unresolved;
+                }
                 h.Read(EntityManager, e, new NetReader(inner, _rs));
+                if (_rs.Unresolved) result.UnresolvedComponents++;
                 if (_position.Value != end && _failedTypes.Add(h.Hash ^ 0x5A5A5A5AUL))
                 {
                     _log.Warn(LogCategory.Replication, h.Name + ": read " + (_position.Value - start) + " of " + (end - start) + " bytes (format differs?)");
                 }
+                return _rs.Unresolved;
             }
             catch (Exception ex)
             {
                 result.Problems.Add(h.Name + ": " + ex.Message);
-                if (_failedTypes.Add(h.Hash ^ 0xA5A5A5A5UL)) _log.Warn(LogCategory.Replication, "applying " + h.Name + " failed", ex);
+                if (_failedTypes.Add(h.Hash ^ 0xA5A5A5A5UL)) _log.Warn(LogCategory.Replication, (probe ? "checking " : "applying ") + h.Name + " failed", ex);
+                return true;
             }
         }
 

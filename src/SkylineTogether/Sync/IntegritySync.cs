@@ -43,6 +43,14 @@ namespace SkylineTogether.Sync
         private const int RecordsPerResponse = 256;
         private const double SweepInterval = 30;
         private const double ToleranceLogInterval = 60;
+        /// <summary>
+        /// crashfix: agents mismatch for a while after every key-link change on the host (household moves, births, deaths
+        /// reach clients only when the host's rolling agent scan gets to them, up to a minute in a large city); within this
+        /// window an agent mismatch is not divergence. The host also moves the agents of a requested bucket to the front of
+        /// its scan (<see cref="TouchAgent"/>), so most of them converge long before.
+        /// </summary>
+        private const double AgentConfirmSeconds = 45;
+        private const double ResendLogInterval = 10;
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
@@ -63,6 +71,17 @@ namespace SkylineTogether.Sync
         private long _droppedRequests;
         private readonly Dictionary<byte, PeerGates> _gates = new Dictionary<byte, PeerGates>();
         private readonly List<EntityHash> _hostList = new List<EntityHash>(EntityDigest.BucketSize);
+        // crashfix: the host's re-send log is a rate-limited summary (it logged one line per request, every 0.5 s)
+        private readonly Dictionary<string, int> _resentByFamily = new Dictionary<string, int>();
+        private readonly List<string> _resentSamples = new List<string>();
+        private int _resentSinceLog;
+        private double _lastResendLog = double.NegativeInfinity;
+
+        /// <summary>
+        /// crashfix (host): moves an agent to the front of the host's agent scan (its key-link changes are streamed within
+        /// a frame or two). Set by the controller; called for the agents of every bucket a client asks the detail of.
+        /// </summary>
+        public Action<uint> TouchAgent;
 
         private sealed class PeerGates
         {
@@ -78,6 +97,9 @@ namespace SkylineTogether.Sync
         private readonly DivergenceTracker.Outcome _outcome = new DivergenceTracker.Outcome();
         private readonly RateGate _detailGate = new RateGate(8, 16);
         private readonly RateGate _repairGate = new RateGate(128, 256);
+        // crashfix: explanations of entities repaired more than once (what differs), at most one per 5 s
+        private readonly RateGate _repeatExplainGate = new RateGate(0.2, 4);
+        private readonly HashSet<uint> _repeatExplains = new HashSet<uint>();
         private readonly List<uint> _pendingRepairs = new List<uint>();
         private readonly HashSet<uint> _pendingRepairSet = new HashSet<uint>();
         private readonly List<uint> _pendingExplains = new List<uint>();
@@ -100,6 +122,7 @@ namespace SkylineTogether.Sync
             _log = log;
             Icons = new IconSync(log, sessions.Clock);
             Lines = new LineCheck(log);
+            _tracker.ConfirmSecondsFor = id => _ids != null && _ids.GetFamily(id) == Family.Agent ? AgentConfirmSeconds : 0;
         }
 
         /// <summary>The icon channel (host capture, client reconciliation and the local-producer filter).</summary>
@@ -186,6 +209,10 @@ namespace SkylineTogether.Sync
             _pendingRepairs.Clear();
             _pendingRepairSet.Clear();
             _pendingExplains.Clear();
+            _repeatExplains.Clear();
+            _resentByFamily.Clear();
+            _resentSamples.Clear();
+            _resentSinceLog = 0;
             _liveSince = -1;
             _verifiedThisCycle = 0;
             _verifiedLastCycle = -1;
@@ -217,6 +244,7 @@ namespace SkylineTogether.Sync
                     sb.Append(", ").Append(N(_tracker.RepairsRequested)).Append(_tracker.RepairsRequested == 1 ? " repair" : " repairs");
                     int tolerated = _tracker.ToleratedCount(_sessions.Clock.Seconds);
                     if (tolerated > 0) sb.Append(", ").Append(N(tolerated)).Append(" unresolved");
+                    if (_tracker.GivenUpCount > 0) sb.Append(" (").Append(N(_tracker.GivenUpCount)).Append(" given up)");
                 }
                 else
                 {
@@ -395,8 +423,83 @@ namespace SkylineTogether.Sync
                 HashBucket(bucket, _hostList);
                 w.EntityHashes(bucket, _hostList);
                 _servedDetails++;
+                TouchAgents(_hostList);
             }
             if (!w.IsEmpty) Send(peer, w);
+        }
+
+        /// <summary>
+        /// crashfix (host): the agents of a bucket a client found mismatching (and the members of its households) go to the
+        /// front of the agent scan, so a key-link change the scan had not reached yet is streamed before the client's
+        /// confirmation window ends instead of being "repaired".
+        /// </summary>
+        private void TouchAgents(List<EntityHash> hashes)
+        {
+            if (TouchAgent == null) return;
+            EntityManager em = _codec.EntityManager;
+            foreach (EntityHash h in hashes)
+            {
+                if (_ids.GetFamily(h.NetId) != Family.Agent) continue;
+                TouchAgent(h.NetId);
+                Entity e = _ids.GetEntity(h.NetId);
+                if (e == Entity.Null || !em.Exists(e) || !em.HasBuffer<Game.Citizens.HouseholdCitizen>(e)) continue;
+                DynamicBuffer<Game.Citizens.HouseholdCitizen> members = em.GetBuffer<Game.Citizens.HouseholdCitizen>(e, true);
+                for (int i = 0; i < members.Length && i < 32; i++)
+                {
+                    uint member = _ids.GetNetId(members[i].m_Citizen);
+                    if (member != 0) TouchAgent(member);
+                }
+            }
+        }
+
+        /// <summary>crashfix: "Family 'prefab name'" of a bound entity, for the logs ("?" when it is not bound here).</summary>
+        public string Describe(uint id)
+        {
+            if (_ids == null || _codec == null) return "?";
+            Entity e = _ids.GetEntity(id);
+            if (e == Entity.Null) return "not here";
+            string family = _ids.GetFamily(id).ToString();
+            try
+            {
+                EntityManager em = _codec.EntityManager;
+                if (!em.Exists(e)) return family + ", destroyed";
+                if (!em.HasComponent<Game.Prefabs.PrefabRef>(e)) return family;
+                Entity prefab = em.GetComponentData<Game.Prefabs.PrefabRef>(e).m_Prefab;
+                if (_prefabs == null) _prefabs = _codec.World.GetExistingSystemManaged<Game.Prefabs.PrefabSystem>();
+                string name = _prefabs != null && prefab != Entity.Null && em.Exists(prefab) ? _prefabs.GetPrefabName(prefab) : null;
+                string extra = family == "Area" && IntegrityHasher.IsSlaveArea(em, e) ? ", slave area" : "";
+                return string.IsNullOrEmpty(name) ? family + extra : family + " '" + name + "'" + extra;
+            }
+            catch (Exception)
+            {
+                return family;
+            }
+        }
+
+        private Game.Prefabs.PrefabSystem _prefabs;
+
+        private void NoteResent(uint id, Family family)
+        {
+            string key = family.ToString();
+            _resentByFamily.TryGetValue(key, out int n);
+            _resentByFamily[key] = n + 1;
+            _resentSinceLog++;
+            if (_resentSamples.Count < 6) _resentSamples.Add("#" + id + " " + Describe(id));
+        }
+
+        private void FlushResendLog(PeerId peer, double now, bool force)
+        {
+            if (_resentSinceLog == 0) return;
+            if (!force && now - _lastResendLog < ResendLogInterval) return;
+            var parts = new List<string>();
+            foreach (KeyValuePair<string, int> pair in _resentByFamily) parts.Add(pair.Key + " " + pair.Value);
+            double span = double.IsNegativeInfinity(_lastResendLog) ? 0 : now - _lastResendLog;
+            _log.Info(LogCategory.Integrity, peer + ": re-sent " + _resentSinceLog + " entities for repair" + (span > 0 ? " in the last " + (int)Math.Round(span) + " s" : "")
+                                             + " (" + string.Join(", ", parts) + "), e.g. " + string.Join("; ", _resentSamples) + " (session: " + _servedRepairs + ")");
+            _lastResendLog = now;
+            _resentSinceLog = 0;
+            _resentByFamily.Clear();
+            _resentSamples.Clear();
         }
 
         private void ServeResends(PeerId peer, uint[] ids, PeerGates gates, double now, bool lines)
@@ -425,6 +528,7 @@ namespace SkylineTogether.Sync
                     if (!IntegrityHasher.IsVerified(family)) continue;
                     _codec.WriteEntity(w, SyncRecordKind.Spawn, id, family, e);
                     sent++;
+                    NoteResent(id, family);
                     if (lines && family == Family.Route)
                     {
                         // the whole line, so missing waypoints and segments are created on the client too
@@ -433,14 +537,18 @@ namespace SkylineTogether.Sync
                             DynamicBuffer<Game.Routes.RouteWaypoint> waypoints = em.GetBuffer<Game.Routes.RouteWaypoint>(e, true);
                             var list = new List<Entity>(waypoints.Length);
                             for (int i = 0; i < waypoints.Length; i++) list.Add(waypoints[i].m_Waypoint);
-                            sent += WriteChildren(w, list);
+                            int children = WriteChildren(w, list);
+                            sent += children;
+                            gates.Resends.TryTake(now, Math.Min(children, 64)); // crashfix: children cost tokens too (bounded per line)
                         }
                         if (em.HasBuffer<Game.Routes.RouteSegment>(e))
                         {
                             DynamicBuffer<Game.Routes.RouteSegment> segments = em.GetBuffer<Game.Routes.RouteSegment>(e, true);
                             var list = new List<Entity>(segments.Length);
                             for (int i = 0; i < segments.Length; i++) list.Add(segments[i].m_Segment);
-                            sent += WriteChildren(w, list);
+                            int children = WriteChildren(w, list);
+                            sent += children;
+                            gates.Resends.TryTake(now, Math.Min(children, 64));
                         }
                     }
                 }
@@ -456,7 +564,11 @@ namespace SkylineTogether.Sync
             }
             if (!w.IsEmpty) Send(peer, w);
             _servedRepairs += sent;
-            if (sent > 0) _log.Info(LogCategory.Integrity, peer + ": re-sent " + sent + (lines ? " line entities" : " entities") + " for repair");
+            if (sent > 0)
+            {
+                if (lines) _log.Info(LogCategory.Integrity, peer + ": re-sent " + sent + " line entities for repair");
+                else FlushResendLog(peer, now, false);
+            }
         }
 
         private int WriteChildren(SyncBatch.Writer w, List<Entity> children)
@@ -537,6 +649,7 @@ namespace SkylineTogether.Sync
                             break;
                         case SyncRecordKind.Despawn:
                             _hasher.Forget(r.NetId);
+                            ForgetRepair(r.NetId); // crashfix: a pending repair of a despawned id would ask for a ghost
                             Icons.ForgetNetId(r.NetId); // w2/ids: the id may be reused; the old owner's icons must not stick to it
                             break;
                         case SyncRecordKind.BucketDigest:
@@ -568,6 +681,19 @@ namespace SkylineTogether.Sync
                     Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "integrity record " + r.Kind, ex);
                 }
             }
+        }
+
+        /// <summary>crashfix (client): this player deleted the entity (or its owner's cascade did): nothing to verify or repair.</summary>
+        public void OnLocalDelete(uint id)
+        {
+            _hasher?.Forget(id);
+            ForgetRepair(id);
+        }
+
+        private void ForgetRepair(uint id)
+        {
+            _tracker.Forget(id);
+            if (_pendingRepairSet.Remove(id)) _pendingRepairs.Remove(id);
         }
 
         private void OnDigest(uint bucket, uint count, ulong sum, double now)
@@ -626,12 +752,35 @@ namespace SkylineTogether.Sync
                 foreach (uint id in _outcome.Repair)
                 {
                     if (_pendingRepairs.Count < MaxPendingRepairs && _pendingRepairSet.Add(id)) _pendingRepairs.Add(id);
-                    if (shown++ < 8) text.Append(shown > 1 ? ", " : "").Append('#').Append(id).Append(' ').Append(Describe(id, host));
+                    if (shown++ < 8)
+                    {
+                        text.Append(shown > 1 ? ", " : "").Append('#').Append(id).Append(' ').Append(Describe(id, host));
+                        int before = _tracker.RepairsOf(id) - 1;
+                        if (before > 0) text.Append(" [repair ").Append(before + 1).Append(']');
+                    }
                 }
                 if (_outcome.Repair.Count > 8) text.Append(", ...");
                 _log.Info(LogCategory.Integrity, "differs from the host; requesting " + _outcome.Repair.Count + " object(s): " + text);
             }
             foreach (uint id in _outcome.Explain) _pendingExplains.Add(id);
+            // crashfix: an entity repaired again after a repair that matched: ask what differs (rate-limited), so the log
+            // tells which component keeps coming back
+            foreach (uint id in _outcome.Repeated)
+            {
+                if (_pendingExplains.Contains(id) || !_repeatExplainGate.TryTake(now)) continue;
+                _repeatExplains.Add(id);
+                _pendingExplains.Add(id);
+            }
+            if (_outcome.GivenUp.Count > 0)
+            {
+                var given = new List<string>();
+                foreach (uint id in _outcome.GivenUp)
+                {
+                    if (given.Count >= 8) break;
+                    given.Add("#" + id + " " + Describe(id));
+                }
+                _log.Warn(LogCategory.Integrity, _outcome.GivenUp.Count + " object(s) still differ from the host after repeated repairs and tolerance; given up for this session: " + string.Join(", ", given));
+            }
             if (_outcome.NewlyTolerated.Count > 0) LogTolerated(_outcome.NewlyTolerated, now);
             if (_outcome.Recheck) _scheduler.Request(bucket, now + _outcome.RecheckAfter, now);
         }
@@ -640,7 +789,7 @@ namespace SkylineTogether.Sync
         {
             bool onHost = host.Exists(h => h.NetId == id);
             bool here = _ids.GetEntity(id) != Entity.Null;
-            string family = here ? _ids.GetFamily(id).ToString() : "?";
+            string family = here ? Describe(id) : "?";
             if (onHost && !here) return "(missing here)";
             if (!onHost && here) return "(" + family + ", not on the host)";
             return "(" + family + ")";
@@ -660,7 +809,7 @@ namespace SkylineTogether.Sync
             foreach (uint id in ids)
             {
                 if (parts.Count >= 16) break;
-                parts.Add("#" + id);
+                parts.Add("#" + id + " " + Describe(id));
             }
             _log.Warn(LogCategory.Integrity, ids.Count + " object(s) still differ from the host after " + _tracker.RepairsBeforeTolerance
                                              + " repairs; not repaired again for " + (int)(_tracker.ToleranceSeconds / 60) + " min: " + string.Join(", ", parts) + more
@@ -691,7 +840,10 @@ namespace SkylineTogether.Sync
             foreach (ComponentHash c in mine.Values) parts.Add(TypeName(c.TypeHash) + " (only here)");
             if (host.Count == 0 && e != Entity.Null) parts.Add("the host does not have it");
             if (e == Entity.Null) parts.Add("missing here");
-            _log.Warn(LogCategory.Integrity, "#" + id + " (" + family + ") differs in: " + (parts.Count == 0 ? "nothing now (it changed meanwhile)" : string.Join(", ", parts)));
+            string what = "#" + id + " (" + Describe(id) + ") differs in: " + (parts.Count == 0 ? "nothing now (it changed meanwhile)" : string.Join(", ", parts));
+            // crashfix: explanations of repeated repairs are diagnostics (Info); those of tolerated entities stay warnings
+            if (_repeatExplains.Remove(id)) _log.Info(LogCategory.Integrity, "repaired again: " + what + " (repairs so far: " + _tracker.RepairsOf(id) + ")");
+            else _log.Warn(LogCategory.Integrity, what);
         }
 
         private static string TypeName(ulong typeHash)

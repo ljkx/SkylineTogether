@@ -17,6 +17,33 @@ namespace SkylineTogether.Sync
         public readonly List<Entity> Keys = new List<Entity>();
         /// <summary>A reference could not be resolved (unknown id or derived key not found).</summary>
         public bool Unresolved;
+
+        /// <summary>
+        /// crashfix: when set, a reference whose bound entity no longer exists or carries <c>Deleted</c> resolves to
+        /// <c>Entity.Null</c> and counts as unresolved. A stale binding (an entity the local game destroyed, a despawn
+        /// applied by an earlier batch of the same frame) otherwise became a component or buffer reference to a destroyed
+        /// entity, which the game's Burst jobs dereference without a check (a native crash, not an exception).
+        /// </summary>
+        public bool CheckLiveness;
+
+        /// <summary>crashfix: the entity manager the liveness check uses (valid while <see cref="CheckLiveness"/>).</summary>
+        public EntityManager EntityManager;
+
+        /// <summary>crashfix: references dropped because their entity was destroyed or deleted (diagnostics).</summary>
+        public long DeadReferences;
+
+        /// <summary>crashfix: see <see cref="NetReader.KeepOnUnresolved"/>.</summary>
+        public bool KeepOnUnresolved;
+
+        /// <summary>crashfix: when not null, every resolved reference is added (spawn validation follows references).</summary>
+        public List<Entity> Collect;
+
+        /// <summary>crashfix: true when the entity may be referenced (exists and is not being deleted).</summary>
+        public bool IsLive(Entity e)
+        {
+            if (!CheckLiveness || e == Entity.Null) return true;
+            return EntityManager.Exists(e) && !EntityManager.HasComponent<Game.Common.Deleted>(e);
+        }
     }
 
     /// <summary>
@@ -51,7 +78,13 @@ namespace SkylineTogether.Sync
             {
                 NativeArray<Entity> table = _state.Table;
                 value = index < table.Length ? table[index] : Entity.Null;
+                if (index > 0 && value != Entity.Null && !_state.IsLive(value))
+                {
+                    value = Entity.Null;
+                    _state.DeadReferences++;
+                }
                 if (index > 0 && value == Entity.Null) _state.Unresolved = true;
+                else if (value != Entity.Null) _state.Collect?.Add(value);
                 return;
             }
             if (index == -1)
@@ -61,8 +94,38 @@ namespace SkylineTogether.Sync
             }
             int key = -2 - index;
             value = key < _state.Keys.Count ? _state.Keys[key] : Entity.Null;
+            if (value != Entity.Null && !_state.IsLive(value))
+            {
+                value = Entity.Null;
+                _state.DeadReferences++;
+            }
             if (value == Entity.Null) _state.Unresolved = true;
+            else _state.Collect?.Add(value);
         }
+
+        /// <summary>crashfix: true once a reference of the current component could not be resolved (unknown, destroyed or deleted).</summary>
+        public bool Unresolved => _state != null && _state.Unresolved;
+
+        /// <summary>crashfix: clears the unresolved flag and returns its previous value (per-element bookkeeping of buffers).</summary>
+        public bool TakeUnresolved()
+        {
+            if (_state == null) return false;
+            bool was = _state.Unresolved;
+            _state.Unresolved = false;
+            return was;
+        }
+
+        /// <summary>crashfix: sets the unresolved flag again (restores what <see cref="TakeUnresolved"/> took).</summary>
+        public void MarkUnresolved()
+        {
+            if (_state != null) _state.Unresolved = true;
+        }
+
+        /// <summary>
+        /// crashfix: true when a component whose references did not all resolve must keep the entity's current value
+        /// instead of writing nulls over it (set by the codec for existing entities).
+        /// </summary>
+        public bool KeepOnUnresolved => _state != null && _state.KeepOnUnresolved;
 
         public void Read(NativeArray<Entity> value)
         {

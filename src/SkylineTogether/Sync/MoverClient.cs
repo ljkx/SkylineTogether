@@ -619,7 +619,7 @@ namespace SkylineTogether.Sync
             Archetypes types = prefab != Entity.Null ? TypesOf(em, prefab, rec.TrainController) : null;
             bool structural = false;
             Entity vehicle = rec.Vehicle != 0 ? _ids.GetEntity(rec.Vehicle) : Entity.Null;
-            if (vehicle != Entity.Null && !em.Exists(vehicle)) vehicle = Entity.Null;
+            if (vehicle != Entity.Null && (!em.Exists(vehicle) || em.HasComponent<Deleted>(vehicle))) vehicle = Entity.Null; // crashfix: never a deleted vehicle
             bool riding = rec.Kind == MoverKind.Riding && vehicle != Entity.Null;
             bool inVehicle = rec.Kind == MoverKind.Inside || rec.Kind == MoverKind.Riding;
             bool wantStopped = rec.Kind == MoverKind.Stopped;
@@ -758,7 +758,7 @@ namespace SkylineTogether.Sync
             if (rec.Controller != 0)
             {
                 Entity controller = _ids.GetEntity(rec.Controller);
-                if (controller != Entity.Null && em.Exists(controller))
+                if (controller != Entity.Null && em.Exists(controller) && !em.HasComponent<Deleted>(controller))
                 {
                     if (!em.HasComponent<Controller>(e)) em.AddComponent<Controller>(e);
                     em.SetComponentData(e, new Controller(controller));
@@ -771,7 +771,7 @@ namespace SkylineTogether.Sync
                 foreach (uint id in rec.Layout)
                 {
                     Entity member = id != 0 ? _ids.GetEntity(id) : Entity.Null;
-                    if (member != Entity.Null && em.Exists(member)) layout.Add(new LayoutElement(member));
+                    if (member != Entity.Null && em.Exists(member) && !em.HasComponent<Deleted>(member)) layout.Add(new LayoutElement(member));
                 }
                 // members carry Controller (vanilla ControllerSystem derives it from the layout on load)
                 for (int i = 0; i < layout.Length; i++)

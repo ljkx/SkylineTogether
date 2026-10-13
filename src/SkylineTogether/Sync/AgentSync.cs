@@ -78,6 +78,7 @@ namespace SkylineTogether.Sync
         private const int MaxInboxPerFrame = 32;
         private const int MaxHeldMessages = 512;
         private const int MaxOwnerBytes = 48 * 1024;
+        private const int MaxOwnerRecordsPerFrame = 256; // crashfix: agent owners written in full per frame at most
         private const double PanelRefreshInterval = 0.5;
 
         /// <summary>Types the agent sync needs (probed at startup, <see cref="Probes"/>).</summary>
@@ -665,7 +666,7 @@ namespace SkylineTogether.Sync
             _ownerScratch.AddRange(_owners);
             _owners.Clear();
             _ownerScratch.Sort();
-            int countPosition = -1, entities = 0;
+            int countPosition = -1, entities = 0, agentRecords = 0;
             foreach (uint owner in _ownerScratch)
             {
                 Entity e = _ids.GetEntity(owner);
@@ -673,12 +674,25 @@ namespace SkylineTogether.Sync
                 Family family = _ids.GetFamily(owner);
                 if (family == Family.Agent)
                 {
+                    // crashfix: a big deletion (a block of buildings) co-captures thousands of households and companies;
+                    // full records beyond the per-frame cap carry over to the next frames instead of one huge frame
+                    if (agentRecords >= MaxOwnerRecordsPerFrame)
+                    {
+                        _owners.Add(owner);
+                        continue;
+                    }
                     write(e, owner, SyncRecordKind.Upsert);
                     OnRecordBroadcast(owner, e);
                     _ownerRecords++;
+                    agentRecords++;
                     continue;
                 }
-                if (!FamilyClassifier.IsReplicated(family) || _ownerOut.Length > MaxOwnerBytes) continue;
+                if (!FamilyClassifier.IsReplicated(family)) continue;
+                if (_ownerOut.Length > MaxOwnerBytes)
+                {
+                    _owners.Add(owner); // crashfix: carried over (was dropped)
+                    continue;
+                }
                 if (countPosition < 0) countPosition = SimValueMessage.BeginValues(_ownerOut);
                 if (_codec.WriteValueSubset(_ownerOut, owner, family, e, OwnerHandlers()) > 0)
                 {

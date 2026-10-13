@@ -34,6 +34,17 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
+        /// crashfix: deserializes the value without writing it anywhere, so the reader's unresolved flag tells whether its
+        /// references resolve here (spawn validation of structural references). Data components only; others read nothing.
+        /// </summary>
+        public virtual void Probe(NetReader r)
+        {
+        }
+
+        /// <summary>crashfix: true when <see cref="Probe"/> reads the value (data components).</summary>
+        public virtual bool CanProbe => false;
+
+        /// <summary>
         /// w3/agents: an order-insensitive hash of a reference list (reverse buffers, ARCH §4.2.4); false for every other
         /// type and when an element cannot be named on the other peer.
         /// </summary>
@@ -63,8 +74,19 @@ namespace SkylineTogether.Sync
             // deserialize over the current value: fields the save format does not carry keep their local value
             T value = em.GetComponentData<T>(e);
             value.Deserialize(r);
+            // crashfix: a reference that did not resolve (unknown, destroyed or deleted here) would be written as a null
+            // over a valid local reference; an existing entity keeps its value until a record that resolves arrives
+            if (r.Unresolved && r.KeepOnUnresolved) return;
             em.SetComponentData(e, value);
         }
+
+        public override void Probe(NetReader r)
+        {
+            T value = default(T);
+            value.Deserialize(r);
+        }
+
+        public override bool CanProbe => true;
     }
 
     internal sealed class BufferHandler<T> : TypeHandler where T : unmanaged, IBufferElementData, ISerializable
@@ -89,15 +111,25 @@ namespace SkylineTogether.Sync
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e);
             int old = buffer.Length;
             var elements = new T[count];
+            int kept = 0;
+            bool anyUnresolved = r.TakeUnresolved();
             for (int i = 0; i < count; i++)
             {
                 T element = i < old ? buffer[i] : default(T);
                 element.Deserialize(r);
-                elements[i] = element;
+                // crashfix: an element whose reference did not resolve is left out instead of pointing at nothing
+                // (ConnectedNode, AggregateElement, LayoutElement, ...: the game's jobs index such references unchecked)
+                if (r.TakeUnresolved())
+                {
+                    anyUnresolved = true;
+                    continue;
+                }
+                elements[kept++] = element;
             }
+            if (anyUnresolved) r.MarkUnresolved();
             buffer = em.GetBuffer<T>(e);
-            buffer.ResizeUninitialized(count);
-            for (int i = 0; i < count; i++) buffer[i] = elements[i];
+            buffer.ResizeUninitialized(kept);
+            for (int i = 0; i < kept; i++) buffer[i] = elements[i];
         }
     }
 
@@ -120,9 +152,15 @@ namespace SkylineTogether.Sync
             if (count < 0 || count > 65536) throw new DecodeException("route with " + count + " waypoints");
             var items = new Entity[count];
             for (int i = 0; i < count; i++) r.Read(out items[i]);
+            // crashfix: a line keeps its waypoint list while a waypoint is unknown here (a null element made route
+            // systems index nothing; dropping one would misalign the segment list, which is indexed by waypoint)
+            if (r.Unresolved && r.KeepOnUnresolved) return;
             DynamicBuffer<Game.Routes.RouteWaypoint> buffer = em.GetBuffer<Game.Routes.RouteWaypoint>(e);
             buffer.Clear();
-            for (int i = 0; i < count; i++) buffer.Add(new Game.Routes.RouteWaypoint(items[i]));
+            for (int i = 0; i < count; i++)
+            {
+                if (items[i] != Entity.Null) buffer.Add(new Game.Routes.RouteWaypoint(items[i]));
+            }
         }
     }
 
@@ -141,9 +179,13 @@ namespace SkylineTogether.Sync
             if (count < 0 || count > 65536) throw new DecodeException("route with " + count + " segments");
             var items = new Entity[count];
             for (int i = 0; i < count; i++) r.Read(out items[i]);
+            if (r.Unresolved && r.KeepOnUnresolved) return; // crashfix: see RouteWaypointsHandler
             DynamicBuffer<Game.Routes.RouteSegment> buffer = em.GetBuffer<Game.Routes.RouteSegment>(e);
             buffer.Clear();
-            for (int i = 0; i < count; i++) buffer.Add(new Game.Routes.RouteSegment(items[i]));
+            for (int i = 0; i < count; i++)
+            {
+                if (items[i] != Entity.Null) buffer.Add(new Game.Routes.RouteSegment(items[i]));
+            }
         }
     }
 

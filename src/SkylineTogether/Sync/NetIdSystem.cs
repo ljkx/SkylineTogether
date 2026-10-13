@@ -53,6 +53,7 @@ namespace SkylineTogether.Sync
         private readonly IdIndexSet _structure = new IdIndexSet();
         private readonly int[] _familyCounts = new int[FamilyCount];
         private readonly List<uint> _pendingDespawns = new List<uint>();
+        private readonly HashSet<uint> _pendingDespawnSet = new HashSet<uint>(); // crashfix: O(1) membership (was List.Contains per unbind)
         private bool _warnedExhausted;
 
         public NetIdAllocator Ids { get; } = new NetIdAllocator(Mod.Log);
@@ -125,6 +126,7 @@ namespace SkylineTogether.Sync
             _bound = 0;
             ClearIndexes();
             _pendingDespawns.Clear();
+            _pendingDespawnSet.Clear();
             Ids.Clear();
             _warnedExhausted = false;
         }
@@ -210,6 +212,7 @@ namespace SkylineTogether.Sync
             if (_pendingDespawns.Count == 0) return false;
             output.AddRange(_pendingDespawns);
             _pendingDespawns.Clear();
+            _pendingDespawnSet.Clear();
             return true;
         }
 
@@ -232,7 +235,7 @@ namespace SkylineTogether.Sync
                 Ids.Release(netId);
                 return;
             }
-            if (!_pendingDespawns.Contains(netId)) _pendingDespawns.Add(netId);
+            if (_pendingDespawnSet.Add(netId)) _pendingDespawns.Add(netId);
         }
 
         private void AddToIndexes(uint id, Family family)
@@ -319,6 +322,7 @@ namespace SkylineTogether.Sync
                 if (_reader[id] != Entity.Null) bound.Add(new KeyValuePair<uint, byte>((uint)id, Ids.GenerationOf((uint)id)));
             }
             _pendingDespawns.Clear();
+            _pendingDespawnSet.Clear();
             int skipped = Ids.Restore(next, bound);
             if (skipped > 0) Mod.Log?.Warn(LogCategory.Replication, "net ids: " + skipped + " invalid bindings skipped while rebuilding the allocator");
         }

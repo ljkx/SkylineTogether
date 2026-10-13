@@ -14,6 +14,8 @@ namespace SkylineTogether.Core.Scheduling
         {
             public long Cell;
             public float X, Z;
+            /// <summary>crashfix: the id's index in its cell's list (O(1) removal; a tower's households share one cell).</summary>
+            public int Slot;
         }
 
         private readonly float _cellSize;
@@ -42,26 +44,31 @@ namespace SkylineTogether.Core.Scheduling
                 return;
             }
             long cell = CellOf(x, z);
+            int slot;
             if (_entries.TryGetValue(id, out Entry old))
             {
                 if (old.Cell != cell)
                 {
-                    RemoveFromCell(old.Cell, id);
-                    AddToCell(cell, id);
+                    RemoveFromCell(old.Cell, old.Slot);
+                    slot = AddToCell(cell, id);
+                }
+                else
+                {
+                    slot = old.Slot;
                 }
             }
             else
             {
-                AddToCell(cell, id);
+                slot = AddToCell(cell, id);
             }
-            _entries[id] = new Entry { Cell = cell, X = x, Z = z };
+            _entries[id] = new Entry { Cell = cell, X = x, Z = z, Slot = slot };
         }
 
         public bool Remove(uint id)
         {
             if (!_entries.TryGetValue(id, out Entry old)) return false;
             _entries.Remove(id);
-            RemoveFromCell(old.Cell, id);
+            RemoveFromCell(old.Cell, old.Slot);
             return true;
         }
 
@@ -94,15 +101,21 @@ namespace SkylineTogether.Core.Scheduling
             long minX = Coord(cx - radius), maxX = Coord(cx + radius);
             long minZ = Coord(cz - radius), maxZ = Coord(cz + radius);
             int found = 0;
-            // a radius larger than the populated area: scanning the entries is cheaper than the empty cells
+            // a radius larger than the populated area: walking the populated cells is cheaper than the empty ones
+            // (crashfix: it walked every entry, which is every agent of the city)
             if (((double)(maxX - minX) + 1.0) * ((double)(maxZ - minZ) + 1.0) > _cells.Count)
             {
-                foreach (KeyValuePair<uint, Entry> pair in _entries)
+                foreach (KeyValuePair<long, List<uint>> cell in _cells)
                 {
-                    if (Within(pair.Value, cx, cz, r2))
+                    long gx = cell.Key >> 32, gz = (int)(cell.Key & 0xFFFFFFFFL);
+                    if (gx < minX || gx > maxX || gz < minZ || gz > maxZ) continue;
+                    foreach (uint id in cell.Value)
                     {
-                        output.Add(pair.Key);
-                        found++;
+                        if (Within(_entries[id], cx, cz, r2))
+                        {
+                            output.Add(id);
+                            found++;
+                        }
                     }
                 }
                 return found;
@@ -137,19 +150,25 @@ namespace SkylineTogether.Core.Scheduling
 
         private static long Key(long gx, long gz) => (gx << 32) ^ (gz & 0xFFFFFFFFL);
 
-        private void AddToCell(long cell, uint id)
+        private int AddToCell(long cell, uint id)
         {
             if (!_cells.TryGetValue(cell, out List<uint> list)) _cells[cell] = list = new List<uint>(4);
             list.Add(id);
+            return list.Count - 1;
         }
 
-        private void RemoveFromCell(long cell, uint id)
+        private void RemoveFromCell(long cell, int slot)
         {
-            if (!_cells.TryGetValue(cell, out List<uint> list)) return;
-            int i = list.IndexOf(id);
-            if (i < 0) return;
+            if (!_cells.TryGetValue(cell, out List<uint> list) || slot < 0 || slot >= list.Count) return;
             int last = list.Count - 1;
-            list[i] = list[last];
+            if (slot != last)
+            {
+                uint moved = list[last];
+                list[slot] = moved;
+                Entry m = _entries[moved];
+                m.Slot = slot;
+                _entries[moved] = m;
+            }
             list.RemoveAt(last);
             if (list.Count == 0) _cells.Remove(cell);
         }

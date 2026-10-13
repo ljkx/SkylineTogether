@@ -31,6 +31,9 @@ namespace SkylineTogether.Sync
     /// values (happiness, money, workplace, property, ...) stream by attention and lag legitimately; the citizen prefab
     /// is left out as well, because a load re-rolls it (<c>Game.Serialization.CitizenSystem</c>, gated on clients but not
     /// worth a repair storm if the gate is missing).</item>
+    /// <item><b>Derived values</b> (crashfix) are verified as presence: the nodes of slave areas, the position of
+    /// non-standalone net nodes and the Transform of attached or aligned objects. Each peer's game recomputes them on
+    /// every <c>Updated</c> tag in its own buffer order, so a repair could never make them stick (a repair storm).</item>
     /// <item><b>Derived references</b> (lanes, station stops) are reduced to kind, owner and prefab
     /// (<see cref="EntityCodec.TryHashValue"/>): each peer regenerates them with its own index and rounding.</item>
     /// </list>
@@ -134,7 +137,51 @@ namespace SkylineTogether.Sync
                 members = agent ? Filter(_codec.HandlersOf(archetype), AgentKeys()) : BuildMembers(archetype, all);
                 cache[archetype] = members;
             }
-            for (int i = 0; i < members.Length; i++) output.Add(Member(members[i], e, mask));
+            // crashfix: the nodes of a slave area (AreaFlags.Slave) are derived: Game.Areas.GeometrySystem regenerates them
+            // from the owner area and the holes of its buildings whenever the area is Updated, in each machine's own
+            // sub-object order, so their value legitimately differs between peers (a real session repaired such areas
+            // over and over: every repair tagged Updated and the client regenerated its own nodes). Verified as presence.
+            // The same holds for two more derived values the explanations of that session named:
+            // - a net node's position and rotation (Game.Net.Node) unless it is standalone: NodeAlignSystem re-averages
+            //   them from the connected edges' curve ends on every Updated node, iterating ConnectedEdge, a buffer each
+            //   peer rebuilds in its own order (a different float summation order, a different last bit);
+            // - the Transform of an object attached to a parent (AttachPositionSystem places it on the parent's curve
+            //   at Attached.m_CurvePosition, which is verified) or aligned to its owner (AlignSystem).
+            TypeHandler derived = null;
+            if (family == Family.Area && IsSlaveArea(em, e)) derived = Derived(ref _areaNodes, ref _areaNodesResolved, typeof(Game.Areas.Node));
+            else if (family == Family.NetNode && !em.HasComponent<Game.Net.Standalone>(e)) derived = Derived(ref _netNode, ref _netNodeResolved, typeof(Game.Net.Node));
+            else if (family == Family.Object && IsPlacedByParent(em, e)) derived = Derived(ref _transform, ref _transformResolved, typeof(Game.Objects.Transform));
+            for (int i = 0; i < members.Length; i++)
+            {
+                TypeHandler h = members[i];
+                if (derived != null && h == derived) output.Add(new ComponentHash(h.Hash, 0, ComponentHashState.Presence));
+                else output.Add(Member(h, e, mask));
+            }
+        }
+
+        private TypeHandler _areaNodes, _netNode, _transform;
+        private bool _areaNodesResolved, _netNodeResolved, _transformResolved;
+
+        private static TypeHandler Derived(ref TypeHandler cached, ref bool resolved, Type type)
+        {
+            if (resolved) return cached;
+            resolved = true;
+            TypeIndex index = TypeManager.GetTypeIndex(type);
+            cached = index == TypeIndex.Null ? null : TypeHandlers.Get(index);
+            return cached;
+        }
+
+        /// <summary>crashfix: an object whose Transform the game derives from its parent (attached) or owner (aligned).</summary>
+        public static bool IsPlacedByParent(EntityManager em, Entity e)
+        {
+            if (em.HasComponent<Game.Objects.Aligned>(e)) return true;
+            return em.HasComponent<Game.Objects.Attached>(e) && em.GetComponentData<Game.Objects.Attached>(e).m_Parent != Entity.Null;
+        }
+
+        /// <summary>crashfix: true for an area whose nodes the game derives (<c>AreaFlags.Slave</c>).</summary>
+        public static bool IsSlaveArea(EntityManager em, Entity e)
+        {
+            return em.HasComponent<Game.Areas.Area>(e) && (em.GetComponentData<Game.Areas.Area>(e).m_Flags & Game.Areas.AreaFlags.Slave) != 0;
         }
 
         private TypeHandler[] BuildMembers(EntityArchetype archetype, bool all)
