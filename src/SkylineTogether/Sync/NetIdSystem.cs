@@ -50,6 +50,7 @@ namespace SkylineTogether.Sync
         private int _bound;
         private readonly IdIndexSet _scanned = new IdIndexSet();
         private readonly IdIndexSet _agents = new IdIndexSet();
+        private readonly IdIndexSet _structure = new IdIndexSet();
         private readonly int[] _familyCounts = new int[FamilyCount];
         private readonly List<uint> _pendingDespawns = new List<uint>();
         private bool _warnedExhausted;
@@ -75,6 +76,13 @@ namespace SkylineTogether.Sync
 
         /// <summary>w3/agents: bound ids of the agent family (the host's rolling agent scan).</summary>
         public IdIndexSet AgentIds => _agents;
+
+        /// <summary>
+        /// perf pass: bound ids of the structure families the host's rolling passes cover (objects, net edges and nodes,
+        /// areas: <see cref="FamilyClassifier.IsPresenceWatched"/>; the presence watch and the attention values scan), so
+        /// refilling those passes copies this set instead of walking the whole id table (agents and movers included).
+        /// </summary>
+        public IdIndexSet StructureIds => _structure;
 
         /// <summary>Bound ids per family (diagnostics).</summary>
         public int CountOf(Family family) => (int)family < FamilyCount ? _familyCounts[(int)family] : 0;
@@ -115,9 +123,7 @@ namespace SkylineTogether.Sync
             _family.Add(0);
             _writer.Add(default(Entity));
             _bound = 0;
-            _scanned.Clear();
-            _agents.Clear();
-            Array.Clear(_familyCounts, 0, _familyCounts.Length);
+            ClearIndexes();
             _pendingDespawns.Clear();
             Ids.Clear();
             _warnedExhausted = false;
@@ -234,6 +240,7 @@ namespace SkylineTogether.Sync
             if ((int)family < FamilyCount) _familyCounts[(int)family]++;
             if (FamilyClassifier.IsScanned(family)) _scanned.Add(id);
             if (family == Family.Agent && id < (1u << 28)) _agents.Add(id);
+            if (FamilyClassifier.IsPresenceWatched(family) && id < (1u << 28)) _structure.Add(id);
         }
 
         private void RemoveFromIndexes(uint id, Family family)
@@ -241,6 +248,15 @@ namespace SkylineTogether.Sync
             if ((int)family < FamilyCount && _familyCounts[(int)family] > 0) _familyCounts[(int)family]--;
             _scanned.Remove(id);
             _agents.Remove(id);
+            _structure.Remove(id);
+        }
+
+        private void ClearIndexes()
+        {
+            _scanned.Clear();
+            _agents.Clear();
+            _structure.Clear();
+            Array.Clear(_familyCounts, 0, _familyCounts.Length);
         }
 
         private void UnbindEntityIndex(Entity e)
@@ -349,9 +365,7 @@ namespace SkylineTogether.Sync
                     _family[i] = 0;
                 }
                 _bound = 0;
-                _scanned.Clear();
-                _agents.Clear();
-                Array.Clear(_familyCounts, 0, _familyCounts.Length);
+                ClearIndexes();
                 Ids.Clear();
                 for (int i = 0; i < ids.Count; i++)
                 {

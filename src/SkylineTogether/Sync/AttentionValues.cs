@@ -89,6 +89,7 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<EntityArchetype, bool> _candidate = new Dictionary<EntityArchetype, bool>();
         private readonly List<uint> _scanIds = new List<uint>();
         private readonly List<uint> _hotIds = new List<uint>();
+        private readonly List<uint> _goneScratch = new List<uint>();
         private readonly Stopwatch _watch = new Stopwatch();
         private readonly ByteWriter _out = new ByteWriter(64 * 1024);
         private readonly List<PeerId> _peerScratch = new List<PeerId>();
@@ -294,24 +295,20 @@ namespace SkylineTogether.Sync
         {
             _scanCursor = 0;
             _scanIds.Clear();
-            NativeArray<Entity> table = _ids.ReaderTable;
-            for (int id = 1; id < table.Length; id++)
-            {
-                if (table[id] == Entity.Null) continue;
-                Family f = _ids.GetFamily((uint)id);
-                // w3/audit: nodes as well (traffic light phases, node wear)
-                if (f == Family.Object || f == Family.NetEdge || f == Family.Area || f == Family.NetNode) _scanIds.Add((uint)id);
-            }
+            // perf pass: the bound objects, edges, areas and nodes (w3/audit: nodes for traffic light phases and wear) come
+            // from their index set, not from a walk over the whole id table
+            IdIndexSet structure = _ids.StructureIds;
+            structure.CopyTo(_scanIds);
             // entities unbound since the last pass
             if (_hashes.Count > _scanIds.Count + 1024)
             {
-                var live = new HashSet<uint>(_scanIds);
-                var gone = new List<uint>();
+                _goneScratch.Clear();
                 foreach (uint id in _hashes.Keys)
                 {
-                    if (!live.Contains(id)) gone.Add(id);
+                    if (!structure.Contains(id)) _goneScratch.Add(id);
                 }
-                foreach (uint id in gone) Forget(id);
+                foreach (uint id in _goneScratch) Forget(id);
+                _goneScratch.Clear();
             }
         }
 

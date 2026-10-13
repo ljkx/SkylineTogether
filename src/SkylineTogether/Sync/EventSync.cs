@@ -298,13 +298,9 @@ namespace SkylineTogether.Sync
 
         private void RefillPass()
         {
+            // perf pass: the structure index set (bound presence-watched ids) instead of a walk over the whole id table
             _scratchIds.Clear();
-            NativeArray<Entity> table = _ids.ReaderTable;
-            for (int id = 1; id < table.Length; id++)
-            {
-                if (table[id] == Entity.Null) continue;
-                if (FamilyClassifier.IsPresenceWatched(_ids.GetFamily((uint)id))) _scratchIds.Add((uint)id);
-            }
+            _ids.StructureIds.CopyTo(_scratchIds);
             _pass.Refill(_scratchIds);
         }
 
