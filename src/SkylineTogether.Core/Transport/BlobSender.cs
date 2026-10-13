@@ -64,6 +64,7 @@ namespace SkylineTogether.Core.Transport
         private bool _pausedLogged;
         private bool _completeLogged;
         private string _failureReason;
+        private double _digestMilliseconds;
 
         /// <param name="output">The receiver's outbox; chunks go through its bulk lane window.</param>
         /// <param name="log">Logger (may be null).</param>
@@ -93,6 +94,17 @@ namespace SkylineTogether.Core.Transport
         /// </summary>
         public BlobManifestInfo Start(uint blobId, Stream source, string purpose, int chunkSize)
         {
+            return Start(blobId, source, purpose, chunkSize, null);
+        }
+
+        /// <summary>
+        /// loadspeed: like <see cref="Start(uint, Stream, string, int)"/>, but with the source's digest already known
+        /// (computed while the file was written, or for an earlier receiver of the same file), so nothing is read
+        /// before the first chunk. The caller vouches that <paramref name="knownDigest"/> is the XXH3-128 of the whole
+        /// source; a wrong one makes the receiver reject the blob at the end. Null hashes the source as before.
+        /// </summary>
+        public BlobManifestInfo Start(uint blobId, Stream source, string purpose, int chunkSize, Digest128? knownDigest)
+        {
             if (source == null) throw new ArgumentNullException(nameof(source));
             if (!source.CanRead || !source.CanSeek) throw new ArgumentException("the source must be readable and seekable", nameof(source));
             if (chunkSize < BlobCodec.MinChunkBytes || chunkSize > Limits.MaxBulkChunkBytes)
@@ -107,7 +119,18 @@ namespace SkylineTogether.Core.Transport
             lock (_lock)
             {
                 if (_started) throw new InvalidOperationException("a BlobSender transfers one blob; it was already started");
-                Digest128 digest = HashSource(source, size);
+                Digest128 digest;
+                if (knownDigest.HasValue)
+                {
+                    digest = knownDigest.Value;
+                    _digestMilliseconds = 0;
+                }
+                else
+                {
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    digest = HashSource(source, size);
+                    _digestMilliseconds = watch.Elapsed.TotalMilliseconds;
+                }
                 _manifest = new BlobManifestInfo { BlobId = blobId, Size = size, ChunkSize = chunkSize, Digest = digest, Purpose = purpose };
                 _chunkCount = BlobCodec.ChunkCount(size, chunkSize);
                 _toSend = new ChunkBitSet(_chunkCount);
@@ -120,7 +143,8 @@ namespace SkylineTogether.Core.Transport
                 _name = "blob " + blobId.ToString(CultureInfo.InvariantCulture) + " \"" + purpose + "\" to peer " + _output.Peer.Value.ToString(CultureInfo.InvariantCulture);
                 _log.Info(LogCategory.Net, _name + ": sending " + size.ToString(CultureInfo.InvariantCulture) + " bytes in "
                                            + _chunkCount.ToString(CultureInfo.InvariantCulture) + " chunk(s) of " + chunkSize.ToString(CultureInfo.InvariantCulture)
-                                           + " bytes, digest " + digest);
+                                           + " bytes, digest " + digest
+                                           + (knownDigest.HasValue ? " (known)" : " (hashed in " + _digestMilliseconds.ToString("0.0", CultureInfo.InvariantCulture) + " ms)"));
                 return _manifest.Clone();
             }
         }
@@ -337,6 +361,12 @@ namespace SkylineTogether.Core.Transport
         public long TotalBytesSent
         {
             get { lock (_lock) return _totalSentBytes; }
+        }
+
+        /// <summary>loadspeed: milliseconds <see cref="Start(uint, Stream, string, int, Digest128?)"/> spent hashing the source (0 with a known digest).</summary>
+        public double DigestMilliseconds
+        {
+            get { lock (_lock) return _digestMilliseconds; }
         }
 
         /// <summary>The in-flight window of the last pump.</summary>

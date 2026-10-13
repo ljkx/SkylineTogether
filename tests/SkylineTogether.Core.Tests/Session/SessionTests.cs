@@ -39,6 +39,9 @@ namespace SkylineTogether.Core.Tests.Session
         /// <summary>When set, snapshots are not delivered (the host keeps "saving the city").</summary>
         public bool Hold;
 
+        /// <summary>loadspeed: deliver the file's digest with the snapshot (as the game's provider does).</summary>
+        public bool ProvideDigest;
+
         private readonly List<Action<SnapshotReady>> _pending = new List<Action<SnapshotReady>>();
 
         /// <summary>Completes the snapshots requested while <see cref="Hold"/> was set.</summary>
@@ -66,6 +69,15 @@ namespace SkylineTogether.Core.Tests.Session
             string path = Path.Combine(_dir, id + ".save");
             File.WriteAllBytes(path, Data);
             var ready = new SnapshotReady { FilePath = path, Manifest = new SnapshotManifest { SnapshotId = id, ChunkSize = BlobCodec.DefaultChunkBytes, GameModeName = "Normal" } };
+            if (ProvideDigest)
+            {
+                Core.Hashing.Digest128 d = Core.Hashing.Digest128.Compute(Data, 0, Data.Length);
+                ready.DigestKnown = true;
+                ready.DigestLo = d.Lo;
+                ready.DigestHi = d.Hi;
+                ready.Size = Data.Length;
+                ready.SaveSeconds = 1.5;
+            }
             onReady(ready);
         }
 
@@ -338,6 +350,8 @@ namespace SkylineTogether.Core.Tests.Session
             var (anna, _, _) = rig.AddClient("Anna");
             rig.Run(60);
             Assert.Equal(ClientState.WaitingForSnapshot, anna.State, anna.EndReason);
+            // loadspeed: the city changes after the request (an unchanged city would let Ben reuse the pending snapshot)
+            rig.Host.Broadcast(MessageKind.Epoch, new byte[] { 7 }, 0, 1);
             var (ben, _, _) = rig.AddClient("Ben");
             rig.Run(60);
             Assert.Equal(ClientState.WaitingForSnapshot, ben.State, ben.EndReason);
@@ -446,6 +460,8 @@ namespace SkylineTogether.Core.Tests.Session
             var rig = new SessionRig(snapshotBytes: 5_000_000);
             var (a, la, _) = rig.AddClient("Anna");
             rig.Run(3);
+            // loadspeed: the city changes while Anna downloads (an unchanged city would let Ben reuse her snapshot)
+            rig.Host.Broadcast(MessageKind.Epoch, new byte[] { 7 }, 0, 1);
             var (b, lb, _) = rig.AddClient("Ben");
             rig.Run(800);
             Assert.Equal(ClientState.Live, a.State, a.EndReason);

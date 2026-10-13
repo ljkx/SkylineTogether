@@ -109,6 +109,13 @@ namespace SkylineTogether.Diagnostics
                     NetLine(sb, h.GetNetStats());
                     Line(sb, "connections:");
                     foreach (string p in h.DescribePeers()) Line(sb, "  " + p);
+                    // loadspeed: stage timings of the last completed joins (oldest first)
+                    Safe(sb, () =>
+                    {
+                        IReadOnlyList<Core.Session.JoinTimeline> joins = h.RecentJoins;
+                        Line(sb, "recent joins (" + joins.Count + "):");
+                        foreach (Core.Session.JoinTimeline t in joins) Line(sb, "  " + t.Describe());
+                    });
                 }
                 if (s.Client != null)
                 {
@@ -117,6 +124,8 @@ namespace SkylineTogether.Diagnostics
                              + ", session \"" + (c.Session?.SessionName ?? "?") + "\" hosted by " + (c.Session?.HostName ?? "?"));
                     Line(sb, "speed: " + c.Speed + (c.EndReason != null ? ", end reason: " + c.EndReason + " (" + c.EndKind + ")" : "") + ", entered the city " + c.EnteredCity + ", was live " + c.WasLive);
                     NetLine(sb, c.GetNetStats());
+                    // loadspeed: this join's stage timings (and whether the backlog is still being applied)
+                    Safe(sb, () => Line(sb, c.Timeline.Describe() + (c.Timeline.CatchingUp ? " (catching up, " + c.Timeline.BacklogRemaining + " batch(es) left)" : "")));
                 }
                 IReadOnlyList<PlayerInfo> players = s.Host != null ? s.Host.GetPlayers() : s.Client?.Players;
                 if (players != null)

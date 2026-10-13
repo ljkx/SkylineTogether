@@ -28,6 +28,12 @@ namespace SkylineTogether.Core.Session
         public double JoinStallTimeoutSeconds = 180;
         /// <summary>Presence updates of a peer that arrive faster than this are dropped instead of relayed.</summary>
         public double PresenceMinIntervalSeconds = 0.04;
+        /// <summary>
+        /// loadspeed: a joiner admitted within this many seconds of the last snapshot request gets that snapshot (still
+        /// being written, or finished and kept) instead of a new one, as long as the city cannot have changed since the
+        /// request: nothing was broadcast and the simulation was held or paused at every tick. 0 turns reuse off.
+        /// </summary>
+        public double SnapshotReuseSeconds = 30;
     }
 
     /// <summary>A chat line as the UI shows it.</summary>
@@ -81,7 +87,12 @@ namespace SkylineTogether.Core.Session
             public long EpochSent;
             /// <summary>gameplay branch: the player's role (ARCH §5.6); the host toggles builder ↔ viewer in the panel.</summary>
             public SessionRole Role = SessionRole.Builder;
+            /// <summary>loadspeed: the stage timings of this player's join (from its admission).</summary>
+            public JoinTimeline Timeline;
         }
+
+        /// <summary>loadspeed: completed joins kept for the diagnostics and the UI.</summary>
+        private const int RecentJoinCount = 8;
 
         private static readonly long JoinerQueueLimitBytes = new OutboxConfig().DisconnectQueuedBytes;
 
@@ -102,6 +113,13 @@ namespace SkylineTogether.Core.Session
         private readonly List<SnapshotReady> _retired = new List<SnapshotReady>();
         private bool _snapshotPending;
         private uint _snapshotGen;
+        // loadspeed: the generation of _snapshot, when the latest request was issued, and whether the city can have
+        // changed since (a broadcast, or a tick with the simulation running): only an unchanged city reuses a snapshot
+        private uint _snapshotReadyGen;
+        private double _snapshotRequestedAt = double.NegativeInfinity;
+        private bool _snapshotUnchanged;
+        private double _snapshotSaveSeconds = double.NaN;
+        private readonly List<JoinTimeline> _recentJoins = new List<JoinTimeline>();
         private uint _nextBlobId = 1;
         private bool _playersDirty;
         private double _lastPlayersSent;
@@ -212,6 +230,9 @@ namespace SkylineTogether.Core.Session
             if (_disposed) return;
             _transport.Poll(this);
             double now = _clock.Seconds;
+            // loadspeed: a running simulation may change the city at any frame, so a snapshot requested earlier is no
+            // longer the city of a new joiner
+            if (_snapshotUnchanged && !HoldSimulation && !_speed.Paused && !_speed.Held) _snapshotUnchanged = false;
             List<(Peer Peer, string Reason)> drop = null;
             foreach (Peer p in _peers.Values)
             {
@@ -237,6 +258,7 @@ namespace SkylineTogether.Core.Session
                         (drop ?? (drop = new List<(Peer, string)>())).Add((p, "snapshot transfer failed"));
                         continue;
                     }
+                    if (p.Timeline != null && !p.Timeline.Has(JoinStage.TransferSent) && p.Sender.IsComplete) p.Timeline.Mark(JoinStage.TransferSent, now);
                 }
                 if (p.Admitted && now - p.LastPingSent > 1.0)
                 {
@@ -288,6 +310,8 @@ namespace SkylineTogether.Core.Session
         /// <summary>Sends a replication message to every admitted peer (queued for joiners until they are live).</summary>
         public void Broadcast(MessageKind kind, byte[] body, int offset, int count, Lane lane = Lane.Reliable)
         {
+            // loadspeed: the city changed after the last snapshot request; a later joiner needs a newer snapshot
+            _snapshotUnchanged = false;
             foreach (Peer p in _peers.Values)
             {
                 if (p.Admitted) SendCounted(p, kind, body, offset, count, lane);
@@ -401,10 +425,42 @@ namespace SkylineTogether.Core.Session
                           + " ping=" + p.PingMs + "ms steamPing=" + c.PingMs + "ms quality=" + c.Quality.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
                           + " in=" + (int)c.InBytesPerSecond + "B/s out=" + (int)c.OutBytesPerSecond + "B/s pendingReliable=" + c.PendingReliableBytes
                           + " outboxQueued=" + p.Channel.Outbox.QueuedBytes + " lastHeard=" + (now - p.LastHeard).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s ago"
-                          + (p.Sender != null ? " snapshotSent=" + p.Sender.TotalBytesSent + "/" + p.SnapshotSize : ""));
+                          + (p.Sender != null ? " snapshotSent=" + p.Sender.TotalBytesSent + "/" + p.SnapshotSize + " window=" + p.Sender.CurrentWindowBytes : "")
+                          + " sendRate=" + c.SendRateBytesPerSecond + "B/s");
+                if (p.Timeline != null && p.State != PlayerState.Live) lines.Add("    " + p.Timeline.Describe());
             }
             return lines;
         }
+
+        /// <summary>
+        /// loadspeed: the timings of the last completed joins (oldest first, at most 8; copies), for the diagnostics
+        /// dump and the UI.
+        /// </summary>
+        public IReadOnlyList<JoinTimeline> RecentJoins
+        {
+            get
+            {
+                var list = new List<JoinTimeline>(_recentJoins.Count);
+                foreach (JoinTimeline t in _recentJoins) list.Add(t.Clone());
+                return list;
+            }
+        }
+
+        /// <summary>loadspeed: the most recent completed join (a copy), or null.</summary>
+        public JoinTimeline LastJoin => _recentJoins.Count > 0 ? _recentJoins[_recentJoins.Count - 1].Clone() : null;
+
+        /// <summary>loadspeed: a copy of the join timings of an admitted peer (null when unknown).</summary>
+        public JoinTimeline GetJoinTimeline(PeerId peer)
+        {
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Admitted && p.Id == peer) return p.Timeline?.Clone();
+            }
+            return null;
+        }
+
+        /// <summary>loadspeed: bumped whenever a join completes (UI refresh key).</summary>
+        public int JoinsCompleted { get; private set; }
 
         /// <summary>
         /// Movers branch: the raw send side of a live peer, for engines that write complete envelopes themselves
@@ -709,6 +765,16 @@ namespace SkylineTogether.Core.Session
                     CloseSender(p);
                     p.State = PlayerState.Live;
                     p.LiveSince = _clock.Seconds;
+                    if (p.Timeline != null)
+                    {
+                        p.Timeline.Mark(JoinStage.Downloaded, p.LiveSince);
+                        p.Timeline.Mark(JoinStage.Loaded, p.LiveSince);
+                        p.Timeline.Mark(JoinStage.Live, p.LiveSince);
+                        _log.Info(LogCategory.Join, p.Timeline.Describe());
+                        _recentJoins.Add(p.Timeline.Clone());
+                        if (_recentJoins.Count > RecentJoinCount) _recentJoins.RemoveAt(0);
+                        JoinsCompleted++;
+                    }
                     ConnectionTimeouts.Apply(p.Channel.Connection, joining: false, _log);
                     _playersDirty = true;
                     _log.Info(LogCategory.Join, p.Name + " is live");
@@ -736,6 +802,7 @@ namespace SkylineTogether.Core.Session
                     {
                         p.LoadProgress = fraction;
                         if (p.State != PlayerState.Loading) _log.Info(LogCategory.Join, p.Name + " downloaded the city and is loading it");
+                        p.Timeline?.Mark(JoinStage.Downloaded, _clock.Seconds);
                         p.State = PlayerState.Loading;
                     }
                     _playersDirty = true;
@@ -813,6 +880,10 @@ namespace SkylineTogether.Core.Session
             }
             p.Admitted = true;
             p.State = PlayerState.WaitingForSnapshot;
+            double admittedAt = _clock.Seconds;
+            p.Timeline = new JoinTimeline { Who = p.Name };
+            p.Timeline.Mark(JoinStage.Start, admittedAt);
+            p.Timeline.Mark(JoinStage.Welcome, admittedAt);
             // the joiner's main thread will stall while its game loads the city (ARCH §9.7)
             ConnectionTimeouts.Apply(p.Channel.Connection, joining: true, _log);
             _payload.Reset();
@@ -834,6 +905,25 @@ namespace SkylineTogether.Core.Session
             _log.Info(LogCategory.Session, "admitted " + p.Name + " as " + p.Id);
             SystemMessage(p.Name + " is joining…");
             PeerJoining?.Invoke(p.Id);
+            // loadspeed: nothing changed since the last request (no broadcast, simulation held or paused throughout):
+            // that snapshot is this city too, and the peer's stream (from now on) has no gap behind it
+            if (SnapshotReusable(admittedAt))
+            {
+                p.MinSnapshotGen = _snapshotGen;
+                p.Timeline.SnapshotReused = true;
+                p.Timeline.Mark(JoinStage.SnapshotRequested, _snapshotRequestedAt);
+                if (_snapshotPending)
+                {
+                    _log.Info(LogCategory.Join, p.Name + " gets the snapshot that is being taken (nothing changed since it was requested)");
+                    return;
+                }
+                _log.Info(LogCategory.Join, p.Name + " gets the snapshot requested " + (admittedAt - _snapshotRequestedAt).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+                                            + " s ago (nothing changed since)");
+                p.Timeline.Mark(JoinStage.SnapshotReady, admittedAt);
+                p.Timeline.SaveSeconds = _snapshotSaveSeconds;
+                StartTransfer(p);
+                return;
+            }
             // final review: a snapshot already requested may have serialized the city before this admission, and this
             // peer's stream starts only now; it waits for the next request (OnSnapshotReady issues it)
             p.MinSnapshotGen = _snapshotGen + 1;
@@ -844,6 +934,19 @@ namespace SkylineTogether.Core.Session
                 _snapshot = null;
             }
             RequestSnapshot();
+        }
+
+        /// <summary>
+        /// loadspeed: the latest snapshot request is recent and the city cannot have changed since (see
+        /// <see cref="HostOptions.SnapshotReuseSeconds"/>), so its snapshot also serves a peer admitted now: while it is
+        /// being written, or once written while it is still kept (another player still waits for it or downloads it; an
+        /// unused snapshot file is released at once, as before).
+        /// </summary>
+        private bool SnapshotReusable(double now)
+        {
+            if (!_snapshotUnchanged || _options.SnapshotReuseSeconds <= 0) return false;
+            if (now - _snapshotRequestedAt > _options.SnapshotReuseSeconds) return false;
+            return _snapshotPending || (_snapshot != null && _snapshotReadyGen == _snapshotGen);
         }
 
         private PeerId AllocatePeerId()
@@ -864,6 +967,12 @@ namespace SkylineTogether.Core.Session
             if (_snapshotPending) return;
             _snapshotPending = true;
             uint gen = ++_snapshotGen;
+            _snapshotRequestedAt = _clock.Seconds;
+            _snapshotUnchanged = true;
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Admitted && p.State == PlayerState.WaitingForSnapshot && p.MinSnapshotGen <= gen) p.Timeline?.Mark(JoinStage.SnapshotRequested, _snapshotRequestedAt, overwrite: true);
+            }
             _log.Info(LogCategory.Join, "taking a snapshot of the city");
             _snapshots.RequestSnapshot(ready => OnSnapshotReady(ready, gen), OnSnapshotFailed);
         }
@@ -877,7 +986,13 @@ namespace SkylineTogether.Core.Session
                 return;
             }
             _snapshot = ready;
-            _log.Info(LogCategory.Join, "snapshot ready: " + new FileInfo(ready.FilePath).Length + " bytes");
+            _snapshotReadyGen = gen;
+            double took = _clock.Seconds - _snapshotRequestedAt;
+            _snapshotSaveSeconds = ready.SaveSeconds > 0 ? ready.SaveSeconds : took;
+            _log.Info(LogCategory.Join, "snapshot ready: " + new FileInfo(ready.FilePath).Length + " bytes, "
+                                        + took.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s after the request"
+                                        + (ready.SaveSeconds > 0 ? " (save " + ready.SaveSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s)" : "")
+                                        + (ready.DigestKnown ? ", digest computed while writing" : ""));
             // a copy: StartTransfer removes the peer when the transfer cannot start
             bool later = false;
             foreach (Peer p in new List<Peer>(_peers.Values))
@@ -887,6 +1002,11 @@ namespace SkylineTogether.Core.Session
                 {
                     later = true; // admitted while this snapshot was being taken
                     continue;
+                }
+                if (p.Timeline != null)
+                {
+                    p.Timeline.Mark(JoinStage.SnapshotReady, _clock.Seconds);
+                    p.Timeline.SaveSeconds = _snapshotSaveSeconds;
                 }
                 StartTransfer(p);
             }
@@ -901,6 +1021,7 @@ namespace SkylineTogether.Core.Session
         private void OnSnapshotFailed(string reason)
         {
             _snapshotPending = false;
+            _snapshotUnchanged = false;
             _log.Error(LogCategory.Join, "snapshot failed: " + reason);
             foreach (Peer p in new List<Peer>(_peers.Values))
             {
@@ -918,11 +1039,30 @@ namespace SkylineTogether.Core.Session
         {
             try
             {
-                p.Snapshot = _snapshot;
-                p.SenderStream = new FileStream(_snapshot.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
+                SnapshotReady snapshot = _snapshot;
+                p.Snapshot = snapshot;
+                p.SenderStream = new FileStream(snapshot.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
                 p.Sender = new BlobSender(p.Channel.Outbox, _log);
-                BlobManifestInfo info = p.Sender.Start(_nextBlobId++, p.SenderStream, "snapshot");
+                // loadspeed: the digest is computed at most once per snapshot (by the provider while writing, or here for
+                // the first receiver) and reused for every later receiver of the same file
+                bool known = snapshot.DigestKnown && snapshot.Size == p.SenderStream.Length;
+                Hashing.Digest128? digest = known ? new Hashing.Digest128(snapshot.DigestLo, snapshot.DigestHi) : (Hashing.Digest128?)null;
+                BlobManifestInfo info = p.Sender.Start(_nextBlobId++, p.SenderStream, "snapshot", BlobCodec.DefaultChunkBytes, digest);
+                if (!known)
+                {
+                    snapshot.DigestKnown = true;
+                    snapshot.DigestLo = info.Digest.Lo;
+                    snapshot.DigestHi = info.Digest.Hi;
+                    snapshot.Size = info.Size;
+                }
                 p.SnapshotSize = info.Size;
+                if (p.Timeline != null)
+                {
+                    p.Timeline.SnapshotBytes = info.Size;
+                    p.Timeline.DigestMilliseconds = p.Sender.DigestMilliseconds;
+                    p.Timeline.DigestReused = known;
+                    p.Timeline.Mark(JoinStage.TransferStarted, _clock.Seconds);
+                }
                 SnapshotManifest m = _snapshot.Manifest;
                 m.Size = info.Size;
                 m.DigestLo = info.Digest.Lo;
@@ -943,6 +1083,10 @@ namespace SkylineTogether.Core.Session
                 p.State = PlayerState.Downloading;
                 _playersDirty = true;
                 _log.Info(LogCategory.Join, p.Name + ": sending the snapshot (" + info.Size + " bytes, " + info.ChunkCount + " chunks)");
+                // loadspeed: the manifest and the first window of chunks leave now, not one frame later
+                p.Channel.Pump();
+                p.Sender.Pump();
+                p.Channel.Pump();
             }
             catch (Exception ex)
             {

@@ -183,6 +183,25 @@ namespace SkylineTogether.Core.Session
 
         public ConnectionStats Stats => _connection != null ? _connection.GetStats() : default(ConnectionStats);
 
+        /// <summary>
+        /// loadspeed: the stage timings of this join (connect, welcome, download, verify, load, live, catch-up) for the
+        /// log, the diagnostics dump and the UI. The session marks every stage up to live; the replication layer reports
+        /// the backlog it still has to apply (<see cref="ReportBacklog"/>), which marks the catch-up.
+        /// </summary>
+        public JoinTimeline Timeline { get; } = new JoinTimeline { Who = "this player" };
+
+        /// <summary>
+        /// loadspeed: the replication layer's backlog after going live (batches still waiting to be applied). Zero
+        /// once live ends the "catching up" state and logs the join's timings.
+        /// </summary>
+        public void ReportBacklog(int remaining)
+        {
+            Timeline.BacklogRemaining = Math.Max(0, remaining);
+            if (State != ClientState.Live || Timeline.Has(JoinStage.CaughtUp) || remaining > 0) return;
+            Timeline.Mark(JoinStage.CaughtUp, _clock.Seconds);
+            _log.Info(LogCategory.Join, Timeline.Describe());
+        }
+
         public event Action StateChanged;
         public event Action PlayersChanged;
         public event Action<ChatEntry> ChatReceived;
@@ -242,6 +261,7 @@ namespace SkylineTogether.Core.Session
         {
             if (State != ClientState.Idle) throw new InvalidOperationException("already connecting");
             SetState(ClientState.Connecting);
+            Timeline.Mark(JoinStage.Start, _clock.Seconds);
             _log.Info(LogCategory.Session, "connecting to " + endpoint);
             _connection = _transport.Connect(endpoint);
             if (_connection == null)
@@ -440,6 +460,7 @@ namespace SkylineTogether.Core.Session
                     _log.Info(LogCategory.Session, "welcomed to \"" + Session.SessionName + "\" as " + LocalPeer);
                     // the city load stalls this game's main thread (and the host's while it saves): longer keepalive
                     ConnectionTimeouts.Apply(_connection, joining: true, _log);
+                    Timeline.Mark(JoinStage.Welcome, _clock.Seconds);
                     SetState(ClientState.WaitingForSnapshot);
                     return;
                 }
@@ -579,6 +600,8 @@ namespace SkylineTogether.Core.Session
                 return;
             }
             _lastChunkAt = _clock.Seconds;
+            Timeline.SnapshotBytes = manifest.Size;
+            Timeline.Mark(JoinStage.TransferStarted, _clock.Seconds);
             SetState(ClientState.Downloading);
             _payload.Reset();
             SendControl(ControlKind.ReadyForSnapshot, _payload);
@@ -588,16 +611,24 @@ namespace SkylineTogether.Core.Session
 
         private void OnDownloadComplete()
         {
+            Timeline.Mark(JoinStage.Downloaded, _clock.Seconds);
             SendHave();
+            // the digest was computed while the chunks arrived in order; only chunks that came ahead of a gap are read back
             if (!_receiver.VerifyDigest())
             {
                 End("The downloaded city is damaged (checksum mismatch). Try joining again.", ClientEndKind.JoinFailed);
                 return;
             }
+            Timeline.Mark(JoinStage.Verified, _clock.Seconds);
             CloseTarget();
             EnteredCity = true;
             SetState(ClientState.Loading);
-            _log.Info(LogCategory.Join, "download complete; loading the city");
+            double rate = Timeline.TransferBytesPerSecond;
+            _log.Info(LogCategory.Join, "download complete (" + _manifest.Size + " bytes in "
+                                        + Timeline.TransferSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s"
+                                        + (double.IsNaN(rate) ? "" : ", " + (rate / 1048576.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " MiB/s")
+                                        + "); loading the city");
+            Timeline.Mark(JoinStage.LoadStarted, _clock.Seconds);
             try
             {
                 _loader.BeginLoad(_manifest, Array.Empty<SettingEntry>(), OnLoaded);
@@ -627,7 +658,8 @@ namespace SkylineTogether.Core.Session
             {
                 _loadProgress = 1f;
                 _loadedAt = _clock.Seconds;
-                _log.Info(LogCategory.Join, "city loaded; waiting for the host");
+                Timeline.Mark(JoinStage.Loaded, _loadedAt);
+                _log.Info(LogCategory.Join, "city loaded in " + Timeline.LoadSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s; waiting for the host");
             }
         }
 
@@ -642,6 +674,13 @@ namespace SkylineTogether.Core.Session
             }
             ConnectionTimeouts.Apply(_connection, joining: false, _log);
             WasLive = true;
+            Timeline.Mark(JoinStage.Live, _clock.Seconds);
+            Timeline.BacklogMessages = _buffered.Count;
+            long backlogBytes = 0;
+            foreach (Buffered b in _buffered) backlogBytes += b.Body.Length;
+            Timeline.BacklogBytes = backlogBytes;
+            _log.Info(LogCategory.Join, "live after " + Timeline.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s; "
+                                        + _buffered.Count + " buffered message(s) (" + backlogBytes + " bytes) follow");
             SetState(ClientState.Live);
             // final review: one throwing listener used to stop GoLive here: the later listeners (gate, clock, movers)
             // never ran and the buffered messages stayed queued, so every later message was queued behind them and the
