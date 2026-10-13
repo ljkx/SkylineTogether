@@ -59,6 +59,7 @@ const vanillaUi = {
   Button(p) { return { type: "vanilla-button", props: p, children: [p.children] }; },
   Panel(p) { return { type: "vanilla-panel", props: p, children: [p.header, p.children] }; },
   Tooltip(p) { return { type: "vanilla-tooltip", props: p, children: [p.tooltip, p.children] }; },
+  Scrollable(p) { return { type: "vanilla-scrollable", props: p, children: [p.children] }; },
   FloatingButton(p) { return { type: "vanilla-floating", props: p, children: [] }; },
   MenuButton(p) { return { type: "vanilla-menu-button", props: p, children: [p.children] }; },
 };
@@ -68,8 +69,23 @@ let locale = null;
 window["cs2/l10n"] = { useLocalization() { return { translate(id, fallback) { return locale && locale[id] !== undefined ? locale[id] : fallback; } }; } };
 
 const MAIN_MENU = "game-ui/menu/components/main-menu-screen/main-menu-screen.tsx";
+// fake class maps of the vanilla themes the module borrows (the real names change with every game build)
+const themeStub = (keys) => Object.fromEntries(keys.map((k) => [k, k + "_x1"]));
 const registry = new Map([
-  [MAIN_MENU, { MainMenuNavigation: (p) => ({ type: "div", props: {}, children: [p.children] }), MainMenuScreen() {}, ModsUIButton() {} }],
+  [MAIN_MENU, { MainMenuNavigation: (p) => ({ type: "div", props: {}, children: [p.children] }), MainMenuScreen: (p) => ({ type: "vanilla-main-menu", props: p, children: [] }), ModsUIButton() {} }],
+  ["game-ui/menu/components/shared/sub-screen/sub-screen.tsx", { SubScreen: (p) => ({ type: "vanilla-sub-screen", props: p, children: [p.title, p.children] }) }],
+  ["game-ui/menu/components/options-screen/options-screen.module.scss", { classes: themeStub(["content", "menu", "scrollable", "item", "primary", "detail"]) }],
+  ["game-ui/menu/components/options-screen/option-page/option-page.module.scss", { classes: themeStub(["optionPage", "mainColumn", "scrollable", "infoColumn", "infoTitle", "infoDescription"]) }],
+  ["game-ui/menu/components/options-screen/option-page/option-page-header.module.scss", { classes: themeStub(["optionPageHeader", "tab", "first", "last"]) }],
+  ["game-ui/menu/widgets/field/row-field.module.scss", { classes: themeStub(["field", "label"]) }],
+  ["game-ui/menu/widgets/string-input-field/string-input-field.module.scss", { classes: themeStub(["stringField"]) }],
+  ["game-ui/menu/widgets/toggle-field/toggle-field.module.scss", { classes: themeStub(["toggle"]) }],
+  ["game-ui/menu/themes/secondary-button.module.scss", { classes: themeStub(["button", "icon", "label"]) }],
+  ["game-ui/common/input/button/themes/dialog-button.module.scss", { classes: themeStub(["button", "negative"]) }],
+  ["game-ui/common/input/button/themes/round-highlight-button.module.scss", { classes: themeStub(["button"]) }],
+  ["game-ui/common/tabs/tabs.module.scss", { classes: themeStub(["tabBar", "tab"]) }],
+  ["game-ui/game/components/selected-info-panel/shared-components/info-section/info-section.module.scss", { classes: themeStub(["infoSection", "content"]) }],
+  ["game-ui/common/image/tinted-icon.module.scss", { classes: themeStub(["tintedIcon"]) }],
   ["game-ui/common/input/button/labeled-icon-button.tsx", { LabeledIconButton: (p) => ({ type: "vanilla-labeled", props: p, children: [p.children] }) }],
   ["game-ui/menu/themes/menu-item.module.scss", { classes: { button: "button_uFa", icon: "icon_zVk", label: "label_NLv" } }],
   ["game-ui/common/input/toggle/checkbox/checkbox.tsx", { Checkbox: (p) => ({ type: "vanilla-checkbox", props: p, children: [] }) }],
@@ -99,6 +115,7 @@ mod.default({
 });
 for (const slot of ["Game", "Menu", "GameTopLeft"]) if (!appended[slot]) fail("nothing appended to " + slot);
 if (!extended[MAIN_MENU + "@MainMenuNavigation"]) fail("the main menu entry was not installed");
+if (!extended[MAIN_MENU + "@MainMenuScreen"]) fail("the multiplayer screen was not installed in place of the main menu screen");
 if (!smoke.store) fail("the smoke hook is missing");
 
 // ---------------------------------------------------------------------------------------------- renderer
@@ -153,14 +170,19 @@ const mods = { seq: 3, kind: "refused", refuse: "Mismatch", text: "Your mods dif
   hostGame: "", yourGame: "", hostProto: "", yourProto: "" };
 const end = (kind, refuse, extra) => Object.assign({ seq: 7, kind, refuse: refuse || "", text: "detail from the host", target: "1.2.3.4:27015", reportKind: "", missing: [], extra: [], versions: [], hostGame: "", yourGame: "", hostProto: "", yourProto: "" }, extra);
 const join = (stage, extra) => Object.assign({ active: true, stage, session: "Anna's city", target: "76561190000000009", done: 0, total: 0, bps: 0, eta: -1, load: 0, progress: 0 }, extra);
+const friends = [{ id: "76561190000000001", name: "Anna", state: "ingame", inSession: true }, { id: "76561190000000002", name: "Bo", state: "online", inSession: false },
+  { id: "76561190000000003", name: "Cy", state: "away", inSession: false }, { id: "76561190000000004", name: "Dee", state: "offline", inSession: false }, { id: "76561190000000005", name: "", state: "weird", inSession: false }];
 const cases = {
   lobbyGame: { state: { ...base, mode: "None" } },
   lobbyMenu: { state: { ...base, mode: "None", inGame: false, canHost: false, hasPassword: true, allowDirect: true } },
   nosteam: { state: { ...base, mode: "None", steam: false, canHost: false, canJoin: false } },
   hosting: { state: { ...base, mode: "Hosting", hold: true, status: "A player is joining – the game is paused until they are in. Anna is downloading the city (40 %).", sessionName: "X", directPort: 27015,
     sync: "12,345 objects in sync; verifying 9,000 objects every 30 s, 0 repairs sent; 812 movers", speed: "paused while a player joins", speedHeld: true, canInvite: true, inviteSteamId: "76561190000000000",
-    players, chat }, net, presence: tags },
-  hostingNoHud: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", speed: "2×", speedValue: 2 }, net: { show: false, text: "" }, presence: { tags: [] } },
+    players, chat }, net, presence: tags, friends, overlayAvailable: true },
+  hostingNoHud: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", speed: "2×", speedValue: 2, canInvite: true }, net: { show: false, text: "" }, presence: { tags: [] }, friends: [], overlayAvailable: false },
+  // invites without the InviteUISystem values (older C#, or not yet sent): only the overlay button
+  hostingNoFriends: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", canInvite: true, players, chat: [] } },
+  clientNoOverlay: { state: { ...base, mode: "Client", status: "Connected", sessionName: "X", canInvite: true, players, chat }, overlayAvailable: false },
   joiningConnect: { state: { ...base, mode: "Joining", stage: "connecting", status: "Connecting…" }, join: join("connecting") },
   joiningWait: { state: { ...base, mode: "Joining", stage: "waiting" }, join: join("waiting") },
   joiningDownload: { state: { ...base, mode: "Joining", stage: "downloading", progress: 0.2 }, join: join("downloading", { done: 41943040, total: 104857600, bps: 3145728, eta: 20, progress: 0.2 }) },
@@ -196,7 +218,7 @@ const cases = {
   soloHostIdle: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X" }, replay: { canRecord: true, recording: false } },
   soloReplaying: { state: { ...base, mode: "Client", status: "Connected", sessionName: "X (test)" }, replay: { replaying: true, replayStatus: "Replayed 0:40 of the recording · 1 checkpoints compared · 0 objects differ", progress: 0.3 } },
   soloReplayLoading: { state: { ...base, mode: "Joining", stage: "loading", progress: 0.7 }, join: join("loading", { load: 0.4, progress: 0.7 }), replay: { replaying: true, replayStatus: "Loading the recorded city…", progress: 0.1 } },
-  garbage: { state: "{not json", net: "", presence: "null", join: "[1,2", replay: "{oops" },
+  garbage: { state: "{not json", net: "", presence: "null", join: "[1,2", replay: "{oops", friends: "{bad" },
   empty: { state: "{}" },
 };
 const passes = [
@@ -212,14 +234,22 @@ for (const pass of passes) {
   forceTrue = pass.forceTrue;
   for (const [name, c] of Object.entries(cases)) {
     values = {};
-    for (const k of Object.keys(c)) values[k] = typeof c[k] === "string" ? c[k] : JSON.stringify(c[k]);
-    for (const tab of ["host", "join"]) {
+    for (const k of Object.keys(c)) values[k] = typeof c[k] === "string" || typeof c[k] === "boolean" ? c[k] : JSON.stringify(c[k]);
+    for (const tab of ["host", "join", "solo"]) {
       for (const slot of roots) {
-        Object.assign(smoke.store, { open: true, menuOpen: true, tab, dismissedEnd: -1, typing: 0 });
+        // every surface at once: panel, invite popover, expanded and collapsed chat dock
+        Object.assign(smoke.store, { open: true, menuOpen: true, tab, dismissedEnd: -1, typing: 0, invitesOpen: true, chatOpen: tab !== "solo", chatSeen: -1, sent: tab === "join" ? { "76561190000000002": true } : {} });
         try { total += render({ type: appended[slot], props: {}, children: [] }); }
         catch (e) { fail(pass.name + " " + name + " " + slot + ": " + (e && e.stack)); }
         runHandlers(pass.name + " " + name + " " + slot);
       }
+    }
+    // the multiplayer screen (open, per page) and the untouched main menu screen (closed)
+    for (const [menuOpen, tab] of [[true, "join"], [true, "host"], [true, "solo"], [false, "join"]]) {
+      Object.assign(smoke.store, { menuOpen, tab, dismissedEnd: -1, typing: 0 });
+      try { total += render({ type: extended[MAIN_MENU + "@MainMenuScreen"], props: { focusKey: { debugName: "menu" }, className: "x" }, children: [] }); }
+      catch (e) { fail(pass.name + " " + name + " multiplayer screen: " + (e && e.stack)); }
+      runHandlers(pass.name + " " + name + " multiplayer screen");
     }
     try { total += render({ type: extended[MAIN_MENU + "@MainMenuNavigation"], props: { children: [{ type: "a", props: {}, children: [] }, { type: "b", props: {}, children: [] }, { type: "c", props: {}, children: [] }, false, { type: "d", props: {}, children: [] }] }, children: [] }); }
     catch (e) { fail(pass.name + " " + name + " main menu: " + (e && e.stack)); }
@@ -230,11 +260,13 @@ for (const pass of passes) {
 console.log("rendered " + total + " nodes over " + passes.length + " passes and " + Object.keys(cases).length + " states");
 if (rawKeys.size > 0) fail("text keys rendered raw (missing in the English table): " + [...rawKeys].join(", "));
 if (unknownBindings.size > 0) fail("bindings the C# side does not provide: " + [...unknownBindings].join(", "));
-const triggerNames = new Set(triggers.map((t) => t[1]));
+const triggerNames = new Set(triggers.filter((t) => t[0] === "skylineTogether").map((t) => t[1]));
 for (const t of triggerNames) if (!csTriggers.has(t)) fail("trigger the C# side does not provide: " + t);
-for (const t of triggers) if (t[0] !== "skylineTogether") fail("trigger outside the group: " + t[0]);
+// the only foreign trigger: the vanilla main menu's own screen switch (Load game / New game from the Host page)
+for (const t of triggers) if (t[0] !== "skylineTogether" && !(t[0] === "menu" && t[1] === "setActiveScreen")) fail("trigger outside the group: " + t[0] + "." + t[1]);
 console.log("triggers used: " + [...triggerNames].sort().join(", "));
-for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends", "toggleNetHud", "writeDiagnostics", "toggleRole"]) {
+for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends", "toggleNetHud", "writeDiagnostics", "toggleRole",
+  "inviteFriend", "openInviteOverlay", "refreshFriends", "recordStart", "recordStop", "replayStart", "replayStop", "replayRefresh", "reconnect", "cancelReconnect", "stayOffline", "mainMenu"]) {
   if (!triggerNames.has(t)) fail("no UI path fires the trigger " + t);
 }
 

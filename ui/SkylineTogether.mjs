@@ -38,9 +38,11 @@ const netBinding = bind("net", "{}");
 const presenceBinding = bind("presence", "{\"tags\":[]}");
 // solo testing: recording and replay state, recordings, last verdict (ReplayUISystem)
 const replayBinding = bind("replay", "{}");
-// Steam friends for the invite list (InviteUISystem, optional): a JSON array of {id, name, state, inSession}. Missing
-// or empty means the list is unavailable and only the Steam overlay button is shown.
+// Steam invites (InviteUISystem): friends is a JSON array of {id, name, state, inSession}; C# asks Steam only while the
+// binding is observed, so only the open invite popover reads it. Missing or empty: only the Steam overlay button shows.
+// overlayAvailable: false when the Steam overlay cannot open (then the overlay button hides; null = unknown).
 const friendsBinding = bind("friends", "");
+const overlayBinding = bind("overlayAvailable", null);
 
 function parse(json) {
   try {
@@ -75,6 +77,15 @@ function useFriends() {
     return Array.isArray(v) ? v : null;
   } catch (e) {
     return null;
+  }
+}
+
+// false only when C# says the Steam overlay cannot open
+function useOverlayAvailable() {
+  try {
+    return api.useValue(overlayBinding) !== false;
+  } catch (e) {
+    return true;
   }
 }
 
@@ -141,7 +152,7 @@ const EN = {
   "st.ui.host.password": "Password",
   "st.ui.host.passwordPlaceholder": "Optional",
   "st.ui.host.passwordKept": "Unchanged (a password is set)",
-  "st.ui.host.passwordHint": "Leave empty for no password. Friends invited through Steam need it too.",
+  "st.ui.host.passwordHint": "Leave empty for no password.",
   "st.ui.host.removePassword": "Remove password",
   "st.ui.host.maxPlayers": "Max players",
   "st.ui.host.maxPlayersHint": "Including you.",
@@ -163,7 +174,7 @@ const EN = {
   "st.ui.host.menu.step3": "Press \"Host this city\" and invite your friends.",
   "st.ui.host.menu.load": "Load game",
   "st.ui.host.menu.new": "New game",
-  "st.ui.host.info": "Your game keeps running the city as usual. Friends who join get a copy of it and from then on everything anyone builds is shared live. Only you can save the city.",
+  "st.ui.host.info": "Your game keeps running the city as usual. Friends who join get a copy of it and from then on everything anyone builds is shared live.",
   "st.ui.join.title": "Join a friend",
   "st.ui.join.subtitle": "Play together in a friend's city",
   "st.ui.join.intro": "Enter the host's Steam ID (shown in their Skyline Together panel) or IP address and port.",
@@ -258,7 +269,7 @@ const EN = {
   "st.ui.friends.invite": "Invite",
   "st.ui.friends.sent": "Sent",
   "st.ui.friends.inSession": "In session",
-  "st.ui.friends.state.ingame": "In a game",
+  "st.ui.friends.state.ingame": "Playing Cities: Skylines II",
   "st.ui.friends.state.online": "Online",
   "st.ui.friends.state.away": "Away",
   "st.ui.friends.state.offline": "Offline",
@@ -268,6 +279,8 @@ const EN = {
   "st.ui.friends.empty": "No Steam friends to show.",
   "st.ui.friends.overlay": "Open the Steam overlay",
   "st.ui.friends.refresh": "Refresh",
+  "st.ui.friends.overlayOnly": "Invite friends through Steam's invite dialog, or share your Steam ID.",
+  "st.ui.friends.noOverlay": "The Steam overlay is not available. Share your Steam ID with your friends: they paste it on the Join page.",
   "st.ui.players.title": "Players",
   "st.ui.players.count": "{N} / {MAX}",
   "st.ui.players.kick": "Kick",
@@ -1251,6 +1264,9 @@ function SessionHeader(p) {
   const flash = useFlash();
   const st = useStore();
   const id = s.inviteSteamId || s.steamId || "";
+  const overlay = useOverlayAvailable();
+  // the host invites from the friends list (works without the overlay); a player can only open Steam's dialog
+  const canInviteHere = !!s.canInvite && (hosting || overlay);
   return h(
     Section,
     { first: true },
@@ -1273,7 +1289,7 @@ function SessionHeader(p) {
         h("div", { style: merge(S.ellipsis, S.ids, { flex: 1, fontSize: FS.l, color: T.text }) }, id),
         h(IconBtn, { src: flash.on ? G.check : G.copy, size: 14, color: flash.on ? T.good : T.text, tooltip: flash.on ? t("st.ui.invite.copied") : t("st.ui.invite.copy"), onClick: function () { send("copySteamId"); flash.fire(); } })
       ),
-      s.canInvite
+      canInviteHere
         ? h(
             "div",
             { style: merge(S.row, { marginTop: "8rem" }) },
@@ -1333,11 +1349,12 @@ function FriendRow(p) {
 }
 
 // The host's invite popover beside the panel: Steam friends (online first) with Invite buttons, or the overlay only.
-function InvitePopover(p) {
-  const friends = p.friends;
+function InvitePopover() {
+  const friends = useFriends();
+  const overlayOk = useOverlayAvailable();
   const [query, setQuery] = React.useState("");
   React.useEffect(function () {
-    if (friends) send("refreshFriends");
+    send("refreshFriends");
   }, []);
   const close = function () { setStore({ invitesOpen: false }); };
   const q = query.trim().toLowerCase();
@@ -1352,7 +1369,7 @@ function InvitePopover(p) {
     });
   const online = all.filter(function (f) { return f.state !== "offline" && FRIEND_ORDER[f.state] !== undefined; });
   const offline = all.filter(function (f) { return !(f.state !== "offline" && FRIEND_ORDER[f.state] !== undefined); });
-  const overlay = function () { send(friends ? "openInviteOverlay" : "inviteFriends"); };
+  const overlay = function () { send("openInviteOverlay"); };
   const group = function (title, items) {
     if (items.length === 0) return null;
     return h("div", { key: title }, h(Label, { style: { padding: "8rem 8rem 2rem 8rem", marginBottom: 0 } }, title), items.map(function (f) { return h(FriendRow, { key: f.id, friend: f }); }));
@@ -1388,8 +1405,8 @@ function InvitePopover(p) {
                     : [group(t("st.ui.friends.groupOnline", { N: online.length }), online), group(t("st.ui.friends.groupOffline", { N: offline.length }), offline)]
               )
             )
-          : h(Hint, { style: { padding: "2rem 4rem 8rem 4rem" } }, t("st.ui.join.steamHint")),
-        h("div", { style: merge(S.row, { marginTop: "8rem" }) }, h(Btn, { kind: "flat", style: { flex: 1 }, onClick: overlay }, t("st.ui.friends.overlay")))
+          : h(Hint, { style: { padding: "2rem 4rem 8rem 4rem" } }, overlayOk ? t("st.ui.friends.overlayOnly") : t("st.ui.friends.noOverlay")),
+        overlayOk ? h("div", { style: merge(S.row, { marginTop: "8rem" }) }, h(Btn, { kind: "flat", style: { flex: 1 }, onClick: overlay }, t("st.ui.friends.overlay"))) : null
       )
     )
   );
@@ -2073,7 +2090,7 @@ function MenuSoloPage(p) {
       title: t("st.ui.nav.solo"),
       subtitle: t("st.ui.test.subtitle"),
       info: info,
-      headerRight: h(Btn, { kind: "menuSecondary", onClick: function () { send("replayRefresh"); } }, h(Glyph, { src: G.refresh, size: 14, color: "currentColor", style: { marginRight: "8rem", backgroundColor: undefined } }), t("st.ui.test.refresh")),
+      headerRight: h(Btn, { kind: "menuSecondary", onClick: function () { send("replayRefresh"); } }, t("st.ui.test.refresh")),
       footer: [
         inGame ? h(Btn, { key: "rec", kind: "menuSecondary", disabled: !r.canRecord, onClick: function () { send("recordStart"); }, style: { marginRight: "12rem" } }, t("st.ui.test.record")) : null,
         h(Btn, { key: "replay", kind: "menuPrimary", disabled: !r.canReplay || !m.chosen, onClick: function () { send("replayStart", m.chosen, m.speed); }, style: { minWidth: "220rem" } }, t("st.ui.test.replay")),
@@ -2211,11 +2228,12 @@ function OvButton(p) {
   );
 }
 
-// The card of the join and error screens: solid backdrop, explicit light text on a dark card.
+// The card of the join and error screens: solid backdrop, explicit light text on a dark card. The backdrop is a
+// viewport-sized box centred on its layer, so it covers the whole screen also from the menu's (centred) content area.
 function OverlayCard(p) {
   return h(
     "div",
-    { style: merge(S.fill, S.center, { backgroundColor: OV.backdrop, pointerEvents: "auto", zIndex: p.z || 2000, color: OV.text, fontFamily: "var(--fontFamily)" }) },
+    { style: merge(S.center, { position: "absolute", left: "50%", top: "50%", width: "100vw", height: "100vh", marginLeft: "-50vw", marginTop: "-50vh", backgroundColor: OV.backdrop, pointerEvents: "auto", zIndex: p.z || 2000, color: OV.text, fontFamily: "var(--fontFamily)" }) },
     h(
       "div",
       { style: merge(S.col, { width: p.width || "560rem", maxHeight: "86vh", borderRadius: "6rem", backgroundColor: OV.cardSolid, backgroundImage: OV.card, boxShadow: "0 8rem 40rem rgba(0, 0, 0, 0.55)", overflow: "hidden" }, border("1rem", "rgba(255, 255, 255, 0.08)")) },
@@ -2695,7 +2713,6 @@ function GameRoot() {
   const s = useJson(stateBinding);
   const st = useStore();
   const panel = useGamePanel();
-  const friends = useFriends();
   const photo = panel === "PhotoMode";
   const social = panel === "Chirper" || panel === "Radio" || panel === "LifePath" || panel === "Journal" || panel === "Notifications";
   const [noTopLeft, setNoTopLeft] = React.useState(false);
@@ -2729,7 +2746,7 @@ function GameRoot() {
           "div",
           { style: S.gamePanelPos },
           h(PanelShell, { title: panelTitle(s), status: statusColor(mode), onClose: close, width: "420rem", maxHeight: "78vh", footer: live ? h(LeaveButton, { state: s }) : null }, s.steam === false && mode === "None" ? h(SteamMissing, { style: { margin: "8rem" } }) : h(PanelContent, { state: s })),
-          showInvites ? h(InvitePopover, { friends: friends }) : null
+          showInvites ? h(InvitePopover, null) : null
         )
       : null,
     h(JoinOverlay, { state: s }),
