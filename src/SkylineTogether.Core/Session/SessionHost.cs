@@ -35,7 +35,7 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         public double SnapshotReuseSeconds = 30;
         /// <summary>
-        /// loadspeed: snapshot chunks are also pumped from a background thread every 2 ms (<see cref="BackgroundPump"/>),
+        /// loadspeed: snapshot chunks are also pumped from a background thread every 2 ms (<see cref="Transport.BackgroundPump"/>),
         /// so a low frame rate or a frame hitch never leaves the transport idle. Only connections that are
         /// <see cref="IThreadSafeConnection"/> (Steam) use it; the session's own tick keeps pumping as well.
         /// </summary>
@@ -260,7 +260,8 @@ namespace SkylineTogether.Core.Session
                 }
                 if (p.Sender != null)
                 {
-                    p.Sender.Pump();
+                    // loadspeed: with a background pump the transfer is pumped there (no lock contention on this thread)
+                    if (p.PumpToken == null) p.Sender.Pump();
                     if (p.Sender.IsFailed)
                     {
                         _log.Warn(LogCategory.Join, p.Name + ": snapshot transfer failed: " + p.Sender.FailureReason);
