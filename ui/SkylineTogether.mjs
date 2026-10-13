@@ -104,7 +104,7 @@ const EN = {
   "st.ui.host.unavailable": "Hosting is not possible right now.",
   "st.ui.join.title": "Join a friend",
   "st.ui.join.intro": "Enter the host's Steam ID (shown in their Skyline Together panel) or IP address and port.",
-  "st.ui.join.target": "Host",
+  "st.ui.join.target": "Host's Steam ID (or IP:port) - paste it here",
   "st.ui.join.targetPlaceholder": "Steam ID or IP:port",
   "st.ui.join.password": "Password",
   "st.ui.join.passwordPlaceholder": "If the host set one",
