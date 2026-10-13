@@ -130,6 +130,10 @@ namespace SkylineTogether.Sync
         private readonly HashSet<Entity> _clientWritten = new HashSet<Entity>();
         private readonly List<uint> _clientProposed = new List<uint>();
         private readonly List<Entity> _clientChanged = new List<Entity>();
+        private readonly HashSet<Entity> _authoredKeys = new HashSet<Entity>();
+        private readonly Action _hostWatchCall, _clientActionCall, _lateIntentsCall, _actionDetectCall, _editHoldsCall, _milestonesCall;
+        private readonly Action _hostModStateCall, _hostModSettingsCall, _clientModStateCall;
+        private double _callNow; // the capture time the cached mod-state and mod-settings calls use
         private Game.Tools.GenerateEdgesSystem _generateEdges;
         /// <summary>Client: the newest ledger epoch applied (the base of its proposals; not a release frame).</summary>
         private uint _baseEpoch;
@@ -244,6 +248,23 @@ namespace SkylineTogether.Sync
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
             _mayCreate = MayCreate;
+            // perf pass: the guarded calls of every frame use delegates made once (a lambda or method group passed to
+            // SafeCall allocated a delegate, and a closure, on every call)
+            _hostWatchCall = () =>
+            {
+                // a copy: the watch's Touch handler adds to _authoredThisFrame while it runs
+                _authoredKeys.Clear();
+                foreach (Entity e in _authoredThisFrame.Keys) _authoredKeys.Add(e);
+                _actions.HostWatch(_authoredKeys);
+            };
+            _clientActionCall = () => _actions.ClientCapture(_appliedThisFrame);
+            _lateIntentsCall = _actions.RunLate;
+            _actionDetectCall = _actions.BeforeApply;
+            _editHoldsCall = ReleaseHolds;
+            _milestonesCall = _actions.AfterApply;
+            _hostModStateCall = () => CaptureModChanges(_callNow, _writtenThisFrame, true);
+            _hostModSettingsCall = () => _modSettings.HostCapture(_batch, _callNow);
+            _clientModStateCall = () => CaptureModChanges(_callNow, _clientWritten, false, _clientProposed);
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -761,7 +782,7 @@ namespace SkylineTogether.Sync
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
-                SafeCall("action detection", _actions.BeforeApply); // gameplay branch: dev tree, map tiles
+                SafeCall("action detection", _actionDetectCall); // gameplay branch: dev tree, map tiles
                 if (Features.GlobalState.IsAvailable)
                 {
                     try
@@ -773,7 +794,7 @@ namespace SkylineTogether.Sync
                         Guard.Report(Features.GlobalState, "global state (before apply)", ex);
                     }
                 }
-                SafeCall("edit holds", ReleaseHolds); // mod compatibility
+                SafeCall("edit holds", _editHoldsCall); // mod compatibility
                 if (Features.Events.IsAvailable)
                 {
                     try
@@ -873,7 +894,7 @@ namespace SkylineTogether.Sync
                         Guard.Report(Features.GlobalState, "global state (after apply)", ex);
                     }
                 }
-                SafeCall("milestones", _actions.AfterApply); // gameplay branch
+                SafeCall("milestones", _milestonesCall); // gameplay branch
             }
             if (IsHost) UpdateQuarantine(now);
             _applyBudget.EndFrame(Perf.Stop(Perf.Apply, start));
@@ -1512,7 +1533,7 @@ namespace SkylineTogether.Sync
                         if (IsHost)
                         {
                             // the host player's own direct UI writes (historical, vehicles, districts, colours) become captures
-                            SafeCall("host action watch", () => _actions.HostWatch(new HashSet<Entity>(_authoredThisFrame.Keys)));
+                            SafeCall("host action watch", _hostWatchCall);
                             CaptureHost(now, dt);
                             if (Features.SimValues.IsAvailable)
                             {
@@ -1543,7 +1564,7 @@ namespace SkylineTogether.Sync
                         {
                             long client = Perf.Start();
                             CaptureClient(now);
-                            SafeCall("action capture", () => _actions.ClientCapture(_appliedThisFrame)); // gameplay branch
+                            SafeCall("action capture", _clientActionCall); // gameplay branch
                             Perf.Stop(Perf.ClientCapture, client);
                             if (Features.Agents.IsAvailable) _agents.ClientFrameEnd(now); // w3/agents: refresh requests
                         }
@@ -1589,7 +1610,7 @@ namespace SkylineTogether.Sync
                 if (IsHost)
                 {
                     // gameplay branch: executors that need EndFrameBarrier run here (after AllowBarrier<EndFrameBarrier>)
-                    SafeCall("late intents", _actions.RunLate);
+                    SafeCall("late intents", _lateIntentsCall);
                     _global.HostCapture(_globalBatch);
                     _actions.HostCapture(_globalBatch, now);
                 }
@@ -1707,10 +1728,11 @@ namespace SkylineTogether.Sync
             _agents.HostCapture(_batch, _writtenThisFrame, _writeAgent ?? (_writeAgent = WriteAgentRecord));
             // mod compatibility: the dependencies all of the above needed, untagged mod state, and its dependencies
             WriteDependencies(_writtenThisFrame);
-            SafeCall("mod state capture", () => CaptureModChanges(now, _writtenThisFrame, true));
+            _callNow = now;
+            SafeCall("mod state capture", _hostModStateCall);
             WriteDependencies(_writtenThisFrame);
             _codec.DependencyBinder = null;
-            SafeCall("mod settings capture", () => _modSettings.HostCapture(_batch, now));
+            SafeCall("mod settings capture", _hostModSettingsCall);
             long scan = Perf.Start();
             ScanValues(now);
             Perf.Stop(Perf.Scan, scan);
@@ -2115,7 +2137,8 @@ namespace SkylineTogether.Sync
             // Bulldozer's removal records), then the dependencies of everything proposed
             WriteDependencies(written, proposed);
             int before = proposed.Count;
-            SafeCall("mod state capture", () => CaptureModChanges(now, written, false, proposed));
+            _callNow = now;
+            SafeCall("mod state capture", _clientModStateCall); // written/proposed are _clientWritten/_clientProposed
             if (proposed.Count > before) flags |= ProposalFlags.DirectTool;
             WriteDependencies(written, proposed);
             _codec.DependencyBinder = null;

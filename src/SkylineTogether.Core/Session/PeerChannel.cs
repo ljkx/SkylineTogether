@@ -21,12 +21,19 @@ namespace SkylineTogether.Core.Session
         private readonly ByteWriter _decodeScratch = new ByteWriter(4096);
         private readonly ByteWriter _decodeScratch2 = new ByteWriter(4096);
         private Lane _sendLane;
+        private bool _sendOk;
+        private readonly Action<byte[], int, int> _emit;
 
         public PeerChannel(IConnection connection, PeerId peer, IClock clock, ILog log)
         {
             Connection = connection ?? throw new ArgumentNullException(nameof(connection));
             Outbox = new PeerOutbox(connection, peer, new OutboxConfig(), clock, log);
             _codec = new EnvelopeCodec(new ManagedLz4Compressor(), log);
+            // perf pass: one delegate for every send (the lambda with a captured local allocated two objects per message)
+            _emit = (b, o, c) =>
+            {
+                if (Outbox.Send(_sendLane, Delivery.ReliableOrdered, b, o, c) != SendResult.Ok) _sendOk = false;
+            };
         }
 
         public IConnection Connection { get; }
@@ -39,12 +46,9 @@ namespace SkylineTogether.Core.Session
             _encoded.Reset();
             _codec.Encode(kind, body, offset, count, _encoded);
             _sendLane = lane;
-            bool ok = true;
-            _fragmenter.Split(kind, _encoded.Buffer, 0, _encoded.Length, _fragment, (b, o, c) =>
-            {
-                if (Outbox.Send(_sendLane, Delivery.ReliableOrdered, b, o, c) != SendResult.Ok) ok = false;
-            });
-            return ok;
+            _sendOk = true;
+            _fragmenter.Split(kind, _encoded.Buffer, 0, _encoded.Length, _fragment, _emit);
+            return _sendOk;
         }
 
         public bool Send(MessageKind kind, ByteWriter body, Lane lane = Lane.Reliable) => Send(kind, body.Buffer, 0, body.Length, lane);

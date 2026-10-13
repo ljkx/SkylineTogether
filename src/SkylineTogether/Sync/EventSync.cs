@@ -93,7 +93,14 @@ namespace SkylineTogether.Sync
         public EventSync(ILog log)
         {
             _log = log;
+            // perf pass: the client's per-frame guarded calls use delegates made once
+            _readLikesCall = ReadLikes;
+            _touchedCall = FixTouched;
+            _hotspotsCall = () => UpdateHotspots(_world.EntityManager);
         }
+
+        private readonly Action _readLikesCall, _touchedCall, _hotspotsCall;
+        private HashSet<Entity> _touched; // the entities of the current ClientAfterApply call
 
         /// <summary>Re-sends found by the presence watch (diagnostics).</summary>
         public long PresenceResends { get; private set; }
@@ -313,7 +320,7 @@ namespace SkylineTogether.Sync
         public void ClientBeforeApply()
         {
             if (!Attached || !Features.Events.IsAvailable) return;
-            Guard("likes", ReadLikes);
+            Guard("likes", _readLikesCall);
             // chirp queue: emptied by ChirpDrainSystem right before CreateChirpSystem (which stays enabled on clients)
         }
 
@@ -321,26 +328,30 @@ namespace SkylineTogether.Sync
         public void ClientAfterApply(HashSet<Entity> touched)
         {
             if (!Attached || !Features.Events.IsAvailable) return;
-            EntityManager em = _world.EntityManager;
             if (touched != null && touched.Count > 0)
             {
-                Guard("touched events", () =>
-                {
-                    foreach (Entity e in touched)
-                    {
-                        if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                        if (em.HasBuffer<Game.Events.TargetElement>(e)) DropNullTargets(em.GetBuffer<Game.Events.TargetElement>(e));
-                        if (em.HasComponent<Game.Triggers.Chirp>(e)) RestoreLike(em, e);
-                        // a tree's growth stage arrived as values (no tag): its mesh is chosen again, as on the host
-                        if (em.HasComponent<Game.Objects.Tree>(e) && !em.HasComponent<Game.Buildings.Building>(e) && !em.HasComponent<Game.Common.BatchesUpdated>(e)
-                            && !em.HasComponent<Game.Common.Updated>(e) && !em.HasComponent<Game.Common.Created>(e))
-                        {
-                            em.AddComponent<Game.Common.BatchesUpdated>(e);
-                        }
-                    }
-                });
+                _touched = touched;
+                Guard("touched events", _touchedCall);
+                _touched = null;
             }
-            Guard("hotspot frames", () => UpdateHotspots(em));
+            Guard("hotspot frames", _hotspotsCall);
+        }
+
+        private void FixTouched()
+        {
+            EntityManager em = _world.EntityManager;
+            foreach (Entity e in _touched)
+            {
+                if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                if (em.HasBuffer<Game.Events.TargetElement>(e)) DropNullTargets(em.GetBuffer<Game.Events.TargetElement>(e));
+                if (em.HasComponent<Game.Triggers.Chirp>(e)) RestoreLike(em, e);
+                // a tree's growth stage arrived as values (no tag): its mesh is chosen again, as on the host
+                if (em.HasComponent<Game.Objects.Tree>(e) && !em.HasComponent<Game.Buildings.Building>(e) && !em.HasComponent<Game.Common.BatchesUpdated>(e)
+                    && !em.HasComponent<Game.Common.Updated>(e) && !em.HasComponent<Game.Common.Created>(e))
+                {
+                    em.AddComponent<Game.Common.BatchesUpdated>(e);
+                }
+            }
         }
 
         private void ReadLikes()

@@ -60,7 +60,16 @@ namespace SkylineTogether.Presence
 
         public static uint ColorOf(PeerId peer) => Palette[peer.Value % Palette.Length];
 
-        public static string CssColor(uint rgba) => "#" + (rgba >> 8).ToString("x6", System.Globalization.CultureInfo.InvariantCulture);
+        /// <summary>perf pass: the CSS colour of each player colour, built once (the tags are rebuilt every frame).</summary>
+        public static string CssColor(uint rgba)
+        {
+            if (CssColors.TryGetValue(rgba, out string css)) return css;
+            css = "#" + (rgba >> 8).ToString("x6", System.Globalization.CultureInfo.InvariantCulture);
+            if (CssColors.Count < 256) CssColors[rgba] = css; // colours come from peers: bounded
+            return css;
+        }
+
+        private static readonly Dictionary<uint, string> CssColors = new Dictionary<uint, string>();
 
         /// <summary>Sends the local presence (host: to every live client; client: to the host, which relays it).</summary>
         public void Send(PresenceMessage m)

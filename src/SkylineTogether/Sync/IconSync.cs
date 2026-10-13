@@ -104,6 +104,7 @@ namespace SkylineTogether.Sync
         private readonly List<LiveIcon> _live = new List<LiveIcon>();
         private readonly List<Pending> _pending = new List<Pending>();
         private readonly List<Entity> _work = new List<Entity>();
+        private readonly HashSet<Entity> _workSet = new HashSet<Entity>();
         private readonly List<SyncRef> _refScratch = new List<SyncRef>();
         private readonly List<IconCommandBuffer.Command> _keep = new List<IconCommandBuffer.Command>();
         private bool _clientActive;
@@ -658,7 +659,8 @@ namespace SkylineTogether.Sync
         private void CollectWork()
         {
             _work.Clear();
-            var set = new HashSet<Entity>();
+            HashSet<Entity> set = _workSet; // perf pass: reused (this runs every client frame)
+            set.Clear();
             if (_sweepAll)
             {
                 _sweepAll = false;
@@ -682,6 +684,7 @@ namespace SkylineTogether.Sync
             foreach (Entity e in _dirty) set.Add(e);
             _dirty.Clear();
             _work.AddRange(set);
+            set.Clear();
         }
 
         private void Reconcile(EntityManager em, Entity owner, ref IconCommandBuffer buffer, ref bool created)
