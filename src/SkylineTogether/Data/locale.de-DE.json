@@ -188,6 +188,8 @@
   "st.options.group.Diagnostics": "Diagnose",
   "st.options.PlayerName.label": "Spielername",
   "st.options.PlayerName.desc": "Der Name, den andere Spieler sehen. Leer: dein Steam-Name.",
+  "st.options.ShowBuildingPreviews.label": "Bauvorschau anderer Spieler anzeigen",
+  "st.options.ShowBuildingPreviews.desc": "Während ein anderer Spieler baut, wird in seiner Farbe gezeigt, was er sieht: die Straße oder Schiene, die er zieht, das Gebäude an seinem Mauszeiger, Bezirke, Zonen, Linien und was sein Abrisswerkzeug entfernen würde.",
   "st.options.SessionName.label": "Sitzungsname",
   "st.options.SessionName.desc": "Wird beitretenden Spielern angezeigt. Leer: „Stadt von <dein Name>“.",
   "st.options.HostPassword.label": "Passwort",

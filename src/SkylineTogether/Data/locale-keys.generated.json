@@ -157,6 +157,8 @@
     "st.options.group.Diagnostics",
     "st.options.PlayerName.label",
     "st.options.PlayerName.desc",
+    "st.options.ShowBuildingPreviews.label",
+    "st.options.ShowBuildingPreviews.desc",
     "st.options.SessionName.label",
     "st.options.SessionName.desc",
     "st.options.HostPassword.label",

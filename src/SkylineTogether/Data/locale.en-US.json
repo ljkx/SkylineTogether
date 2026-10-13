@@ -188,6 +188,8 @@
   "st.options.group.Diagnostics": "Diagnostics",
   "st.options.PlayerName.label": "Player name",
   "st.options.PlayerName.desc": "The name other players see. Empty: your Steam name.",
+  "st.options.ShowBuildingPreviews.label": "Show other players' building previews",
+  "st.options.ShowBuildingPreviews.desc": "While another player builds, draw what they see in their colour: the road or track being drawn, the building at their cursor, districts, zones being painted, lines, and what their bulldozer would remove.",
   "st.options.SessionName.label": "Session name",
   "st.options.SessionName.desc": "Shown to players who join. Empty: \"<your name>'s city\".",
   "st.options.HostPassword.label": "Password",

@@ -277,7 +277,7 @@ namespace SkylineTogether.Core.Tests.Protocol
                  3000, 410, (b, o, c) => ViewReport.Decode(b, o, c));
             Fuzz("Presence", new[]
             {
-                Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { From = new PeerId(2), CurveControlPoints = new float[12], Footprints = new float[8], BrushRadius = 3 }),
+                Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { From = new PeerId(2), Preview = new byte[] { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, PreviewLength = 16, BrushRadius = 3 }),
                 Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage())
             }, 3000, 411, (b, o, c) => PresenceMessage.Decode(b, o, c));
             Fuzz("Clock", new[] { Encode<ClockSample>(ClockSample.Write, new ClockSample { HostFrame = 99, FrameTime = 0.5f, SmoothSpeed = 1, Paused = true, HostTimeSeconds = 12.5 }) },

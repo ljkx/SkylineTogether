@@ -110,7 +110,7 @@ namespace SkylineTogether.Core.Tests.Protocol
                 }), "View"),
                 (MessageKind.Presence, Size<PresenceMessage>(PresenceMessage.Write, new PresenceMessage
                 {
-                    Prefab = new PrefabRank(int.MaxValue), CurveControlPoints = new float[PresenceMessage.MaxCurveFloats], Footprints = new float[PresenceMessage.MaxFootprintFloats]
+                    Prefab = new PrefabRank(int.MaxValue), Preview = new byte[PresenceMessage.MaxPreviewBytes], PreviewLength = PresenceMessage.MaxPreviewBytes
                 }), "Presence"),
                 (MessageKind.Clock, Size<ClockSample>(ClockSample.Write, new ClockSample()), "Clock"),
                 (MessageKind.Ack, Size<AckMessage>(AckMessage.Write, new AckMessage { LastApplied = new EpochId(uint.MaxValue), LastMotionControlSeq = uint.MaxValue }), "Ack"),

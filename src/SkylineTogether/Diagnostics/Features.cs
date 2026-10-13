@@ -74,6 +74,12 @@ namespace SkylineTogether.Diagnostics
         public static readonly FeatureHealth Presence = Registry.Add("presence", "player cursors", false);
 
         /// <summary>
+        /// blueprint branch: every player's live tool preview (the road being drawn, the building at the cursor, zones
+        /// being painted, ...) drawn for the others in the player's colour. Fallback: cursors and name tags only.
+        /// </summary>
+        public static readonly FeatureHealth Previews = Registry.Add("previews", "building previews", false);
+
+        /// <summary>
         /// w6/invites: Steam lobby, rich presence, invites (overlay dialog and direct) and the friends list. Fallback:
         /// friends join with the host's Steam ID.
         /// </summary>

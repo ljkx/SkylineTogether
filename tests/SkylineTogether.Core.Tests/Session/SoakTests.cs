@@ -199,7 +199,7 @@ namespace SkylineTogether.Core.Tests.Session
                         }
                         if (p.SendPresence && _frame % 6 == 0)
                         {
-                            p.Client.SendPresence(new PresenceMessage { CursorX = _frame, CursorY = 1, CursorZ = 2, CurveControlPoints = new float[0], Footprints = new float[0] });
+                            p.Client.SendPresence(new PresenceMessage { CursorX = _frame, CursorY = 1, CursorZ = 2 });
                         }
                     }
                     if (p.Client.State == ClientState.Ended)

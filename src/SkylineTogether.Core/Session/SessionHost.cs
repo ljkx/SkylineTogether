@@ -752,6 +752,7 @@ namespace SkylineTogether.Core.Session
             p.LastPresence = now;
             PresenceMessage m = PresenceMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
             m.From = p.Id; // never trust the sender's own claim
+            if (!RolePermissions.Predicts(p.Role)) m.PreviewLength = 0; // blueprint branch: viewers build nothing, so they show no preview
             _body.Reset();
             PresenceMessage.Write(_body, m);
             foreach (Peer o in _peers.Values)

@@ -176,6 +176,11 @@ namespace SkylineTogether.Diagnostics
                 }
                 Line(sb, "active: " + presence.Active + ", remote players shown: " + presence.Table.Entries.Count);
                 foreach (var t in presence.Tags) Line(sb, "  peer " + t.Peer + " \"" + t.Name + "\" " + (t.OnScreen ? "on screen" : "off screen") + (string.IsNullOrEmpty(t.Activity) ? "" : ", " + t.Activity));
+                // blueprint branch: tool previews
+                Line(sb, "building previews: " + (Features.Previews.IsAvailable ? "on" : "off (" + Features.Previews.UnavailableReason + ")") + ", shown here: " + (Mod.Settings == null || Mod.Settings.ShowBuildingPreviews)
+                         + ", sent: last " + presence.LastPreviewShapes + " shapes in " + presence.LastPreviewBytes + " bytes" + (presence.LastPreviewTruncated ? " (truncated)" : "")
+                         + ", received malformed: " + presence.Table.BadPreviews + ", unknown version: " + presence.Table.UnknownPreviewVersions);
+                foreach (var e in presence.Table.Entries) Line(sb, "  peer " + e.Peer.Value + " preview: " + e.Preview.Count + " shapes" + (e.Preview.Truncated ? " (truncated)" : ""));
             });
 
             Section(sb, "Settings (passwords omitted)");

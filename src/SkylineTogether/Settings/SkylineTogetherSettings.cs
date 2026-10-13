@@ -23,7 +23,7 @@ namespace SkylineTogether.Settings
         /// <summary>Every option shown on the Options page (texts: <c>st.options.&lt;name&gt;.label/.desc</c>).</summary>
         public static readonly string[] OptionNames =
         {
-            nameof(PlayerName), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(AllowDirectConnections),
+            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(AllowDirectConnections),
             nameof(DirectPort), nameof(JoinTarget), nameof(JoinPassword), nameof(HostButton), nameof(JoinButton), nameof(LeaveButton), nameof(ShowNetworkHud),
             nameof(WriteDiagnosticsButton),
         };
@@ -46,6 +46,10 @@ namespace SkylineTogether.Settings
         [SettingsUISection(MainSection, PlayerGroup)]
         [SettingsUITextInput]
         public string PlayerName { get; set; }
+
+        /// <summary>blueprint branch: draw the other players' live tool previews (roads being drawn, buildings at their cursor, ...).</summary>
+        [SettingsUISection(MainSection, PlayerGroup)]
+        public bool ShowBuildingPreviews { get; set; }
 
         [SettingsUISection(MainSection, HostGroup)]
         [SettingsUITextInput]
@@ -138,6 +142,7 @@ namespace SkylineTogether.Settings
             JoinTarget = "";
             JoinPassword = "";
             ShowNetworkHud = false;
+            ShowBuildingPreviews = true;
         }
     }
 }

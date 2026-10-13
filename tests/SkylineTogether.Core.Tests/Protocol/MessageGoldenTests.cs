@@ -253,12 +253,12 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void Presence()
         {
-            // from 1 | cursor 1, 2, 3 | tool 4 | prefab 9+1 | color 0xff00ff00 | 1 curve float 0.5 | no footprints | brush 8
-            const string hex = "01 | 0000803f 00000040 00004040 | 04 | 0a | 00ff00ff | 01 0000003f | 00 | 00000041";
+            // from 1 | cursor 1, 2, 3 | tool 4 | prefab 9+1 | color 0xff00ff00 | brush 8 | 3 preview bytes (opaque)
+            const string hex = "01 | 0000803f 00000040 00004040 | 04 | 0a | 00ff00ff | 00000041 | 03 aabbcc";
             var m = new PresenceMessage
             {
                 From = new PeerId(1), CursorX = 1f, CursorY = 2f, CursorZ = 3f, ToolKind = 4, Prefab = new PrefabRank(9), Color = 0xFF00FF00,
-                CurveControlPoints = new[] { 0.5f }, Footprints = null, BrushRadius = 8f
+                Preview = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD }, PreviewLength = 3, BrushRadius = 8f
             };
             AssertBytes(hex, Write<PresenceMessage>(PresenceMessage.Write, m));
             byte[] bytes = Hex(hex);
@@ -268,14 +268,14 @@ namespace SkylineTogether.Core.Tests.Protocol
             Assert.Equal((byte)4, read.ToolKind);
             Assert.Equal(new PrefabRank(9), read.Prefab);
             Assert.Equal(0xFF00FF00u, read.Color);
-            Assert.SequenceEqual(new[] { 0.5f }, read.CurveControlPoints);
-            Assert.Equal(0, read.Footprints.Length);
+            Assert.Equal(3, read.PreviewLength);
+            Assert.SequenceEqual(new byte[] { 0xAA, 0xBB, 0xCC }, read.Preview);
             Assert.Equal(8f, read.BrushRadius);
 
-            // no prefab is written as 0
+            // no prefab is written as 0, no preview as an empty one
             m.Prefab = PrefabRank.None;
-            m.CurveControlPoints = null;
-            AssertBytes("01 | 0000803f 00000040 00004040 | 04 | 00 | 00ff00ff | 00 | 00 | 00000041", Write<PresenceMessage>(PresenceMessage.Write, m));
+            m.Preview = null;
+            AssertBytes("01 | 0000803f 00000040 00004040 | 04 | 00 | 00ff00ff | 00000041 | 00", Write<PresenceMessage>(PresenceMessage.Write, m));
         }
 
         [Test]
