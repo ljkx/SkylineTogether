@@ -46,7 +46,7 @@ namespace SkylineTogether
         /// <summary>Movers branch: vehicle and creature replication.</summary>
         public static MoverSync Movers { get; private set; }
 
-        /// <summary>Steam friends: rich presence "connect", the invite dialog, invite joins.</summary>
+        /// <summary>Steam friends: lobby, rich presence, the invite dialog, direct invites, the friends list, invite joins.</summary>
         public static SteamInvites Invites { get; private set; }
 
         /// <summary>Solo testing: "Record test session" and "Replay &amp; verify" (ARCH §13.5).</summary>
@@ -142,6 +142,7 @@ namespace SkylineTogether
             });
             Step(log, "panel bindings", () => updateSystem.UpdateAt<SessionUISystem>(SystemUpdatePhase.UIUpdate));
             Step(log, "solo testing bindings", () => updateSystem.UpdateAt<ReplayUISystem>(SystemUpdatePhase.UIUpdate));
+            Step(log, "invite bindings", () => updateSystem.UpdateAt<InviteUISystem>(SystemUpdatePhase.UIUpdate)); // w6/invites: friends list, overlay state
             Step(log, "presence system", () =>
             {
                 // presence branch: remote cursors drawn into the overlay buffer right before it renders (ARCH K15)
@@ -193,7 +194,7 @@ namespace SkylineTogether
             }
             catch (Exception ex)
             {
-                Log?.Warn(LogCategory.Session, "clearing the Steam rich presence failed", ex);
+                Log?.Warn(LogCategory.Session, "leaving the Steam lobby or clearing the rich presence failed", ex);
             }
             Invites = null;
             Toasts = null;

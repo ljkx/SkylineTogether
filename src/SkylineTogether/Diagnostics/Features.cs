@@ -73,6 +73,12 @@ namespace SkylineTogether.Diagnostics
         /// <summary>Remote cursors and name tags.</summary>
         public static readonly FeatureHealth Presence = Registry.Add("presence", "player cursors", false);
 
+        /// <summary>
+        /// w6/invites: Steam lobby, rich presence, invites (overlay dialog and direct) and the friends list. Fallback:
+        /// friends join with the host's Steam ID.
+        /// </summary>
+        public static readonly FeatureHealth Invites = Registry.Add("invites", "Steam invites and friends list", false);
+
         /// <summary>The in-game panel (UI module and its bindings). Fallback: the Options page.</summary>
         public static readonly FeatureHealth Ui = Registry.Add("ui", "in-game panel", false);
     }
