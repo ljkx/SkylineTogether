@@ -483,16 +483,8 @@ function border(width, color, sides) {
   return o;
 }
 
-// The mod's icon (two people), shipped inline. Tinted vanilla buttons draw their icon as a CSS mask, which the game
-// only ever feeds with files, so those use the game's own glyph of the same motif instead.
-const ICON_DATA =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="#ffffff">' +
-      '<circle cx="11" cy="10" r="5"/><circle cx="22" cy="11" r="4" fill-opacity=".75"/>' +
-      '<path d="M1 27c0-5.5 4.5-9 10-9s10 3.5 10 9z"/><path fill-opacity=".75" d="M19 27c0-3-1-5.6-2.8-7.3 1.5-.9 3.2-1.4 5-1.4 4.8 0 8.8 3.1 8.8 8.7z"/>' +
-      "</svg>"
-  );
+// The game's own glyph of the mod's motif (people); drawn as a tinted mask like the game's icons. (An inline
+// data: SVG image does not render in the game's browser.)
 const ICON_GLYPH = "Media/Game/Icons/Population.svg";
 const G = {
   close: "Media/Glyphs/Close.svg",
@@ -630,7 +622,7 @@ function withTooltip(node, tooltip, direction) {
 
 // Shared by separately appended components (main menu entry, top-left button, roots).
 const store = {
-  open: false, menuOpen: false, tab: null, typing: 0, topLeftMounted: false, menuEntryMounted: false, dismissedEnd: -1,
+  open: false, menuOpen: false, tab: null, gameTab: null, typing: 0, topLeftMounted: false, menuEntryMounted: false, dismissedEnd: -1,
   // chat dock: expanded, last chat line seen while expanded, focus request; invite popover; invites sent (by Steam ID)
   chatOpen: true, chatSeen: -1, chatFocus: false, invitesOpen: false, sent: {},
   listeners: new Set(),
@@ -830,6 +822,19 @@ function vanillaButton(kind) {
   return null;
 }
 
+// layout the vanilla themes leave to the caller (the flat theme has no padding; dialog buttons are sized for dialogs)
+const CENTERED = { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" };
+const VANILLA_LAYOUT = {
+  primary: merge(CENTERED, { padding: "7rem 14rem" }),
+  danger: merge(CENTERED, { padding: "7rem 14rem" }),
+  flat: merge(CENTERED, { padding: "5rem 12rem", fontSize: FS.s }),
+  menuPrimary: CENTERED,
+  menuSecondary: null,
+  icon: null,
+  tab: null,
+  navItem: { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start" },
+};
+
 function FallbackButton(p) {
   const [hover, hv] = useHover();
   const kind = p.kind;
@@ -862,7 +867,7 @@ function Btn(p) {
   };
   const vanilla = V.ok && V.Button ? vanillaButton(kind) : null;
   if (!vanilla) return fallback();
-  const props = merge(vanilla, { disabled: disabled, selected: !!p.selected, onSelect: onSelect, focusKey: V.focusDisabled, style: p.style });
+  const props = merge(vanilla, { disabled: disabled, selected: !!p.selected, onSelect: onSelect, focusKey: V.focusDisabled, style: merge(VANILLA_LAYOUT[kind], p.style) });
   return Safe(h(V.Button, props, p.children), fallback);
 }
 
@@ -1132,7 +1137,7 @@ function PanelShell(p) {
   const header = h(
     "div",
     { style: merge(S.row, { justifyContent: "center", minWidth: 0 }) },
-    h("img", { src: ICON_DATA, style: { width: "20rem", height: "20rem", marginRight: "8rem", flexShrink: 0 } }),
+    h(Glyph, { src: ICON_GLYPH, size: 20, color: T.titleBlue, style: { marginRight: "8rem" } }),
     h("div", { style: merge(S.ellipsis, { textTransform: "uppercase" }) }, p.title),
     p.status ? h(Dot, { color: p.status, size: 8, gap: 0, style: { marginLeft: "8rem" } }) : null
   );
@@ -1815,7 +1820,7 @@ function Tabs(p) {
   const bar = vc("tabs", "tabBar");
   return h(
     "div",
-    { className: bar || undefined, style: merge({ paddingTop: "8rem" }, bar ? { "--minTabWidth": "0rem" } : merge(S.row, { justifyContent: "center", padding: "8rem 10rem 0 10rem" }), border("2rem", T.accentDark, ["Bottom"])) },
+    { className: bar || undefined, style: merge({ paddingTop: "8rem" }, bar ? { "--minTabWidth": "0rem" } : merge(S.row, { justifyContent: "center", padding: "8rem 10rem 0 10rem" }), border("2rem", T.divider, ["Bottom"])) },
     p.tabs.map(function (tab, i) {
       return h(Btn, { key: tab.id, kind: "tab", selected: p.value === tab.id, style: merge({ flex: 1, minWidth: 0 }, i > 0 && !bar ? { marginLeft: "4rem" } : null), onClick: function () { p.onChange(tab.id); } }, tab.label);
     })
@@ -1826,7 +1831,8 @@ function GameLobby(p) {
   const s = p.state;
   const st = useStore();
   const [name, setName] = React.useState(s.playerName || "");
-  const tab = st.tab === "join" || st.tab === "solo" ? st.tab : "host";
+  // its own page memory: in a city hosting comes first, in the main menu joining does
+  const tab = st.gameTab === "join" || st.gameTab === "solo" ? st.gameTab : "host";
   const saveName = function () {
     send("saveHostSettings", name, s.sessionNameSetting || "", s.keepPassword || KEEP_PASSWORD);
   };
@@ -1834,7 +1840,7 @@ function GameLobby(p) {
   return h(
     "div",
     null,
-    h(Tabs, { value: tab, onChange: function (id) { setStore({ tab: id }); }, tabs: [{ id: "host", label: t("st.ui.tab.host") }, { id: "join", label: t("st.ui.tab.join") }, { id: "solo", label: t("st.ui.tab.solo") }] }),
+    h(Tabs, { value: tab, onChange: function (id) { setStore({ gameTab: id }); }, tabs: [{ id: "host", label: t("st.ui.tab.host") }, { id: "join", label: t("st.ui.tab.join") }, { id: "solo", label: t("st.ui.tab.solo") }] }),
     s.steam === false ? h(SteamMissing, { style: { margin: "8rem" } }) : null,
     s.blocked ? h(Notice, { color: T.bad, style: { margin: "8rem" } }, t("st.ui.blocked", { REASON: s.blocked })) : null,
     tab === "host" ? h(GameHostTab, { state: s, name: name, nameField: nameField }) : tab === "join" ? h(GameJoinTab, { state: s, name: name, nameField: nameField }) : h(SoloTestSection, { inGame: true }),
@@ -2240,7 +2246,7 @@ function OverlayCard(p) {
       h(
         "div",
         { style: merge(S.row, { minHeight: "56rem", padding: "10rem 20rem", backgroundColor: OV.header }) },
-        p.icon || h("img", { src: ICON_DATA, style: { width: "24rem", height: "24rem", marginRight: "12rem", flexShrink: 0 } }),
+        p.icon || h(Glyph, { src: ICON_GLYPH, size: 24, color: OV.title, style: { marginRight: "12rem" } }),
         h("div", { style: merge(S.ellipsis, { flex: 1, fontSize: "20rem", fontWeight: "bold", textTransform: "uppercase", color: p.titleColor || OV.title }) }, p.title)
       ),
       h("div", { style: { padding: "18rem 24rem 20rem 24rem", overflowY: "auto" } }, p.children)
@@ -2536,7 +2542,8 @@ function ChatDock(p) {
   const [hover, hv] = useHover();
   return h(
     "div",
-    { style: { position: "absolute", right: "62rem", bottom: "10rem", width: "340rem", pointerEvents: "auto", zIndex: 900 } },
+    // right side, above the toolbar (two rows of --toolbarHeight) and left of the right-hand button column
+    { style: { position: "absolute", right: "62rem", bottom: "calc(var(--toolbarHeight) * 2 + 20rem)", width: "340rem", pointerEvents: "auto", zIndex: 900 } },
     previewLine
       ? h("div", { style: { marginBottom: "6rem", padding: "6rem 10rem", borderRadius: T.radius, backgroundColor: T.panelDark, backdropFilter: T.blur } }, h(ChatLine, { line: previewLine }))
       : null,
@@ -2650,7 +2657,7 @@ function FallbackRoundButton(p) {
       style: { width: "40rem", height: "40rem", borderRadius: "6rem", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: p.selected ? T.selected : T.panelDark, backdropFilter: T.blur, cursor: "pointer", pointerEvents: "auto" },
       onClick: p.onSelect,
     },
-    h("img", { src: ICON_DATA, style: { width: "26rem", height: "26rem" } })
+    h(Glyph, { src: ICON_GLYPH, size: 24 })
   );
 }
 
@@ -2700,7 +2707,7 @@ function FallbackToggle(p) {
       style: { position: "absolute", left: "10rem", top: p.menu ? "10rem" : "100rem", height: "36rem", padding: "0 14rem", display: "flex", alignItems: "center", borderRadius: "18rem", backgroundColor: T.panelDark, backdropFilter: T.blur, color: T.text, fontSize: FS.m, cursor: "pointer", pointerEvents: "auto", zIndex: 1000 },
       onClick: p.onClick,
     },
-    h("img", { src: ICON_DATA, style: { width: "20rem", height: "20rem", marginRight: "8rem" } }),
+    h(Glyph, { src: ICON_GLYPH, size: 20, style: { marginRight: "8rem" } }),
     h(Dot, { color: color, size: 8 }),
     mode === "None" ? t("st.ui.menu.multiplayer") : mode === "Joining" ? t("st.ui.join.overlayTitleUnknown") : mode === "Recovering" ? t("st.ui.menu.multiplayer") + " · " + t("st.ui.recovery.badge") : t("st.ui.menu.multiplayer") + " · " + list(s.players).length
   );

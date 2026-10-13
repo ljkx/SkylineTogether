@@ -238,7 +238,7 @@ for (const pass of passes) {
     for (const tab of ["host", "join", "solo"]) {
       for (const slot of roots) {
         // every surface at once: panel, invite popover, expanded and collapsed chat dock
-        Object.assign(smoke.store, { open: true, menuOpen: true, tab, dismissedEnd: -1, typing: 0, invitesOpen: true, chatOpen: tab !== "solo", chatSeen: -1, sent: tab === "join" ? { "76561190000000002": true } : {} });
+        Object.assign(smoke.store, { open: true, menuOpen: true, tab, gameTab: tab, dismissedEnd: -1, typing: 0, invitesOpen: true, chatOpen: tab !== "solo", chatSeen: -1, sent: tab === "join" ? { "76561190000000002": true } : {} });
         try { total += render({ type: appended[slot], props: {}, children: [] }); }
         catch (e) { fail(pass.name + " " + name + " " + slot + ": " + (e && e.stack)); }
         runHandlers(pass.name + " " + name + " " + slot);
