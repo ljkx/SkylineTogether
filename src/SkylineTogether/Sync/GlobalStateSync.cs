@@ -140,7 +140,19 @@ namespace SkylineTogether.Sync
         public GlobalStateSync(ILog log)
         {
             _log = log;
+            // perf pass: the client runs the detectors twice and the baseline once per frame; their delegates are made once
+            _detectTax = () => DetectTax(_detectNow);
+            _detectBudgets = () => DetectBudgets(_detectNow);
+            _detectFees = () => DetectFees(_detectNow);
+            _detectLoan = DetectLoan;
+            _detectNames = () => DetectNames(_detectNow);
+            _detectCityName = DetectCityName;
+            _detectFollowed = DetectFollowed;
+            _rebaseline = RebaselineAll;
         }
+
+        private readonly Action _detectTax, _detectBudgets, _detectFees, _detectLoan, _detectNames, _detectCityName, _detectFollowed, _rebaseline;
+        private double _detectNow;
 
         // ---- gameplay branch ----
 
@@ -749,13 +761,14 @@ namespace SkylineTogether.Sync
 
         private void DetectLocal(double now)
         {
-            Guard("tax", () => DetectTax(now));
-            Guard("budget", () => DetectBudgets(now));
-            Guard("fee", () => DetectFees(now));
-            Guard("loan", DetectLoan);
-            Guard("names", () => DetectNames(now));
-            Guard("city name", DetectCityName);
-            Guard("followed citizens", DetectFollowed); // w3/audit
+            _detectNow = now;
+            Guard("tax", _detectTax);
+            Guard("budget", _detectBudgets);
+            Guard("fee", _detectFees);
+            Guard("loan", _detectLoan);
+            Guard("names", _detectNames);
+            Guard("city name", _detectCityName);
+            Guard("followed citizens", _detectFollowed); // w3/audit
         }
 
         private void DetectTax(double now)
@@ -909,21 +922,20 @@ namespace SkylineTogether.Sync
             foreach (KeyValuePair<uint, float> e in _feePredicted) ServiceFeeSystem.SetFee((PlayerResource)(int)e.Key, fees, e.Value);
         }
 
-        private void Rebaseline()
+        private void Rebaseline() => Guard("baseline", _rebaseline);
+
+        private void RebaselineAll()
         {
-            Guard("baseline", () =>
-            {
-                _taxBase = ReadTax();
-                _intScratch.Clear();
-                if (ReadBudgets(_intScratch)) Copy(_intScratch, _budgetBase);
-                _floatScratch.Clear();
-                if (ReadFees(_floatScratch)) Copy(_floatScratch, _feeBase);
-                if (ReadLoan(out int loan)) _loanBase = loan;
-                _stringScratch.Clear();
-                if (ReadNames(_stringScratch)) Copy(_stringScratch, _nameBase);
-                _cityNameBase = _config.cityName ?? "";
-                RebaselineFollowed(); // w3/audit
-            });
+            _taxBase = ReadTax();
+            _intScratch.Clear();
+            if (ReadBudgets(_intScratch)) Copy(_intScratch, _budgetBase);
+            _floatScratch.Clear();
+            if (ReadFees(_floatScratch)) Copy(_floatScratch, _feeBase);
+            if (ReadLoan(out int loan)) _loanBase = loan;
+            _stringScratch.Clear();
+            if (ReadNames(_stringScratch)) Copy(_stringScratch, _nameBase);
+            _cityNameBase = _config.cityName ?? "";
+            RebaselineFollowed(); // w3/audit
         }
 
         // ================================================================== state readers
