@@ -18,5 +18,10 @@ namespace SkylineTogether.Core
         public long QueueTimeMicroseconds;
         public float OutBytesPerSecond;
         public float InBytesPerSecond;
+        /// <summary>
+        /// loadspeed: delivery rate 0..1 of what this side sends, as the remote end observed it (Steam
+        /// <c>m_flConnectionQualityRemote</c>); 0 or below = unknown. The send rate controller backs off on loss.
+        /// </summary>
+        public float RemoteQuality;
     }
 }

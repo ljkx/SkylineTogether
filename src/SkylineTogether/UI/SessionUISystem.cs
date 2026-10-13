@@ -20,6 +20,16 @@ namespace SkylineTogether.UI
     /// bytes, speed, ETA; at most 4 times a second while joining); <c>net</c> and <c>presence</c>; and triggers for the
     /// panel's actions. Every name here is also checked by tools/ui_smoke.mjs.
     /// <para>
+    /// loadspeed: the <c>join</c> value also carries the join's stage timings, <c>timings</c> =
+    /// <c>{connectMs, waitMs, saveMs, digestMs, transferMs, bytes, bps, verifyMs, loadMs, confirmMs, catchUpMs, totalMs,
+    /// backlog, reused}</c> (milliseconds, -1 while a stage was not reached; <c>bytes</c> the snapshot size, <c>bps</c>
+    /// its average download rate, <c>backlog</c> the replication messages buffered during the join, <c>reused</c> true
+    /// when the host reused a snapshot). While joining it is next to the progress fields; once live (or on the host)
+    /// the inactive value is <c>{active:false, catchingUp, backlog, timings}</c>: <c>catchingUp</c> is true while the
+    /// client applies that backlog after going live, <c>backlog</c> the batches still waiting, and <c>timings</c> the
+    /// client's own join or, on the host, the last player's join (absent when there is none).
+    /// </para>
+    /// <para>
     /// Robust branch: every getter and trigger is guarded (<see cref="Guard"/>, feature <see cref="Features.Ui"/>), the
     /// state's change check compares a struct every frame without allocating (single player costs nothing while nothing
     /// changes), and the state carries the recovery after an unexpected disconnect and the self-test summary.
@@ -281,9 +291,9 @@ namespace SkylineTogether.UI
             if (c == null || c.State == ClientState.Live || c.State == ClientState.Ended)
             {
                 _rateClient = null;
-                _join = NoJoin;
-                return _join;
+                return BuildDoneJoin(s, c);
             }
+            _doneSource = null; // the inactive value is rebuilt after this join
             double now = s.Clock.Seconds;
             if (now - _joinAt < 0.25 && _rateClient == c) return _join;
             long done = c.DownloadedBytes;
@@ -315,10 +325,82 @@ namespace SkylineTogether.UI
             Prop(sb, "bps", (long)_rate).Append(',');
             Prop(sb, "eta", (long)Math.Round(eta)).Append(',');
             Prop(sb, "load", c.State == ClientState.Loading ? Math.Max(0f, c.JoinProgress * 2f - 1f) : 0f).Append(',');
-            Prop(sb, "progress", c.JoinProgress);
+            Prop(sb, "progress", c.JoinProgress).Append(',');
+            Timings(sb, c.Timeline);
             sb.Append('}');
             _join = sb.ToString();
             return _join;
+        }
+
+        private object _doneSource;
+        private int _doneKey = int.MinValue;
+
+        /// <summary>
+        /// loadspeed: the inactive join value: the catch-up state of a client that just went live and the timings of its
+        /// join, or the host's last completed join; <see cref="NoJoin"/> when there is nothing to show. Rebuilt only
+        /// when its inputs change.
+        /// </summary>
+        private string BuildDoneJoin(SessionManager s, SessionClient c)
+        {
+            SessionHost host = s?.Host;
+            object source;
+            int key;
+            if (c != null && c.State == ClientState.Live)
+            {
+                source = c;
+                key = c.Timeline.BacklogRemaining * 4 + (c.Timeline.Has(JoinStage.CaughtUp) ? 1 : 0) + (c.Timeline.CatchingUp ? 2 : 0);
+            }
+            else if (host != null && host.JoinsCompleted > 0)
+            {
+                source = host;
+                key = host.JoinsCompleted;
+            }
+            else
+            {
+                _doneSource = null;
+                _join = NoJoin;
+                return _join;
+            }
+            if (ReferenceEquals(source, _doneSource) && key == _doneKey) return _join;
+            _doneSource = source;
+            _doneKey = key;
+            JoinTimeline t = source == c ? c.Timeline : host.LastJoin;
+            var sb = new StringBuilder(320);
+            sb.Append('{');
+            Prop(sb, "active", false).Append(',');
+            Prop(sb, "catchingUp", t != null && t.CatchingUp).Append(',');
+            Prop(sb, "backlog", t != null ? t.BacklogRemaining : 0);
+            if (t != null)
+            {
+                sb.Append(',');
+                Timings(sb, t);
+            }
+            sb.Append('}');
+            _join = sb.ToString();
+            return _join;
+        }
+
+        /// <summary>loadspeed: <c>"timings":{...}</c> of a join (see the class summary).</summary>
+        private static void Timings(StringBuilder sb, JoinTimeline t)
+        {
+            Str(sb, "timings");
+            sb.Append(":{");
+            Prop(sb, "connectMs", JoinTimeline.Ms(t.ConnectSeconds)).Append(',');
+            Prop(sb, "waitMs", JoinTimeline.Ms(t.WaitSeconds)).Append(',');
+            Prop(sb, "saveMs", JoinTimeline.Ms(t.SaveSeconds)).Append(',');
+            Prop(sb, "digestMs", double.IsNaN(t.DigestMilliseconds) ? -1L : (long)Math.Round(t.DigestMilliseconds)).Append(',');
+            Prop(sb, "transferMs", JoinTimeline.Ms(t.TransferSeconds)).Append(',');
+            Prop(sb, "bytes", t.SnapshotBytes).Append(',');
+            double rate = t.TransferBytesPerSecond;
+            Prop(sb, "bps", double.IsNaN(rate) ? -1L : (long)rate).Append(',');
+            Prop(sb, "verifyMs", JoinTimeline.Ms(t.VerifySeconds)).Append(',');
+            Prop(sb, "loadMs", JoinTimeline.Ms(t.LoadSeconds)).Append(',');
+            Prop(sb, "confirmMs", JoinTimeline.Ms(t.ConfirmSeconds)).Append(',');
+            Prop(sb, "catchUpMs", JoinTimeline.Ms(t.CatchUpSeconds)).Append(',');
+            Prop(sb, "totalMs", JoinTimeline.Ms(t.TotalSeconds)).Append(',');
+            Prop(sb, "backlog", t.BacklogMessages).Append(',');
+            Prop(sb, "reused", t.SnapshotReused);
+            sb.Append('}');
         }
 
         private static string StageOf(ClientState state)

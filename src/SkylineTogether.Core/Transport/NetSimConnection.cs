@@ -184,6 +184,7 @@ namespace SkylineTogether.Core.Transport
                 {
                     PingMs = (int)Math.Round(2 * Positive(options.LatencyMs) + Positive(options.JitterMs)),
                     Quality = Closed || RemoteClosed ? 0f : (float)(1 - Rate(options.LossRate)),
+                    RemoteQuality = Closed || RemoteClosed ? 0f : (float)(1 - Rate(options.LossRate)),
                     SendRateBytesPerSecond = bandwidth > 0 ? (int)bandwidth : 0,
                     PendingReliableBytes = Clamp(_queuedReliableBytes),
                     PendingUnreliableBytes = Clamp(_queuedUnreliableBytes),

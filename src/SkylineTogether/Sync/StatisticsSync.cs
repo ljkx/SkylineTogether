@@ -25,8 +25,10 @@ namespace SkylineTogether.Sync
     /// frame (private fields, which date the samples in the chart) are set by reflection, then
     /// <c>eventStatisticsUpdated</c> refreshes the panel exactly like a local sample would.
     /// </para>
-    /// The host polls once a second and broadcasts the series that changed (normally right after a sample), and sends all
-    /// series to a peer that goes live. Main thread only.
+    /// The host polls once a second and broadcasts the series that changed (normally right after a sample). loadspeed: a
+    /// peer that goes live gets only the series that changed since its admission (its snapshot, taken after the admission,
+    /// carries the rest; the series' hashes at the admission are its baseline), instead of every series again; without a
+    /// baseline it gets all of them as before. Main thread only.
     /// </summary>
     public sealed class StatisticsSync
     {
@@ -38,6 +40,8 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<long, ulong> _sentHashes = new Dictionary<long, ulong>();
         private readonly Queue<byte[]> _inbox = new Queue<byte[]>();
         private readonly List<PeerId> _newPeers = new List<PeerId>();
+        /// <summary>loadspeed: per joining peer, the series' content hashes at its admission (what its snapshot holds).</summary>
+        private readonly Dictionary<byte, Dictionary<long, ulong>> _joinBaselines = new Dictionary<byte, Dictionary<long, ulong>>();
         private readonly ByteWriter _out = new ByteWriter(16 * 1024);
         private World _world;
         private CityStatisticsSystem _stats;
@@ -56,6 +60,8 @@ namespace SkylineTogether.Sync
             {
                 Reset();
                 host.PeerLive += peer => _newPeers.Add(peer);
+                host.PeerJoining += OnPeerJoining;
+                host.PeerLeft += peer => _joinBaselines.Remove(peer.Value);
             };
             sessions.ClientStarted += client =>
             {
@@ -92,6 +98,7 @@ namespace SkylineTogether.Sync
             _sentHashes.Clear();
             _inbox.Clear();
             _newPeers.Clear();
+            _joinBaselines.Clear();
             _lastCount = int.MinValue;
             _lastFrame = 0;
             _nextPoll = _nextFull = 0;
@@ -133,10 +140,24 @@ namespace SkylineTogether.Sync
                 if (_newPeers.Count > 0)
                 {
                     List<StatisticSeries> all = Collect();
-                    if (all.Count > 0)
+                    foreach (PeerId peer in _newPeers)
                     {
-                        Encode(all);
-                        foreach (PeerId peer in _newPeers) host.SendTo(peer, MessageKind.Statistics, _out.Buffer, 0, _out.Length);
+                        // loadspeed: only what changed since the peer's snapshot (usually nothing: the simulation was held)
+                        List<StatisticSeries> send = all;
+                        if (_joinBaselines.TryGetValue(peer.Value, out Dictionary<long, ulong> baseline))
+                        {
+                            send = new List<StatisticSeries>();
+                            foreach (StatisticSeries s in all)
+                            {
+                                if (!baseline.TryGetValue(Key(s.Type, s.Parameter), out ulong hash) || hash != s.ContentHash()) send.Add(s);
+                            }
+                            _joinBaselines.Remove(peer.Value);
+                        }
+                        _log.Info(LogCategory.Replication, peer + ": " + send.Count + " of " + all.Count + " statistics series sent at live"
+                                                           + (send == all ? "" : " (the rest is in its snapshot)"));
+                        if (send.Count == 0) continue;
+                        Encode(send == all ? new List<StatisticSeries>(all) : send);
+                        host.SendTo(peer, MessageKind.Statistics, _out.Buffer, 0, _out.Length);
                     }
                     _newPeers.Clear();
                 }
@@ -170,6 +191,23 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 _log.Error(LogCategory.Replication, "statistics capture failed", ex);
+            }
+        }
+
+        /// <summary>loadspeed: the series' hashes now are what the joiner's snapshot (taken after its admission) holds.</summary>
+        private void OnPeerJoining(PeerId peer)
+        {
+            try
+            {
+                if (!EnsureWorld()) return;
+                var baseline = new Dictionary<long, ulong>();
+                foreach (StatisticSeries s in Collect()) baseline[Key(s.Type, s.Parameter)] = s.ContentHash();
+                _joinBaselines[peer.Value] = baseline;
+            }
+            catch (Exception ex)
+            {
+                _joinBaselines.Remove(peer.Value);
+                _log.Warn(LogCategory.Replication, "statistics baseline for " + peer + " failed; it gets every series when live", ex);
             }
         }
 

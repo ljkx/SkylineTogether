@@ -9,6 +9,7 @@ using Game.Prefabs.Modes;
 using Game.Serialization;
 using Game.Simulation;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Hashing;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Transport;
 using Unity.Entities;
@@ -21,6 +22,13 @@ namespace SkylineTogether.Session
     /// temporary file on the "SaveLoadGame" queue (so it never overlaps an autosave or a manual save). Unlike a normal
     /// save it writes no package, no preview, no "Continue" entry and does not collect garbage. polish: the prefabs a save
     /// would store into its package travel in front of the save data (<see cref="JoinAssetTransfer"/>).
+    /// <para>
+    /// loadspeed: the file is written through a <see cref="DigestingWriteStream"/>, so its XXH3-128 digest and length
+    /// are known the moment the save completes (<see cref="SnapshotReady.DigestKnown"/>) and no joiner's transfer reads
+    /// the file before its first chunk. The save itself is the game's: <c>WriteSystem</c> compresses every buffer with
+    /// ZStd level 3 (hard-coded, the game's fast setting), and <c>StreamBinaryWriter</c> only writes sequentially,
+    /// which the digesting stream requires. The save's time is measured (<see cref="SnapshotReady.SaveSeconds"/>).
+    /// </para>
     /// </summary>
     public sealed class SnapshotService : ISnapshotProvider
     {
@@ -51,11 +59,15 @@ namespace SkylineTogether.Session
             Directory.CreateDirectory(_folder);
             string path = Path.Combine(_folder, "snapshot-" + id + "-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".bin");
             _files[id] = path;
+            var queued = System.Diagnostics.Stopwatch.StartNew();
             TaskManager.instance.EnqueueTask("SaveLoadGame", async () =>
             {
                 try
                 {
-                    var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16);
+                    double queueSeconds = queued.Elapsed.TotalSeconds;
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    // loadspeed: the digest is computed as the save writes (the game writes sequentially, never seeks)
+                    var stream = new DigestingWriteStream(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16));
                     string[] renderIds = new string[0];
                     try
                     {
@@ -87,6 +99,15 @@ namespace SkylineTogether.Session
                         Sync.NetIdSystem.WritingSnapshot = false;
                         stream.Dispose(); // WriteSystem normally disposed it already
                     }
+                    double saveSeconds = watch.Elapsed.TotalSeconds;
+                    Digest128 digest = stream.Finish();
+                    long size = stream.BytesWritten;
+                    long onDisk = new FileInfo(path).Length;
+                    bool digestKnown = onDisk == size;
+                    if (!digestKnown) _log.Warn(LogCategory.Join, "snapshot: " + size + " bytes went through the digest but the file holds " + onDisk + "; the host hashes it again");
+                    _log.Info(LogCategory.Join, "snapshot written: " + size + " bytes in " + saveSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                                                + " s (" + (size / 1048576.0 / Math.Max(saveSeconds, 0.001)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+                                                + " MiB/s), waited " + queueSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s for the save queue, digest " + digest);
                     var content = new List<string>();
                     if (save.referencedContent.IsCreated)
                     {
@@ -105,7 +126,16 @@ namespace SkylineTogether.Session
                     {
                         // hosting stopped while the city was being saved: ReleaseAll could not delete the open file
                         if (!_files.ContainsKey(id)) TryDelete(path);
-                        onReady(new SnapshotReady { Manifest = manifest, FilePath = path });
+                        onReady(new SnapshotReady
+                        {
+                            Manifest = manifest,
+                            FilePath = path,
+                            DigestKnown = digestKnown,
+                            DigestLo = digest.Lo,
+                            DigestHi = digest.Hi,
+                            Size = size,
+                            SaveSeconds = saveSeconds,
+                        });
                     });
                 }
                 catch (Exception ex)

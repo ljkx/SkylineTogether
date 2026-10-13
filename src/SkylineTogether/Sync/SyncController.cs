@@ -50,6 +50,13 @@ namespace SkylineTogether.Sync
     {
         private const double ApplyBudgetMs = 6.0;
         private const int MaxBatchesPerFrame = 64;
+        /// <summary>
+        /// loadspeed: right after a client went live it applies the backlog that queued up during its join in big bounded
+        /// slices (its own simulation is gated anyway): this budget per frame and this many batches, until the backlog is
+        /// empty (the "catching up" state, <see cref="Core.Session.JoinTimeline.CatchingUp"/>).
+        /// </summary>
+        private const double CatchUpBudgetMs = 24.0;
+        private const int CatchUpMaxBatchesPerFrame = 512;
         private const double ScanBudgetMs = 1.0;
         private const int MinScanPerFrame = 32;
         private const double DeferredBudgetMs = 1.5;
@@ -149,6 +156,7 @@ namespace SkylineTogether.Sync
         private readonly List<uint> _scratchIds = new List<uint>();
         private readonly LinkBudgetConfig _linkConfig = new LinkBudgetConfig();
         private readonly FrameBudget _applyBudget = new FrameBudget(ApplyBudgetMs);
+        private readonly FrameBudget _catchUpBudget = new FrameBudget(CatchUpBudgetMs);
         private readonly ByteWriter _ackWriter = new ByteWriter(16);
         private readonly Func<byte, long> _epochSent;
         private readonly Func<uint, Family, bool> _mayCreate;
@@ -563,6 +571,7 @@ namespace SkylineTogether.Sync
             _outList.Clear();
             _barrier = 0;
             _applyBudget.Reset();
+            _catchUpBudget.Reset();
         }
 
         /// <summary>Host: whether <paramref name="peer"/>'s role allows <paramref name="needed"/> (ARCH §5.6).</summary>
@@ -807,9 +816,14 @@ namespace SkylineTogether.Sync
                     }
                 }
             }
-            double allowance = _applyBudget.BeginFrame();
+            // loadspeed: a client that just went live catches up with bigger slices
+            SessionClient joining = IsHost ? null : _sessions.Client;
+            bool catchingUp = joining != null && joining.Timeline.Has(JoinStage.Live) && !joining.Timeline.Has(JoinStage.CaughtUp);
+            FrameBudget budget = catchingUp ? _catchUpBudget : _applyBudget;
+            int maxBatches = catchingUp ? CatchUpMaxBatchesPerFrame : MaxBatchesPerFrame;
+            double allowance = budget.BeginFrame();
             int n = 0;
-            while (_inbox.Count > 0 && n < MaxBatchesPerFrame)
+            while (_inbox.Count > 0 && n < maxBatches)
             {
                 // budgeted with carry-over; a batch (a transaction) is never split, and at least one is applied per frame
                 if (n > 0 && Perf.Elapsed(start) > allowance) break;
@@ -837,6 +851,8 @@ namespace SkylineTogether.Sync
                     if (item.Seq != 0) _sessions.Client?.ApplyAcks.Release(item.Seq);
                 }
             }
+            // loadspeed: the backlog left after this frame (zero ends the catch-up and logs the join's timings)
+            joining?.ReportBacklog(_inbox.Count);
             RetryZones();
             // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
             if (!IsHost) _simValues.ApplyIncoming(_inbox.Count);
@@ -897,7 +913,7 @@ namespace SkylineTogether.Sync
                 SafeCall("milestones", _milestonesCall); // gameplay branch
             }
             if (IsHost) UpdateQuarantine(now);
-            _applyBudget.EndFrame(Perf.Stop(Perf.Apply, start));
+            budget.EndFrame(Perf.Stop(Perf.Apply, start));
         }
 
         /// <summary>
