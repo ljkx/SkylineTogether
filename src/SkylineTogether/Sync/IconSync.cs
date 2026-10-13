@@ -49,6 +49,9 @@ namespace SkylineTogether.Sync
     public sealed class IconSync
     {
         private const double HostScanInterval = 0.5;
+        /// <summary>perf pass: host milliseconds per frame for a scan pass (at least <see cref="HostMinOwnersPerFrame"/> owners).</summary>
+        private const double HostSliceMs = 0.5;
+        private const int HostMinOwnersPerFrame = 64;
         private const int DigestEveryScans = 20;
         private const int MaxOwnersPerFrame = 2048;
         private const int MaxAttemptsPerOwner = 3;
@@ -76,6 +79,10 @@ namespace SkylineTogether.Sync
         private readonly HashSet<Entity> _seen = new HashSet<Entity>();
         private readonly List<Entity> _gone = new List<Entity>();
         private readonly HashSet<SyncRef> _liveRefs = new HashSet<SyncRef>();
+        // perf pass: the owners of the scan pass in progress (a snapshot taken at its start) and the next one to read
+        private readonly List<Entity> _passOwners = new List<Entity>();
+        private int _passCursor = -1;
+        private readonly List<SyncIcon> _iconScratch = new List<SyncIcon>(SyncBatch.MaxIconsPerOwner);
         private double _lastScan = -1000;
         private int _scans;
         private uint _hostIcons;
@@ -198,6 +205,9 @@ namespace SkylineTogether.Sync
         public void Reset()
         {
             _sent.Clear();
+            _seen.Clear();
+            _passOwners.Clear();
+            _passCursor = -1;
             _lastScan = -1000;
             _scans = 0;
             _hostIcons = 0;
@@ -290,52 +300,82 @@ namespace SkylineTogether.Sync
 
         // ================================================================== host
 
-        /// <summary>Host, at the end of the frame's capture: changed icon sets (and periodically the digest) into the broadcast batch.</summary>
+        /// <summary>
+        /// Host, at the end of the frame's capture: changed icon sets (and periodically the digest) into the broadcast batch.
+        /// perf pass: a scan pass starts at most every <see cref="HostScanInterval"/> s with a snapshot of the icon owners and
+        /// reads them in time slices (<see cref="HostSliceMs"/> per frame), so a large city's thousands of owners no longer
+        /// hitch one frame twice a second; a small city still finishes a pass in one frame. Owners whose icons vanished
+        /// before their turn count as gone, exactly as if they had left the query; owners that gained icons during the pass
+        /// are found by the next one. Unchanged sets allocate nothing.
+        /// </summary>
         public void HostCapture(double now, SyncBatch.Writer batch)
         {
-            if (_codec == null || now - _lastScan < HostScanInterval) return;
-            _lastScan = now;
-            _scans++;
+            if (_codec == null) return;
             EntityManager em = _codec.EntityManager;
-            _seen.Clear();
-            NativeArray<Entity> owners = _owners.ToEntityArray(Allocator.Temp);
-            try
+            if (_passCursor < 0)
             {
-                foreach (Entity owner in owners)
+                if (now - _lastScan < HostScanInterval) return;
+                _lastScan = now;
+                _seen.Clear();
+                _passOwners.Clear();
+                NativeArray<Entity> owners = _owners.ToEntityArray(Allocator.Temp);
+                try
                 {
-                    try
+                    for (int i = 0; i < owners.Length; i++) _passOwners.Add(owners[i]);
+                }
+                finally
+                {
+                    owners.Dispose();
+                }
+                _passCursor = 0;
+            }
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
+            long budget = (long)(HostSliceMs * System.Diagnostics.Stopwatch.Frequency / 1000.0);
+            int n = 0;
+            while (_passCursor < _passOwners.Count)
+            {
+                if (n >= HostMinOwnersPerFrame && (n & 15) == 0 && System.Diagnostics.Stopwatch.GetTimestamp() - start > budget) return;
+                Entity owner = _passOwners[_passCursor++];
+                n++;
+                try
+                {
+                    // a snapshot entry may have lost its icons, been deleted or destroyed since the pass started
+                    if (!em.Exists(owner) || !em.HasBuffer<IconElement>(owner) || em.HasComponent<Deleted>(owner) || em.HasComponent<Game.Tools.Temp>(owner)) continue;
+                    if (!_codec.TryGetPortableRef(owner, out uint id, out DerivedKey key)) continue;
+                    SyncRef r = ToRef(id, key);
+                    List<SyncIcon> icons = HostIcons(em, owner, batch);
+                    if (icons.Count == 0) continue;
+                    _seen.Add(owner);
+                    ulong exact = IconSetDigest.ExactSetHash(icons);
+                    if (_sent.TryGetValue(owner, out SentOwner sent))
                     {
-                        if (!_codec.TryGetPortableRef(owner, out uint id, out DerivedKey key)) continue;
-                        SyncRef r = ToRef(id, key);
-                        List<SyncIcon> icons = HostIcons(em, owner, batch);
-                        if (icons.Count == 0) continue;
-                        _seen.Add(owner);
-                        ulong exact = IconSetDigest.ExactSetHash(icons);
-                        if (_sent.TryGetValue(owner, out SentOwner sent))
-                        {
-                            if (sent.Exact == exact && sent.Ref.Equals(r)) continue;
-                            if (!sent.Ref.Equals(r)) batch.IconSet(sent.Ref, Array.Empty<SyncIcon>());
-                        }
-                        else
-                        {
-                            sent = new SentOwner();
-                            _sent[owner] = sent;
-                        }
-                        sent.Ref = r;
-                        sent.Exact = exact;
-                        sent.Icons = icons;
-                        batch.IconSet(r, icons);
+                        if (sent.Exact == exact && sent.Ref.Equals(r)) continue;
+                        if (!sent.Ref.Equals(r)) batch.IconSet(sent.Ref, Array.Empty<SyncIcon>());
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        _log.Debug(LogCategory.Integrity, "icons of " + owner + " not captured: " + ex.Message);
+                        sent = new SentOwner();
+                        _sent[owner] = sent;
                     }
+                    sent.Ref = r;
+                    sent.Exact = exact;
+                    sent.Icons = new List<SyncIcon>(icons); // the scratch list is reused by the next owner
+                    batch.IconSet(r, sent.Icons);
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(LogCategory.Integrity, "icons of " + owner + " not captured: " + ex.Message);
                 }
             }
-            finally
-            {
-                owners.Dispose();
-            }
+            FinishHostPass(batch);
+        }
+
+        /// <summary>The pass read every owner of its snapshot: owners not seen are gone (empty sets), then the periodic digest.</summary>
+        private void FinishHostPass(SyncBatch.Writer batch)
+        {
+            _passCursor = -1;
+            _passOwners.Clear();
+            _scans++;
             _gone.Clear();
             _liveRefs.Clear();
             foreach (KeyValuePair<Entity, SentOwner> pair in _sent)
@@ -357,9 +397,11 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>The owner's default-layer icons into a scratch list (valid until the next call).</summary>
         private List<SyncIcon> HostIcons(EntityManager em, Entity owner, SyncBatch.Writer batch)
         {
-            var list = new List<SyncIcon>();
+            List<SyncIcon> list = _iconScratch;
+            list.Clear();
             DynamicBuffer<IconElement> buffer = em.GetBuffer<IconElement>(owner, true);
             for (int i = 0; i < buffer.Length && list.Count < SyncBatch.MaxIconsPerOwner; i++)
             {
