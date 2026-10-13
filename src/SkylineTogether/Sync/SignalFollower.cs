@@ -25,11 +25,14 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<Entity, ulong> _applied = new Dictionary<Entity, ulong>();
         private readonly List<Entity> _lanes = new List<Entity>();
         private readonly HashSet<Entity> _live = new HashSet<Entity>();
+        private readonly List<Entity> _gone = new List<Entity>();
+        private readonly List<(Entity Node, TrafficLights Lights)> _changed = new List<(Entity, TrafficLights)>();
         private World _world;
         private EntityQuery _nodes;
         private bool _attached;
         private bool _warned;
         private int _frames;
+        private uint _lastVersion; // perf pass: chunks unchanged since this version are skipped (0: read every chunk)
 
         public SignalFollower(ILog log)
         {
@@ -62,32 +65,54 @@ namespace SkylineTogether.Sync
         {
             _applied.Clear();
             _frames = 0;
+            _lastVersion = 0;
             Applied = 0;
         }
 
         private static ulong Phase(TrafficLights t) =>
             (ulong)(byte)t.m_State | ((ulong)(byte)t.m_Flags << 8) | ((ulong)t.m_SignalGroupCount << 16) | ((ulong)t.m_CurrentSignalGroup << 24) | ((ulong)t.m_NextSignalGroup << 32) | (1UL << 40);
 
-        /// <summary>Client, once per frame after the host's values were applied.</summary>
+        /// <summary>
+        /// Client, once per frame after the host's values were applied. perf pass: a junction's phase only changes when the
+        /// host's values are written into it (or it is created or moved to another chunk), and every such write raises the
+        /// chunk's change version of <c>TrafficLights</c>; chunks unchanged since the last pass are skipped, so a city's
+        /// thousands of junctions cost a few chunk checks per frame. Every 256th frame reads every chunk (and prunes
+        /// junctions that are gone), whatever the versions say.
+        /// </summary>
         public void Update()
         {
             if (!_attached || _nodes.IsEmptyIgnoreFilter) return;
             EntityManager em = _world.EntityManager;
-            NativeArray<Entity> nodes = _nodes.ToEntityArray(Allocator.Temp);
-            NativeArray<TrafficLights> lights = _nodes.ToComponentDataArray<TrafficLights>(Allocator.Temp);
+            bool sweep = (++_frames & 255) == 0;
+            uint since = sweep ? 0u : _lastVersion; // 0: every chunk counts as changed
+            _nodes.CompleteDependency();
+            uint version = em.GlobalSystemVersion;
+            EntityTypeHandle entityType = em.GetEntityTypeHandle();
+            ComponentTypeHandle<TrafficLights> lightsType = em.GetComponentTypeHandle<TrafficLights>(true);
+            NativeArray<ArchetypeChunk> chunks = _nodes.ToArchetypeChunkArray(Allocator.Temp);
             try
             {
-                bool sweep = (++_frames & 255) == 0;
                 if (sweep) _live.Clear();
-                for (int i = 0; i < nodes.Length; i++)
+                for (int c = 0; c < chunks.Length; c++)
                 {
-                    Entity node = nodes[i];
-                    if (sweep) _live.Add(node);
-                    TrafficLights t = lights[i];
-                    if ((t.m_Flags & TrafficLightFlags.IsSubNode) != 0) continue;
-                    ulong phase = Phase(t);
-                    if (_applied.TryGetValue(node, out ulong last) && last == phase) continue;
-                    _applied[node] = phase;
+                    ArchetypeChunk chunk = chunks[c];
+                    if (!chunk.DidChange(ref lightsType, since)) continue;
+                    NativeArray<Entity> nodes = chunk.GetNativeArray(entityType);
+                    NativeArray<TrafficLights> lights = chunk.GetNativeArray(ref lightsType);
+                    for (int i = 0; i < nodes.Length; i++)
+                    {
+                        Entity node = nodes[i];
+                        if (sweep) _live.Add(node);
+                        TrafficLights t = lights[i];
+                        if ((t.m_Flags & TrafficLightFlags.IsSubNode) != 0) continue;
+                        ulong phase = Phase(t);
+                        if (_applied.TryGetValue(node, out ulong last) && last == phase) continue;
+                        _applied[node] = phase;
+                        _changed.Add((node, t)); // applied after the chunk walk: a moveable bridge adds a tag (structural change)
+                    }
+                }
+                foreach ((Entity node, TrafficLights t) in _changed)
+                {
                     try
                     {
                         Apply(em, node, t);
@@ -104,19 +129,23 @@ namespace SkylineTogether.Sync
                 }
                 if (sweep && _applied.Count > _live.Count)
                 {
-                    var gone = new List<Entity>();
+                    _gone.Clear();
                     foreach (Entity e in _applied.Keys)
                     {
-                        if (!_live.Contains(e)) gone.Add(e);
+                        if (!_live.Contains(e)) _gone.Add(e);
                     }
-                    foreach (Entity e in gone) _applied.Remove(e);
+                    foreach (Entity e in _gone) _applied.Remove(e);
+                    _gone.Clear();
                 }
             }
             finally
             {
-                nodes.Dispose();
-                lights.Dispose();
+                _changed.Clear();
+                chunks.Dispose();
             }
+            // conservative: a write later in this same system update carries this version too, so the next pass starts one
+            // version earlier and reads this frame's changed chunks once more rather than missing one
+            _lastVersion = version - 1;
         }
 
         private void Apply(EntityManager em, Entity node, TrafficLights t)

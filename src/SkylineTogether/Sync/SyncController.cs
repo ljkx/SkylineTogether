@@ -133,6 +133,14 @@ namespace SkylineTogether.Sync
         /// <summary>Host: entities changed without a tag (intents, host UI direct writes) that the capture must stream.</summary>
         private readonly HashSet<Entity> _forceCapture = new HashSet<Entity>();
         private readonly HashSet<Entity> _writtenThisFrame = new HashSet<Entity>();
+        // perf pass: the client capture's per-frame collections, reused
+        private readonly HashSet<Entity> _clientWritten = new HashSet<Entity>();
+        private readonly List<uint> _clientProposed = new List<uint>();
+        private readonly List<Entity> _clientChanged = new List<Entity>();
+        private readonly HashSet<Entity> _authoredKeys = new HashSet<Entity>();
+        private readonly Action _hostWatchCall, _clientActionCall, _lateIntentsCall, _actionDetectCall, _editHoldsCall, _milestonesCall;
+        private readonly Action _hostModStateCall, _hostModSettingsCall, _clientModStateCall;
+        private double _callNow; // the capture time the cached mod-state and mod-settings calls use
         private Game.Tools.GenerateEdgesSystem _generateEdges;
         /// <summary>Client: the newest ledger epoch applied (the base of its proposals; not a release frame).</summary>
         private uint _baseEpoch;
@@ -248,6 +256,23 @@ namespace SkylineTogether.Sync
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
             _mayCreate = MayCreate;
+            // perf pass: the guarded calls of every frame use delegates made once (a lambda or method group passed to
+            // SafeCall allocated a delegate, and a closure, on every call)
+            _hostWatchCall = () =>
+            {
+                // a copy: the watch's Touch handler adds to _authoredThisFrame while it runs
+                _authoredKeys.Clear();
+                foreach (Entity e in _authoredThisFrame.Keys) _authoredKeys.Add(e);
+                _actions.HostWatch(_authoredKeys);
+            };
+            _clientActionCall = () => _actions.ClientCapture(_appliedThisFrame);
+            _lateIntentsCall = _actions.RunLate;
+            _actionDetectCall = _actions.BeforeApply;
+            _editHoldsCall = ReleaseHolds;
+            _milestonesCall = _actions.AfterApply;
+            _hostModStateCall = () => CaptureModChanges(_callNow, _writtenThisFrame, true);
+            _hostModSettingsCall = () => _modSettings.HostCapture(_batch, _callNow);
+            _clientModStateCall = () => CaptureModChanges(_callNow, _clientWritten, false, _clientProposed);
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;
@@ -715,6 +740,7 @@ namespace SkylineTogether.Sync
             // feat/terrain: received stamps and heightmap/water tiles (independent of the entity stream)
             if (Features.Terrain.IsAvailable)
             {
+                long terrain = Perf.Start();
                 try
                 {
                     _terrain.ApplyIncoming();
@@ -723,9 +749,11 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Terrain, "terrain apply", ex);
                 }
+                Perf.Stop(Perf.Terrain, terrain);
             }
             if (Features.Water.IsAvailable)
             {
+                long water = Perf.Start();
                 try
                 {
                     _water.ApplyIncoming();
@@ -734,9 +762,11 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Water, "water apply", ex);
                 }
+                Perf.Stop(Perf.Water, water);
             }
             if (Features.SimValues.IsAvailable)
             {
+                long maps = Perf.Start();
                 try
                 {
                     _cellMaps.ApplyIncoming(); // w2/simvals: host merges paint patches, clients write map tiles
@@ -746,6 +776,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.SimValues, "map tiles and statistics apply", ex);
                 }
+                Perf.Stop(Perf.Maps, maps);
             }
             if (_codec == null || !Features.Replication.IsAvailable) return;
             if (!IsHost && !IsLiveClient)
@@ -760,7 +791,7 @@ namespace SkylineTogether.Sync
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
-                SafeCall("action detection", _actions.BeforeApply); // gameplay branch: dev tree, map tiles
+                SafeCall("action detection", _actionDetectCall); // gameplay branch: dev tree, map tiles
                 if (Features.GlobalState.IsAvailable)
                 {
                     try
@@ -772,7 +803,7 @@ namespace SkylineTogether.Sync
                         Guard.Report(Features.GlobalState, "global state (before apply)", ex);
                     }
                 }
-                SafeCall("edit holds", ReleaseHolds); // mod compatibility
+                SafeCall("edit holds", _editHoldsCall); // mod compatibility
                 if (Features.Events.IsAvailable)
                 {
                     try
@@ -854,6 +885,7 @@ namespace SkylineTogether.Sync
             // w3/audit (client): lane signals and signal heads from the host's junction phases
             if (!IsHost && Features.SimValues.IsAvailable)
             {
+                long signals = Perf.Start();
                 try
                 {
                     _signals.Update();
@@ -862,6 +894,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.SimValues, "traffic lights", ex);
                 }
+                Perf.Stop(Perf.Signals, signals);
             }
             // client: what the appliers wrote becomes the baseline, so it is never proposed back
             if (!IsHost)
@@ -877,7 +910,7 @@ namespace SkylineTogether.Sync
                         Guard.Report(Features.GlobalState, "global state (after apply)", ex);
                     }
                 }
-                SafeCall("milestones", _actions.AfterApply); // gameplay branch
+                SafeCall("milestones", _milestonesCall); // gameplay branch
             }
             if (IsHost) UpdateQuarantine(now);
             budget.EndFrame(Perf.Stop(Perf.Apply, start));
@@ -1464,6 +1497,7 @@ namespace SkylineTogether.Sync
             // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
             if (Features.Terrain.IsAvailable)
             {
+                long terrain = Perf.Start();
                 try
                 {
                     _terrain.CaptureOutgoing();
@@ -1472,9 +1506,11 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Terrain, "terrain capture", ex);
                 }
+                Perf.Stop(Perf.Terrain, terrain);
             }
             if (Features.Water.IsAvailable)
             {
+                long water = Perf.Start();
                 try
                 {
                     _water.CaptureOutgoing();
@@ -1483,9 +1519,11 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Water, "water capture", ex);
                 }
+                Perf.Stop(Perf.Water, water);
             }
             if (Features.SimValues.IsAvailable)
             {
+                long maps = Perf.Start();
                 try
                 {
                     _cellMaps.CaptureOutgoing(); // w2/simvals: host map tiles, client paint patches
@@ -1495,6 +1533,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.SimValues, "map tiles and statistics capture", ex);
                 }
+                Perf.Stop(Perf.Maps, maps);
             }
             double dt = _lastFrameTime > 0 ? Math.Min(0.25, Math.Max(0.0, now - _lastFrameTime)) : 1.0 / 60.0;
             _lastFrameTime = now;
@@ -1510,10 +1549,11 @@ namespace SkylineTogether.Sync
                         if (IsHost)
                         {
                             // the host player's own direct UI writes (historical, vehicles, districts, colours) become captures
-                            SafeCall("host action watch", () => _actions.HostWatch(new HashSet<Entity>(_authoredThisFrame.Keys)));
+                            SafeCall("host action watch", _hostWatchCall);
                             CaptureHost(now, dt);
                             if (Features.SimValues.IsAvailable)
                             {
+                                long simValues = Perf.Start();
                                 try
                                 {
                                     _simValues.CaptureOutgoing(now); // w2/simvals: attention values and inspection samples
@@ -1522,6 +1562,7 @@ namespace SkylineTogether.Sync
                                 {
                                     Guard.Report(Features.SimValues, "attention values and inspection samples", ex);
                                 }
+                                Perf.Stop(Perf.SimValues, simValues);
                             }
                             if (Features.FlowStatus.IsAvailable)
                             {
@@ -1537,8 +1578,10 @@ namespace SkylineTogether.Sync
                         }
                         else if (IsLiveClient)
                         {
+                            long client = Perf.Start();
                             CaptureClient(now);
-                            SafeCall("action capture", () => _actions.ClientCapture(_appliedThisFrame)); // gameplay branch
+                            SafeCall("action capture", _clientActionCall); // gameplay branch
+                            Perf.Stop(Perf.ClientCapture, client);
                             if (Features.Agents.IsAvailable) _agents.ClientFrameEnd(now); // w3/agents: refresh requests
                         }
                     }
@@ -1583,7 +1626,7 @@ namespace SkylineTogether.Sync
                 if (IsHost)
                 {
                     // gameplay branch: executors that need EndFrameBarrier run here (after AllowBarrier<EndFrameBarrier>)
-                    SafeCall("late intents", _actions.RunLate);
+                    SafeCall("late intents", _lateIntentsCall);
                     _global.HostCapture(_globalBatch);
                     _actions.HostCapture(_globalBatch, now);
                 }
@@ -1677,6 +1720,7 @@ namespace SkylineTogether.Sync
             // w3/audit: components the simulation added or removed without a tag (fires, damage, floods, accident sites)
             if (Features.Events.IsAvailable)
             {
+                long watch = Perf.Start();
                 try
                 {
                     _events.HostCollect(now, _forceCapture, _scratchValues);
@@ -1687,6 +1731,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Events, "presence watch", ex);
                 }
+                Perf.Stop(Perf.PresenceWatch, watch);
             }
             // gameplay branch: entities that intents or the host's own UI changed without any tag
             foreach (Entity e in _forceCapture)
@@ -1699,10 +1744,11 @@ namespace SkylineTogether.Sync
             _agents.HostCapture(_batch, _writtenThisFrame, _writeAgent ?? (_writeAgent = WriteAgentRecord));
             // mod compatibility: the dependencies all of the above needed, untagged mod state, and its dependencies
             WriteDependencies(_writtenThisFrame);
-            SafeCall("mod state capture", () => CaptureModChanges(now, _writtenThisFrame, true));
+            _callNow = now;
+            SafeCall("mod state capture", _hostModStateCall);
             WriteDependencies(_writtenThisFrame);
             _codec.DependencyBinder = null;
-            SafeCall("mod settings capture", () => _modSettings.HostCapture(_batch, now));
+            SafeCall("mod settings capture", _hostModSettingsCall);
             long scan = Perf.Start();
             ScanValues(now);
             Perf.Stop(Perf.Scan, scan);
@@ -2006,11 +2052,34 @@ namespace SkylineTogether.Sync
             // tool; outside a tool path only those are proposed, every other local deletion waits for the host
             ProposalFlags flags = _toolApplied ? ProposalFlags.ToolApply : localTool ? ProposalFlags.DirectTool : ProposalFlags.None;
             _batch.Reset();
-            var written = new HashSet<Entity>();
-            var proposed = new List<uint>();
+            HashSet<Entity> written = _clientWritten;
+            List<uint> proposed = _clientProposed;
+            written.Clear();
+            proposed.Clear();
             // mod compatibility: mod data entities the proposed values reference get ids from the pool and travel along
             _codec.DependencyBinder = ClientBindDependency;
-            NativeArray<Entity> changed = _changed.ToEntityArray(Allocator.Temp);
+            // perf pass: outside a tool path only deletions count, so whole chunks without Deleted are skipped instead of
+            // copying and testing every tagged entity of the frame (the simulation and the applier tag many each frame)
+            List<Entity> changed = _clientChanged;
+            changed.Clear();
+            if (!_changed.IsEmptyIgnoreFilter)
+            {
+                NativeArray<ArchetypeChunk> chunks = _changed.ToArchetypeChunkArray(Allocator.Temp);
+                try
+                {
+                    EntityTypeHandle entityType = em.GetEntityTypeHandle();
+                    foreach (ArchetypeChunk chunk in chunks)
+                    {
+                        if (!toolPath && !chunk.Has<Game.Common.Deleted>()) continue;
+                        NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
+                        for (int i = 0; i < entities.Length; i++) changed.Add(entities[i]);
+                    }
+                }
+                finally
+                {
+                    chunks.Dispose();
+                }
+            }
             try
             {
                 foreach (Entity e in changed)
@@ -2078,13 +2147,14 @@ namespace SkylineTogether.Sync
             }
             finally
             {
-                changed.Dispose();
+                changed.Clear();
             }
             // mod compatibility: untagged mod state the player changed (components tool, info-panel toggles, Better
             // Bulldozer's removal records), then the dependencies of everything proposed
             WriteDependencies(written, proposed);
             int before = proposed.Count;
-            SafeCall("mod state capture", () => CaptureModChanges(now, written, false, proposed));
+            _callNow = now;
+            SafeCall("mod state capture", _clientModStateCall); // written/proposed are _clientWritten/_clientProposed
             if (proposed.Count > before) flags |= ProposalFlags.DirectTool;
             WriteDependencies(written, proposed);
             _codec.DependencyBinder = null;

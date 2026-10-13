@@ -29,6 +29,8 @@ namespace SkylineTogether.Core.Diagnostics
             public double PeakSince;
             public long Samples;
             public bool Started;
+            /// <summary>perf pass: the component this one runs inside (its time is part of the parent's), or null.</summary>
+            public string Parent;
         }
 
         private sealed class Channel
@@ -46,6 +48,7 @@ namespace SkylineTogether.Core.Diagnostics
         private readonly Dictionary<string, Channel> _channelByName = new Dictionary<string, Channel>(StringComparer.Ordinal);
         private readonly Dictionary<string, long> _counters = new Dictionary<string, long>(StringComparer.Ordinal);
         private readonly List<string> _counterOrder = new List<string>();
+        private readonly Dictionary<string, string> _parents = new Dictionary<string, string>(StringComparer.Ordinal);
 
         /// <summary>Adds milliseconds spent by a component during the current frame (several calls per frame add up).</summary>
         public void AddTime(string component, double milliseconds)
@@ -54,6 +57,17 @@ namespace SkylineTogether.Core.Diagnostics
             Timer t = GetTimer(component);
             t.FrameMs += milliseconds;
             t.Started = true;
+        }
+
+        /// <summary>
+        /// perf pass: declares that <paramref name="component"/> runs inside <paramref name="parent"/> (its time is already
+        /// part of the parent's), so totals count it once; the diagnostics show it as "component (in parent)".
+        /// </summary>
+        public void Nest(string component, string parent)
+        {
+            if (component == null || string.Equals(component, parent, StringComparison.Ordinal)) return;
+            _parents[component] = parent; // kept across Clear (structure, not measurements)
+            if (_timerByName.TryGetValue(component, out Timer t)) t.Parent = parent;
         }
 
         /// <summary>Closes the frame: each component that reported time this frame records its frame total.</summary>
@@ -133,13 +147,16 @@ namespace SkylineTogether.Core.Diagnostics
         /// <summary>The highest milliseconds per frame of a component within the last 10-20 s.</summary>
         public double PeakMs(string component) => _timerByName.TryGetValue(component, out Timer t) ? Math.Max(t.PeakMs, t.PeakPrevMs) : 0;
 
-        /// <summary>The sum of the components' smoothed milliseconds per frame.</summary>
+        /// <summary>The sum of the components' smoothed milliseconds per frame (nested components are counted in their parent).</summary>
         public double TotalAverageMs
         {
             get
             {
                 double sum = 0;
-                for (int i = 0; i < _timers.Count; i++) sum += _timers[i].AverageMs;
+                for (int i = 0; i < _timers.Count; i++)
+                {
+                    if (_timers[i].Parent == null) sum += _timers[i].AverageMs;
+                }
                 return sum;
             }
         }
@@ -154,7 +171,9 @@ namespace SkylineTogether.Core.Diagnostics
                 Timer t = _timers[i];
                 if (t.Samples == 0) continue;
                 if (sb.Length > 0) sb.Append(", ");
-                sb.Append(t.Name).Append(' ').Append(t.AverageMs.ToString("0.00", ci)).Append('/').Append(Math.Max(t.PeakMs, t.PeakPrevMs).ToString("0.0", ci)).Append(" ms");
+                sb.Append(t.Name);
+                if (t.Parent != null) sb.Append(" (in ").Append(t.Parent).Append(')');
+                sb.Append(' ').Append(t.AverageMs.ToString("0.00", ci)).Append('/').Append(Math.Max(t.PeakMs, t.PeakPrevMs).ToString("0.0", ci)).Append(" ms");
             }
             bool first = true;
             for (int i = 0; i < _channels.Count; i++)
@@ -169,8 +188,8 @@ namespace SkylineTogether.Core.Diagnostics
         }
 
         /// <summary>
-        /// A short form for a status line: "1.23 ms/frame (scan 0.80), 12.3 KB/s" — the summed smoothed milliseconds,
-        /// the costliest component, and the summed rate of every channel except <paramref name="excludedChannel"/>.
+        /// A short form for a status line: "1.23 ms/frame (scan 0.80), 12.3 KB/s" — the summed smoothed milliseconds
+        /// (top-level components only: a nested one is part of its parent), the costliest component, and the summed rate of every channel except <paramref name="excludedChannel"/>.
         /// </summary>
         public string CompactSummary(double now, string excludedChannel = null)
         {
@@ -179,7 +198,7 @@ namespace SkylineTogether.Core.Diagnostics
             string worstName = null;
             foreach (Timer t in _timers)
             {
-                total += t.AverageMs;
+                if (t.Parent == null) total += t.AverageMs;
                 if (t.AverageMs > worst)
                 {
                     worst = t.AverageMs;
@@ -205,7 +224,7 @@ namespace SkylineTogether.Core.Diagnostics
             var ci = CultureInfo.InvariantCulture;
             foreach (Timer t in _timers)
             {
-                lines.Add("time " + t.Name + ": avg " + t.AverageMs.ToString("0.000", ci) + " ms/frame, last " + t.LastMs.ToString("0.000", ci)
+                lines.Add("time " + t.Name + (t.Parent != null ? " (in " + t.Parent + ")" : "") + ": avg " + t.AverageMs.ToString("0.000", ci) + " ms/frame, last " + t.LastMs.ToString("0.000", ci)
                           + " ms, peak " + Math.Max(t.PeakMs, t.PeakPrevMs).ToString("0.00", ci) + " ms, frames " + t.Samples.ToString(ci));
             }
             foreach (Channel c in _channels)
@@ -230,6 +249,7 @@ namespace SkylineTogether.Core.Diagnostics
         {
             if (_timerByName.TryGetValue(name, out Timer t)) return t;
             t = new Timer { Name = name };
+            _parents.TryGetValue(name, out t.Parent);
             _timerByName.Add(name, t);
             _timers.Add(t);
             return t;

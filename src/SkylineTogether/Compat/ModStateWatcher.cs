@@ -48,6 +48,8 @@ namespace SkylineTogether.Compat
         private readonly Dictionary<uint, (ulong Presence, ulong Value)> _shadow = new Dictionary<uint, (ulong, ulong)>();
         private readonly Dictionary<uint, double> _lastEmit = new Dictionary<uint, double>();
         private readonly HashSet<uint> _retry = new HashSet<uint>();
+        private readonly List<uint> _retryScratch = new List<uint>();
+        private DynamicComponentTypeHandle[] _handles;
         private readonly List<uint> _sweep = new List<uint>();
         private readonly Func<TypeIndex, bool> _isWatched;
         private EntityQuery _query;
@@ -192,7 +194,9 @@ namespace SkylineTogether.Compat
             EntityManager em = _codec.EntityManager;
             _query.CompleteDependency();
             uint since = _lastVersion;
-            var handles = new DynamicComponentTypeHandle[_types.Count];
+            // perf pass: the handle array is kept (the watched types are fixed between Start calls); handles are fresh
+            if (_handles == null || _handles.Length != _types.Count) _handles = new DynamicComponentTypeHandle[_types.Count];
+            DynamicComponentTypeHandle[] handles = _handles;
             for (int i = 0; i < handles.Length; i++) handles[i] = em.GetDynamicComponentTypeHandle(_types[i]);
             EntityTypeHandle entityHandle = em.GetEntityTypeHandle();
             NativeArray<ArchetypeChunk> chunks = _query.ToArchetypeChunkArray(Allocator.Temp);
@@ -218,7 +222,9 @@ namespace SkylineTogether.Compat
 
             if (_retry.Count > 0)
             {
-                foreach (uint id in new List<uint>(_retry))
+                _retryScratch.Clear();
+                _retryScratch.AddRange(_retry);
+                foreach (uint id in _retryScratch)
                 {
                     if (_lastEmit.TryGetValue(id, out double last) && now - last < MinInterval) continue;
                     _retry.Remove(id);

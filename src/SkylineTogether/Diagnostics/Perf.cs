@@ -25,6 +25,19 @@ namespace SkylineTogether.Diagnostics
         public const string AgentScan = "agent scan";
         public const string AgentApply = "agent apply";
         public const string FlowScan = "flow scan"; // w4/flow
+        // perf pass: components that were not measured before
+        public const string SimValues = "sim values";          // host: attention values scan, samples, streams
+        public const string PresenceWatch = "presence watch";  // host: component sets changed without a tag (events)
+        public const string Icons = "icons";                   // host: icon set capture
+        public const string IconFilter = "icon filter";        // client: local icon commands filtered, host icons reconciled
+        public const string Signals = "signals";               // client: lane signals from the host's junction phases
+        public const string ClientCapture = "client capture";  // client: proposals of the player's edits
+        public const string Terrain = "terrain";               // both: stamps, heightmap tiles, audits
+        public const string Water = "water";                   // both: water sources and samples
+        public const string Maps = "maps+stats";               // both: cell maps (resources, pollution, ...) and statistics
+        public const string Bind = "bind";                     // host: new entities bound before the save system
+        public const string Network = "network";               // both: session tick (receive, decode, dispatch, send)
+        public const string Presence = "presence";             // both: cursors and name tags
 
         // channel names (bytes per second, host: summed over the peers it was sent to)
         public const string StructureBytes = "structure";
@@ -40,7 +53,25 @@ namespace SkylineTogether.Diagnostics
 
         private static readonly double MsPerTick = 1000.0 / Stopwatch.Frequency;
 
-        public static PerfCounters Counters { get; } = new PerfCounters();
+        public static PerfCounters Counters { get; } = CreateCounters();
+
+        /// <summary>perf pass: components measured inside another one are counted once in the totals.</summary>
+        private static PerfCounters CreateCounters()
+        {
+            var c = new PerfCounters();
+            c.Nest(Scan, Capture);
+            c.Nest(Integrity, Capture);
+            c.Nest(Icons, Integrity);
+            c.Nest(Deferred, Capture);
+            c.Nest(AgentScan, Capture);
+            c.Nest(PresenceWatch, Capture);
+            c.Nest(SimValues, Capture);
+            c.Nest(FlowScan, Capture);
+            c.Nest(ClientCapture, Capture);
+            c.Nest(AgentApply, Apply);
+            c.Nest(Signals, Apply);
+            return c;
+        }
 
         /// <summary>A start timestamp for <see cref="Stop"/>.</summary>
         public static long Start() => Stopwatch.GetTimestamp();

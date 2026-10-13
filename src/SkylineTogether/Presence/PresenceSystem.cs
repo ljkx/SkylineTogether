@@ -79,6 +79,7 @@ namespace SkylineTogether.Presence
                 }
                 return;
             }
+            long start = Diagnostics.Perf.Start();
             try
             {
                 Viewer viewer = null;
@@ -91,6 +92,7 @@ namespace SkylineTogether.Presence
                 // cosmetic: never let it break the frame
                 Diagnostics.Guard.Report(Diagnostics.Features.Presence, "presence update", ex);
             }
+            Diagnostics.Perf.Stop(Diagnostics.Perf.Presence, start);
         }
 
         // ---------------------------------------------------------------- local player

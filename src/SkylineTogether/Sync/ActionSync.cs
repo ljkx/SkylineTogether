@@ -90,6 +90,25 @@ namespace SkylineTogether.Sync
         public ActionSync(ILog log)
         {
             _log = log;
+            // perf pass: the watchers run every frame on both roles; their delegates are made once
+            _foundSelection = (e, kind, intent) => OnWatchFound(e, intent);
+            _foundWrite = OnWatchFound;
+            _watchSelectionCall = () => WatchSelection(_watchWrote, _foundSelection);
+            _watchMeshCall = () => WatchMeshColors(_watchWrote, _foundWrite);
+            _watchRoutesCall = () => WatchRouteColors(_watchWrote, _foundWrite);
+        }
+
+        private readonly Found _foundSelection;
+        private readonly Action<Entity, ActionIntent> _foundWrite;
+        private readonly Action _watchSelectionCall, _watchMeshCall, _watchRoutesCall;
+        private HashSet<Entity> _watchWrote; // the entities not to report this pass (host: proposals; client: host data)
+        private bool _watchForHost;
+
+        /// <summary>A watcher found a direct write: on the host the capture streams the entity, on a client it becomes an intent.</summary>
+        private void OnWatchFound(Entity e, ActionIntent intent)
+        {
+            if (_watchForHost) Touch?.Invoke(e, PeerId.Host);
+            else _pending.Add(intent);
         }
 
         /// <summary>Host: an intent made <paramref name="e"/> change; the capture streams it, authored by <paramref name="peer"/>.</summary>
@@ -303,9 +322,12 @@ namespace SkylineTogether.Sync
         public void ClientCapture(HashSet<Entity> applied)
         {
             if (!Attached) return;
-            Guard("selection", () => WatchSelection(applied, (e, kind, intent) => _pending.Add(intent)));
-            Guard("mesh colours", () => WatchMeshColors(applied, (e, intent) => _pending.Add(intent)));
-            Guard("line colours", () => WatchRouteColors(applied, (e, intent) => _pending.Add(intent)));
+            _watchWrote = applied;
+            _watchForHost = false;
+            Guard("selection", _watchSelectionCall);
+            Guard("mesh colours", _watchMeshCall);
+            Guard("line colours", _watchRoutesCall);
+            _watchWrote = null;
             if (_subElements.Count > 0)
             {
                 _pending.Add(new ActionIntent { Kind = ActionKind.DeleteSubElements, Keys = _subElements.ToArray() });
@@ -487,9 +509,12 @@ namespace SkylineTogether.Sync
         public void HostWatch(HashSet<Entity> proposalWrote)
         {
             if (!Attached) return;
-            Guard("host selection", () => WatchSelection(proposalWrote, (e, kind, intent) => Touch?.Invoke(e, PeerId.Host)));
-            Guard("host mesh colours", () => WatchMeshColors(proposalWrote, (e, intent) => Touch?.Invoke(e, PeerId.Host)));
-            Guard("host line colours", () => WatchRouteColors(proposalWrote, (e, intent) => Touch?.Invoke(e, PeerId.Host)));
+            _watchWrote = proposalWrote;
+            _watchForHost = true;
+            Guard("host selection", _watchSelectionCall);
+            Guard("host mesh colours", _watchMeshCall);
+            Guard("host line colours", _watchRoutesCall);
+            _watchWrote = null;
         }
 
         /// <summary>Host, global batch of the frame: sub-element deletions to replay on clients and the unlock set.</summary>

@@ -21,12 +21,19 @@ namespace SkylineTogether.Core.Session
         private readonly ByteWriter _decodeScratch = new ByteWriter(4096);
         private readonly ByteWriter _decodeScratch2 = new ByteWriter(4096);
         private Lane _sendLane;
+        private bool _sendOk;
+        private readonly Action<byte[], int, int> _emit;
 
         public PeerChannel(IConnection connection, PeerId peer, IClock clock, ILog log)
         {
             Connection = connection ?? throw new ArgumentNullException(nameof(connection));
             Outbox = new PeerOutbox(connection, peer, new OutboxConfig(), clock, log);
             _codec = new EnvelopeCodec(new ManagedLz4Compressor(), log);
+            // perf pass: one delegate for every send (the lambda with a captured local allocated two objects per message)
+            _emit = (b, o, c) =>
+            {
+                if (Outbox.Send(_sendLane, Delivery.ReliableOrdered, b, o, c) != SendResult.Ok) _sendOk = false;
+            };
         }
 
         public IConnection Connection { get; }
@@ -38,13 +45,26 @@ namespace SkylineTogether.Core.Session
         {
             _encoded.Reset();
             _codec.Encode(kind, body, offset, count, _encoded);
+            return SendEncoded(kind, _encoded.Buffer, 0, _encoded.Length, lane);
+        }
+
+        /// <summary>The compression this channel encodes with (channels with the same kind encode a body identically).</summary>
+        public CompressionKind Compression => _codec.Compressor?.Kind ?? CompressionKind.None;
+
+        /// <summary>
+        /// perf pass: encodes (and compresses) a body into <paramref name="output"/> exactly as <see cref="Send(MessageKind, byte[], int, int, Lane)"/> would, so
+        /// a broadcast encodes once and hands the result to every channel with the same <see cref="Compression"/>
+        /// (<see cref="SendEncoded"/>). The writer is not reset.
+        /// </summary>
+        public void Encode(MessageKind kind, byte[] body, int offset, int count, ByteWriter output) => _codec.Encode(kind, body, offset, count, output);
+
+        /// <summary>Fragments and queues an envelope made by <see cref="Encode"/> (reliable, ordered). False once the connection is closed.</summary>
+        public bool SendEncoded(MessageKind kind, byte[] envelope, int offset, int count, Lane lane = Lane.Reliable)
+        {
             _sendLane = lane;
-            bool ok = true;
-            _fragmenter.Split(kind, _encoded.Buffer, 0, _encoded.Length, _fragment, (b, o, c) =>
-            {
-                if (Outbox.Send(_sendLane, Delivery.ReliableOrdered, b, o, c) != SendResult.Ok) ok = false;
-            });
-            return ok;
+            _sendOk = true;
+            _fragmenter.Split(kind, envelope, offset, count, _fragment, _emit);
+            return _sendOk;
         }
 
         public bool Send(MessageKind kind, ByteWriter body, Lane lane = Lane.Reliable) => Send(kind, body.Buffer, 0, body.Length, lane);

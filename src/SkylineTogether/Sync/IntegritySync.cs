@@ -241,6 +241,7 @@ namespace SkylineTogether.Sync
         public void HostCapture(double now, SyncBatch.Writer batch, SyncBatch.Writer digests, int livePeers)
         {
             if (_codec == null) return;
+            long icons = Diagnostics.Perf.Start();
             try
             {
                 Icons.HostCapture(now, batch);
@@ -249,6 +250,7 @@ namespace SkylineTogether.Sync
             {
                 Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "icon capture", ex);
             }
+            Diagnostics.Perf.Stop(Diagnostics.Perf.Icons, icons);
             try
             {
                 Lines.HostCapture(now, batch);

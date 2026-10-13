@@ -73,8 +73,8 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<EntityArchetype, bool> _trees = new Dictionary<EntityArchetype, bool>();
         private ComponentType _treeType;
         private ComponentType _buildingType;
-        private readonly HashSet<uint> _watchedLast = new HashSet<uint>();
-        private readonly HashSet<uint> _watchedNow = new HashSet<uint>();
+        private HashSet<uint> _watchedLast = new HashSet<uint>();
+        private HashSet<uint> _watchedNow = new HashSet<uint>();
         private readonly HashSet<uint> _liked = new HashSet<uint>();
         private readonly HashSet<string> _once = new HashSet<string>();
         private readonly List<uint> _scratchIds = new List<uint>();
@@ -93,7 +93,14 @@ namespace SkylineTogether.Sync
         public EventSync(ILog log)
         {
             _log = log;
+            // perf pass: the client's per-frame guarded calls use delegates made once
+            _readLikesCall = ReadLikes;
+            _touchedCall = FixTouched;
+            _hotspotsCall = () => UpdateHotspots(_world.EntityManager);
         }
+
+        private readonly Action _readLikesCall, _touchedCall, _hotspotsCall;
+        private HashSet<Entity> _touched; // the entities of the current ClientAfterApply call
 
         /// <summary>Re-sends found by the presence watch (diagnostics).</summary>
         public long PresenceResends { get; private set; }
@@ -204,8 +211,11 @@ namespace SkylineTogether.Sync
                     if (_watchedNow.Contains(id)) continue;
                     if (Check(em, id, into)) found++;
                 }
-                _watchedLast.Clear();
-                foreach (uint id in _watchedNow) _watchedLast.Add(id);
+                // perf pass: the sets swap roles (the copy cost an add per watched entity four times a second)
+                HashSet<uint> last = _watchedLast;
+                _watchedLast = _watchedNow;
+                _watchedNow = last;
+                _watchedNow.Clear();
             }
             // 3: everything else on a budgeted rolling pass
             if (!_pass.InProgress && now - _lastRefill >= RollingRefillSeconds)
@@ -232,6 +242,7 @@ namespace SkylineTogether.Sync
         {
             int found = 0;
             NativeArray<ArchetypeChunk> chunks = query.ToArchetypeChunkArray(Allocator.Temp);
+            IdIndexSet structure = _ids.StructureIds; // bound ids of the presence-watched families
             try
             {
                 EntityTypeHandle entityType = em.GetEntityTypeHandle();
@@ -243,7 +254,7 @@ namespace SkylineTogether.Sync
                     for (int i = 0; i < entities.Length; i++)
                     {
                         uint id = _ids.GetNetId(entities[i]);
-                        if (id == 0 || !FamilyClassifier.IsPresenceWatched(_ids.GetFamily(id))) continue;
+                        if (id == 0 || !structure.Contains(id)) continue;
                         seen?.Add(id);
                         if (!_sent.Changed(id, signature))
                         {
@@ -298,13 +309,9 @@ namespace SkylineTogether.Sync
 
         private void RefillPass()
         {
+            // perf pass: the structure index set (bound presence-watched ids) instead of a walk over the whole id table
             _scratchIds.Clear();
-            NativeArray<Entity> table = _ids.ReaderTable;
-            for (int id = 1; id < table.Length; id++)
-            {
-                if (table[id] == Entity.Null) continue;
-                if (FamilyClassifier.IsPresenceWatched(_ids.GetFamily((uint)id))) _scratchIds.Add((uint)id);
-            }
+            _ids.StructureIds.CopyTo(_scratchIds);
             _pass.Refill(_scratchIds);
         }
 
@@ -317,7 +324,7 @@ namespace SkylineTogether.Sync
         public void ClientBeforeApply()
         {
             if (!Attached || !Features.Events.IsAvailable) return;
-            Guard("likes", ReadLikes);
+            Guard("likes", _readLikesCall);
             // chirp queue: emptied by ChirpDrainSystem right before CreateChirpSystem (which stays enabled on clients)
         }
 
@@ -325,26 +332,30 @@ namespace SkylineTogether.Sync
         public void ClientAfterApply(HashSet<Entity> touched)
         {
             if (!Attached || !Features.Events.IsAvailable) return;
-            EntityManager em = _world.EntityManager;
             if (touched != null && touched.Count > 0)
             {
-                Guard("touched events", () =>
-                {
-                    foreach (Entity e in touched)
-                    {
-                        if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                        if (em.HasBuffer<Game.Events.TargetElement>(e)) DropNullTargets(em.GetBuffer<Game.Events.TargetElement>(e));
-                        if (em.HasComponent<Game.Triggers.Chirp>(e)) RestoreLike(em, e);
-                        // a tree's growth stage arrived as values (no tag): its mesh is chosen again, as on the host
-                        if (em.HasComponent<Game.Objects.Tree>(e) && !em.HasComponent<Game.Buildings.Building>(e) && !em.HasComponent<Game.Common.BatchesUpdated>(e)
-                            && !em.HasComponent<Game.Common.Updated>(e) && !em.HasComponent<Game.Common.Created>(e))
-                        {
-                            em.AddComponent<Game.Common.BatchesUpdated>(e);
-                        }
-                    }
-                });
+                _touched = touched;
+                Guard("touched events", _touchedCall);
+                _touched = null;
             }
-            Guard("hotspot frames", () => UpdateHotspots(em));
+            Guard("hotspot frames", _hotspotsCall);
+        }
+
+        private void FixTouched()
+        {
+            EntityManager em = _world.EntityManager;
+            foreach (Entity e in _touched)
+            {
+                if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                if (em.HasBuffer<Game.Events.TargetElement>(e)) DropNullTargets(em.GetBuffer<Game.Events.TargetElement>(e));
+                if (em.HasComponent<Game.Triggers.Chirp>(e)) RestoreLike(em, e);
+                // a tree's growth stage arrived as values (no tag): its mesh is chosen again, as on the host
+                if (em.HasComponent<Game.Objects.Tree>(e) && !em.HasComponent<Game.Buildings.Building>(e) && !em.HasComponent<Game.Common.BatchesUpdated>(e)
+                    && !em.HasComponent<Game.Common.Updated>(e) && !em.HasComponent<Game.Common.Created>(e))
+                {
+                    em.AddComponent<Game.Common.BatchesUpdated>(e);
+                }
+            }
         }
 
         private void ReadLikes()

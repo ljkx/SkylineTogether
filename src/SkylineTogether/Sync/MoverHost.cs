@@ -93,6 +93,7 @@ namespace SkylineTogether.Sync
         private readonly MotionFrame[] _four = new MotionFrame[4];
         private readonly uint[] _fourTicks = new uint[4];
         private readonly List<uint> _scratchIds = new List<uint>();
+        private readonly MoverAgentLinks _linksScratch = new MoverAgentLinks();
         private readonly LinkBudgetConfig _linkConfig = new LinkBudgetConfig();
         private MotionHostEncoder _encoder;
         private World _world;
@@ -448,9 +449,12 @@ namespace SkylineTogether.Sync
         /// w3/agents: the agents a mover refers to (the citizen of a pedestrian, the household pet of an animal, the keeper
         /// and the owner of a vehicle) as net ids; unbound targets are 0 and are sent once they are bound.
         /// </summary>
-        private MoverAgentLinks Links(EntityManager em, Entity e)
+        private MoverAgentLinks Links(EntityManager em, Entity e) => Links(em, e, new MoverAgentLinks());
+
+        /// <summary>Fills <paramref name="links"/> (cleared first) with the mover's agent links; returns it.</summary>
+        private MoverAgentLinks Links(EntityManager em, Entity e, MoverAgentLinks links)
         {
-            var links = new MoverAgentLinks();
+            links.Agent = links.Keeper = links.Owner = 0;
             if (em.HasComponent<Game.Creatures.Resident>(e)) links.Agent = _ids.GetNetId(em.GetComponentData<Game.Creatures.Resident>(e).m_Citizen);
             else if (em.HasComponent<Game.Creatures.Pet>(e)) links.Agent = _ids.GetNetId(em.GetComponentData<Game.Creatures.Pet>(e).m_HouseholdPet);
             if (em.HasComponent<Game.Vehicles.PersonalCar>(e)) links.Keeper = _ids.GetNetId(em.GetComponentData<Game.Vehicles.PersonalCar>(e).m_Keeper);
@@ -464,9 +468,12 @@ namespace SkylineTogether.Sync
             if (known == null) return;
             try
             {
-                MoverAgentLinks links = Links(em, e);
+                // perf pass: read into a scratch instance; a new one is kept only when the links changed (this runs for
+                // every tagged mover and the refresh scan's movers each frame)
+                MoverAgentLinks links = Links(em, e, _linksScratch);
                 if (spawn ? links.IsEmpty : links.SameAs(known.Links)) return;
                 if (!spawn && known.Links == null && links.IsEmpty) return;
+                links = links.Clone();
                 _batch.MoverAgents(id, links);
                 known.Links = links;
             }
