@@ -38,6 +38,13 @@ namespace SkylineTogether.Core.Tests.Protocol
 
         private static float RandomFloat(DeterministicRandom random) => (float)((random.NextDouble() - 0.5) * 1e6);
 
+        private static byte[] Prefix(byte[] data, int length)
+        {
+            var copy = new byte[length];
+            if (length > 0) Array.Copy(data, copy, length);
+            return copy;
+        }
+
         private static NetSlot RandomSlot(DeterministicRandom random, bool allowNone)
         {
             uint value = random.Next(4) == 0 ? (uint)random.Next(1, 200) : random.NextUInt() & NetSlot.MaxValue;
@@ -457,15 +464,13 @@ namespace SkylineTogether.Core.Tests.Protocol
                 Assert.Equal(view.PanelFlags, viewInto.PanelFlags);
                 Assert.Equal(view.PanelTarget, viewInto.PanelTarget);
 
-                var curve = new float[random.Next(PresenceMessage.MaxCurveFloats + 1)];
-                for (int i = 0; i < curve.Length; i++) curve[i] = RandomFloat(random);
-                var footprints = new float[random.Next(PresenceMessage.MaxFootprintFloats + 1)];
-                for (int i = 0; i < footprints.Length; i++) footprints[i] = RandomFloat(random);
+                var preview = new byte[random.Next(PresenceMessage.MaxPreviewBytes + 1)];
+                for (int i = 0; i < preview.Length; i++) preview[i] = (byte)random.Next(256);
                 var presence = new PresenceMessage
                 {
                     From = new PeerId((byte)random.Next(256)), CursorX = RandomFloat(random), CursorY = RandomFloat(random), CursorZ = RandomFloat(random),
                     ToolKind = (byte)random.Next(256), Prefab = new PrefabRank(random.Next(-1, 100000)), Color = random.NextUInt(),
-                    CurveControlPoints = curve, Footprints = footprints, BrushRadius = RandomFloat(random)
+                    Preview = preview, PreviewLength = preview.Length, BrushRadius = RandomFloat(random)
                 };
                 byte[] p = Encode<PresenceMessage>(PresenceMessage.Write, presence);
                 Assert.True(p.Length <= Limits.MaxBodyBytes(MessageKind.Presence));
@@ -475,17 +480,17 @@ namespace SkylineTogether.Core.Tests.Protocol
                 Assert.Equal(presence.ToolKind, pr.ToolKind);
                 Assert.Equal(presence.Prefab, pr.Prefab);
                 Assert.Equal(presence.Color, pr.Color);
-                Assert.SequenceEqual(curve, pr.CurveControlPoints);
-                Assert.SequenceEqual(footprints, pr.Footprints);
+                Assert.Equal(preview.Length, pr.PreviewLength);
+                Assert.SequenceEqual(preview, Prefix(pr.Preview, pr.PreviewLength));
                 Assert.Equal(presence.BrushRadius, pr.BrushRadius);
+                Assert.True(p.Length + 2 <= Limits.MaxDatagramBytes, "a presence message is one datagram even uncompressed");
 
-                // ReadInto reuses arrays of the received length and replaces the others
-                var presenceInto = new PresenceMessage { CurveControlPoints = new float[curve.Length], Footprints = new float[footprints.Length + 1] };
-                float[] reusedCurve = presenceInto.CurveControlPoints;
+                // ReadInto reuses a preview array that is large enough
+                var presenceInto = new PresenceMessage { Preview = new byte[PresenceMessage.MaxPreviewBytes] };
+                byte[] reused = presenceInto.Preview;
                 PresenceMessage.ReadInto(Reader(p), presenceInto);
-                if (curve.Length > 0) Assert.Same(reusedCurve, presenceInto.CurveControlPoints, "an array of the right length is reused");
-                Assert.SequenceEqual(curve, presenceInto.CurveControlPoints);
-                Assert.SequenceEqual(footprints, presenceInto.Footprints);
+                Assert.Same(reused, presenceInto.Preview, "a large enough array is reused");
+                Assert.SequenceEqual(preview, Prefix(presenceInto.Preview, presenceInto.PreviewLength));
                 Assert.Equal(presence.From, presenceInto.From);
                 Assert.Equal(presence.CursorX, presenceInto.CursorX);
                 Assert.Equal(presence.CursorZ, presenceInto.CursorZ);
@@ -550,9 +555,10 @@ namespace SkylineTogether.Core.Tests.Protocol
             view[3] = 0x7F;                                                         // NaN in PivotX
             Assert.Throws<DecodeException>(() => ViewReport.Decode(view, 0, view.Length));
 
-            byte[] presence = Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { CurveControlPoints = new[] { float.NaN, 1f } });
+            byte[] presence = Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { CursorX = float.NaN, BrushRadius = 1f });
             PresenceMessage p = PresenceMessage.Decode(presence, 0, presence.Length);
-            Assert.SequenceEqual(new[] { 0f, 1f }, p.CurveControlPoints);
+            Assert.Equal(0f, p.CursorX);
+            Assert.Equal(1f, p.BrushRadius);
 
             byte[] clock = Encode<ClockSample>(ClockSample.Write, new ClockSample { HostTimeSeconds = double.NaN });
             Assert.Equal(0.0, ClockSample.Decode(clock, 0, clock.Length).HostTimeSeconds);
@@ -567,20 +573,19 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void PresenceAndViewLimitsAreEnforced()
         {
-            Assert.Throws<ArgumentException>(() => Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { CurveControlPoints = new float[PresenceMessage.MaxCurveFloats + 1] }));
-            Assert.Throws<ArgumentException>(() => Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { Footprints = new float[PresenceMessage.MaxFootprintFloats + 1] }));
+            Assert.Throws<ArgumentException>(() => Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { Preview = new byte[PresenceMessage.MaxPreviewBytes + 1], PreviewLength = PresenceMessage.MaxPreviewBytes + 1 }));
+            Assert.Throws<ArgumentException>(() => Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { Preview = new byte[4], PreviewLength = 5 }));
 
-            // 193 curve floats declared
+            // 1101 preview bytes declared
             var w = new ByteWriter();
             w.WriteByte(0);
             for (int i = 0; i < 3; i++) w.WriteSingle(0);
             w.WriteByte(0);
             w.WriteVarUInt32(0);
             w.WriteUInt32(0);
-            w.WriteVarUInt32(PresenceMessage.MaxCurveFloats + 1);
-            for (int i = 0; i <= PresenceMessage.MaxCurveFloats; i++) w.WriteSingle(0);
-            w.WriteVarUInt32(0);
             w.WriteSingle(0);
+            w.WriteVarUInt32(PresenceMessage.MaxPreviewBytes + 1);
+            for (int i = 0; i <= PresenceMessage.MaxPreviewBytes; i++) w.WriteByte(0);
             byte[] hostile = w.ToArray();
             Assert.Throws<DecodeException>(() => PresenceMessage.Decode(hostile, 0, hostile.Length));
 

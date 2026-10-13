@@ -69,6 +69,22 @@ if ($CollectLogs) {
             Get-ChildItem -Path $_.FullName -Filter 'verdict*' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dst -Force
         }
     }
+    # Unity crash reports (error.log + crash.dmp) of the last two crashes
+    $crashRoots = @(
+        (Join-Path $env:TEMP 'Colossal Order\Cities Skylines II\Crashes'),
+        (Join-Path $env:LOCALAPPDATA 'Temp\Colossal Order\Cities Skylines II\Crashes'),
+        (Join-Path $UserData 'Crashes')
+    ) | Select-Object -Unique
+    foreach ($root in $crashRoots) {
+        if (-not (Test-Path $root)) { continue }
+        Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 2 | ForEach-Object {
+            $dst = Join-Path $stage ('crash-' + $_.Name)
+            New-Item -ItemType Directory -Force -Path $dst | Out-Null
+            Get-ChildItem -Path $_.FullName -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Extension -in '.log', '.dmp', '.txt', '.json' -and $_.Length -lt 200MB } |
+                ForEach-Object { Copy-Item $_.FullName -Destination $dst -Force; $count++ }
+        }
+    }
     if ($count -eq 0) {
         Write-Bad "No logs found in $LogsDir. Start the game with the mod once, then try again."
         Finish 1

@@ -8,6 +8,8 @@ using Game.Prefabs;
 using Game.Rendering;
 using Game.Tools;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Buffers;
+using SkylineTogether.Core.Hashing;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Session;
 using Unity.Collections;
@@ -26,6 +28,13 @@ namespace SkylineTogether.Presence
     /// the player's colour with <see cref="OverlayRenderSystem.GetBuffer"/> (never ECS <c>Temp</c> entities, which
     /// belong to the local tool). Name tags are projected to the screen and handed to the UI. Runs in the Rendering
     /// phase right before <see cref="OverlayRenderSystem"/>.
+    /// <para>
+    /// blueprint branch: with every send it also captures the local tool's live preview (<see cref="ToolPreviewCapture"/>,
+    /// read from the game's own <c>Temp</c> output, never written) and sends it as a whole (a keyframe) in the same
+    /// message, so a change goes out at once and a lost message heals with the next one; the remote previews are eased
+    /// between keyframes (<see cref="ToolPreviewSmoother"/>) and drawn as overlay outlines in the player's colour
+    /// (<see cref="ToolPreviewRenderer"/>), unless the player turned "Show other players' building previews" off.
+    /// </para>
     /// </summary>
     public sealed class PresenceSystem : GameSystemBase
     {
@@ -40,7 +49,15 @@ namespace SkylineTogether.Presence
 
         /// <summary>polish: the activity text per peer for its last tool and prefab (no string building per frame).</summary>
         private readonly Dictionary<byte, (byte Tool, int Prefab, string Text)> _activity = new Dictionary<byte, (byte, int, string)>();
-        private readonly PresenceMessage _outgoing = new PresenceMessage { CurveControlPoints = new float[0], Footprints = new float[0] };
+        private readonly PresenceMessage _outgoing = new PresenceMessage();
+
+        /// <summary>blueprint branch: the local tool preview, its encoded bytes (reused every send) and the reader of the game's tool output.</summary>
+        private readonly ToolPreview _preview = new ToolPreview();
+        private readonly ByteWriter _previewBytes = new ByteWriter(PresenceMessage.MaxPreviewBytes + 64);
+        private ToolPreviewCapture _capture;
+
+        /// <summary>blueprint branch: a remote preview not refreshed for this long (lost keepalives) is no longer drawn.</summary>
+        private const double PreviewStaleSeconds = 2.5;
         private OverlayRenderSystem _overlay;
         private RaycastSystem _raycast;
         private CameraUpdateSystem _camera;
@@ -57,6 +74,22 @@ namespace SkylineTogether.Presence
             _camera = World.GetOrCreateSystemManaged<CameraUpdateSystem>();
             _tools = World.GetOrCreateSystemManaged<ToolSystem>();
             _ranks = new PrefabRankIndex(Mod.Log);
+            try
+            {
+                _capture = new ToolPreviewCapture(EntityManager);
+            }
+            catch (Exception ex)
+            {
+                _capture = null; // previews of the local tool stay off; remote ones are still drawn
+                Diagnostics.Guard.Report(Diagnostics.Features.Previews, "creating the tool preview queries", ex);
+            }
+        }
+
+        protected override void OnDestroy()
+        {
+            _capture?.Dispose();
+            _capture = null;
+            base.OnDestroy();
         }
 
         protected override void OnUpdate()
@@ -145,7 +178,13 @@ namespace SkylineTogether.Presence
             int rank = kind == PresenceTool.Select || kind == PresenceTool.None ? -1 : _ranks.RankOf(World, prefab);
             byte toolByte = PresenceToolKind.Pack(kind, hit);
             if (!hit) position = default;
-            if (!presence.Throttle.ShouldSend(presence.Now, position.x, position.y, position.z, toolByte, rank, brush)) return;
+            if (!presence.Throttle.Due(presence.Now)) return; // the preview below is gathered at the send rate only
+            int previewLength = CapturePreview(presence, kind);
+            ulong previewHash = previewLength > 0 ? XxHash64.Hash(_previewBytes.Buffer, 0, previewLength) | 1UL : 0UL;
+            if (!presence.Throttle.ShouldSend(presence.Now, position.x, position.y, position.z, toolByte, rank, brush, previewHash)) return;
+            _outgoing.Preview = _previewBytes.Buffer;
+            _outgoing.PreviewLength = previewLength;
+            presence.LastPreviewBytes = previewLength;
             _outgoing.CursorX = position.x;
             _outgoing.CursorY = position.y;
             _outgoing.CursorZ = position.z;
@@ -154,6 +193,37 @@ namespace SkylineTogether.Presence
             _outgoing.Color = PresenceController.ColorOf(presence.LocalPeer);
             _outgoing.BrushRadius = brush;
             presence.Send(_outgoing);
+        }
+
+        /// <summary>
+        /// blueprint branch: captures and encodes the local tool's preview into <see cref="_previewBytes"/>; returns its
+        /// length (0: none — no building tool, a viewer, the feature off, or nothing in progress). Never throws.
+        /// </summary>
+        private int CapturePreview(PresenceController presence, PresenceTool kind)
+        {
+            _previewBytes.Reset();
+            _preview.Clear();
+            if (_capture == null || kind == PresenceTool.None || kind == PresenceTool.Select) return Captured(presence, 0);
+            if (!Diagnostics.Features.Previews.IsAvailable || !presence.MaySendPreview) return Captured(presence, 0);
+            try
+            {
+                _capture.Capture(_preview);
+                return Captured(presence, ToolPreviewCodec.Encode(_preview, _previewBytes));
+            }
+            catch (Exception ex)
+            {
+                _previewBytes.Reset();
+                _preview.Clear();
+                Diagnostics.Guard.Report(Diagnostics.Features.Previews, "capturing the tool preview", ex);
+                return Captured(presence, 0);
+            }
+        }
+
+        private int Captured(PresenceController presence, int length)
+        {
+            presence.LastPreviewShapes = length > 0 ? _preview.Count : 0;
+            presence.LastPreviewTruncated = length > 0 && (_preview.Truncated || ToolPreviewCodec.Truncated(_previewBytes.Buffer, 0, length));
+            return length;
         }
 
         private static PresenceTool ToolKindOf(ToolBaseSystem tool)
@@ -192,6 +262,7 @@ namespace SkylineTogether.Presence
             tags.Clear();
             OverlayRenderSystem.Buffer buffer = default;
             bool haveBuffer = false;
+            bool showPreviews = Diagnostics.Features.Previews.IsAvailable && (Mod.Settings == null || Mod.Settings.ShowBuildingPreviews);
             foreach (PresenceTable.Entry e in entries)
             {
                 string name = presence.NameOf(e.Peer);
@@ -204,6 +275,24 @@ namespace SkylineTogether.Presence
                     Activity = CachedActivity(e),
                 };
                 tags.Add(tag);
+                if (showPreviews && now - e.ReceivedAt <= PreviewStaleSeconds)
+                {
+                    ToolPreviewSmoother.Step(e.ShownPreview, e.Preview, blend);
+                    if (camera != null && !e.ShownPreview.IsEmpty)
+                    {
+                        if (!haveBuffer)
+                        {
+                            buffer = _overlay.GetBuffer(out JobHandle previewWriters);
+                            previewWriters.Complete();
+                            haveBuffer = true;
+                        }
+                        DrawPreview(buffer, e.ShownPreview, rgba, camera);
+                    }
+                }
+                else if (!e.ShownPreview.IsEmpty)
+                {
+                    e.ShownPreview.Clear();
+                }
                 if (!e.CursorVisible)
                 {
                     _shown.Remove(e.Peer.Value);
@@ -243,6 +332,21 @@ namespace SkylineTogether.Presence
             }
             if (_shown.Count > entries.Count) PruneShown(entries);
             presence.SetTags(tags);
+        }
+
+        /// <summary>blueprint branch: one remote preview; a failure turns the previews off, never the cursors.</summary>
+        private static void DrawPreview(OverlayRenderSystem.Buffer buffer, ToolPreview preview, uint rgba, Camera camera)
+        {
+            try
+            {
+                PreviewPoint anchor = preview.PointAt(0, 0);
+                float distance = math.distance((float3)camera.transform.position, new float3(anchor.X, anchor.Y, anchor.Z));
+                ToolPreviewRenderer.Draw(buffer, preview, ToColor(rgba, 1f), distance);
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Guard.Report(Diagnostics.Features.Previews, "drawing a building preview", ex);
+            }
         }
 
         private string CachedActivity(PresenceTable.Entry e)

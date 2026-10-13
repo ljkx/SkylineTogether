@@ -187,6 +187,8 @@ namespace SkylineTogether.Diagnostics
             // w4/flow: the flow-status channel reads and writes the flow graph's components by type
             ProbeTypeNames("P-FLOW", Features.FlowStatus, FlowStatusSync.TypeNames, systems: false);
             ProbeTypeNames("P-FLOW", Features.FlowStatus, FlowStatusSync.FlowSystemNames, systems: true);
+            ProbeTypeNames("P-PREVIEW", Features.Previews, Presence.ToolPreviewCapture.TypeNames, systems: false); // blueprint branch
+            Safe("P-PREVIEW-CODEC", Features.Previews, "tool preview encode/decode round trip", ProbePreviewCodec);
             ProbeSteam();
             if (world) ProbeWorld();
             if (_uiResult != null)
@@ -333,6 +335,22 @@ namespace SkylineTogether.Diagnostics
         {
             FieldInfo f = type?.GetField(name, Private);
             return f != null && f.FieldType == typeof(JobHandle) ? f : null;
+        }
+
+        /// <summary>blueprint branch: the preview wire format works in this runtime (a curve and a zone block survive a round trip).</summary>
+        private static string ProbePreviewCodec()
+        {
+            var preview = new Core.Session.ToolPreview();
+            var a = new Core.Session.PreviewPoint(100f, 50f, -200f);
+            var b = new Core.Session.PreviewPoint(140f, 52f, -180f);
+            preview.AddCurve(Core.Session.ToolPreviewFlags.None, a, a, b, b, 12f);
+            preview.AddZoneBlock(Core.Session.ToolPreviewFlags.None, b, 1f, 10, 6, 0x0F0F0FUL);
+            var w = new Core.Buffers.ByteWriter(256);
+            int length = Core.Session.ToolPreviewCodec.Encode(preview, w);
+            var back = new Core.Session.ToolPreview();
+            if (length <= 0 || !Core.Session.ToolPreviewCodec.Decode(w.Buffer, 0, length, back)) return "encoding failed";
+            if (back.Count != 2 || back.BitsAt(1) != 0x0F0F0FUL || Math.Abs(back.Data[back.StartOf(0) + 12] - 12f) > 0.1f) return "round trip differs";
+            return null;
         }
 
         /// <summary>Types the mod finds by name: each missing one is a warning (the feature runs without it).</summary>

@@ -46,6 +46,17 @@ namespace SkylineTogether.Presence
         /// <summary>True while presence flows: hosting, or a live client.</summary>
         public bool Active => _sessions.Host != null || (_sessions.Client != null && _sessions.Client.State == ClientState.Live);
 
+        /// <summary>blueprint branch: false for a viewer (they build nothing, so they send no tool preview).</summary>
+        public bool MaySendPreview => _sessions.Client == null || RolePermissions.Predicts(_sessions.Client.LocalRole);
+
+        /// <summary>blueprint branch: bytes of the last preview sent (diagnostics).</summary>
+        public int LastPreviewBytes { get; set; }
+
+        /// <summary>blueprint branch: shapes of the last preview captured, and whether it did not fit (diagnostics).</summary>
+        public int LastPreviewShapes { get; set; }
+
+        public bool LastPreviewTruncated { get; set; }
+
         /// <summary>The local player's peer id (host: 0).</summary>
         public PeerId LocalPeer => _sessions.Client != null ? _sessions.Client.LocalPeer : PeerId.Host;
 
