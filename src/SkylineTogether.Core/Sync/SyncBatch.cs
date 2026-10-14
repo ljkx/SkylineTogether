@@ -264,6 +264,48 @@ namespace SkylineTogether.Core.Sync
         /// <summary><see cref="SyncRecordKind.ReplayCheckpoint"/>: begin or end (the checkpoint number is <see cref="Seq"/>).</summary>
         public ReplayCheckpointPhase CheckpointPhase;
 
+        /// <summary>Back to a freshly constructed record (the component list keeps its capacity; <see cref="SyncRecordPool"/>).</summary>
+        internal void Reset()
+        {
+            Kind = default;
+            NetId = 0;
+            Family = default;
+            CompleteSet = false;
+            Components.Clear();
+            PrefabName = null;
+            PrefabData = null;
+            Block = default;
+            ZoneIds = null;
+            RangeStart = 0;
+            RangeCount = 0;
+            Amount = 0;
+            Frame = 0;
+            Request = default;
+            Channel = 0;
+            Payload = null;
+            Bucket = 0;
+            Count = 0;
+            Count2 = 0;
+            Hash = 0;
+            Hashes = null;
+            Ids = null;
+            ComponentHashes = null;
+            Owner = default;
+            Icons = null;
+            IconMode = default;
+            Mover = null;
+            AgentLinks = null;
+            EnabledBits = null;
+            Settings = null;
+            Source = null;
+            EpochNumber = 0;
+            Seq = 0;
+            BaseEpoch = 0;
+            ProposalFlags = default;
+            Reason = default;
+            CheckpointPhase = default;
+        }
+
         public override string ToString() => Kind + " #" + NetId + (Components.Count > 0 ? " (" + Components.Count + " components)" : "");
     }
 
@@ -778,17 +820,37 @@ namespace SkylineTogether.Core.Sync
         /// Decodes a batch. Component data segments point into <paramref name="buffer"/>, which must stay unchanged while
         /// the records are used. Throws <see cref="DecodeException"/> for malformed input.
         /// </summary>
-        public static List<SyncRecord> Read(byte[] buffer, int offset, int count)
+        public static List<SyncRecord> Read(byte[] buffer, int offset, int count) => Read(buffer, offset, count, null);
+
+        /// <summary>
+        /// As <see cref="Read(byte[], int, int)"/>, decoding into <paramref name="pool"/>'s reusable records (null: fresh
+        /// objects). The returned list and its records belong to the pool and are valid until its next decode.
+        /// </summary>
+        public static List<SyncRecord> Read(byte[] buffer, int offset, int count, SyncRecordPool pool)
         {
-            var r = new ByteReader(buffer, offset, count);
+            ByteReader r;
+            if (pool != null)
+            {
+                r = pool.Reader;
+                r.Reset(buffer, offset, count);
+            }
+            else
+            {
+                r = new ByteReader(buffer, offset, count);
+            }
             try
             {
                 byte version = r.ReadByte();
                 if (version != Version) throw new DecodeException("sync batch version " + version + " (expected " + Version + ")");
                 uint n = r.ReadUInt32();
                 if (n > MaxRecords) throw new DecodeException("sync batch with " + n + " records");
-                var list = new List<SyncRecord>((int)Math.Min(n, 4096));
-                for (uint i = 0; i < n; i++) list.Add(ReadRecord(r, buffer, offset));
+                List<SyncRecord> list = pool != null ? pool.Begin() : new List<SyncRecord>((int)Math.Min(n, 4096));
+                for (uint i = 0; i < n; i++)
+                {
+                    SyncRecord rec = pool != null ? pool.Take() : new SyncRecord();
+                    if (pool == null) list.Add(rec);
+                    ReadRecord(r, buffer, offset, rec);
+                }
                 if (!r.IsAtEnd) throw new DecodeException("sync batch has " + r.Remaining + " trailing bytes");
                 return list;
             }
@@ -821,9 +883,9 @@ namespace SkylineTogether.Core.Sync
             return n;
         }
 
-        private static SyncRecord ReadRecord(ByteReader r, byte[] buffer, int baseOffset)
+        private static SyncRecord ReadRecord(ByteReader r, byte[] buffer, int baseOffset, SyncRecord rec)
         {
-            var rec = new SyncRecord { Kind = (SyncRecordKind)r.ReadByte() };
+            rec.Kind = (SyncRecordKind)r.ReadByte();
             switch (rec.Kind)
             {
                 case SyncRecordKind.Spawn:
@@ -835,6 +897,8 @@ namespace SkylineTogether.Core.Sync
                     rec.CompleteSet = r.ReadBool();
                     int components = r.ReadUInt16();
                     if (components > MaxComponents) throw new DecodeException("record with " + components + " components");
+                    // one sized allocation instead of the list's doubling (each component needs at least 9 bytes)
+                    if (rec.Components.Capacity < components && components <= r.Remaining / 9 + 1) rec.Components.Capacity = components;
                     for (int c = 0; c < components; c++)
                     {
                         var comp = new SyncComponent { TypeHash = r.ReadUInt64(), Kind = (SyncComponentKind)r.ReadByte(), Data = buffer };

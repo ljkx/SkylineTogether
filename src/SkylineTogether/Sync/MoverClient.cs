@@ -41,6 +41,7 @@ namespace SkylineTogether.Sync
     {
         private const double ReportInterval = 0.1;
         private const int MaxBatchesPerFrame = 64;
+        private readonly SyncRecordPool _decodePool = new SyncRecordPool(); // decoded mover records, reused per batch
         private const TransformFlags LightMask = TransformFlags.MainLights | TransformFlags.ExtraLights | TransformFlags.WarningLights | TransformFlags.WorkLights;
 
         /// <summary>Modification systems that would create or move agents on a follower (R15 §4.6, ARCHITECTURE.md#gated-systems).</summary>
@@ -263,7 +264,7 @@ namespace SkylineTogether.Sync
                 (byte[] data, long seq) = _batches.Dequeue();
                 try
                 {
-                    ApplyBatch(em, SyncBatch.Read(data, 0, data.Length));
+                    ApplyBatch(em, SyncBatch.Read(data, 0, data.Length, _decodePool));
                 }
                 catch (DecodeException ex)
                 {

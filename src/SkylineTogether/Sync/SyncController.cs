@@ -110,6 +110,8 @@ namespace SkylineTogether.Sync
         // host: failures applying one peer's proposals (rate-limited log; the peer is removed when they keep failing)
         private readonly Dictionary<byte, FeatureHealth> _proposalHealth = new Dictionary<byte, FeatureHealth>();
         private readonly Dictionary<uint, ulong> _shadow = new Dictionary<uint, ulong>();
+        /// <summary>The decoded records of the batch being applied (reused; valid until the next batch is decoded).</summary>
+        private readonly SyncRecordPool _decodePool = new SyncRecordPool();
         private readonly HashSet<Entity> _appliedThisFrame = new HashSet<Entity>();
         private readonly HashSet<Entity> _toolOriginals = new HashSet<Entity>();
         private readonly List<PendingZone> _pendingZones = new List<PendingZone>();

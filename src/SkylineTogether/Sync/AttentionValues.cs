@@ -727,11 +727,12 @@ namespace SkylineTogether.Sync
         }
 
         private readonly ApplyResult _applyResult = new ApplyResult();
+        private readonly SyncRecordPool _decodePool = new SyncRecordPool(); // decoded values, reused per message
 
         /// <summary>Writes one message; returns the sample's selected net id (0 for a values message).</summary>
         private uint Apply(byte[] data, out bool isSample)
         {
-            List<SyncRecord> records = SimValueMessage.Read(data, 0, data.Length, out byte type, out _, out uint selected);
+            List<SyncRecord> records = SimValueMessage.Read(data, 0, data.Length, _decodePool, out byte type, out _, out uint selected);
             isSample = type == SimValueMessage.TypeSample;
             ApplyResult result = _applyResult; // reused (was a result with four collections per message)
             result.Reset();

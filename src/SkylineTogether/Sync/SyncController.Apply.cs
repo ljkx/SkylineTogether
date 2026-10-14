@@ -311,7 +311,7 @@ namespace SkylineTogether.Sync
 
         private void ApplyFromHost(byte[] data)
         {
-            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length); // decoded once for every consumer
+            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length, _decodePool); // decoded once for every consumer (pooled records)
             // ids this player deleted locally wait for the host's despawn; a rejected proposal releases its ids
             // (the rollback in the same message recreates them)
             if (_localDeletes.Count > 0) UpdateLocalDeletes(records);
@@ -417,7 +417,7 @@ namespace SkylineTogether.Sync
 
         private void ApplyProposal(PeerId peer, byte[] data)
         {
-            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length);
+            List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length, _decodePool);
             // gameplay branch: validation (ARCHITECTURE.md#host-validation-and-commit); a refused proposal is rolled back on its originator by a resend
             ProposalFacts facts = Facts(records, out uint seq, out uint baseEpoch);
             bool isGlobal = SyncBatch.FirstRecordKind(data, 0, data.Length) == (byte)SyncRecordKind.Global;

@@ -183,6 +183,7 @@ namespace SkylineTogether.Sync
         /// R10 §0.4), so they run in <see cref="RunLate"/> at the end-of-frame capture.
         /// </summary>
         private readonly List<Action> _late = new List<Action>();
+        private readonly SyncRecordPool _decodePool = new SyncRecordPool(); // decoded global records, reused per batch
 
         private void RunLate()
         {
@@ -617,7 +618,7 @@ namespace SkylineTogether.Sync
             // are recognised by their first record kind (offset 5: after the version byte and the record count) and
             // not decoded a further time
             if (data == null || SyncBatch.FirstRecordKind(data, 0, data.Length) != (byte)SyncRecordKind.Global) return;
-            foreach (SyncRecord r in SyncBatch.Read(data, 0, data.Length))
+            foreach (SyncRecord r in SyncBatch.Read(data, 0, data.Length, _decodePool))
             {
                 if (r.Kind != SyncRecordKind.Global || r.Payload == null) continue;
                 try

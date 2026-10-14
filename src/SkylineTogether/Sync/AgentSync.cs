@@ -178,6 +178,7 @@ namespace SkylineTogether.Sync
         private readonly List<uint> _due = new List<uint>();
         private readonly ByteWriter _request = new ByteWriter(256);
         private readonly ApplyResult _result = new ApplyResult();
+        private readonly SyncRecordPool _decodePool = new SyncRecordPool(); // decoded values, reused per message
         private ComponentSystemBase _reroll;
         private bool _rerollWasEnabled, _rerollGated;
         private long _valuesApplied, _messagesApplied, _orphans;
@@ -969,7 +970,7 @@ namespace SkylineTogether.Sync
                     byte[] data = _inbox.Dequeue();
                     try
                     {
-                        List<SyncRecord> records = SimValueMessage.Read(data, 0, data.Length, out _, out _, out _);
+                        List<SyncRecord> records = SimValueMessage.Read(data, 0, data.Length, _decodePool, out _, out _, out _);
                         _result.Reset();
                         _unresolved.Clear();
                         List<Entity> written = _codec.ApplyAgentValues(data, 0, data.Length, records, _result, _unresolved);

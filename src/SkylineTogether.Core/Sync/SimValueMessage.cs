@@ -138,8 +138,24 @@ namespace SkylineTogether.Core.Sync
         }
 
         public static List<SyncRecord> Read(byte[] buffer, int offset, int count, out byte type, out uint sampleTick, out uint selectedNetId)
+            => Read(buffer, offset, count, null, out type, out sampleTick, out selectedNetId);
+
+        /// <summary>
+        /// As <see cref="Read(byte[], int, int, out byte, out uint, out uint)"/>, decoding into <paramref name="pool"/>'s
+        /// reusable records (null: fresh objects); the result is valid until the pool's next decode.
+        /// </summary>
+        public static List<SyncRecord> Read(byte[] buffer, int offset, int count, SyncRecordPool pool, out byte type, out uint sampleTick, out uint selectedNetId)
         {
-            var r = new ByteReader(buffer, offset, count);
+            ByteReader r;
+            if (pool != null)
+            {
+                r = pool.Reader;
+                r.Reset(buffer, offset, count);
+            }
+            else
+            {
+                r = new ByteReader(buffer, offset, count);
+            }
             type = 0;
             sampleTick = 0;
             selectedNetId = 0;
@@ -160,12 +176,16 @@ namespace SkylineTogether.Core.Sync
                 uint n = r.ReadUInt32();
                 // every entity needs at least 4 bytes (id, family, component count)
                 if (n > MaxEntities || n > (uint)(r.Remaining / 4)) throw new DecodeException(What + " with " + n + " entities");
-                var list = new List<SyncRecord>((int)n);
+                List<SyncRecord> list = pool != null ? pool.Begin() : new List<SyncRecord>((int)n);
                 for (uint i = 0; i < n; i++)
                 {
-                    var rec = new SyncRecord { Kind = SyncRecordKind.Values, NetId = r.ReadVarUInt32(), Family = (Family)r.ReadByte() };
+                    SyncRecord rec = pool != null ? pool.Take() : new SyncRecord();
+                    rec.Kind = SyncRecordKind.Values;
+                    rec.NetId = r.ReadVarUInt32();
+                    rec.Family = (Family)r.ReadByte();
                     int components = r.ReadUInt16();
                     if (components > MaxComponents) throw new DecodeException(What + ": entity with " + components + " components");
+                    if (rec.Components.Capacity < components && components <= r.Remaining / 9 + 1) rec.Components.Capacity = components;
                     for (int c = 0; c < components; c++)
                     {
                         var comp = new SyncComponent { TypeHash = r.ReadUInt64(), Kind = (SyncComponentKind)r.ReadByte(), Data = buffer };
@@ -180,7 +200,7 @@ namespace SkylineTogether.Core.Sync
                         r.Skip((int)length);
                         rec.Components.Add(comp);
                     }
-                    list.Add(rec);
+                    if (pool == null) list.Add(rec);
                 }
                 if (!r.IsAtEnd) throw new DecodeException(What + " has " + r.Remaining + " trailing bytes");
                 return list;
