@@ -239,6 +239,8 @@
   "st.options.RequireSameMods.desc": "Refuse players whose code mods differ from yours. They get a list of what to enable or disable. Turning this off can make the city look or behave differently for them.",
   "st.options.FriendsOnly.label": "Friends and invited only",
   "st.options.FriendsOnly.desc": "Only your Steam friends and players you invite from the Skyline Together panel can join through Steam. Others are told they are not invited.",
+  "st.options.EnforcePlacementChecks.label": "Enforce build checks on other players",
+  "st.options.EnforcePlacementChecks.desc": "Undo other players' builds that a normal game could not make: locked buildings, unbought map tiles, impossible shapes. Off: such builds are kept and only written to the log, so a check that misjudges a legitimate build never undoes it.",
   "st.options.AllowDirectConnections.label": "Allow direct IP connections",
   "st.options.AllowDirectConnections.desc": "Also accept connections on a UDP port (needs port forwarding). Steam does not check these players, so a host password is required; without one the port stays closed. Steam connections always work without it.",
   "st.options.DirectPort.label": "Direct connection port",

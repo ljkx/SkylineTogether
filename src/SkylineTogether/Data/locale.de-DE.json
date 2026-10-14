@@ -239,6 +239,8 @@
   "st.options.RequireSameMods.desc": "Spieler mit anderen Code-Mods werden abgewiesen und bekommen eine Liste, was sie aktivieren oder deaktivieren müssen. Ist das aus, kann die Stadt bei ihnen anders aussehen oder sich anders verhalten.",
   "st.options.FriendsOnly.label": "Nur Freunde und Eingeladene",
   "st.options.FriendsOnly.desc": "Über Steam können nur deine Steam-Freunde und Spieler beitreten, die du über das Skyline-Together-Panel einlädst. Andere erfahren, dass sie nicht eingeladen sind.",
+  "st.options.EnforcePlacementChecks.label": "Bauprüfungen für andere Spieler durchsetzen",
+  "st.options.EnforcePlacementChecks.desc": "Macht Bauten anderer Spieler rückgängig, die im normalen Spiel nicht möglich wären: gesperrte Gebäude, nicht gekaufte Kartenfelder, unmögliche Formen. Aus: Solche Bauten bleiben bestehen und werden nur im Log vermerkt, damit eine Prüfung, die sich irrt, nie einen legitimen Bau rückgängig macht.",
   "st.options.AllowDirectConnections.label": "Direkte IP-Verbindungen erlauben",
   "st.options.AllowDirectConnections.desc": "Zusätzlich Verbindungen über einen UDP-Port annehmen (braucht Portweiterleitung). Steam prüft diese Spieler nicht, daher ist ein Host-Passwort Pflicht; ohne Passwort bleibt der Port geschlossen. Steam-Verbindungen funktionieren auch ohne.",
   "st.options.DirectPort.label": "Port für direkte Verbindungen",

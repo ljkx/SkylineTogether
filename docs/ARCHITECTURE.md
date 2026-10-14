@@ -650,6 +650,11 @@ Two counters must not be confused: **ledger epochs** number the host's structura
 
 #### Placement checks
 
+**Enforcement is off by default** (host option *Enforce build checks on other players*, `EnforcePlacementChecks`): until
+the rules are confirmed in real sessions, a failed placement check is only logged (`placement check would refuse …; kept,
+enforcement is off`, at most 200 lines per session, then counted) and the build is kept. With the option on, a failure
+refuses the proposal as described below. Header, base-epoch, host-only and cost checks are always enforced.
+
 The host applies proposals with the codec, not through the game's tool pipeline, so the game's own validation
 (`Game.Tools.ValidationSystem`, which only judges `Temp` entities of the local tool) never sees them; re-running it would
 mean recreating the proposal as `Temp` entities next to the host player's own tool. Instead the host reads each spawn

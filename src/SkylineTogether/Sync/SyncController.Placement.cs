@@ -36,6 +36,7 @@ namespace SkylineTogether.Sync
         {
             _tilesCached = -1;
             _unownedCached = -1;
+            _unenforcedLogged = 0;
             _placement.Tiles.Clear();
             var by = new List<string>();
             try
@@ -52,7 +53,7 @@ namespace SkylineTogether.Sync
                 return;
             }
             PlacementChecks active = PlacementChecks.All & ~_relaxedChecks;
-            _log.Info(LogCategory.Replication, "placement checks of client proposals: " + active + (by.Count > 0 ? " (relaxed by " + string.Join(", ", by) + ")" : "")
+            _log.Info(LogCategory.Replication, "placement checks of client proposals: " + active + (EnforcePlacement ? ", enforced" : ", logged only (not enforced)") + (by.Count > 0 ? " (relaxed by " + string.Join(", ", by) + ")" : "")
                                                + (_directToolsPossible ? "; direct-write mod tools skip them" : "; no code mods, so no client tool may write directly"));
         }
 
@@ -106,6 +107,11 @@ namespace SkylineTogether.Sync
                 FillCandidate(em, r, created, existing, shape, shapes, unlocks);
                 RejectReason reason = PlacementValidator.Check(_candidate, _placement, out string detail);
                 if (reason == RejectReason.None) continue;
+                if (!EnforcePlacement)
+                {
+                    LogUnenforced(peer, "#" + r.NetId, reason, detail);
+                    continue;
+                }
                 Perf.Counters.Count("proposals refused by placement checks");
                 _log.Info(LogCategory.Replication, peer + ": placement check refused #" + r.NetId + " (" + reason + "): " + detail);
                 return reason;
@@ -113,9 +119,31 @@ namespace SkylineTogether.Sync
             if ((checks & PlacementChecks.Unlocks) != 0)
             {
                 RejectReason zones = CheckZoneUnlocks(peer, em, records);
-                if (zones != RejectReason.None) return zones;
+                if (zones != RejectReason.None)
+                {
+                    if (EnforcePlacement) return zones;
+                    LogUnenforced(peer, "zone cells", zones, "locked zone type");
+                }
             }
             return RejectReason.None;
+        }
+
+        /// <summary>
+        /// The host's "enforce build checks" option. Off (the default until the checks are confirmed in real sessions): a
+        /// failed check is only logged, so a rule that misjudges legitimate play never undoes a player's build.
+        /// </summary>
+        private static bool EnforcePlacement => Mod.Settings != null && Mod.Settings.EnforcePlacementChecks;
+
+        private int _unenforcedLogged;
+
+        private void LogUnenforced(PeerId peer, string what, RejectReason reason, string detail)
+        {
+            Perf.Counters.Count("placement checks failed (not enforced)");
+            // rate-limited: a misjudging rule fires on every build
+            if (_unenforcedLogged >= 200) return;
+            _unenforcedLogged++;
+            _log.Info(LogCategory.Replication, peer + ": placement check would refuse " + what + " (" + reason + "): " + detail + "; kept, enforcement is off"
+                                               + (_unenforcedLogged == 200 ? " (further failures are only counted)" : ""));
         }
 
         private static CandidateShape ShapeOf(Family family)
