@@ -400,6 +400,9 @@ namespace SkylineTogether.Diagnostics
                 callback.Dispose();
                 return null;
             });
+            // lanes for reliable bulk next to control (ARCHITECTURE.md#steam-networking-sockets); without them every message
+            // shares one lane, as before
+            Safe("P-STEAMLANES", Features.Steam, "Steam Networking Sockets lanes (loopback self-test)", Net.SteamLanes.Probe, warningOnly: true);
             Safe("P-RELAY", Features.Steam, "Steam relay network", () =>
             {
                 ESteamNetworkingAvailability a = SteamNetworkingUtils.GetRelayNetworkStatus(out SteamRelayNetworkStatus_t _);

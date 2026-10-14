@@ -54,7 +54,9 @@ It is written automatically when a client hits a local fault and when the host t
 `Diagnostics/Probes.cs` resolves, in one place, every non-public member and every type the mod finds by name, the Steam
 APIs it uses and the UI module. It runs at load (types and members), after each city load (system instances, field
 values) and about 20 seconds after the menu or a city appears (the UI module observed its bindings). Probe ids look like
-`P-CTX`, `P-SYSTEMS`, `P-GATE`, `P-COSMETIC`, `P-STEAM`, `P-RELAY`, `P-UI`.
+`P-CTX`, `P-SYSTEMS`, `P-GATE`, `P-COSMETIC`, `P-STEAM`, `P-STEAMLANES`, `P-RELAY`, `P-UI`. `P-STEAMLANES` only warns:
+when its loopback self-test fails, connections run without Steam lanes (every message on lane 0) and the log line
+"connected: … , 3 lanes" is missing.
 
 Results go to the log, the diagnostics dump and the one-line summary "Self-test: X/Y checks passed" in the panel and on
 the title screen. A failed probe switches its feature off (`Diagnostics/Features.cs`), so the feature never touches a

@@ -25,6 +25,12 @@ namespace SkylineTogether.Net
     /// buffer (<c>k_ESteamNetworkingConfig_RecvBufferSize</c>, default 1 MiB = four snapshot chunks) is raised to
     /// 32 MiB, so a joiner whose frame hitches does not drop packets that then have to be resent.
     /// </para>
+    /// <para>
+    /// Lanes: once the <see cref="SteamLanes"/> self-test passed, every connection gets one Steam lane per
+    /// <see cref="Lane"/> when it is reported connected (R on lane 0, U on 1, B on 2; equal priority, weights 4/2/1,
+    /// <see cref="LanePlan"/>). Each lane is ordered on its own, so snapshot chunks no longer hold back control messages,
+    /// chat or presence; received messages report the lane they came on. Without lanes everything shares lane 0.
+    /// </para>
     /// </summary>
     public sealed class SteamSocketsTransport : ITransport
     {
@@ -49,6 +55,7 @@ namespace SkylineTogether.Net
 
         private static readonly SendRateOptions RateOptions = new SendRateOptions();
         private static bool _recvBufferWarned;
+        private static bool _lanesWarned;
 
         private static readonly List<(HSteamListenSocket Socket, double CloseAt)> DeferredSockets = new List<(HSteamListenSocket, double)>();
         private static readonly System.Diagnostics.Stopwatch DeferredClock = System.Diagnostics.Stopwatch.StartNew();
@@ -174,7 +181,7 @@ namespace SkylineTogether.Net
                     if (!connection.Reported && !TryReportConnected(connection, sink)) continue;
                     try
                     {
-                        sink.OnMessage(connection, Lane.Reliable, _receiveBuffer, 0, size);
+                        sink.OnMessage(connection, LanePlan.LaneOf(msg.m_idxLane), _receiveBuffer, 0, size);
                     }
                     catch (Exception ex)
                     {
@@ -310,8 +317,34 @@ namespace SkylineTogether.Net
         {
             connection.Peer = IdentityOf(info, connection.Peer.Direct || IsDirect(info));
             connection.Reported = true;
-            _log.Info(LogCategory.Net, "connected: " + connection.Peer + " (" + info.m_szConnectionDescription + ")");
+            ConfigureLanes(connection);
+            _log.Info(LogCategory.Net, "connected: " + connection.Peer + " (" + info.m_szConnectionDescription + ")" + (connection.Lanes ? ", " + LanePlan.Count + " lanes" : ""));
             sink.OnConnected(connection);
+        }
+
+        /// <summary>
+        /// Gives the connection one Steam lane per <see cref="Lane"/> (<see cref="SteamLanes"/>, <see cref="LanePlan"/>),
+        /// before the first message is sent on it; without lanes every message uses lane 0 as before.
+        /// </summary>
+        private void ConfigureLanes(SteamConnection connection)
+        {
+            if (!SteamLanes.Available || connection.Closed) return;
+            try
+            {
+                if (SteamLanes.Configure(connection.Handle, out EResult result))
+                {
+                    connection.Lanes = true;
+                }
+                else if (!_lanesWarned)
+                {
+                    _lanesWarned = true;
+                    _log.Info(LogCategory.Net, connection + ": Steam refused the lanes (" + result + "); its messages share one lane");
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Net, connection + ": configuring the lanes failed; its messages share one lane", ex);
+            }
         }
 
         /// <summary>Reports a connection whose "connected" callback has not been dispatched yet, if Steam says it is connected.</summary>
@@ -438,6 +471,14 @@ namespace SkylineTogether.Net
             int flags = delivery == Delivery.Unreliable
                 ? Constants.k_nSteamNetworkingSend_Unreliable
                 : lane == Lane.Bulk ? Constants.k_nSteamNetworkingSend_Reliable : Constants.k_nSteamNetworkingSend_ReliableNoNagle;
+            if (connection.Lanes && lane != Lane.Reliable)
+            {
+                // U and B on their own Steam lanes; R stays on lane 0 (SendMessageToConnection)
+                EResult laneResult = SteamLanes.Send(connection.Handle, LanePlan.IndexOf(lane), flags, buffer, offset, count);
+                if (laneResult != EResult.k_EResultInvalidParam && laneResult != EResult.k_EResultDisabled) return ResultOf(laneResult);
+                connection.Lanes = false; // Steam no longer knows the lanes: everything goes to lane 0 from now on
+                _log.Info(LogCategory.Net, connection + ": sending on lane " + LanePlan.IndexOf(lane) + " failed (" + laneResult + "); its messages share one lane from now on");
+            }
             GCHandle pin = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             EResult result;
             try
@@ -449,6 +490,11 @@ namespace SkylineTogether.Net
             {
                 pin.Free();
             }
+            return ResultOf(result);
+        }
+
+        private static SendResult ResultOf(EResult result)
+        {
             switch (result)
             {
                 case EResult.k_EResultOK:
@@ -587,6 +633,9 @@ namespace SkylineTogether.Net
         public HSteamNetConnection Handle { get; }
         public bool Reported;
         public bool Closed;
+
+        /// <summary>The connection has one Steam lane per <see cref="Lane"/> (written on the main thread, read by the snapshot pump too).</summary>
+        public volatile bool Lanes;
 
         public int Id { get; }
 

@@ -312,9 +312,10 @@ A joiner receives the host's city as a save game and loads it through the game's
    prefabs (climate, water and terrain render prefabs from packages) travel in front of the save data
    ([`JoinAssetTransfer`](../src/SkylineTogether/Session/JoinAssetTransfer.cs)).
 3. **Transfer.** The manifest goes as `Control SnapshotManifest`; the file streams as 256 KiB `BlobChunk` messages on
-   the bulk lane ([blob transfer](#blob-transfer)). The client acknowledges with have-bitmaps; chunks that arrive
-   before the manifest are kept (bounded) and fed in once the receiver exists. The download is verified against the
-   digest.
+   the bulk lane ([blob transfer](#blob-transfer)). The client acknowledges with have-bitmaps. The host hands the
+   manifest over first, but with Steam lanes (and in the network simulator) lanes are ordered independently, so a
+   resent manifest can arrive after chunks; those are kept (up to 16 MiB) and fed in once the receiver exists. The
+   download is verified against the digest.
 4. **Load.** [`SnapshotLoader`](../src/SkylineTogether/Session/SnapshotLoader.cs) imports the join assets, then loads
    the save from a transient asset database with the host's game mode and city options, achievements off and the
    simulation paused. `ModCompat.OnClientStarted` switches off mod systems that must not run during a joiner's load.
@@ -384,9 +385,17 @@ estimate bandwidth): start at 1 MiB/s, every 0.5 s multiply by 1.5 while the lin
 8 MiB/s while the remote quality is unknown, 48 MiB/s at most), by 0.7 on loss below 93 % or queueing delay, never
 below 256 KiB/s.
 
-Steam lanes are not configured: every message goes to the same Steam connection. Reliable messages of lanes R and U
-are sent `ReliableNoNagle`, lane B `Reliable`, unreliable ones `Unreliable`; the lane's meaning is the scheduling in
-`PeerOutbox`.
+**Lanes.** Every connection gets one Steam lane per `Lane` when it is reported connected
+([`SteamLanes`](../src/SkylineTogether/Net/SteamLanes.cs), [`LanePlan`](../src/SkylineTogether.Core/Transport/LanePlan.cs)):
+R on Steam lane 0, U on 1, B on 2, all with the same priority and weights 4, 2 and 1. Each lane has its own reliable
+ordering, so a lost packet of snapshot chunks no longer holds back a control message, a chat line or presence, and
+when every lane has data R gets 4/7 of the send rate; equal priorities mean bulk is never starved. The game's
+Steamworks.NET declares `ConfigureConnectionLanes` with single values instead of per-lane arrays and `SendMessages`
+with an array of structs instead of message pointers, so `SteamLanes` calls the same `steam_api64` exports with the
+native signatures. It does so only after the startup probe `P-STEAMLANES` passed (64-bit, the expected
+`SteamNetworkingMessage_t` layout, and a loopback socket pair that configures three lanes and receives a message on
+lane 2 intact); otherwise, or when Steam refuses a connection's lanes, every message uses lane 0 as before. Reliable
+messages of lanes R and U are sent `ReliableNoNagle`, lane B `Reliable`, unreliable ones `Unreliable`.
 
 ### Envelope and message kinds
 
@@ -432,7 +441,9 @@ status, 16 KiB for mod-channel payloads.
 the connection, so a reliable message is never lost when Steam's send buffer is full: it hands a message over only
 while Steam's pending bytes plus the message stay inside a window (R and U: send buffer minus 1 MiB headroom; B: only
 while no reliable message is queued and below an adaptive 2-8 MiB window), keeps a refused message at the head of its
-queue and retries on the next pump. Unreliable messages go straight to the connection and may be dropped.
+queue and retries on the next pump. Unreliable messages go straight to the connection and may be dropped. This
+scheduling is all the fairness there is when Steam lanes are unavailable: lane B then shares Steam's one reliable
+stream with lane R, and a control message can wait behind the bulk bytes already handed over (at most the bulk window).
 
 | Lane | Used for |
 |---|---|
@@ -1045,7 +1056,7 @@ and keeps recent lines for the dump. Every line has a
 
 [`Probes`](../src/SkylineTogether/Diagnostics/Probes.cs) checks at startup every non-public member and assumption the
 mod relies on (for example `P-CTX` serialization context tags, `P-CLOCK` frame setter, `P-SYSTEMS` update system
-layout, `P-ICONQUEUES`, `P-STATS`, `P-JOINASSETS`, `P-STEAM`, `P-STEAMSOCKETS`, `P-RELAY`), and again with the world
+layout, `P-ICONQUEUES`, `P-STATS`, `P-JOINASSETS`, `P-STEAM`, `P-STEAMSOCKETS`, `P-STEAMLANES`, `P-RELAY`), and again with the world
 once a city is loaded (gated systems present, readable queues). A failed probe turns off the feature it belongs to, or
 only warns; the summary is in the log, the panel and the dump.
 
@@ -1181,8 +1192,6 @@ Open design gaps and inconsistencies found while writing this document.
 - **NotLive is never delivered.** A proposal of a peer that is no longer live is dropped with a log line; the peer
   cannot receive a result.
 - **Permissions are per role.** There are no per-player overrides (`RolePermissions.Of` depends on the role only).
-- **Steam lanes.** Lanes are an outbox scheduling concept; Steam's own lanes are not configured, so lane B traffic
-  shares Steam's single reliable stream with lane R (the outbox only hands B over while R is empty).
 - **Blob resume across reconnects** (`BlobSender.Rebind`) exists but is unused: a rejoin downloads a fresh snapshot.
 ### Core code the game layer does not reach
 

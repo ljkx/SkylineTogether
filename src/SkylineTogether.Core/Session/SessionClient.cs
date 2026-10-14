@@ -116,7 +116,7 @@ namespace SkylineTogether.Core.Session
         private readonly ByteWriter _payload = new ByteWriter(4096);
         private readonly ByteReader _reader = new ByteReader();
         private readonly Queue<Buffered> _buffered = new Queue<Buffered>();
-        // snapshot chunks that overtook the manifest (see Handle, BlobChunk)
+        // snapshot chunks that arrived before the manifest (independently ordered lanes; see Handle, BlobChunk)
         private readonly List<byte[]> _earlyChunks = new List<byte[]>();
         private long _earlyChunkBytes;
         private const long MaxEarlyChunkBytes = 16L << 20;
@@ -551,10 +551,14 @@ namespace SkylineTogether.Core.Session
                 case MessageKind.BlobChunk:
                     if (_receiver == null && State == ClientState.WaitingForSnapshot)
                     {
-                        // chunks travel on the bulk lane, the manifest on the reliable lane, and lanes are
-                        // ordered independently: chunks can arrive before the manifest. They used to be dropped, and
-                        // when every chunk was (a snapshot of one chunk) nothing asked for them again: the join hung
-                        // until the 120 s stall watchdog. They are kept (bounded) and fed in once the receiver exists.
+                        // the host hands the manifest (lane R) to the transport before the first chunk (lane B), but
+                        // where lanes are ordered independently a chunk can still arrive first: on Steam with lanes
+                        // configured (Net.SteamLanes) when the manifest's packet is lost and resent while the chunks
+                        // behind it get through, and in the network simulator. On one shared Steam lane it cannot
+                        // happen (one reliable order, and the outbox holds lane B back while lane R has a message
+                        // queued). Early chunks used to be dropped, and when every chunk was (a snapshot of one chunk)
+                        // nothing asked for them again: the join hung until the 120 s stall watchdog. They are kept
+                        // (at most 16 MiB) and fed in once the receiver exists.
                         if (_earlyChunkBytes + e.BodyCount <= MaxEarlyChunkBytes)
                         {
                             var early = new byte[e.BodyCount];
