@@ -69,6 +69,9 @@ namespace SkylineTogether.Core.Transport
         private volatile bool _faulted;
         private string _faultReason;
         private ConnectionStats _lastStats;
+        private long _statsFrame; // the StatsFrame stamp of the last query made for Stats (under _statsLock)
+        private long _statsReused; // under _statsLock
+        private long _statsQueries;
         private int _bulkWindow;
 
         // counters (Interlocked)
@@ -111,8 +114,47 @@ namespace SkylineTogether.Core.Transport
         /// <summary>The wrapped connection.</summary>
         public IConnection Connection => _connection;
 
-        /// <summary>The transport's real-time statistics (queried from the connection; the last known values when it fails).</summary>
-        public ConnectionStats Stats => QueryStats();
+        /// <summary>
+        /// The transport's real-time statistics (queried from the connection; the last known values when it fails). Reads
+        /// within one <see cref="StatsFrame"/> stamp share one query, so every main-thread consumer of a frame sees the same
+        /// numbers; the pump and <see cref="CanAcceptReliable"/> always query.
+        /// </summary>
+        public ConnectionStats Stats
+        {
+            get
+            {
+                long frame = StatsFrame.Current;
+                if (frame != 0)
+                {
+                    lock (_statsLock)
+                    {
+                        if (_statsFrame == frame)
+                        {
+                            _statsReused++;
+                            return _lastStats;
+                        }
+                    }
+                }
+                ConnectionStats stats = QueryStats();
+                if (frame != 0)
+                {
+                    lock (_statsLock) _statsFrame = frame;
+                }
+                return stats;
+            }
+        }
+
+        /// <summary>Transport statistics queries made (the pump's included).</summary>
+        public long StatsQueries => Interlocked.Read(ref _statsQueries);
+
+        /// <summary><see cref="Stats"/> reads answered from the frame's query.</summary>
+        public long StatsReused
+        {
+            get
+            {
+                lock (_statsLock) return _statsReused;
+            }
+        }
 
         /// <summary>Bytes waiting in the outbox, all lanes (they count as P0 backlog, ARCHITECTURE.md#live-session).</summary>
         public long QueuedBytes => Interlocked.Read(ref _queuedBytes);
@@ -421,6 +463,7 @@ namespace SkylineTogether.Core.Transport
         private ConnectionStats QueryStats()
         {
             ConnectionStats stats;
+            Interlocked.Increment(ref _statsQueries);
             try
             {
                 stats = _connection.GetStats();

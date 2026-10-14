@@ -553,7 +553,7 @@ namespace SkylineTogether.Core.Session
             foreach (Peer p in _peers.Values)
             {
                 if (!p.Admitted) continue;
-                ConnectionStats c = p.Channel.Connection.GetStats();
+                ConnectionStats c = p.Channel.Outbox.Stats; // the frame's query (the HUD reads it every frame)
                 s.Connections++;
                 s.InBytesPerSecond += Math.Max(0f, c.InBytesPerSecond);
                 s.OutBytesPerSecond += Math.Max(0f, c.OutBytesPerSecond);

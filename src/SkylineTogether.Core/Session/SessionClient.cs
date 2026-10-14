@@ -210,7 +210,7 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        public ConnectionStats Stats => _connection != null ? _connection.GetStats() : default(ConnectionStats);
+        public ConnectionStats Stats => _channel != null ? _channel.Outbox.Stats : _connection != null ? _connection.GetStats() : default(ConnectionStats);
 
         /// <summary>
         /// The stage timings of this join (connect, welcome, download, verify, load, live, catch-up) for the
@@ -264,7 +264,7 @@ namespace SkylineTogether.Core.Session
         public SessionNetStats GetNetStats()
         {
             if (_connection == null || _channel == null || State == ClientState.Ended) return new SessionNetStats { PingMs = -1 };
-            ConnectionStats c = _connection.GetStats();
+            ConnectionStats c = _channel.Outbox.Stats; // the frame's query (the HUD reads it every frame)
             return new SessionNetStats
             {
                 PingMs = c.PingMs,

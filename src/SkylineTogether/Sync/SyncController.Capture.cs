@@ -82,6 +82,7 @@ namespace SkylineTogether.Sync
         public void CaptureOutgoing(double now)
         {
             if (_codec != null) _codec.DependencyBinder = null; // mod compatibility: never left over from a failed capture
+            Core.Transport.StatsFrame.Advance(); // link statistics: one transport query per peer and frame
             if (!SessionActive) return; // single player: nothing to do, nothing allocated
             // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
             if (Features.Terrain.IsAvailable)
