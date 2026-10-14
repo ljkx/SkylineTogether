@@ -47,7 +47,7 @@ namespace SkylineTogether.Settings
         [SettingsUITextInput]
         public string PlayerName { get; set; }
 
-        /// <summary>blueprint branch: draw the other players' live tool previews (roads being drawn, buildings at their cursor, ...).</summary>
+        /// <summary>Draw the other players' live tool previews (roads being drawn, buildings at their cursor, ...).</summary>
         [SettingsUISection(MainSection, PlayerGroup)]
         public bool ShowBuildingPreviews { get; set; }
 

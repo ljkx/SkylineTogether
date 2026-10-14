@@ -47,7 +47,7 @@ STATUS_TEXT = OrderedDict([
     ("snapshot", "arrives with the join snapshot and is invariant during a session (or changes only with synced inputs)"),
     ("local", "per-player by design (camera, UI, tool, preferences)"),
     ("transient", "one-frame command, tool-time or render-time data; never outlives a frame or a tool action"),
-    ("agents", "agent replication (AgentSync, w3/agents): citizens, households, pets, companies and their reverse buffers"),
+    ("agents", "agent replication (AgentSync): citizens, households, pets, companies and their reverse buffers"),
     ("hostonly", "host-internal simulation bookkeeping (dispatch requests, seekers, cursors, AI inputs); every outcome a player sees is synced"),
     ("excluded", "irrelevant in a session (achievements, tutorials, editor-only, telemetry)"),
     ("gap", "NOT synced (must be fixed or justified)"),

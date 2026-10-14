@@ -67,7 +67,7 @@ namespace SkylineTogether.Core.Session
         /// <summary>Anything else.</summary>
         Failed,
 
-        // robust branch: finer kinds the rejoin decision needs (RejoinController, SessionClient.IsRetryable)
+        // finer kinds the rejoin decision needs (RejoinController, SessionClient.IsRetryable)
         /// <summary>The host could not be reached while connecting. Retryable.</summary>
         Unreachable,
         /// <summary>The join failed in a way a new attempt can fix (damaged download, busy loader). Retryable.</summary>
@@ -186,7 +186,7 @@ namespace SkylineTogether.Core.Session
 
         public PeerId LocalPeer { get; private set; }
 
-        /// <summary>gameplay branch: this player's role (from the welcome, then from every player list the host sends).</summary>
+        /// <summary>This player's role (from the welcome, then from every player list the host sends).</summary>
         public SessionRole LocalRole { get; private set; } = SessionRole.Builder;
 
         public SessionInfo Session { get; private set; }

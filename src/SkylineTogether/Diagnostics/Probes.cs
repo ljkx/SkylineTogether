@@ -147,7 +147,7 @@ namespace SkylineTogether.Diagnostics
             Safe("P-BARRIER", Features.Clock, "TimeUISystem.m_SimulationPausedBarrierBinding", ProbeBarrierField, warningOnly: true);
             Safe("P-ICONQUEUES", Features.Icons, "IconCommandSystem.m_Queues/m_Dependencies", ProbeIconQueues);
             Safe("P-NAMES", Features.GlobalState, "NameSystem.m_Names", ProbeNameTable, warningOnly: true);
-            // gameplay branch: ViewerGateSystem clears a viewer's tool apply through this protected setter
+            // ViewerGateSystem clears a viewer's tool apply through this protected setter
             Safe("P-APPLYMODE", Features.Gate, "ToolBaseSystem.applyMode setter", () => typeof(Game.Tools.ToolBaseSystem).GetProperty("applyMode", AnyInstance)?.GetSetMethod(true) != null
                 ? null : "not found: viewers' tool applies are refused by the host instead", warningOnly: true);
             // the chart sample counter is written on clients (StatisticsSync)
@@ -155,7 +155,7 @@ namespace SkylineTogether.Diagnostics
                 typeof(Game.Simulation.CityStatisticsSystem).GetField("m_SampleCount", AnyInstance)?.FieldType == typeof(int)
                 && typeof(Game.Simulation.CityStatisticsSystem).GetField("m_LastSampleFrameIndex", AnyInstance)?.FieldType == typeof(uint)
                     ? null : "not found: client charts may be dated by their own counter", warningOnly: true);
-            // gameplay branch: the host's pause menu is told apart from a session pause (SpeedAuthoritySystem)
+            // the host's pause menu is told apart from a session pause (SpeedAuthoritySystem)
             Safe("P-PAUSEMENU", Features.Speed, "TimeUISystem.m_UnpausedBeforeForcedPause/m_SpeedBeforePause", () =>
                 typeof(TimeUISystem).GetField("m_UnpausedBeforeForcedPause", Private) != null && typeof(TimeUISystem).GetField("m_SpeedBeforePause", Private) != null
                     ? null : "not found: the host's pause menu pauses the session", warningOnly: true);
@@ -187,7 +187,7 @@ namespace SkylineTogether.Diagnostics
             // the flow-status channel reads and writes the flow graph's components by type
             ProbeTypeNames("P-FLOW", Features.FlowStatus, FlowStatusSync.TypeNames, systems: false);
             ProbeTypeNames("P-FLOW", Features.FlowStatus, FlowStatusSync.FlowSystemNames, systems: true);
-            ProbeTypeNames("P-PREVIEW", Features.Previews, Presence.ToolPreviewCapture.TypeNames, systems: false); // blueprint branch
+            ProbeTypeNames("P-PREVIEW", Features.Previews, Presence.ToolPreviewCapture.TypeNames, systems: false);
             Safe("P-PREVIEW-CODEC", Features.Previews, "tool preview encode/decode round trip", ProbePreviewCodec);
             ProbeSteam();
             if (world) ProbeWorld();
@@ -337,7 +337,7 @@ namespace SkylineTogether.Diagnostics
             return f != null && f.FieldType == typeof(JobHandle) ? f : null;
         }
 
-        /// <summary>blueprint branch: the preview wire format works in this runtime (a curve and a zone block survive a round trip).</summary>
+        /// <summary>The preview wire format works in this runtime (a curve and a zone block survive a round trip).</summary>
         private static string ProbePreviewCodec()
         {
             var preview = new Core.Session.ToolPreview();

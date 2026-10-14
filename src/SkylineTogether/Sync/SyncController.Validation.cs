@@ -24,7 +24,7 @@ namespace SkylineTogether.Sync
     // charging the city.
     public sealed partial class SyncController
     {
-        // ================================================================== gameplay branch: host validation and rollback
+        // ================================================================== host validation and rollback
 
         private static ProposalFacts Facts(List<SyncRecord> records, out uint seq, out uint baseEpoch)
         {

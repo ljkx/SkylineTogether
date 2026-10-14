@@ -61,7 +61,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// The live preview of a player's tool (blueprint branch): what the player sees while building — net curves, object
+    /// The live preview of a player's tool: what the player sees while building — net curves, object
     /// footprints, area outlines, painted zone cells, line paths — reduced to a few drawable shapes. The sender fills it
     /// from the game's own tool output, <see cref="ToolPreviewCodec"/> carries it inside a presence message, and the
     /// receivers draw it in the player's colour. Fixed capacity, no allocation after construction: every <c>Add</c>

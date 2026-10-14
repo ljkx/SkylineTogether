@@ -32,7 +32,7 @@ namespace SkylineTogether.Sync
         private bool _attached;
         private bool _warned;
         private int _frames;
-        private uint _lastVersion; // perf pass: chunks unchanged since this version are skipped (0: read every chunk)
+        private uint _lastVersion; // chunks unchanged since this version are skipped (0: read every chunk)
 
         public SignalFollower(ILog log)
         {
@@ -73,7 +73,7 @@ namespace SkylineTogether.Sync
             (ulong)(byte)t.m_State | ((ulong)(byte)t.m_Flags << 8) | ((ulong)t.m_SignalGroupCount << 16) | ((ulong)t.m_CurrentSignalGroup << 24) | ((ulong)t.m_NextSignalGroup << 32) | (1UL << 40);
 
         /// <summary>
-        /// Client, once per frame after the host's values were applied. perf pass: a junction's phase only changes when the
+        /// Client, once per frame after the host's values were applied. A junction's phase only changes when the
         /// host's values are written into it (or it is created or moved to another chunk), and every such write raises the
         /// chunk's change version of <c>TrafficLights</c>; chunks unchanged since the last pass are skipped, so a city's
         /// thousands of junctions cost a few chunk checks per frame. Every 256th frame reads every chunk (and prunes

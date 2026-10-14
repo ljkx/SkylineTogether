@@ -37,7 +37,7 @@ again on the client from host data. The statuses:
 | `global` | `GlobalStateSync`: a system's own `ISerializable` state, a custom slice of state, or a typed channel (taxes, budgets, names, ...) |
 | `actions` | `ActionSync` intents and the unlock set, or a client proposal channel |
 | `statistics`, `cellmap`, `terrain`, `water`, `movers`, `icons` | the dedicated channels of those branches |
-| `agents` | agent replication (`AgentSync`, w3/agents) |
+| `agents` | agent replication (`AgentSync`) |
 | `clock` | the follower clock and what is a pure function of it (date, time of day, season, climate) |
 | `derived` | computed identically on every peer from synced inputs |
 | `snapshot` | arrives with the join snapshot and never changes during a session (or only with synced inputs) |
@@ -64,7 +64,7 @@ again on the client from host data. The statuses:
 | 11 | Node wear and other node values froze | nodes were not attention candidates | part of fix 10 |
 | 12 | Trees never grew on clients | tree growth changes `Tree` values with `BatchesUpdated` only; trees are not attention candidates | the presence watch re-sends a tree's values when it has `BatchesUpdated` with an unchanged component set; clients tag it `BatchesUpdated` so the mesh is chosen again |
 | 13 | Following a citizen only worked for the player who clicked it | the followed list (50 citizens, life paths) is city state written by `LifePathEventSystem.FollowCitizen` | channel `Follow`: client deltas, the host follows through the vanilla API, agent replication brings `Followed` and the life path to everyone |
-| 14 | The Electricity and Water infoviews coloured power lines, transformers, water and sewage pipes from the join snapshot's flows on clients (bottlenecks, disconnected lines and pipe pollution never changed) | flow values live on the derived flow graph (`ElectricityFlowEdge`, `WaterPipeEdge`), written only by the GameSimulation flow systems, and flow edges have no portable identity | w4/flow: the **[flow-status channel](../ARCHITECTURE.md#statistics-icons-and-flow-status)** (`FlowStatusSync`, `MessageKind.FlowStatus`). A flow edge is keyed by its start and end flow node, a flow node by its owner's net id and role (net node or edge, valve, building transformer/producer/consumer/charge/discharge node, source, sink; `FlowKey`). While a peer's view report has the Electricity or Water topic, the host runs a time-sliced pass over the graph (0.75 ms per frame, at most one start per second) and sends the edges the peer lacks or whose value changed significantly (flags and capacities exactly, flows by 1/64), in-view first, within a 16 KB/s per-peer budget; activation is a keyframe. Clients write the values into their own derived edges after completing the jobs that read or write the edge type, and while their own infoview has the topic, local passes re-apply cached values to edges the graph systems rebuilt. The kept graph systems only create edges and rewrite direction and capacity on building and road-connection updates (`ElectricityBuildingGraphSystem.CreateOrUpdateFlowEdge`, `ElectricityGraphUtils.TrySetFlowEdge`, water likewise), never flow or flags; the flow systems themselves are GameSimulation (off on clients; a warning is logged if one runs). Building consumer state (`ElectricityConsumer`, `WaterConsumer`) keeps coming from the attention values under the same topics |
+| 14 | The Electricity and Water infoviews coloured power lines, transformers, water and sewage pipes from the join snapshot's flows on clients (bottlenecks, disconnected lines and pipe pollution never changed) | flow values live on the derived flow graph (`ElectricityFlowEdge`, `WaterPipeEdge`), written only by the GameSimulation flow systems, and flow edges have no portable identity | The **[flow-status channel](../ARCHITECTURE.md#statistics-icons-and-flow-status)** (`FlowStatusSync`, `MessageKind.FlowStatus`). A flow edge is keyed by its start and end flow node, a flow node by its owner's net id and role (net node or edge, valve, building transformer/producer/consumer/charge/discharge node, source, sink; `FlowKey`). While a peer's view report has the Electricity or Water topic, the host runs a time-sliced pass over the graph (0.75 ms per frame, at most one start per second) and sends the edges the peer lacks or whose value changed significantly (flags and capacities exactly, flows by 1/64), in-view first, within a 16 KB/s per-peer budget; activation is a keyframe. Clients write the values into their own derived edges after completing the jobs that read or write the edge type, and while their own infoview has the topic, local passes re-apply cached values to edges the graph systems rebuilt. The kept graph systems only create edges and rewrite direction and capacity on building and road-connection updates (`ElectricityBuildingGraphSystem.CreateOrUpdateFlowEdge`, `ElectricityGraphUtils.TrySetFlowEdge`, water likewise), never flow or flags; the flow systems themselves are GameSimulation (off on clients; a warning is logged if one runs). Building consumer state (`ElectricityConsumer`, `WaterConsumer`) keeps coming from the attention values under the same topics |
 | 15 | Roads, power lines and pipes with a utility connection would not have replicated at all | `ElectricityNodeConnection`/`WaterPipeNodeConnection` were flow-graph family markers, but the graph systems add them to the net nodes and edges themselves, so those nets classified as derived `FlowGraph` (rule 8 precedes the net rules) | they are no markers any more; all six flow-graph connection components (`*NodeConnection`, `*ValveConnection`, `*BuildingConnection`) are excluded from structure records (`TypeHandlers.Excluded`): they point at derived flow nodes, and as presence-only components a spawn would have added them with null references that the edge graph system takes for an existing flow node |
 
 ## Runtime state the UI and the renderer read (not saved components)
@@ -105,7 +105,7 @@ again on the client from host data. The statuses:
 
 | State | Why it is not synced | Player impact |
 |---|---|---|
-| Transient agents (service requests, job and school seekers, partner search, meetings) | dispatch bookkeeping of the host simulation; references to them arrive as null (`EntityCodec` lenient references, as w3/agents does) | none visible: dispatched vehicles, their targets, icons and building values are synced |
+| Transient agents (service requests, job and school seekers, partner search, meetings) | dispatch bookkeeping of the host simulation; references to them arrive as null (`EntityCodec` lenient references, as agent replication does) | none visible: dispatched vehicles, their targets, icons and building values are synced |
 | Object wetness, dirt and snow, wind, snow cover | cosmetic, simulated locally | slight visual differences of weather effects |
 | Per-player state (camera, selection, info views, tools, radio, chirp likes, palette, tutorials, victory pop-up seen) | by design | none |
 | Achievements | inert in modded cities | none |
@@ -160,7 +160,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `snapshot` | 164 | 6 | arrives with the join snapshot and is invariant during a session (or changes only with synced inputs) |
 | `local` | 5 | 8 | per-player by design (camera, UI, tool, preferences) |
 | `transient` | 2 | 0 | one-frame command, tool-time or render-time data; never outlives a frame or a tool action |
-| `agents` | 76 | 0 | agent replication (AgentSync, w3/agents): citizens, households, pets, companies and their reverse buffers |
+| `agents` | 76 | 0 | agent replication (AgentSync): citizens, households, pets, companies and their reverse buffers |
 | `hostonly` | 26 | 5 | host-internal simulation bookkeeping (dispatch requests, seekers, cursors, AI inputs); every outcome a player sees is synced |
 | `excluded` | 2 | 1 | irrelevant in a session (achievements, tutorials, editor-only, telemetry) |
 | **total** | **748** | **73** | |
@@ -183,27 +183,27 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Game.Routes.RoutePathSystem` | ModificationEnd | `derived` | gated except in the route-tool preview window | lazy update set; line paths are host data (line state, [transport lines](../ARCHITECTURE.md#structure-and-transport-lines)) |
 | `Game.Simulation.AirPollutionSystem` | GameSimulation | `cellmap` | CellMapSync | air pollution map |
 | `Game.Simulation.AvailabilityInfoToGridSystem` | GameSimulation | `cellmap` | CellMapSync | availability map |
-| `Game.Simulation.CitizenHappinessSystem` | GameSimulation | `global` | blob "Happiness" (5 s) | w3/audit fix: happiness factors of the city info panel |
-| `Game.Simulation.CityProductionCapacityCalculationSystem` | GameSimulation | `global` | blob "Production.Capacity" (5 s) | w3/audit fix: production panel capacity |
-| `Game.Simulation.CityProductionStatisticSystem` | GameSimulation | `global` | custom channel "Production.Statistic" (2 s) | w3/audit fix: consumption, usage and production chains (the full blob would grow a queue on clients) |
+| `Game.Simulation.CitizenHappinessSystem` | GameSimulation | `global` | blob "Happiness" (5 s) | happiness factors of the city info panel |
+| `Game.Simulation.CityProductionCapacityCalculationSystem` | GameSimulation | `global` | blob "Production.Capacity" (5 s) | production panel capacity |
+| `Game.Simulation.CityProductionStatisticSystem` | GameSimulation | `global` | custom channel "Production.Statistic" (2 s) | consumption, usage and production chains (the full blob would grow a queue on clients) |
 | `Game.Simulation.CityStatisticsSystem` | GameSimulation | `statistics` | StatisticsSync (sample count, last sample frame, CityStatistic buffers) | charts and every statistic the panels read |
 | `Game.Simulation.CitySystem` | Modification1 | `snapshot` | join snapshot | the City entity reference; the City's components are scanned (structure value scan) |
-| `Game.Simulation.ClimateSystem` | GameSimulation, EditorSimulation | `clock` | cosmetic allow-list; hail and rainbow via custom channel "Runtime" | climate and weather selection are deterministic functions of the replicated date (no randomness); w3/audit fix: hail and rainbow come from the host's weather phenomena |
+| `Game.Simulation.ClimateSystem` | GameSimulation, EditorSimulation | `clock` | cosmetic allow-list; hail and rainbow via custom channel "Runtime" | climate and weather selection are deterministic functions of the replicated date (no randomness); hail and rainbow come from the host's weather phenomena |
 | `Game.Simulation.CommercialDemandSystem` | GameSimulation | `global` | blob "Demand.Commercial" | demand bars |
-| `Game.Simulation.CountCityStoredResourceSystem` | GameSimulation | `global` | blob "Count.StoredResources" (2 s) | w3/audit fix: stored resources |
-| `Game.Simulation.CountCompanyDataSystem` | GameSimulation | `global` | blob "Count.Companies" (2 s) | w3/audit fix: company, worker and production counters |
-| `Game.Simulation.CountConsumptionSystem` | GameSimulation | `global` | blob "Count.Consumption" (2 s) | w3/audit fix: consumption counters |
+| `Game.Simulation.CountCityStoredResourceSystem` | GameSimulation | `global` | blob "Count.StoredResources" (2 s) | stored resources |
+| `Game.Simulation.CountCompanyDataSystem` | GameSimulation | `global` | blob "Count.Companies" (2 s) | company, worker and production counters |
+| `Game.Simulation.CountConsumptionSystem` | GameSimulation | `global` | blob "Count.Consumption" (2 s) | consumption counters |
 | `Game.Simulation.CountHouseholdDataSystem` | GameSimulation | `global` | blob "Count.Household" | household counters |
-| `Game.Simulation.CountResidentialPropertySystem` | GameSimulation | `global` | blob "Count.ResidentialProperties" (2 s) | w3/audit fix: free and total properties, shelters |
-| `Game.Simulation.CountStudyPositionsSystem` | GameSimulation | `global` | blob "Count.StudyPositions" (2 s) | w3/audit fix: education panel study positions |
-| `Game.Simulation.CountVehicleDataSystem` | GameSimulation | `global` | blob "Count.Vehicles" (2 s) | w3/audit fix: bicycle and parking counters |
+| `Game.Simulation.CountResidentialPropertySystem` | GameSimulation | `global` | blob "Count.ResidentialProperties" (2 s) | free and total properties, shelters |
+| `Game.Simulation.CountStudyPositionsSystem` | GameSimulation | `global` | blob "Count.StudyPositions" (2 s) | education panel study positions |
+| `Game.Simulation.CountVehicleDataSystem` | GameSimulation | `global` | blob "Count.Vehicles" (2 s) | bicycle and parking counters |
 | `Game.Simulation.CountWorkplacesSystem` | GameSimulation | `global` | blob "Count.Workplaces" | workplace counters |
 | `Game.Simulation.DeathCheckSystem` | GameSimulation | `snapshot` | join snapshot | death-rate curve flag, set once per save |
-| `Game.Simulation.ElectricityFlowSystem` | GameSimulation | `derived` | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync, w4/flow) |
-| `Game.Simulation.ElectricityStatisticsSystem` | GameSimulation | `global` | blob "Electricity.Statistics" (1 s) | w3/audit fix: electricity panel production and consumption |
-| `Game.Simulation.ElectricityTradeSystem` | GameSimulation | `global` | blob "Electricity.Trade" (1 s) | w3/audit fix: electricity import and export |
-| `Game.Simulation.FireHazardSystem` | GameSimulation | `global` | blob "FireHazard" (5 s) | w3/audit fix: dry days of the fire hazard view |
-| `Game.Simulation.GarbageAccumulationSystem` | GameSimulation | `global` | blob "Garbage.Accumulation" (2 s) | w3/audit fix: garbage panel |
+| `Game.Simulation.ElectricityFlowSystem` | GameSimulation | `derived` | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync) |
+| `Game.Simulation.ElectricityStatisticsSystem` | GameSimulation | `global` | blob "Electricity.Statistics" (1 s) | electricity panel production and consumption |
+| `Game.Simulation.ElectricityTradeSystem` | GameSimulation | `global` | blob "Electricity.Trade" (1 s) | electricity import and export |
+| `Game.Simulation.FireHazardSystem` | GameSimulation | `global` | blob "FireHazard" (5 s) | dry days of the fire hazard view |
+| `Game.Simulation.GarbageAccumulationSystem` | GameSimulation | `global` | blob "Garbage.Accumulation" (2 s) | garbage panel |
 | `Game.Simulation.GroundHeightSystem` | Modification2 | `derived` | runs on every peer (Modification2) | derived from terrain (TerrainSync) |
 | `Game.Simulation.GroundPollutionSystem` | GameSimulation | `cellmap` | CellMapSync | ground pollution map |
 | `Game.Simulation.GroundWaterSystem` | GameSimulation | `cellmap` | CellMapSync | groundwater map |
@@ -218,7 +218,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Game.Simulation.ProductionSpecializationSystem` | GameSimulation | `values` | City SpecializationBonus (structure value scan) | its queue is host-internal input; Serialize drains the queue, so it must never be mirrored as a blob |
 | `Game.Simulation.ResidentialDemandSystem` | GameSimulation | `global` | blob "Demand.Residential" | demand bars |
 | `Game.Simulation.ResourceAvailabilitySystem` | GameSimulation | `hostonly` | host-only cursor | round-robin cursor of the host's availability update; results travel as net values |
-| `Game.Simulation.ServiceFeeSystem` | GameSimulation | `global` | custom channel "Fees.Collected" (1 s) | w3/audit fix: the fee cache the budget panel's fee income is computed from (CollectedCityServiceFeeData on service prefabs, which do not replicate); the fee queue is host-internal |
+| `Game.Simulation.ServiceFeeSystem` | GameSimulation | `global` | custom channel "Fees.Collected" (1 s) | the fee cache the budget panel's fee income is computed from (CollectedCityServiceFeeData on service prefabs, which do not replicate); the fee queue is host-internal |
 | `Game.Simulation.SimulationSystem` | LateUpdate | `clock` | follower clock (frame index, speed) | [follower clock](../ARCHITECTURE.md#follower-clock) |
 | `Game.Simulation.SnowSystem` | GameSimulation, EditorSimulation | `local` | cosmetic allow-list | snow cover is simulated locally for visuals |
 | `Game.Simulation.SoilWaterSystem` | - | `cellmap` | CellMapSync | soil water map |
@@ -230,15 +230,15 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Game.Simulation.TrafficAmbienceSystem` | GameSimulation | `cellmap` | CellMapSync | traffic ambience map |
 | `Game.Simulation.TransportLineSystem` | GameSimulation | `hostonly` | host-only input | maximum transport speeds used by the host's vehicle AIs |
 | `Game.Simulation.TransportUsageTrackSystem` | GameSimulation | `hostonly` | host-only input | transport usage feeds unlock requirements (host); results travel on the unlock channel |
-| `Game.Simulation.WaterPipeFlowSystem` | GameSimulation | `derived` | flow graph topology rebuilt on every peer | source and sink node (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync, w4/flow) |
-| `Game.Simulation.WaterStatisticsSystem` | GameSimulation | `global` | blob "Water.Statistics" (1 s) | w3/audit fix: water panel |
+| `Game.Simulation.WaterPipeFlowSystem` | GameSimulation | `derived` | flow graph topology rebuilt on every peer | source and sink node (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync) |
+| `Game.Simulation.WaterStatisticsSystem` | GameSimulation | `global` | blob "Water.Statistics" (1 s) | water panel |
 | `Game.Simulation.WaterSystem` | PostSimulation | `water` | WaterSync | water surface, sources, sea level |
-| `Game.Simulation.WaterTradeSystem` | GameSimulation | `global` | blob "Water.Trade" (1 s) | w3/audit fix: water import and export |
+| `Game.Simulation.WaterTradeSystem` | GameSimulation | `global` | blob "Water.Trade" (1 s) | water import and export |
 | `Game.Simulation.WindSimulationSystem` | GameSimulation, EditorSimulation | `local` | cosmetic allow-list | wind cells for visuals |
 | `Game.Simulation.WindSystem` | GameSimulation, EditorSimulation | `local` | cosmetic allow-list | wind for visuals |
 | `Game.Simulation.ZoneAmbienceSystem` | GameSimulation | `derived` | cosmetic allow-list | from replicated buildings |
 | `Game.Triggers.TriggerSystem` | ModificationEnd | `local` | runs locally; chirp creation gated (EventSync drains the queue) | trigger cooldowns drive tutorials and radio (local); chirps come from the host |
-| `Game.UI.InGame.ChirpLinkSystem` | UIUpdate | `global` | custom channel "Chirp.Links" (2 s) | w3/audit fix: sender and link names of chirps (citizens do not replicate as entities yet) |
+| `Game.UI.InGame.ChirpLinkSystem` | UIUpdate | `global` | custom channel "Chirp.Links" (2 s) | sender and link names of chirps (citizens do not replicate as entities yet) |
 | `Game.UI.InGame.CityInfoUISystem` | UIUpdate | `derived` | runs on every peer (UIUpdate) | smoothed demand and happiness from the replicated demand blobs and City values |
 | `Game.UI.InGame.MilestoneUISystem` | UIUpdate | `local` | - | whether this player saw the victory pop-up |
 | `Game.UI.NameSystem` | - | `global` | GlobalChannel.Name (both ways) | custom names |
@@ -407,7 +407,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `CurrentBuilding` | component | `agents` | agent replication | citizens, households, pets |
 | `CurrentTransport` | component | `agents` | agent replication | citizens, households, pets |
 | `Elderly` | component (empty) | `agents` | agent replication | citizens, households, pets |
-| `Followed` | component | `actions` | channel "Follow" (client deltas, host LifePathEventSystem.FollowCitizen) + agent replication | w3/audit fix: the followed list is part of the city and shared |
+| `Followed` | component | `actions` | channel "Follow" (client deltas, host LifePathEventSystem.FollowCitizen) + agent replication | the followed list is part of the city and shared |
 | `HasSchoolSeeker` | component | `agents` | agent replication | citizens, households, pets |
 | `HealthProblem` | component | `agents` | agent replication | citizens, households, pets |
 | `HomelessHousehold` | component | `agents` | agent replication | citizens, households, pets |
@@ -546,37 +546,37 @@ Generated from **748** serializable components and buffers and **73** serializab
 
 | Type | Kind | Status | Mechanism | Note |
 |---|---|---|---|---|
-| `AccidentSite` | component | `presence` | structure codec + presence watch | w3/audit fix: added and removed without a tag |
+| `AccidentSite` | component | `presence` | structure codec + presence watch | added and removed without a tag |
 | `AttendingEvent` | component | `agents` | citizens | agent state |
-| `CalendarEvent` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `Crime` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `DangerLevel` | component | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `Destruction` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `Duration` | component | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `Event` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `EventJournalCityEffect` | buffer | `scan` | host-only Event family | w3/audit fix |
-| `EventJournalCompleted` | component (empty) | `scan` | host-only Event family | w3/audit fix |
-| `EventJournalData` | buffer | `scan` | host-only Event family | w3/audit fix |
-| `EventJournalEntry` | component | `scan` | host-only Event family | w3/audit fix: the event journal; EventJournalSystem keeps the list and callbacks on clients |
-| `EventJournalPending` | component | `scan` | host-only Event family | w3/audit fix |
-| `FacingWeather` | component | `presence` | structure codec + presence watch | w3/audit fix |
+| `CalendarEvent` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `Crime` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `DangerLevel` | component | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `Destruction` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `Duration` | component | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `Event` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `EventJournalCityEffect` | buffer | `scan` | host-only Event family | the event journal |
+| `EventJournalCompleted` | component (empty) | `scan` | host-only Event family | the event journal |
+| `EventJournalData` | buffer | `scan` | host-only Event family | the event journal |
+| `EventJournalEntry` | component | `scan` | host-only Event family | the event journal; EventJournalSystem keeps the list and callbacks on clients |
+| `EventJournalPending` | component | `scan` | host-only Event family | the event journal |
+| `FacingWeather` | component | `presence` | structure codec + presence watch | event state on buildings |
 | `FindingEventParticipants` | component (empty) | `agents` | meetings of citizens | agent state |
-| `Fire` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `Flood` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `Flooded` | component | `presence` | structure codec + presence watch | w3/audit fix: removed without a tag |
-| `HealthEvent` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `HotspotFrame` | buffer (empty) | `derived` | EventSync writes the frames from the replicated hotspot | w3/audit fix: never saved; EventInterpolateSystem indexes it unchecked |
-| `InDanger` | component | `presence` | structure codec + presence watch | w3/audit fix: removed with EffectsUpdated only |
+| `Fire` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `Flood` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `Flooded` | component | `presence` | structure codec + presence watch | removed without a tag |
+| `HealthEvent` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `HotspotFrame` | buffer (empty) | `derived` | EventSync writes the frames from the replicated hotspot | never saved; EventInterpolateSystem indexes it unchecked |
+| `InDanger` | component | `presence` | structure codec + presence watch | removed with EffectsUpdated only |
 | `InvolvedInAccident` | component | `movers` | mover discrete state | vehicles and creatures in an accident |
-| `JournalEvent` | component | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `OnFire` | component | `presence` | structure codec + presence watch, values by attention | w3/audit fix: IgniteSystem adds it with BatchesUpdated only |
-| `SpectatorEvent` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `SpectatorSite` | component | `presence` | structure codec + presence watch | w3/audit fix |
-| `TargetElement` | buffer | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `TrafficAccident` | component (empty) | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `VehicleLaunch` | component | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `WaterLevelChange` | component | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
-| `WeatherPhenomenon` | component | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `JournalEvent` | component | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `OnFire` | component | `presence` | structure codec + presence watch, values by attention | IgniteSystem adds it with BatchesUpdated only |
+| `SpectatorEvent` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `SpectatorSite` | component | `presence` | structure codec + presence watch | event state on buildings |
+| `TargetElement` | buffer | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `TrafficAccident` | component (empty) | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `VehicleLaunch` | component | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `WaterLevelChange` | component | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
+| `WeatherPhenomenon` | component | `scan` | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events |
 
 #### Game.Net (82)
 
@@ -686,7 +686,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `BlockedLane` | buffer | `derived` | lane blocking derived on every peer | from objects on lanes |
 | `Color` | component (empty) | `structure` | structure codec | colour marker |
 | `Crane` | component (empty) | `structure` | structure codec | objects: buildings, props, trees, decals, stops |
-| `Damaged` | component | `presence` | structure codec + presence watch | w3/audit fix: added by DamageSystem with BatchesUpdated only |
+| `Damaged` | component | `presence` | structure codec + presence watch | added by DamageSystem with BatchesUpdated only |
 | `Decoration` | component (empty, enableable) | `structure` | structure codec | objects: buildings, props, trees, decals, stops |
 | `ElectricityOutsideConnection` | component (empty) | `structure` | structure codec | objects: buildings, props, trees, decals, stops |
 | `Elevation` | component | `structure` | structure codec | objects: buildings, props, trees, decals, stops |
@@ -833,7 +833,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `PipelineData` | component (empty) | `snapshot` | prefab entities (handshake: same mods, versions, settings) | prefab data is invariant during a session |
 | `PlaceableNetData` | component | `snapshot` | prefab entities (handshake: same mods, versions, settings) | prefab data is invariant during a session |
 | `PlaceableObjectData` | component | `snapshot` | prefab entities (handshake: same mods, versions, settings) | prefab data is invariant during a session |
-| `PlacedSignatureBuildingData` | component (empty) | `global` | custom channel "Signatures" (1 s) | w3/audit fix: written by the gated XPBuiltSystem; without it a placed signature building stayed in the clients' toolbars |
+| `PlacedSignatureBuildingData` | component (empty) | `global` | custom channel "Signatures" (1 s) | written by the gated XPBuiltSystem; without it a placed signature building stayed in the clients' toolbars |
 | `PlaceholderBuildingData` | component | `snapshot` | prefab entities (handshake: same mods, versions, settings) | prefab data is invariant during a session |
 | `PlantData` | component (empty) | `snapshot` | prefab entities (handshake: same mods, versions, settings) | prefab data is invariant during a session |
 | `PoliceCarData` | component | `snapshot` | prefab entities (handshake: same mods, versions, settings) | prefab data is invariant during a session |
@@ -984,14 +984,14 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `BatteryChargeNode` | component (empty) | `derived` | flow graph | derived topology |
 | `BatteryDischargeNode` | component (empty) | `derived` | flow graph | derived topology |
 | `CollectedCityServiceBudgetData` | component | `derived` | CityServiceBudgetSystem runs on clients (ModificationEnd) | from replicated buildings and budgets; worker counts depend on agent replication |
-| `CollectedCityServiceFeeData` | buffer | `global` | custom channel "Fees.Collected" | w3/audit fix: lives on service prefabs; clients get the host's cache |
+| `CollectedCityServiceFeeData` | buffer | `global` | custom channel "Fees.Collected" | lives on service prefabs; clients get the host's cache |
 | `CollectedCityServiceUpkeepData` | buffer | `derived` | CityServiceBudgetSystem runs on clients | as above |
 | `CollectedServiceBuildingBudgetData` | component | `derived` | CityServiceBudgetSystem runs on clients | as above |
 | `ConnectedFlowEdge` | buffer (empty) | `derived` | flow graph | derived topology |
 | `Creditworthiness` | component | `scan` | City entity value scan (1 s) | loan panel |
 | `Dispatched` | component | `hostonly` | service requests (TransientAgent family) | requests and dispatch are host simulation |
 | `ElectricityBuildingConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (transformer, producer, consumer, charge, discharge) |
-| `ElectricityFlowEdge` | component | `keyed` | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | w4/flow fix: infoview colours of power lines and transformers ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status)) |
+| `ElectricityFlowEdge` | component | `keyed` | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | infoview colours of power lines and transformers ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status)) |
 | `ElectricityFlowNode` | component (empty) | `derived` | flow graph | derived topology |
 | `ElectricityNodeConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys |
 | `ElectricityValveConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys |
@@ -1019,7 +1019,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `TransportVehicleRequest` | component | `hostonly` | TransientAgent family | host simulation |
 | `UpdateFrame` | shared | `movers` | spawn bundle (host UpdateFrame) / prefab archetype | shared component; set on spawn |
 | `WaterPipeBuildingConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (producer, consumer) |
-| `WaterPipeEdge` | component | `keyed` | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | w4/flow fix: infoview colours of water and sewage pipes ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status)) |
+| `WaterPipeEdge` | component | `keyed` | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | infoview colours of water and sewage pipes ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status)) |
 | `WaterPipeNode` | component | `derived` | flow graph | derived topology |
 | `WaterPipeNodeConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys |
 | `WaterPipeValveConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys |
@@ -1037,11 +1037,11 @@ Generated from **748** serializable components and buffers and **73** serializab
 
 | Type | Kind | Status | Mechanism | Note |
 |---|---|---|---|---|
-| `Chirp` | component | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: chirps and life-path events; CreateChirpSystem gated on clients |
-| `ChirpEntity` | buffer | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: chirps and life-path events; CreateChirpSystem gated on clients |
+| `Chirp` | component | `scan` | host-only Event family: structure codec + value scan | chirps and life-path events; CreateChirpSystem gated on clients |
+| `ChirpEntity` | buffer | `scan` | host-only Event family: structure codec + value scan | chirps and life-path events; CreateChirpSystem gated on clients |
 | `ChirpLink` | buffer | `structure` | structure codec (buffer on linked entities) | chirp references of buildings |
 | `LifePathEntry` | buffer | `agents` | on followed citizens | agent state |
-| `LifePathEvent` | component | `scan` | host-only Event family: structure codec + value scan | w3/audit fix: chirps and life-path events; CreateChirpSystem gated on clients |
+| `LifePathEvent` | component | `scan` | host-only Event family: structure codec + value scan | chirps and life-path events; CreateChirpSystem gated on clients |
 | `RadioEvent` | component | `local` | radio is per player | - |
 
 #### Game.UI (1)

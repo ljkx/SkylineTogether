@@ -24,9 +24,9 @@ namespace SkylineTogether.Core.Sync
         public static readonly uint Name = Id("Name");
         /// <summary>The city name (<c>CityConfigurationSystem.cityName</c>), key 0.</summary>
         public static readonly uint CityName = Id("CityName");
-        /// <summary>gameplay branch: semantic UI intents (<see cref="ActionIntent"/>), client → host only.</summary>
+        /// <summary>Semantic UI intents (<see cref="ActionIntent"/>), client → host only.</summary>
         public static readonly uint Action = Id("Action");
-        /// <summary>gameplay branch: the host's unlocked prefabs (<see cref="UnlockSet"/>), host → clients only.</summary>
+        /// <summary>The host's unlocked prefabs (<see cref="UnlockSet"/>), host → clients only.</summary>
         public static readonly uint Unlocks = Id("Unlocks");
 
         /// <summary>The channel id of a string id (FNV-1a, 32 bit).</summary>

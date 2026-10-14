@@ -34,7 +34,7 @@ namespace SkylineTogether.Sync
         public readonly List<(uint Start, uint Count)> IdRanges = new List<(uint, uint)>();
         /// <summary>Entities written or tagged by this apply (the client excludes them from its own capture).</summary>
         public readonly HashSet<Entity> Touched = new HashSet<Entity>();
-        /// <summary>gameplay branch: the entities this apply created (host: build-order re-base of committed edges).</summary>
+        /// <summary>The entities this apply created (host: build-order re-base of committed edges).</summary>
         public readonly List<Entity> SpawnedEntities = new List<Entity>();
         public readonly List<string> Problems = new List<string>();
 
@@ -502,7 +502,7 @@ namespace SkylineTogether.Sync
 
         private static ulong Mix(ulong h, ulong v) => (h ^ v) * 1099511628211UL + (h >> 29);
 
-        // ------------------------------------------------------------------ integrity and icon channels (feat/integrity)
+        // ------------------------------------------------------------------ integrity and icon channels
 
         /// <summary>
         /// Hash of one component's replicated value as both peers can compute it (IntegritySync): the game bytes with net
@@ -1264,7 +1264,7 @@ namespace SkylineTogether.Sync
         {
             EntityManager em = EntityManager;
             {
-                // gameplay branch: a client's edit of an existing entity never touches host-owned state (ARCHITECTURE.md#client-proposals)
+                // a client's edit of an existing entity never touches host-owned state (ARCHITECTURE.md#client-proposals)
                 bool keepHostOwned = proposal && !_spawned.Contains(e);
                 _recordTypes.Clear();
                 for (int c = 0; c < r.Components.Count; c++)
@@ -1305,7 +1305,7 @@ namespace SkylineTogether.Sync
                     // a payload of another kind than this game's type (data vs buffer) would be misread
                     if (h == null || h.Kind == SyncComponentKind.Presence || h.Kind != comp.Kind || !em.HasComponent(e, h.Type)) continue;
                     if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
-                    // gameplay branch: state vanilla keeps beside some values (mesh colour enable bit, line colour events)
+                    // state vanilla keeps beside some values (mesh colour enable bit, line colour events)
                     Type fixup = FixupType(h);
                     Game.Routes.Color oldColor = fixup == typeof(Game.Routes.Color) ? em.GetComponentData<Game.Routes.Color>(e) : default;
                     ReadComponent(h, e, comp, offset, data, result, !spawned);
@@ -1575,7 +1575,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// gameplay branch: types a client's proposal never writes on an existing entity (ARCHITECTURE.md#host-validation-and-commit).
+        /// Types a client's proposal never writes on an existing entity (ARCHITECTURE.md#host-validation-and-commit).
         /// Line state and initializer outputs are the host's (RouteNumber, VehicleModel); values the
         /// player edits through the UI travel as intents (<see cref="ActionSync"/>: line colour, vehicle models, service
         /// districts, mesh colour), so a tool edit of the same entity in the same round trip cannot revert them; the

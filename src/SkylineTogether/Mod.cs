@@ -40,10 +40,10 @@ namespace SkylineTogether
         /// <summary>Remote presence (cursors, tools, name tags).</summary>
         public static PresenceController Presence { get; private set; }
 
-        /// <summary>Movers branch: the client's follower clock.</summary>
+        /// <summary>The client's follower clock.</summary>
         public static FollowerClock Clock { get; private set; }
 
-        /// <summary>Movers branch: vehicle and creature replication.</summary>
+        /// <summary>Vehicle and creature replication.</summary>
         public static MoverSync Movers { get; private set; }
 
         /// <summary>Steam friends: lobby, rich presence, the invite dialog, direct invites, the friends list, invite joins.</summary>
@@ -99,7 +99,7 @@ namespace SkylineTogether
                 Sessions = new SessionManager(Settings, log);
                 Sync = new SyncController(Sessions, log);
                 Presence = new PresenceController(Sessions);
-                // movers branch: follower clock (time runs, gameplay simulation off) and mover replication
+                // follower clock (time runs, gameplay simulation off) and mover replication
                 Clock = new FollowerClock(Sessions, log);
                 Movers = new MoverSync(Sessions, log);
                 Toasts = new SessionToasts(Sessions);
@@ -129,16 +129,16 @@ namespace SkylineTogether
                 updateSystem.UpdateBefore<SyncCaptureSystem, PrepareCleanUpSystem>(SystemUpdatePhase.MainLoop);
                 updateSystem.UpdateBefore<SyncToolApplySystem>(SystemUpdatePhase.ApplyTool);
                 updateSystem.UpdateBefore<SyncBindSystem, SaveGameSystem>(SystemUpdatePhase.MainLoop);
-                // gameplay branch: viewers' tools never apply (no-predict gate, right before ToolOutputSystem)
+                // viewers' tools never apply (no-predict gate, right before ToolOutputSystem)
                 updateSystem.UpdateBefore<ViewerGateSystem, Game.Tools.ToolOutputSystem>(SystemUpdatePhase.ToolUpdate);
-                // feat/integrity: client icons are host data; filter local producers right before IconCommandSystem
+                // client icons are host data; filter local producers right before IconCommandSystem
                 updateSystem.UpdateBefore<IconAuthorityFilterSystem, Game.Notifications.IconCommandSystem>(SystemUpdatePhase.ModificationEnd);
                 // clients: local chirps dropped right before CreateChirpSystem consumes its queue (it stays enabled)
                 updateSystem.UpdateBefore<ChirpDrainSystem, Game.Triggers.CreateChirpSystem>(SystemUpdatePhase.ModificationEnd);
             });
             Step(log, "mover systems", () =>
             {
-                // movers branch: host capture before SaveGameSystem, client apply after the structure apply, client
+                // host capture before SaveGameSystem, client apply after the structure apply, client
                 // motion writer after PrepareRendering and before PreCullingSystem reads the frames
                 updateSystem.UpdateBefore<MoverCaptureSystem, SaveGameSystem>(SystemUpdatePhase.MainLoop);
                 updateSystem.UpdateAfter<MoverApplySystem, SyncApplySystem>(SystemUpdatePhase.MainLoop);

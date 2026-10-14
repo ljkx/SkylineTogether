@@ -29,7 +29,7 @@ namespace SkylineTogether.Core.Session
             Connection = connection ?? throw new ArgumentNullException(nameof(connection));
             Outbox = new PeerOutbox(connection, peer, new OutboxConfig(), clock, log);
             _codec = new EnvelopeCodec(new ManagedLz4Compressor(), log);
-            // perf pass: one delegate for every send (the lambda with a captured local allocated two objects per message)
+            // one delegate for every send (the lambda with a captured local allocated two objects per message)
             _emit = (b, o, c) =>
             {
                 if (Outbox.Send(_sendLane, Delivery.ReliableOrdered, b, o, c) != SendResult.Ok) _sendOk = false;
@@ -59,7 +59,7 @@ namespace SkylineTogether.Core.Session
         public CompressionKind Compression => _codec.Compressor?.Kind ?? CompressionKind.None;
 
         /// <summary>
-        /// perf pass: encodes (and compresses) a body into <paramref name="output"/> exactly as <see cref="Send(MessageKind, byte[], int, int, Lane)"/> would, so
+        /// Encodes (and compresses) a body into <paramref name="output"/> exactly as <see cref="Send(MessageKind, byte[], int, int, Lane)"/> would, so
         /// a broadcast encodes once and hands the result to every channel with the same <see cref="Compression"/>
         /// (<see cref="SendEncoded"/>). The writer is not reset.
         /// </summary>

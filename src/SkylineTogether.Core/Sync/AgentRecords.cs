@@ -6,7 +6,7 @@ namespace SkylineTogether.Core.Sync
 {
     /// <summary>
     /// The agent identities a mover refers to (body of <see cref="SyncRecordKind.MoverAgents"/>, written into the
-    /// movers branch's batches right after the mover's spawn or state record). Movers are spawned on clients from their
+    /// mover batches right after the mover's spawn or state record). Movers are spawned on clients from their
     /// prefab archetype, so without this record a client's pedestrian has no citizen (no citizen panel, no follow camera
     /// through <c>Resident.m_Citizen</c>), a pet no household pet and a car no keeper or owner. Net ids; 0 means "none".
     /// <code>

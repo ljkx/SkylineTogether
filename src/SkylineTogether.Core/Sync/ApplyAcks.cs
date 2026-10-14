@@ -11,7 +11,7 @@ namespace SkylineTogether.Core.Sync
     /// number of <c>Epoch</c> messages it has <i>applied</i> (<see cref="ApplyAckTracker"/>), so it has applied frame F once
     /// its acknowledged count reaches F's watermark. Frames sealed before a peer was admitted count as applied by it (its
     /// stream starts after them, and its join snapshot is taken after its admission). Release frames gate net id reuse
-    /// only; they are unrelated to the gameplay branch's ledger epochs (<c>SyncRecordKind.Epoch</c>, conflict bases).
+    /// only; they are unrelated to the ledger epochs (<c>SyncRecordKind.Epoch</c>, conflict bases).
     /// <para>Host main thread. Not thread-safe.</para>
     /// </summary>
     public sealed class ApplyAckBook

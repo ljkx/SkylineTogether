@@ -30,7 +30,7 @@ namespace SkylineTogether.UI
     /// client's own join or, on the host, the last player's join (absent when there is none).
     /// </para>
     /// <para>
-    /// Robust branch: every getter and trigger is guarded (<see cref="Guard"/>, feature <see cref="Features.Ui"/>), the
+    /// Every getter and trigger is guarded (<see cref="Guard"/>, feature <see cref="Features.Ui"/>), the
     /// state's change check compares a struct every frame without allocating (single player costs nothing while nothing
     /// changes), and the state carries the recovery after an unexpected disconnect and the self-test summary.
     /// </para>
@@ -121,7 +121,7 @@ namespace SkylineTogether.UI
             AddBinding(new TriggerBinding(Group, "leave", () => Trigger("leave", () => Mod.Sessions?.Leave())));
             AddBinding(new TriggerBinding<string>(Group, "chat", text => Trigger("chat", () => Mod.Sessions?.SendChat(text))));
             AddBinding(new TriggerBinding<int>(Group, "kick", peer => Trigger("kick", () => Mod.Sessions?.Kick((byte)Math.Max(0, Math.Min(255, peer))))));
-            // gameplay branch: builder ↔ viewer
+            // builder ↔ viewer
             AddBinding(new TriggerBinding<int>(Group, "toggleRole", peer => Trigger("toggleRole", () => Mod.Sessions?.ToggleRole((byte)Math.Max(0, Math.Min(255, peer))))));
             // bans, co-hosts, the join policy, the integrity resync offer
             AddBinding(new TriggerBinding<int>(Group, "ban", peer => Trigger("ban", () => Mod.Sessions?.Ban((byte)Math.Max(0, Math.Min(255, peer))))));
@@ -178,7 +178,7 @@ namespace SkylineTogether.UI
             AddBinding(new TriggerBinding<string>(Group, "copyText", text => Trigger("copyText", () => Copy(text ?? ""))));
             AddBinding(new TriggerBinding(Group, "inviteFriends", () => Trigger("inviteFriends", () => Mod.Invites?.OpenInviteDialog())));
 
-            // robust branch: recovery after an unexpected end of a client session in the host's city
+            // recovery after an unexpected end of a client session in the host's city
             AddBinding(new TriggerBinding(Group, "reconnect", () => Trigger("reconnect", () => Mod.Sessions?.Reconnect())));
             AddBinding(new TriggerBinding(Group, "cancelReconnect", () => Trigger("cancelReconnect", () => Mod.Sessions?.CancelReconnect())));
             AddBinding(new TriggerBinding(Group, "stayOffline", () => Trigger("stayOffline", () => Mod.Sessions?.StayOffline())));
@@ -553,7 +553,7 @@ namespace SkylineTogether.UI
             sb.Append("],");
             Prop(sb, "canInvite", steam && inviteTarget != 0).Append(',');
             Prop(sb, "inviteSteamId", inviteTarget != 0 ? inviteTarget.ToString(CultureInfo.InvariantCulture) : "").Append(',');
-            // robust branch: the self-test (ARCHITECTURE.md#probes-and-self-test) in one line, and what blocks hosting/joining if anything
+            // the self-test (ARCHITECTURE.md#probes-and-self-test) in one line, and what blocks hosting/joining if anything
             Prop(sb, "probes", Probes.Summary ?? "").Append(',');
             Prop(sb, "blocked", SessionManager.BlockingReason() ?? "").Append(',');
 
@@ -610,7 +610,7 @@ namespace SkylineTogether.UI
             WriteEnd(sb, s.LastEnd);
             sb.Append(',');
 
-            // robust branch: recovery {phase, attempt, max, seconds, reason, canReconnect, hostEnded, attemptStage}
+            // recovery {phase, attempt, max, seconds, reason, canReconnect, hostEnded, attemptStage}
             RejoinController r = s.Recovery;
             sb.Append("\"recovery\":{");
             Prop(sb, "phase", r.Phase.ToString()).Append(',');
@@ -754,7 +754,7 @@ namespace SkylineTogether.UI
                 case ClientEndKind.Timeout: return "timeout";
                 case ClientEndKind.ConnectionLost: return "connectionLost";
                 case ClientEndKind.Failed: return "failed";
-                // robust branch: the finer kinds map onto the error screen's categories
+                // the finer kinds map onto the error screen's categories
                 case ClientEndKind.Unreachable: return "timeout"; // never connected ("check the Steam ID or address")
                 case ClientEndKind.RefusedTemporarily: return "refused";
                 // the error screen has its own copy for these two (what to check, what to update)

@@ -8,7 +8,7 @@ using UnityEngine;
 namespace SkylineTogether.Presence
 {
     /// <summary>
-    /// Draws a remote player's <see cref="ToolPreview"/> (blueprint branch) into the game's overlay buffer as translucent
+    /// Draws a remote player's <see cref="ToolPreview"/> into the game's overlay buffer as translucent
     /// filled outlines in the player's colour, projected onto the ground like the game's own tool guides: net curves
     /// with their width, footprints, area outlines with their corner points, painted zone cells, line paths. Removals are
     /// filled red, invalid placements outlined red, sub-elements fainter. Outline widths grow with the camera distance

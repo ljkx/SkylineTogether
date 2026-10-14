@@ -49,7 +49,7 @@ namespace SkylineTogether.Sync
     public sealed class IconSync
     {
         private const double HostScanInterval = 0.5;
-        /// <summary>perf pass: host milliseconds per frame for a scan pass (at least <see cref="HostMinOwnersPerFrame"/> owners).</summary>
+        /// <summary>Host milliseconds per frame for a scan pass (at least <see cref="HostMinOwnersPerFrame"/> owners).</summary>
         private const double HostSliceMs = 0.5;
         private const int HostMinOwnersPerFrame = 64;
         private const int DigestEveryScans = 20;
@@ -79,7 +79,7 @@ namespace SkylineTogether.Sync
         private readonly HashSet<Entity> _seen = new HashSet<Entity>();
         private readonly List<Entity> _gone = new List<Entity>();
         private readonly HashSet<SyncRef> _liveRefs = new HashSet<SyncRef>();
-        // perf pass: the owners of the scan pass in progress (a snapshot taken at its start) and the next one to read
+        // the owners of the scan pass in progress (a snapshot taken at its start) and the next one to read
         private readonly List<Entity> _passOwners = new List<Entity>();
         private int _passCursor = -1;
         private readonly List<SyncIcon> _iconScratch = new List<SyncIcon>(SyncBatch.MaxIconsPerOwner);
@@ -304,7 +304,7 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// Host, at the end of the frame's capture: changed icon sets (and periodically the digest) into the broadcast batch.
-        /// perf pass: a scan pass starts at most every <see cref="HostScanInterval"/> s with a snapshot of the icon owners and
+        /// A scan pass starts at most every <see cref="HostScanInterval"/> s with a snapshot of the icon owners and
         /// reads them in time slices (<see cref="HostSliceMs"/> per frame), so a large city's thousands of owners no longer
         /// hitch one frame twice a second; a small city still finishes a pass in one frame. Owners whose icons vanished
         /// before their turn count as gone, exactly as if they had left the query; owners that gained icons during the pass
@@ -660,7 +660,7 @@ namespace SkylineTogether.Sync
         private void CollectWork()
         {
             _work.Clear();
-            HashSet<Entity> set = _workSet; // perf pass: reused (this runs every client frame)
+            HashSet<Entity> set = _workSet; // reused (this runs every client frame)
             set.Clear();
             if (_sweepAll)
             {

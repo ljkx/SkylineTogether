@@ -25,10 +25,10 @@ namespace SkylineTogether.Core.Session
             /// <summary>When the last update arrived (<see cref="IClock.Seconds"/>).</summary>
             public double ReceivedAt;
 
-            /// <summary>blueprint branch: the player's tool preview as last received (empty when none or unreadable).</summary>
+            /// <summary>The player's tool preview as last received (empty when none or unreadable).</summary>
             public readonly ToolPreview Preview = new ToolPreview();
 
-            /// <summary>blueprint branch: the preview as drawn, eased toward <see cref="Preview"/> by <see cref="ToolPreviewSmoother"/>.</summary>
+            /// <summary>The preview as drawn, eased toward <see cref="Preview"/> by <see cref="ToolPreviewSmoother"/>.</summary>
             public readonly ToolPreview ShownPreview = new ToolPreview();
         }
 
@@ -42,10 +42,10 @@ namespace SkylineTogether.Core.Session
 
         public IReadOnlyList<Entry> Entries => _entries;
 
-        /// <summary>blueprint branch: received previews that were malformed (dropped; the cursor still updates).</summary>
+        /// <summary>Received previews that were malformed (dropped; the cursor still updates).</summary>
         public int BadPreviews { get; private set; }
 
-        /// <summary>blueprint branch: received previews of another preview version (ignored).</summary>
+        /// <summary>Received previews of another preview version (ignored).</summary>
         public int UnknownPreviewVersions { get; private set; }
 
         /// <summary>Stores a received presence; the local player's own peer is never stored.</summary>

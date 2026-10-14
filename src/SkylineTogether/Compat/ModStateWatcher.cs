@@ -194,7 +194,7 @@ namespace SkylineTogether.Compat
             EntityManager em = _codec.EntityManager;
             _query.CompleteDependency();
             uint since = _lastVersion;
-            // perf pass: the handle array is kept (the watched types are fixed between Start calls); handles are fresh
+            // the handle array is kept (the watched types are fixed between Start calls); handles are fresh
             if (_handles == null || _handles.Length != _types.Count) _handles = new DynamicComponentTypeHandle[_types.Count];
             DynamicComponentTypeHandle[] handles = _handles;
             for (int i = 0; i < handles.Length; i++) handles[i] = em.GetDynamicComponentTypeHandle(_types[i]);

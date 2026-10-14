@@ -71,7 +71,7 @@ namespace SkylineTogether.Sync
             for (int i = 0; i < records.Count; i++)
             {
                 SyncRecord r = records[i];
-                // gameplay branch: the host's ledger epochs (conflict base) and proposal results (rollback toast)
+                // the host's ledger epochs (conflict base) and proposal results (rollback toast)
                 if (fromHost && r.Kind == SyncRecordKind.Epoch)
                 {
                     _baseEpoch = r.EpochNumber;

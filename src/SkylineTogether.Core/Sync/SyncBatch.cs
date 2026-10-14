@@ -38,7 +38,7 @@ namespace SkylineTogether.Core.Sync
         /// </summary>
         IdCeiling = 12,
 
-        // ---- integrity and icon channels (feat/integrity; values 40-49 are reserved for them by merge coordination) ----
+        // ---- integrity and icon channels (values 40-49 are reserved for them) ----
         /// <summary>Host → client: the integrity digest of one bucket of net ids (rolling verification).</summary>
         BucketDigest = 40,
         /// <summary>Host → client: the integrity hash of every bound entity of one bucket (answer to <see cref="SyncRequest.BucketDetail"/>).</summary>
@@ -54,7 +54,7 @@ namespace SkylineTogether.Core.Sync
         /// <summary>Host → client: the UI-level line rows (<c>LineStateReport.WriteRows</c>).</summary>
         LineRows = 46,
 
-        // ---- movers branch (ARCHITECTURE.md#movers; kinds 20-29 are reserved for it): existence of vehicles and creatures ----
+        // ---- movers (ARCHITECTURE.md#movers; kinds 20-29 are reserved for them): existence of vehicles and creatures ----
 
         /// <summary>Host → client: a mover appeared (<see cref="MoverRecord"/>).</summary>
         MoverSpawn = 20,
@@ -149,7 +149,7 @@ namespace SkylineTogether.Core.Sync
         /// <summary>The full state of every replicated entity (repair).</summary>
         ResendAll = 3,
 
-        // ---- with a list of ids (SyncRecordKind.RequestIds; feat/integrity; values 40-49 reserved) ----
+        // ---- with a list of ids (SyncRecordKind.RequestIds; values 40-49 reserved) ----
         /// <summary>The per-entity hashes of the listed buckets.</summary>
         BucketDetail = 40,
         /// <summary>Re-send the listed entities (as spawns; ids the host does not have are answered with a despawn).</summary>
@@ -220,7 +220,7 @@ namespace SkylineTogether.Core.Sync
         public uint Channel;
         public byte[] Payload;
 
-        // ---- integrity and icon channels (feat/integrity) ----
+        // ---- integrity and icon channels ----
         /// <summary><see cref="SyncRecordKind.BucketDigest"/>, <see cref="SyncRecordKind.EntityHashes"/>: the bucket.</summary>
         public uint Bucket;
         /// <summary><see cref="SyncRecordKind.BucketDigest"/>: entities in the bucket; <see cref="SyncRecordKind.IconControl"/>: owners.</summary>
@@ -237,7 +237,7 @@ namespace SkylineTogether.Core.Sync
         public SyncRef Owner;
         public List<SyncIcon> Icons;
         public IconControlMode IconMode;
-        /// <summary>For <see cref="SyncRecordKind.MoverSpawn"/> and <see cref="SyncRecordKind.MoverState"/> (movers branch).</summary>
+        /// <summary>For <see cref="SyncRecordKind.MoverSpawn"/> and <see cref="SyncRecordKind.MoverState"/>.</summary>
         public MoverRecord Mover;
         /// <summary>For <see cref="SyncRecordKind.MoverAgents"/> (with <see cref="NetId"/> = the mover).</summary>
         public MoverAgentLinks AgentLinks;
@@ -248,7 +248,7 @@ namespace SkylineTogether.Core.Sync
         /// <summary>For <see cref="SyncRecordKind.PrefabSource"/> (with <see cref="NetId"/> = the prefab's id): its origin.</summary>
         public Modding.AssetSource Source;
 
-        // ---- gameplay branch ----
+        // ---- proposal validation and results ----
         /// <summary><see cref="SyncRecordKind.Epoch"/>: the broadcast number.</summary>
         public uint EpochNumber;
         /// <summary><see cref="SyncRecordKind.ProposalHeader"/>, <see cref="SyncRecordKind.ProposalResult"/>: the proposal's sequence number.</summary>
@@ -370,7 +370,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// A batch of the movers branch (<c>MoverHost</c> writes only mover records into its batches): owned by the
+        /// A mover batch (<c>MoverHost</c> writes only mover records into its batches): owned by the
         /// client's <c>MoverClient</c>; the structure apply, the integrity check and global state never need it.
         /// </summary>
         public static bool IsMoverBatch(byte[] data, int offset, int count)
@@ -600,7 +600,7 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
-            // ---- integrity and icon channels (feat/integrity) ----
+            // ---- integrity and icon channels ----
 
             public void BucketDigest(uint bucket, uint count, ulong hash)
             {
@@ -679,7 +679,7 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
-            /// <summary>A mover spawn or state record (movers branch, ARCHITECTURE.md#movers).</summary>
+            /// <summary>A mover spawn or state record (ARCHITECTURE.md#movers).</summary>
             public void Mover(SyncRecordKind kind, uint netId, MoverRecord mover)
             {
                 if (kind != SyncRecordKind.MoverSpawn && kind != SyncRecordKind.MoverState) throw new ArgumentException("not a mover record kind", nameof(kind));
@@ -689,7 +689,7 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
-            /// <summary>A mover despawn record (movers branch).</summary>
+            /// <summary>A mover despawn record.</summary>
             public void MoverDespawn(uint netId)
             {
                 _w.WriteByte((byte)SyncRecordKind.MoverDespawn);
@@ -749,7 +749,7 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
-            // ---- gameplay branch ----
+            // ---- proposal validation and results ----
 
             /// <summary>Host: stamps this structural broadcast with its epoch number.</summary>
             public void Epoch(uint epoch)

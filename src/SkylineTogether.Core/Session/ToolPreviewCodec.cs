@@ -6,7 +6,7 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// The wire form of a <see cref="ToolPreview"/> (blueprint branch), carried as the opaque preview bytes of a
+    /// The wire form of a <see cref="ToolPreview"/>, carried as the opaque preview bytes of a
     /// <see cref="PresenceMessage"/>. Every message holds the whole preview (a keyframe, never a delta), so one received
     /// message heals any number of lost ones. An empty preview is zero bytes.
     /// <code>

@@ -18,7 +18,7 @@ using UnityEngine;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// gameplay branch: the player actions whose vanilla handlers write the world without any tag the entity capture
+    /// The player actions whose vanilla handlers write the world without any tag the entity capture
     /// could scope, or through an API only the host may run (R10 §2-§5, ARCHITECTURE.md#player-actions). See
     /// docs/design/ACTION-COVERAGE.md for the full action table.
     /// <list type="bullet">
@@ -94,7 +94,7 @@ namespace SkylineTogether.Sync
         public ActionSync(ILog log)
         {
             _log = log;
-            // perf pass: the watchers run every frame on both roles; their delegates are made once
+            // the watchers run every frame on both roles; their delegates are made once
             _foundSelection = (e, kind, intent) => OnWatchFound(e, intent);
             _foundWrite = OnWatchFound;
             _watchSelectionCall = () => WatchSelection(_watchWrote, _foundSelection);

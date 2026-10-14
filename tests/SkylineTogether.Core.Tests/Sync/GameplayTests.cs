@@ -7,7 +7,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>gameplay branch: proposal records, intents, unlock sets, roles, validation rules, build orders.</summary>
+    /// <summary>Proposal records, intents, unlock sets, roles, validation rules, build orders.</summary>
     public sealed class GameplayTests
     {
         private static List<SyncRecord> RoundTrip(SyncBatch.Writer w)

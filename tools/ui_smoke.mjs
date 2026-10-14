@@ -49,7 +49,7 @@ for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "w
   "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync"]) {
   if (!csTriggers.has(t)) fail("SessionUISystem lost the trigger " + t);
 }
-// the invite contract the panel consumes (w6/invites)
+// the invite contract the panel consumes
 for (const b of ["friends", "overlayAvailable"]) if (!csBindings.has(b)) fail("InviteUISystem lost the binding " + b);
 for (const t of ["inviteFriend", "openInviteOverlay", "refreshFriends"]) if (!csTriggers.has(t)) fail("InviteUISystem lost the trigger " + t);
 
@@ -199,7 +199,7 @@ const base = { steam: true, steamId: "76561190000000000", players: [], chat: [],
   playerName: "Me", sessionNameSetting: "", hasPassword: false, joinTarget: "", lastEnd: "", status: "", sync: "", speed: "", sessionName: "", progress: 0, directPort: 0,
   inGame: true, maxPlayers: 8, allowDirect: false, requireSameMods: true, portSetting: 27015, canInvite: false, inviteSteamId: "", hold: false, stage: "",
   speedValue: 1, speedPaused: false, speedHeld: false, end: null, build: "2f076aad4234", friendsOnly: false, localRole: "", resync: "", bans: [] };
-// w8/security: bans, co-hosts, removal after loading, resync offers
+// bans, co-hosts, removal after loading, resync offers
 const bans = [{ key: "steam:76561190000000007", name: "Griefer", kind: "steam", id: "76561190000000007" }, { key: "ip:203.0.113.9", name: "", kind: "ip", id: "203.0.113.9" }];
 const coPlayers = [{ id: 0, name: "Host", host: true, you: false, state: "Live", ping: 40, progress: 1, color: "#f2b84b", role: "host" },
   { id: 1, name: "Me", host: false, you: true, state: "Live", ping: 0, progress: 1, color: "#3fb6e8", role: "cohost" },
@@ -267,7 +267,7 @@ const cases = {
   recoveryBanned: { state: { ...base, mode: "Recovering", recovery: { phase: "NeedsChoice", attempt: 0, max: 6, seconds: 0, reason: "The host removed you from the session and banned you: Banned by the host", canReconnect: false, hostEnded: true, kicked: false, banned: true, attemptStage: "" } } },
   endEnded: { state: { ...base, mode: "None", end: end("sessionEnded") } },
   endFailed: { state: { ...base, mode: "None", end: end("failed") } },
-  // robust branch: recovery after an unexpected disconnect, self-test line, blocked hosting
+  // recovery after an unexpected disconnect, self-test line, blocked hosting
   recoveryWaiting: { state: { ...base, mode: "Recovering", probes: "Self-test: 30/31 checks passed, 1 warnings", recovery: { phase: "Waiting", attempt: 2, max: 6, seconds: 4, reason: "Lost the connection to the host (timed out).", canReconnect: true, hostEnded: false, attemptStage: "downloading" }, players: [{ id: 0, name: "Host", host: true, you: false, state: "Offline", ping: 0, progress: 1, color: "#fff", role: "host" }] } },
   recoveryAttempt: { state: { ...base, mode: "Recovering", progress: 0.3, recovery: { phase: "Attempting", attempt: 2, max: 6, seconds: 4, reason: "Lost the connection to the host (timed out).", canReconnect: true, hostEnded: false, attemptStage: "downloading" } } },
   recoveryChoice: { state: { ...base, mode: "Recovering", recovery: { phase: "NeedsChoice", attempt: 2, max: 6, seconds: 4, reason: "Lost the connection to the host (timed out).", canReconnect: true, hostEnded: false, attemptStage: "downloading" } } },

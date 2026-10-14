@@ -34,7 +34,7 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    _terrain.OnToolApply(); // feat/terrain: brush stamps, on the host and on clients
+                    _terrain.OnToolApply(); // brush stamps, on the host and on clients
                 }
                 catch (Exception ex)
                 {
@@ -52,7 +52,7 @@ namespace SkylineTogether.Sync
                     Guard.Report(Features.SimValues, "resource brush capture", ex);
                 }
             }
-            // gameplay branch: the host records its own tool's originals too (authored changes, conflict ledger)
+            // the host records its own tool's originals too (authored changes, conflict ledger)
             if (_codec == null || (!IsLiveClient && !IsHost) || !Features.Replication.IsAvailable) return;
             if (!IsHost) HashBaselines(true); // the edit baselines of everything the tool may change, before it changes it
             EntityManager em = _codec.EntityManager;
@@ -84,7 +84,7 @@ namespace SkylineTogether.Sync
             if (_codec != null) _codec.DependencyBinder = null; // mod compatibility: never left over from a failed capture
             Core.Transport.StatsFrame.Advance(); // link statistics: one transport query per peer and frame
             if (!SessionActive) return; // single player: nothing to do, nothing allocated
-            // feat/terrain: stamps out, readbacks in, settled heightmap tiles, audits, water samples
+            // stamps out, readbacks in, settled heightmap tiles, audits, water samples
             if (Features.Terrain.IsAvailable)
             {
                 long terrain = Perf.Start();
@@ -129,7 +129,7 @@ namespace SkylineTogether.Sync
             _lastFrameTime = now;
             if (_codec != null)
             {
-                // gameplay branch: the bulldozer's sub-element mode deletes derived props and fences (no net ids)
+                // the bulldozer's sub-element mode deletes derived props and fences (no net ids)
                 _subElementFrame = _toolApplied && _tools.activeTool is BulldozeToolSystem bulldozer && bulldozer.actualMode != BulldozeToolSystem.Mode.MainElements;
                 long start = Perf.Start();
                 try
@@ -170,7 +170,7 @@ namespace SkylineTogether.Sync
                         {
                             long client = Perf.Start();
                             CaptureClient(now);
-                            SafeCall("action capture", _clientActionCall); // gameplay branch
+                            SafeCall("action capture", _clientActionCall);
                             Perf.Stop(Perf.ClientCapture, client);
                             if (Features.Agents.IsAvailable) _agents.ClientFrameEnd(now); // refresh requests
                         }
@@ -179,7 +179,7 @@ namespace SkylineTogether.Sync
                     {
                         try
                         {
-                            if (IsLiveClient) Integrity.ClientFrameEnd(now); // feat/integrity: integrity requests, icon digest
+                            if (IsLiveClient) Integrity.ClientFrameEnd(now); // integrity requests, icon digest
                         }
                         catch (Exception ex)
                         {
@@ -231,7 +231,7 @@ namespace SkylineTogether.Sync
                 _globalBatch.Reset();
                 if (IsHost)
                 {
-                    // gameplay branch: executors that need EndFrameBarrier run here (after AllowBarrier<EndFrameBarrier>)
+                    // executors that need EndFrameBarrier run here (after AllowBarrier<EndFrameBarrier>)
                     SafeCall("late intents", _lateIntentsCall);
                     _global.HostCapture(_globalBatch);
                     _actions.HostCapture(_globalBatch, now);
@@ -340,7 +340,7 @@ namespace SkylineTogether.Sync
                 }
                 Perf.Budget.End(Perf.BudgetPresenceWatch, Perf.Stop(Perf.PresenceWatch, watch));
             }
-            // gameplay branch: entities that intents or the host's own UI changed without any tag
+            // entities that intents or the host's own UI changed without any tag
             foreach (Entity e in _forceCapture)
             {
                 if (_writtenThisFrame.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
@@ -376,7 +376,7 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    Integrity.HostCapture(now, _batch, _digestBatch, _sessions.Host?.LivePeerCount ?? 0); // feat/integrity: icons and line rows; digests per peer
+                    Integrity.HostCapture(now, _batch, _digestBatch, _sessions.Host?.LivePeerCount ?? 0); // icons and line rows; digests per peer
                 }
                 catch (Exception ex)
                 {
@@ -386,7 +386,7 @@ namespace SkylineTogether.Sync
             Perf.Budget.End(Perf.BudgetIntegrity, Perf.Stop(Perf.Integrity, integrity));
             if (!_batch.IsEmpty)
             {
-                // gameplay branch: the ledger epoch goes last, so the first-record routing of batches is unchanged
+                // the ledger epoch goes last, so the first-record routing of batches is unchanged
                 _batch.Epoch(_ledger.Advance());
                 Broadcast(_batch, Perf.StructureBytes);
             }
@@ -407,7 +407,7 @@ namespace SkylineTogether.Sync
             }
             if (_subElementFrame && deleted && (family == Family.PrefabSubObject || family == Family.Lane))
             {
-                _actions.NoteSubElementDeleted(e); // gameplay branch: replayed on clients by key
+                _actions.NoteSubElementDeleted(e); // replayed on clients by key
                 return;
             }
             if (family == Family.Agent)
@@ -487,7 +487,7 @@ namespace SkylineTogether.Sync
             _writtenThisFrame.Add(e);
             DropDeferred(id, DeferredClass.Upsert); // the full record supersedes waiting values and re-sends
             _events.NoteWritten(em, id, e, family); // the component set clients now hold
-            // gameplay branch: authored changes (committed proposals and intents, the host player's tool) for conflicts
+            // authored changes (committed proposals and intents, the host player's tool) for conflicts
             if (_authoredThisFrame.TryGetValue(e, out byte author)) _ledger.MarkAuthored(id, author);
             else if (em.HasComponent<Game.Common.Applied>(e) || _toolOriginals.Contains(e)) _ledger.MarkAuthored(id, PeerId.Host.Value);
         }
@@ -660,7 +660,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// gameplay branch: a deletion the vanilla UI makes outside any tool (R10 D1-D3: <c>ActionsSection.OnDelete</c>
+        /// A deletion the vanilla UI makes outside any tool (R10 D1-D3: <c>ActionsSection.OnDelete</c>
         /// for districts, service upgrades and lines, <c>UpgradesSection.OnDelete</c>, the transport overview's delete).
         /// Entities removed together with their owner are the owner's business.
         /// </summary>

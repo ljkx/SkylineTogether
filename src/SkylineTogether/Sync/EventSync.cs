@@ -116,7 +116,7 @@ namespace SkylineTogether.Sync
         public EventSync(ILog log)
         {
             _log = log;
-            // perf pass: the client's per-frame guarded calls use delegates made once
+            // the client's per-frame guarded calls use delegates made once
             _readLikesCall = ReadLikes;
             _touchedCall = FixTouched;
             _hotspotsCall = () => UpdateHotspots(_world.EntityManager);
@@ -238,7 +238,7 @@ namespace SkylineTogether.Sync
                     if (w.Now.Contains(id)) continue;
                     if (Check(em, id, into)) found++;
                 }
-                // perf pass: the sets swap roles (the copy cost an add per watched entity at every sweep)
+                // the sets swap roles (the copy cost an add per watched entity at every sweep)
                 HashSet<uint> last = w.Seen;
                 w.Seen = w.Now;
                 w.Now = last;
@@ -336,7 +336,7 @@ namespace SkylineTogether.Sync
 
         private void RefillPass()
         {
-            // perf pass: the structure index set (bound presence-watched ids) instead of a walk over the whole id table
+            // the structure index set (bound presence-watched ids) instead of a walk over the whole id table
             _scratchIds.Clear();
             _ids.StructureIds.CopyTo(_scratchIds);
             _pass.Refill(_scratchIds);

@@ -18,7 +18,7 @@ namespace SkylineTogether.Systems
         private bool _holding;
         private float _speedBeforeHold;
         private float _lastNonZero = 1f;
-        // gameplay branch: TimeUISystem forces speed 0 while the window has no focus or a pause menu is open
+        // TimeUISystem forces speed 0 while the window has no focus or a pause menu is open
         // (TimeUISystem.cs:115-137, R10 T2); with players in the session the host's menu must not pause everyone
         private Game.UI.InGame.TimeUISystem _timeUi;
         private System.Reflection.FieldInfo _forcedPause;
@@ -83,7 +83,7 @@ namespace SkylineTogether.Systems
             if (sessions.TakeSpeedRequest(out SpeedState request))
             {
                 float speed = request.Paused ? 0f : MultiplierToSpeed(request.Speed);
-                _pauseRequested = request.Paused; // gameplay branch: a player's pause is never undone below
+                _pauseRequested = request.Paused; // a player's pause is never undone below
                 if (_holding) _speedBeforeHold = speed;
                 else _simulation.selectedSpeed = speed;
             }
@@ -112,7 +112,7 @@ namespace SkylineTogether.Systems
         }
 
         /// <summary>
-        /// gameplay branch: undoes TimeUISystem's forced pause (focus loss, pause menu) on a host with live players, but
+        /// Undoes TimeUISystem's forced pause (focus loss, pause menu) on a host with live players, but
         /// never a pause the host chose (the field is only set when the game ran before the forced pause).
         /// </summary>
         private void KeepRunningThroughForcedPause()
@@ -145,7 +145,7 @@ namespace SkylineTogether.Systems
         /// </summary>
         private void UpdateClient(SessionClient client)
         {
-            // movers branch: the follower clock (Sync/FollowerClock.cs) mirrors the host's speed with every gameplay
+            // the follower clock (Sync/FollowerClock.cs) mirrors the host's speed with every gameplay
             // GameSimulation system off and forwards player speed changes as requests; without it, stay paused below
             if (Sync.FollowerClock.Instance != null && Sync.FollowerClock.Instance.Tick(_simulation, client)) return;
             float current = _simulation.selectedSpeed;

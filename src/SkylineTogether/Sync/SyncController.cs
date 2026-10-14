@@ -30,7 +30,7 @@ namespace SkylineTogether.Sync
     /// <para>
     /// Two different counters run here; they never mix:
     /// <list type="bullet">
-    /// <item><b>Ledger epochs</b> (gameplay branch, <see cref="AuthoredLedger"/>): the number of each host broadcast
+    /// <item><b>Ledger epochs</b> (<see cref="AuthoredLedger"/>): the number of each host broadcast
     /// batch, sent as <see cref="SyncRecordKind.Epoch"/>; a client names the newest one it applied as the
     /// <c>BaseEpoch</c> of its proposals, and the host refuses edits of entities authored by somebody else after it
     /// (conflicts, ARCHITECTURE.md#host-validation-and-commit).</item>
@@ -128,7 +128,7 @@ namespace SkylineTogether.Sync
         private readonly SignalFollower _signals; // clients derive lane signals and signal heads
         private readonly SyncBatch.Writer _globalBatch = new SyncBatch.Writer();
         private readonly ClientGate _gate;
-        // feat/terrain: terrain and water sync (self-contained; they follow the session events themselves)
+        // terrain and water sync (self-contained; they follow the session events themselves)
         private readonly TerrainSync _terrain;
         private readonly WaterSync _water;
         // simulation values by attention (+ time-aligned panels), cell maps, statistics history (self-contained)
@@ -138,7 +138,7 @@ namespace SkylineTogether.Sync
         private readonly StatisticsSync _statistics;
         // citizens, households, pets and companies (existence here, values and attention there)
         private readonly AgentSync _agents;
-        // gameplay branch: UI intents, host validation (ARCHITECTURE.md#host-validation-and-commit), conflicts, build order
+        // UI intents, host validation (ARCHITECTURE.md#host-validation-and-commit), conflicts, build order
         private readonly ActionSync _actions;
         private readonly AuthoredLedger _ledger = new AuthoredLedger();
         // direct-write tools may propose every frame; the limit only stops floods (violations kick, ARCHITECTURE.md#host-validation-and-commit)
@@ -154,7 +154,7 @@ namespace SkylineTogether.Sync
         /// <summary>Host: entities changed without a tag (intents, host UI direct writes) that the capture must stream.</summary>
         private readonly HashSet<Entity> _forceCapture = new HashSet<Entity>();
         private readonly HashSet<Entity> _writtenThisFrame = new HashSet<Entity>();
-        // perf pass: the client capture's per-frame collections, reused
+        // the client capture's per-frame collections, reused
         private readonly HashSet<Entity> _clientWritten = new HashSet<Entity>();
         private readonly List<uint> _clientProposed = new List<uint>();
         private readonly List<Entity> _clientChanged = new List<Entity>();
@@ -246,7 +246,7 @@ namespace SkylineTogether.Sync
             _global = new GlobalStateSync(log);
             _events = new EventSync(log);
             _signals = new SignalFollower(log);
-            // gameplay branch: semantic intents beside the global channels; both report refusals here (rollback)
+            // semantic intents beside the global channels; both report refusals here (rollback)
             _actions = new ActionSync(log)
             {
                 Touch = (e, peer) =>
@@ -267,11 +267,11 @@ namespace SkylineTogether.Sync
                 return client == null || client.State != ClientState.Live || RolePermissions.Allows(client.LocalRole, needed);
             };
             _global.Reject = (peer, reason, ids) => RejectIntent(peer, reason, ids);
-            // feat/terrain
+            // terrain and water
             _terrain = new TerrainSync(sessions, log);
             _water = new WaterSync(sessions, log);
             _terrain.HeightsChanged += _water.MarkHot;
-            Integrity = new IntegritySync(sessions, log); // feat/integrity
+            Integrity = new IntegritySync(sessions, log);
             _simValues = new AttentionValues(sessions, log);
             _cellMaps = new CellMapSync(sessions, log) { PeerTopics = _simValues.PeerTopics };
             _flow = new FlowStatusSync(sessions, log) { PeerTopics = _simValues.PeerTopics, InView = _simValues.InView, LocalTopics = () => _simValues.LocalTopics };
@@ -281,7 +281,7 @@ namespace SkylineTogether.Sync
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
             _mayCreate = MayCreate;
-            // perf pass: the guarded calls of every frame use delegates made once (a lambda or method group passed to
+            // the guarded calls of every frame use delegates made once (a lambda or method group passed to
             // SafeCall allocated a delegate, and a closure, on every call)
             _hostWatchCall = () =>
             {
@@ -327,7 +327,7 @@ namespace SkylineTogether.Sync
         /// <summary>Where a missing asset comes from and what to do about it (diagnostics).</summary>
         public string ExplainMissing(string asset) => _codec?.ExplainMissing(asset) ?? asset;
 
-        /// <summary>feat/integrity: divergence detection and repair, host icons, line check (see <see cref="IntegritySync"/>).</summary>
+        /// <summary>Divergence detection and repair, host icons, line check (see <see cref="IntegritySync"/>).</summary>
         public IntegritySync Integrity { get; }
 
         // ---- solo testing (record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay): read-only views for the recorder and the replay ----
@@ -357,13 +357,13 @@ namespace SkylineTogether.Sync
                     if (deferred > 0) s += ", " + deferred + " values waiting (slow link)";
                     if (_ids.Ids.QuarantinedCount > 0) s += ", " + _ids.Ids.QuarantinedCount + " ids in quarantine";
                 }
-                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status, _agents.Status, _flow.Status }) // feat/terrain
+                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status, _agents.Status, _flow.Status })
                 {
                     if (env.Length > 0) s += ", " + env;
                 }
-                string integrity = Integrity.Status; // feat/integrity
+                string integrity = Integrity.Status;
                 if (integrity.Length > 0) s += "; " + integrity;
-                // review: the movers branch had no line in the panel or the diagnostics
+                // the movers' line in the panel and the diagnostics
                 MoverSync movers = MoverSync.Instance;
                 if (movers != null)
                 {

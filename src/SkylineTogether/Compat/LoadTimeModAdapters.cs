@@ -23,7 +23,7 @@ namespace SkylineTogether.Compat
     /// <summary>
     /// Historical Start (algernon, Paradox Mods 74535): unlocks transport, industry and highway prefabs at every load
     /// from the local settings. Prefab unlocks are the host's (they travel in the join snapshot and through the
-    /// gameplay branch's unlock channel), so the system is off on a client while it joins and plays.
+    /// the unlock channel), so the system is off on a client while it joins and plays.
     /// </summary>
     public sealed class HistoricalStartAdapter : ModAdapter
     {

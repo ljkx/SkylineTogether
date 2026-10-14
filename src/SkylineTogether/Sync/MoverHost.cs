@@ -475,7 +475,7 @@ namespace SkylineTogether.Sync
             if (known == null) return;
             try
             {
-                // perf pass: read into a scratch instance; a new one is kept only when the links changed (this runs for
+                // read into a scratch instance; a new one is kept only when the links changed (this runs for
                 // every tagged mover and the refresh scan's movers each frame)
                 MoverAgentLinks links = Links(em, e, _linksScratch);
                 if (spawn ? links.IsEmpty : links.SameAs(known.Links)) return;

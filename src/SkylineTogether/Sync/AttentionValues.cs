@@ -229,7 +229,7 @@ namespace SkylineTogether.Sync
             _log.Info(LogCategory.Replication, peer + ": simulation values stream started (" + _planner.DirtyCount(peer) + " entities changed since its snapshot)");
         }
 
-        /// <summary>Host: the view report the movers branch already sends (camera), plus selection and infoview topics.</summary>
+        /// <summary>Host: the view report the mover replication already sends (camera), plus selection and infoview topics.</summary>
         private void OnHostMessage(PeerId peer, Envelope e)
         {
             if (e.Kind != MessageKind.View) return;
@@ -304,7 +304,7 @@ namespace SkylineTogether.Sync
         {
             _scanCursor = 0;
             _scanIds.Clear();
-            // perf pass: the bound objects, edges, areas and nodes (nodes for traffic light phases and wear) come
+            // the bound objects, edges, areas and nodes (nodes for traffic light phases and wear) come
             // from their index set, not from a walk over the whole id table
             IdIndexSet structure = _ids.StructureIds;
             structure.CopyTo(_scanIds);
@@ -586,7 +586,7 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// Client view report hook (<see cref="MoverClient"/>, about 10 Hz): the selected entity and the topics of the
-        /// active infoview (<see cref="InfomodeTopics"/>). The camera fields are the movers branch's.
+        /// active infoview (<see cref="InfomodeTopics"/>). The camera fields belong to the mover replication.
         /// </summary>
         public void FillViewReport(ViewReport view, bool forRecorder = false)
         {

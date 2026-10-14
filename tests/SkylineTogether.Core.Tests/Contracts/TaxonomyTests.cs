@@ -44,7 +44,7 @@ namespace SkylineTogether.Core.Tests.Contracts
             {
                 "Hello", "Welcome", "Refuse", "Control", "Epoch", "Ack", "Proposal", "Motion", "MotionControl", "Clock",
                 "View", "Presence", "HashDetail", "RepairRequest", "BlobManifest", "BlobChunk", "BlobHave", "Ping", "Chat",
-                "Terrain", "Water", // feat/terrain
+                "Terrain", "Water",
             };
             for (int i = 0; i < sequential.Length; i++)
             {

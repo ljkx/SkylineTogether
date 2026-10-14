@@ -154,7 +154,7 @@ namespace SkylineTogether.Core.Session
             public bool Admitted;
             /// <summary>Reliable <c>Epoch</c> messages queued for this peer (the watermarks of <c>ApplyAckBook</c>).</summary>
             public long EpochSent;
-            /// <summary>gameplay branch: the player's role (ARCHITECTURE.md#roles-and-moderation); the host toggles builder ↔ viewer in the panel.</summary>
+            /// <summary>The player's role (ARCHITECTURE.md#roles-and-moderation); the host toggles builder ↔ viewer in the panel.</summary>
             public SessionRole Role = SessionRole.Builder;
             /// <summary>The stage timings of this player's join (from its admission).</summary>
             public JoinTimeline Timeline;
@@ -190,7 +190,7 @@ namespace SkylineTogether.Core.Session
         private readonly ILog _log;
         private readonly Dictionary<IConnection, Peer> _peers = new Dictionary<IConnection, Peer>();
         private readonly ByteWriter _body = new ByteWriter(4096);
-        private readonly ByteWriter _broadcastEnvelope = new ByteWriter(4096); // perf pass: a broadcast's shared envelope
+        private readonly ByteWriter _broadcastEnvelope = new ByteWriter(4096); // a broadcast's shared envelope
         private readonly ByteWriter _payload = new ByteWriter(4096);
         private readonly ByteReader _reader = new ByteReader();
         private readonly Random _random = new Random();
@@ -445,7 +445,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// Sends a replication message to every admitted peer (queued for joiners until they are live). perf pass: with
+        /// Sends a replication message to every admitted peer (queued for joiners until they are live). With
         /// several peers the body is encoded and compressed once and the same envelope is queued for each of them.
         /// </summary>
         public void Broadcast(MessageKind kind, byte[] body, int offset, int count, Lane lane = Lane.Reliable)
@@ -627,7 +627,7 @@ namespace SkylineTogether.Core.Session
         public int JoinsCompleted { get; private set; }
 
         /// <summary>
-        /// Movers branch: the raw send side of a live peer, for engines that write complete envelopes themselves
+        /// The raw send side of a live peer, for engines that write complete envelopes themselves
         /// (the motion encoder, ARCHITECTURE.md#movers); null when the peer is unknown or not live.
         /// </summary>
         public IPeerOutput GetPeerOutput(PeerId peer)
@@ -656,7 +656,7 @@ namespace SkylineTogether.Core.Session
             BroadcastControl(ControlKind.Toast, _payload, live: false);
         }
 
-        /// <summary>gameplay branch: a player's role changed (<see cref="SetRole"/>).</summary>
+        /// <summary>A player's role changed (<see cref="SetRole"/>).</summary>
         public event Action<PeerId, SessionRole> RoleChanged;
 
         /// <summary>The role of an admitted peer (<see cref="SessionRole.Host"/> for the host itself, Viewer for unknown peers).</summary>
@@ -1063,7 +1063,7 @@ namespace SkylineTogether.Core.Session
             p.LastPresence = now;
             PresenceMessage m = PresenceMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
             m.From = p.Id; // never trust the sender's own claim
-            if (!RolePermissions.Predicts(p.Role)) m.PreviewLength = 0; // blueprint branch: viewers build nothing, so they show no preview
+            if (!RolePermissions.Predicts(p.Role)) m.PreviewLength = 0; // viewers build nothing, so they show no preview
             _body.Reset();
             PresenceMessage.Write(_body, m);
             foreach (Peer o in _peers.Values)

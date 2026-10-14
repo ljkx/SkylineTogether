@@ -26,7 +26,6 @@ namespace SkylineTogether.Core
         Ping,
         Chat,
 
-        // feat/terrain (merge note: renumber here if another branch also appended kinds after Chat)
         /// <summary>Terrain sync (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water): brush stamps, heightmap tiles, tile-hash manifests and tile requests
         /// (<see cref="Sync.TerrainMessage"/>), host ↔ client.</summary>
         Terrain = 20,

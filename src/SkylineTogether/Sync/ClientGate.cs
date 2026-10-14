@@ -37,7 +37,7 @@ namespace SkylineTogether.Sync
             "Game.Buildings.ZoneCheckSystem",
             "Game.City.DevTreeSystem",
             "Game.AutoSaveSystem",
-            // feat/integrity: writes nothing but warning icons, which come from the host (IconSync)
+            // writes nothing but warning icons, which come from the host (IconSync)
             "Game.Net.ConnectionWarningSystem",
             // event entities come from the host; its initializer would ignite, damage and pick random targets
             "Game.Events.InitializeSystem",

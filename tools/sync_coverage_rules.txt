@@ -6,7 +6,7 @@
 #   status:  structure, presence, scan, values, keyed, global, actions, statistics, cellmap, terrain, water, movers,
 #            icons, clock, derived, snapshot, local, transient, agents, hostonly, excluded, gap (see the script).
 # Families (FamilyClassifier/FamilyRules): which entities a component lives on decides its path. Structure entities
-# (nets, objects, areas, routes, water sources, mod entities, and since w3/audit events) send every serializable
+# (nets, objects, areas, routes, water sources, mod entities and events) send every serializable
 # component in their structure records; values of non-structure types also travel on the attention values stream.
 
 # =====================================================================================================================
@@ -26,27 +26,27 @@ system:Game.Rendering.WaterRenderSystem | local | - | render state
 system:Game.Routes.RoutePathSystem | derived | gated except in the route-tool preview window | lazy update set; line paths are host data (line state, [transport lines](../ARCHITECTURE.md#structure-and-transport-lines))
 system:Game.Simulation.AirPollutionSystem | cellmap | CellMapSync | air pollution map
 system:Game.Simulation.AvailabilityInfoToGridSystem | cellmap | CellMapSync | availability map
-system:Game.Simulation.CitizenHappinessSystem | global | blob "Happiness" (5 s) | w3/audit fix: happiness factors of the city info panel
-system:Game.Simulation.CityProductionCapacityCalculationSystem | global | blob "Production.Capacity" (5 s) | w3/audit fix: production panel capacity
-system:Game.Simulation.CityProductionStatisticSystem | global | custom channel "Production.Statistic" (2 s) | w3/audit fix: consumption, usage and production chains (the full blob would grow a queue on clients)
+system:Game.Simulation.CitizenHappinessSystem | global | blob "Happiness" (5 s) | happiness factors of the city info panel
+system:Game.Simulation.CityProductionCapacityCalculationSystem | global | blob "Production.Capacity" (5 s) | production panel capacity
+system:Game.Simulation.CityProductionStatisticSystem | global | custom channel "Production.Statistic" (2 s) | consumption, usage and production chains (the full blob would grow a queue on clients)
 system:Game.Simulation.CityStatisticsSystem | statistics | StatisticsSync (sample count, last sample frame, CityStatistic buffers) | charts and every statistic the panels read
 system:Game.Simulation.CitySystem | snapshot | join snapshot | the City entity reference; the City's components are scanned (structure value scan)
-system:Game.Simulation.ClimateSystem | clock | cosmetic allow-list; hail and rainbow via custom channel "Runtime" | climate and weather selection are deterministic functions of the replicated date (no randomness); w3/audit fix: hail and rainbow come from the host's weather phenomena
+system:Game.Simulation.ClimateSystem | clock | cosmetic allow-list; hail and rainbow via custom channel "Runtime" | climate and weather selection are deterministic functions of the replicated date (no randomness); hail and rainbow come from the host's weather phenomena
 system:Game.Simulation.CommercialDemandSystem | global | blob "Demand.Commercial" | demand bars
-system:Game.Simulation.CountCityStoredResourceSystem | global | blob "Count.StoredResources" (2 s) | w3/audit fix: stored resources
-system:Game.Simulation.CountCompanyDataSystem | global | blob "Count.Companies" (2 s) | w3/audit fix: company, worker and production counters
-system:Game.Simulation.CountConsumptionSystem | global | blob "Count.Consumption" (2 s) | w3/audit fix: consumption counters
+system:Game.Simulation.CountCityStoredResourceSystem | global | blob "Count.StoredResources" (2 s) | stored resources
+system:Game.Simulation.CountCompanyDataSystem | global | blob "Count.Companies" (2 s) | company, worker and production counters
+system:Game.Simulation.CountConsumptionSystem | global | blob "Count.Consumption" (2 s) | consumption counters
 system:Game.Simulation.CountHouseholdDataSystem | global | blob "Count.Household" | household counters
-system:Game.Simulation.CountResidentialPropertySystem | global | blob "Count.ResidentialProperties" (2 s) | w3/audit fix: free and total properties, shelters
-system:Game.Simulation.CountStudyPositionsSystem | global | blob "Count.StudyPositions" (2 s) | w3/audit fix: education panel study positions
-system:Game.Simulation.CountVehicleDataSystem | global | blob "Count.Vehicles" (2 s) | w3/audit fix: bicycle and parking counters
+system:Game.Simulation.CountResidentialPropertySystem | global | blob "Count.ResidentialProperties" (2 s) | free and total properties, shelters
+system:Game.Simulation.CountStudyPositionsSystem | global | blob "Count.StudyPositions" (2 s) | education panel study positions
+system:Game.Simulation.CountVehicleDataSystem | global | blob "Count.Vehicles" (2 s) | bicycle and parking counters
 system:Game.Simulation.CountWorkplacesSystem | global | blob "Count.Workplaces" | workplace counters
 system:Game.Simulation.DeathCheckSystem | snapshot | join snapshot | death-rate curve flag, set once per save
-system:Game.Simulation.ElectricityFlowSystem | derived | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync, w4/flow)
-system:Game.Simulation.ElectricityStatisticsSystem | global | blob "Electricity.Statistics" (1 s) | w3/audit fix: electricity panel production and consumption
-system:Game.Simulation.ElectricityTradeSystem | global | blob "Electricity.Trade" (1 s) | w3/audit fix: electricity import and export
-system:Game.Simulation.FireHazardSystem | global | blob "FireHazard" (5 s) | w3/audit fix: dry days of the fire hazard view
-system:Game.Simulation.GarbageAccumulationSystem | global | blob "Garbage.Accumulation" (2 s) | w3/audit fix: garbage panel
+system:Game.Simulation.ElectricityFlowSystem | derived | flow graph topology rebuilt on every peer | source and sink node of the derived flow graph (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync)
+system:Game.Simulation.ElectricityStatisticsSystem | global | blob "Electricity.Statistics" (1 s) | electricity panel production and consumption
+system:Game.Simulation.ElectricityTradeSystem | global | blob "Electricity.Trade" (1 s) | electricity import and export
+system:Game.Simulation.FireHazardSystem | global | blob "FireHazard" (5 s) | dry days of the fire hazard view
+system:Game.Simulation.GarbageAccumulationSystem | global | blob "Garbage.Accumulation" (2 s) | garbage panel
 system:Game.Simulation.GroundHeightSystem | derived | runs on every peer (Modification2) | derived from terrain (TerrainSync)
 system:Game.Simulation.GroundPollutionSystem | cellmap | CellMapSync | ground pollution map
 system:Game.Simulation.GroundWaterSystem | cellmap | CellMapSync | groundwater map
@@ -61,7 +61,7 @@ system:Game.Simulation.ProductionChainDataSystem | snapshot | - | serializes not
 system:Game.Simulation.ProductionSpecializationSystem | values | City SpecializationBonus (structure value scan) | its queue is host-internal input; Serialize drains the queue, so it must never be mirrored as a blob
 system:Game.Simulation.ResidentialDemandSystem | global | blob "Demand.Residential" | demand bars
 system:Game.Simulation.ResourceAvailabilitySystem | hostonly | host-only cursor | round-robin cursor of the host's availability update; results travel as net values
-system:Game.Simulation.ServiceFeeSystem | global | custom channel "Fees.Collected" (1 s) | w3/audit fix: the fee cache the budget panel's fee income is computed from (CollectedCityServiceFeeData on service prefabs, which do not replicate); the fee queue is host-internal
+system:Game.Simulation.ServiceFeeSystem | global | custom channel "Fees.Collected" (1 s) | the fee cache the budget panel's fee income is computed from (CollectedCityServiceFeeData on service prefabs, which do not replicate); the fee queue is host-internal
 system:Game.Simulation.SimulationSystem | clock | follower clock (frame index, speed) | [follower clock](../ARCHITECTURE.md#follower-clock)
 system:Game.Simulation.SnowSystem | local | cosmetic allow-list | snow cover is simulated locally for visuals
 system:Game.Simulation.SoilWaterSystem | cellmap | CellMapSync | soil water map
@@ -73,15 +73,15 @@ system:Game.Simulation.TradeSystem | hostonly | host-only input | trade balances
 system:Game.Simulation.TrafficAmbienceSystem | cellmap | CellMapSync | traffic ambience map
 system:Game.Simulation.TransportLineSystem | hostonly | host-only input | maximum transport speeds used by the host's vehicle AIs
 system:Game.Simulation.TransportUsageTrackSystem | hostonly | host-only input | transport usage feeds unlock requirements (host); results travel on the unlock channel
-system:Game.Simulation.WaterPipeFlowSystem | derived | flow graph topology rebuilt on every peer | source and sink node (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync, w4/flow)
-system:Game.Simulation.WaterStatisticsSystem | global | blob "Water.Statistics" (1 s) | w3/audit fix: water panel
+system:Game.Simulation.WaterPipeFlowSystem | derived | flow graph topology rebuilt on every peer | source and sink node (flow keys Source/Sink); the system stays off on clients, its flow values come by flow key (FlowStatusSync)
+system:Game.Simulation.WaterStatisticsSystem | global | blob "Water.Statistics" (1 s) | water panel
 system:Game.Simulation.WaterSystem | water | WaterSync | water surface, sources, sea level
-system:Game.Simulation.WaterTradeSystem | global | blob "Water.Trade" (1 s) | w3/audit fix: water import and export
+system:Game.Simulation.WaterTradeSystem | global | blob "Water.Trade" (1 s) | water import and export
 system:Game.Simulation.WindSimulationSystem | local | cosmetic allow-list | wind cells for visuals
 system:Game.Simulation.WindSystem | local | cosmetic allow-list | wind for visuals
 system:Game.Simulation.ZoneAmbienceSystem | derived | cosmetic allow-list | from replicated buildings
 system:Game.Triggers.TriggerSystem | local | runs locally; chirp creation gated (EventSync drains the queue) | trigger cooldowns drive tutorials and radio (local); chirps come from the host
-system:Game.UI.InGame.ChirpLinkSystem | global | custom channel "Chirp.Links" (2 s) | w3/audit fix: sender and link names of chirps (citizens do not replicate as entities yet)
+system:Game.UI.InGame.ChirpLinkSystem | global | custom channel "Chirp.Links" (2 s) | sender and link names of chirps (citizens do not replicate as entities yet)
 system:Game.UI.InGame.CityInfoUISystem | derived | runs on every peer (UIUpdate) | smoothed demand and happiness from the replicated demand blobs and City values
 system:Game.UI.InGame.MilestoneUISystem | local | - | whether this player saw the victory pop-up
 system:Game.UI.NameSystem | global | GlobalChannel.Name (both ways) | custom names
@@ -94,13 +94,13 @@ system:Game.UI.NameSystem | global | GlobalChannel.Name (both ways) | custom nam
 Game.Prefabs.* | snapshot | prefab entities (handshake: same mods, versions, settings) | prefab data is invariant during a session
 Game.Prefabs.PrefabRef | structure | structure codec (prefab rank) | on every replicated entity
 Game.Prefabs.Locked | actions | GlobalChannel.Unlocks (replayed as Unlock events) | milestones, dev tree, mods
-Game.Prefabs.PlacedSignatureBuildingData | global | custom channel "Signatures" (1 s) | w3/audit fix: written by the gated XPBuiltSystem; without it a placed signature building stayed in the clients' toolbars
+Game.Prefabs.PlacedSignatureBuildingData | global | custom channel "Signatures" (1 s) | written by the gated XPBuiltSystem; without it a placed signature building stayed in the clients' toolbars
 Game.Prefabs.UIHighlight | local | - | per-player UI highlight of a new asset
 Game.Prefabs.ServiceBudget | snapshot | prefab data | default budget of a service prefab; current budgets travel on GlobalChannel.Budget
 
 # ---- simulation namespace ---------------------------------------------------------------------------------------------
 Game.Simulation.* | derived | - | (refined below)
-Game.Simulation.CollectedCityServiceFeeData | global | custom channel "Fees.Collected" | w3/audit fix: lives on service prefabs; clients get the host's cache
+Game.Simulation.CollectedCityServiceFeeData | global | custom channel "Fees.Collected" | lives on service prefabs; clients get the host's cache
 Game.Simulation.CollectedCityServiceBudgetData | derived | CityServiceBudgetSystem runs on clients (ModificationEnd) | from replicated buildings and budgets; worker counts depend on agent replication
 Game.Simulation.CollectedCityServiceUpkeepData | derived | CityServiceBudgetSystem runs on clients | as above
 Game.Simulation.CollectedServiceBuildingBudgetData | derived | CityServiceBudgetSystem runs on clients | as above
@@ -112,12 +112,12 @@ Game.Simulation.WaterSourceData | water | WaterSource family (structure) | water
 Game.Simulation.UpdateFrame | movers | spawn bundle (host UpdateFrame) / prefab archetype | shared component; set on spawn
 Game.Simulation.MaintenanceConsumer | values | attention values | on buildings and nets
 Game.Simulation.ElectricityBuildingConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (transformer, producer, consumer, charge, discharge)
-Game.Simulation.ElectricityFlowEdge | keyed | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | w4/flow fix: infoview colours of power lines and transformers ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status))
+Game.Simulation.ElectricityFlowEdge | keyed | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | infoview colours of power lines and transformers ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status))
 Game.Simulation.ElectricityFlowNode | derived | flow graph | derived topology
 Game.Simulation.ElectricityNodeConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys
 Game.Simulation.ElectricityValveConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys
 Game.Simulation.WaterPipeBuildingConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (producer, consumer)
-Game.Simulation.WaterPipeEdge | keyed | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | w4/flow fix: infoview colours of water and sewage pipes ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status))
+Game.Simulation.WaterPipeEdge | keyed | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | infoview colours of water and sewage pipes ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status))
 Game.Simulation.WaterPipeNode | derived | flow graph | derived topology
 Game.Simulation.WaterPipeNodeConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys
 Game.Simulation.WaterPipeValveConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys
@@ -191,7 +191,7 @@ Game.Buildings.LocalEffectProvider | structure | structure codec | marker
 
 # ---- objects ----------------------------------------------------------------------------------------------------------
 Game.Objects.* | structure | structure codec | objects: buildings, props, trees, decals, stops
-Game.Objects.Damaged | presence | structure codec + presence watch | w3/audit fix: added by DamageSystem with BatchesUpdated only
+Game.Objects.Damaged | presence | structure codec + presence watch | added by DamageSystem with BatchesUpdated only
 Game.Objects.UnderConstruction | presence | structure codec + presence watch, values by attention | construction progress
 Game.Objects.Plant | values | attention values | plant growth
 Game.Objects.Tree | values | attention values + structure codec | tree growth state
@@ -320,35 +320,35 @@ Game.Pathfind.PathInformations | hostonly | pathfinding of agents | host simulat
 Game.Pathfind.PathOwner | movers | mover state | vehicles and creatures
 Game.Pathfind.CoverageElement | derived | coverage pathfinding | derived
 
-# ---- events, journal, chirps (w3/audit) -------------------------------------------------------------------------------
-Game.Events.* | scan | host-only Event family: structure codec + value scan | w3/audit fix: fires, accidents, weather phenomena, floods, health, crime, calendar events
-Game.Events.OnFire | presence | structure codec + presence watch, values by attention | w3/audit fix: IgniteSystem adds it with BatchesUpdated only
-Game.Events.Flooded | presence | structure codec + presence watch | w3/audit fix: removed without a tag
-Game.Events.InDanger | presence | structure codec + presence watch | w3/audit fix: removed with EffectsUpdated only
-Game.Events.AccidentSite | presence | structure codec + presence watch | w3/audit fix: added and removed without a tag
-Game.Events.FacingWeather | presence | structure codec + presence watch | w3/audit fix
-Game.Events.SpectatorSite | presence | structure codec + presence watch | w3/audit fix
+# ---- events, journal, chirps ------------------------------------------------------------------------------------------
+Game.Events.* | scan | host-only Event family: structure codec + value scan | fires, accidents, weather phenomena, floods, health, crime, calendar events
+Game.Events.OnFire | presence | structure codec + presence watch, values by attention | IgniteSystem adds it with BatchesUpdated only
+Game.Events.Flooded | presence | structure codec + presence watch | removed without a tag
+Game.Events.InDanger | presence | structure codec + presence watch | removed with EffectsUpdated only
+Game.Events.AccidentSite | presence | structure codec + presence watch | added and removed without a tag
+Game.Events.FacingWeather | presence | structure codec + presence watch | event state on buildings
+Game.Events.SpectatorSite | presence | structure codec + presence watch | event state on buildings
 Game.Events.InvolvedInAccident | movers | mover discrete state | vehicles and creatures in an accident
 Game.Events.AttendingEvent | agents | citizens | agent state
-Game.Events.HotspotFrame | derived | EventSync writes the frames from the replicated hotspot | w3/audit fix: never saved; EventInterpolateSystem indexes it unchecked
-Game.Events.EventJournalEntry | scan | host-only Event family | w3/audit fix: the event journal; EventJournalSystem keeps the list and callbacks on clients
-Game.Events.EventJournalData | scan | host-only Event family | w3/audit fix
-Game.Events.EventJournalCityEffect | scan | host-only Event family | w3/audit fix
-Game.Events.EventJournalPending | scan | host-only Event family | w3/audit fix
-Game.Events.EventJournalCompleted | scan | host-only Event family | w3/audit fix
+Game.Events.HotspotFrame | derived | EventSync writes the frames from the replicated hotspot | never saved; EventInterpolateSystem indexes it unchecked
+Game.Events.EventJournalEntry | scan | host-only Event family | the event journal; EventJournalSystem keeps the list and callbacks on clients
+Game.Events.EventJournalData | scan | host-only Event family | the event journal
+Game.Events.EventJournalCityEffect | scan | host-only Event family | the event journal
+Game.Events.EventJournalPending | scan | host-only Event family | the event journal
+Game.Events.EventJournalCompleted | scan | host-only Event family | the event journal
 Game.Events.FindingEventParticipants | agents | meetings of citizens | agent state
-Game.Triggers.* | scan | host-only Event family: structure codec + value scan | w3/audit fix: chirps and life-path events; CreateChirpSystem gated on clients
+Game.Triggers.* | scan | host-only Event family: structure codec + value scan | chirps and life-path events; CreateChirpSystem gated on clients
 Game.Triggers.ChirpLink | structure | structure codec (buffer on linked entities) | chirp references of buildings
 Game.Triggers.LifePathEntry | agents | on followed citizens | agent state
 Game.Triggers.RadioEvent | local | radio is per player | -
 
-# ---- agents (AgentSync, branch w3/agents, merged) ---------------------------------------------------------------------
+# ---- agents (AgentSync) -----------------------------------------------------------------------------------------------
 Game.Citizens.* | agents | agent replication | citizens, households, pets
 Game.Citizens.SchoolSeeker | hostonly | TransientAgent family; references arrive as null | school search bookkeeping
 Game.Citizens.LookingForPartner | hostonly | TransientAgent family | partner search bookkeeping
 Game.Citizens.CoordinatedMeeting | hostonly | TransientAgent family | meeting bookkeeping
 Game.Citizens.CoordinatedMeetingAttendee | hostonly | TransientAgent family | meeting bookkeeping
-Game.Citizens.Followed | actions | channel "Follow" (client deltas, host LifePathEventSystem.FollowCitizen) + agent replication | w3/audit fix: the followed list is part of the city and shared
+Game.Citizens.Followed | actions | channel "Follow" (client deltas, host LifePathEventSystem.FollowCitizen) + agent replication | the followed list is part of the city and shared
 Game.Companies.* | agents | agent replication | companies
 Game.Companies.WorkProvider | values | attention values (service buildings) | worker capacity of service buildings
 Game.Companies.Employee | agents | data on buildings; employees are citizens | [agents](../ARCHITECTURE.md#agents)

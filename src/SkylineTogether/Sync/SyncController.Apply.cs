@@ -36,7 +36,7 @@ namespace SkylineTogether.Sync
                 return;
             }
             _appliedThisFrame.Clear();
-            // feat/terrain: received stamps and heightmap/water tiles (independent of the entity stream)
+            // received stamps and heightmap/water tiles (independent of the entity stream)
             if (Features.Terrain.IsAvailable)
             {
                 long terrain = Perf.Start();
@@ -94,7 +94,7 @@ namespace SkylineTogether.Sync
             {
                 // a selected tool (other than the default one) may edit the world this frame: edit baselines first
                 if (_tools.activeTool != null && !(_tools.activeTool is DefaultToolSystem)) HashBaselines(true);
-                SafeCall("action detection", _actionDetectCall); // gameplay branch: dev tree, map tiles
+                SafeCall("action detection", _actionDetectCall); // dev tree, map tiles
                 if (Features.GlobalState.IsAvailable)
                 {
                     try
@@ -216,7 +216,7 @@ namespace SkylineTogether.Sync
                         Guard.Report(Features.GlobalState, "global state (after apply)", ex);
                     }
                 }
-                SafeCall("milestones", _milestonesCall); // gameplay branch
+                SafeCall("milestones", _milestonesCall);
             }
             if (IsHost) UpdateQuarantine(now);
             // client: the rolling audit of references the game follows unchecked (diagnostics only)
@@ -363,7 +363,7 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    Integrity.OnHostBatch(records, _inbox.Count); // feat/integrity: presence masks, digests, icons, line rows
+                    Integrity.OnHostBatch(records, _inbox.Count); // presence masks, digests, icons, line rows
                 }
                 catch (Exception ex)
                 {
@@ -458,7 +458,7 @@ namespace SkylineTogether.Sync
         private void ApplyProposal(PeerId peer, byte[] data)
         {
             List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length, _decodePool);
-            // gameplay branch: validation (ARCHITECTURE.md#host-validation-and-commit); a refused proposal is rolled back on its originator by a resend
+            // validation (ARCHITECTURE.md#host-validation-and-commit); a refused proposal is rolled back on its originator by a resend
             ProposalFacts facts = Facts(records, out uint seq, out uint baseEpoch);
             bool isGlobal = SyncBatch.FirstRecordKind(data, 0, data.Length) == (byte)SyncRecordKind.Global;
             if ((facts.EntityCount > 0 || facts.HasCost || isGlobal) && !_rate.TryTake(peer.Value, _sessions.Clock.Seconds))
@@ -536,7 +536,7 @@ namespace SkylineTogether.Sync
                 {
                     try
                     {
-                        Integrity.OnPeerRequest(peer, rec); // feat/integrity
+                        Integrity.OnPeerRequest(peer, rec);
                     }
                     catch (Exception ex)
                     {
@@ -571,7 +571,7 @@ namespace SkylineTogether.Sync
 
         private void FollowClock(uint frame)
         {
-            // movers branch: a running follower clock owns frameIndex; the record is one of its samples
+            // a running follower clock owns frameIndex; the record is one of its samples
             if (FollowerClock.Instance != null && FollowerClock.Instance.OnHostClock(frame)) return;
             Action<SimulationSystem, uint> set = Probes.SetFrameIndex; // P-CLOCK
             if (set == null || !Features.Clock.IsAvailable) return;

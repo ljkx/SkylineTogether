@@ -48,7 +48,7 @@ namespace SkylineTogether.Sync
                              && _tools.activeTool.GetType().Assembly != typeof(DefaultToolSystem).Assembly
                              && !Compat.ModCompat.IsPipelineTool(_tools.activeTool.GetType());
             bool toolPath = _toolApplied || localTool;
-            // gameplay branch: deletions from the UI (district, service upgrade, line: R10 D1-D3) happen outside any
+            // deletions from the UI (district, service upgrade, line: R10 D1-D3) happen outside any
             // tool; outside a tool path only those are proposed, every other local deletion waits for the host
             ProposalFlags flags = _toolApplied ? ProposalFlags.ToolApply : localTool ? ProposalFlags.DirectTool : ProposalFlags.None;
             _batch.Reset();
@@ -58,7 +58,7 @@ namespace SkylineTogether.Sync
             proposed.Clear();
             // mod compatibility: mod data entities the proposed values reference get ids from the pool and travel along
             _codec.DependencyBinder = ClientBindDependency;
-            // perf pass: outside a tool path only deletions count, so whole chunks without Deleted are skipped instead of
+            // outside a tool path only deletions count, so whole chunks without Deleted are skipped instead of
             // copying and testing every tagged entity of the frame (the simulation and the applier tag many each frame)
             List<Entity> changed = _clientChanged;
             changed.Clear();
@@ -103,7 +103,7 @@ namespace SkylineTogether.Sync
                     }
                     if (_subElementFrame && (family == Family.PrefabSubObject || family == Family.Lane) && em.HasComponent<Game.Common.Deleted>(e))
                     {
-                        _actions.NoteSubElementDeleted(e); // gameplay branch: sent as derived keys (intent)
+                        _actions.NoteSubElementDeleted(e); // sent as derived keys (intent)
                         continue;
                     }
                     if (!FamilyClassifier.IsReplicated(family)) continue;
@@ -186,7 +186,7 @@ namespace SkylineTogether.Sync
                 }
             }
             if (_toolCost != 0) _batch.Cost(_toolCost);
-            // gameplay branch: sequence, base ledger epoch and kind of the proposal (host validation, rollback)
+            // sequence, base ledger epoch and kind of the proposal (host validation, rollback)
             if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
             if (_pool.ShouldRequestMore(_sessions.Clock.Seconds)) _batch.Request(SyncRequest.MoreIds); // retried with backoff
             if (!_batch.IsEmpty)

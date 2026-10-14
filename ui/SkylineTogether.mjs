@@ -22,7 +22,7 @@ const api = window["cs2/api"];
 const UI = window["cs2/ui"] || null;
 const L10N = window["cs2/l10n"] || null;
 const GAME_BINDINGS = window["cs2/bindings"] || null;
-// Review fix: the module used to throw at import when a global was missing; now it registers nothing (ARCHITECTURE.md#ui-module).
+// The module used to throw at import when a global was missing; now it registers nothing (ARCHITECTURE.md#ui-module).
 const ready = !!(React && React.createElement && React.useState && api && api.bindValue && api.useValue && api.trigger);
 const h = ready ? React.createElement : function () { return null; };
 const GROUP = "skylineTogether";
@@ -389,7 +389,7 @@ const EN = {
   "st.ui.leave.client": "Leave session",
   "st.ui.leave.host": "End session",
   "st.ui.leave.confirm": "Click again to confirm",
-  // robust branch: recovery after an unexpected disconnect, self-test line
+  // recovery after an unexpected disconnect, self-test line
   "st.ui.recovery.lost.title": "Connection lost",
   "st.ui.recovery.lost.text": "Reconnecting in {S} s (attempt {N} of {MAX}). The city is paused until then; changes you make now are not kept.",
   "st.ui.recovery.attempt.title": "Reconnecting (attempt {N} of {MAX})",
@@ -1352,7 +1352,7 @@ function playerName(pl) {
   return name.length > 0 ? name : t("st.ui.players.unnamed", { N: num(pl.id, 0) });
 }
 
-// What a remote player is doing (presence branch). Its own small component: the presence binding changes up to 20
+// What a remote player is doing. Its own small component: the presence binding changes up to 20
 // times a second, and only this line re-renders then, not the whole player list with its menus.
 function ActivityLine(p) {
   const tags = useJson(presenceBinding).tags;
@@ -1649,7 +1649,7 @@ function NetLine() {
   );
 }
 
-// robust branch: the startup self-test in one line (details go to the diagnostics file)
+// the startup self-test in one line (details go to the diagnostics file)
 function SelfTest(p) {
   const s = p.state;
   const probes = str(s.probes);
@@ -1674,7 +1674,7 @@ function Diagnostics(p) {
   );
 }
 
-// robust branch: a client session ended unexpectedly in the host's city: automatic rejoin, or the player's choice
+// a client session ended unexpectedly in the host's city: automatic rejoin, or the player's choice
 function RecoveryView(p) {
   const s = p.state;
   const r = obj(s.recovery);
@@ -1697,7 +1697,7 @@ function RecoveryView(p) {
     text = STAGES.indexOf(r.attemptStage) >= 0 ? t("st.ui.join.stage." + r.attemptStage) : "";
     buttons = [h(Btn, { key: "cancel", style: full, onClick: function () { send("cancelReconnect"); } }, t("st.ui.recovery.cancel"))];
   } else {
-    // w8/security: removed (or banned) after loading the city says so; it used to read "the session has ended"
+    // removed (or banned) after loading the city says so; it used to read "the session has ended"
     const why = r.banned ? "banned" : r.kicked ? "kicked" : r.hostEnded ? "ended" : "failed";
     title = t("st.ui.recovery." + why + ".title");
     text = t("st.ui.recovery." + why + ".text");
@@ -1722,7 +1722,7 @@ function RecoveryView(p) {
   );
 }
 
-// w8/security: the integrity check found more divergence than object repairs fix: offer a rejoin with a fresh snapshot
+// the integrity check found more divergence than object repairs fix: offer a rejoin with a fresh snapshot
 function ResyncOffer(p) {
   const s = p.state;
   const detail = str(s.resync);
@@ -1761,7 +1761,7 @@ function SessionView(p) {
   );
 }
 
-// w8/security: the build id, exactly as the installer prints it (players compare it when a join is refused)
+// the build id, exactly as the installer prints it (players compare it when a join is refused)
 function BuildLine(p) {
   const s = p.state;
   if (!str(s.build)) return null;
@@ -1980,7 +1980,7 @@ function useHostOptions(s) {
   };
 }
 
-// w8/security: the host's ban list with an unban button per entry (stored with the host's settings)
+// the host's ban list with an unban button per entry (stored with the host's settings)
 function BanList(p) {
   const bans = objs(p.state.bans).filter(function (b) { return str(b.key).length > 0; });
   if (bans.length === 0) return null;
@@ -2010,7 +2010,7 @@ function HostOptions(p) {
   const s = p.state;
   const o = useHostOptions(s);
   const [friendsOnly, setFriendsOnly] = React.useState(!!s.friendsOnly);
-  // w8/security: direct connections need a password (Steam does not check those players)
+  // direct connections need a password (Steam does not check those players)
   const directOk = !!s.hasPassword;
   return h(
     "div",
@@ -2088,7 +2088,7 @@ function GameHostTab(p) {
   const s = p.state;
   const [session, setSession] = React.useState(str(s.sessionNameSetting));
   const [password, setPassword] = React.useState("");
-  // review fix: an untouched (empty) password field keeps the stored host password instead of wiping it
+  // an untouched (empty) password field keeps the stored host password instead of wiping it
   const save = function (pw) {
     send("saveHostSettings", p.name, session, pw !== undefined ? pw : password.length > 0 ? password : str(s.keepPassword) || KEEP_PASSWORD);
   };
@@ -2392,9 +2392,9 @@ function MenuHostPage(p) {
   const [password, setPassword] = React.useState("");
   const [hoverInfo, setHoverInfo] = React.useState(null);
   const [friendsOnly, setFriendsOnly] = React.useState(!!s.friendsOnly);
-  const directOk = !!s.hasPassword; // w8/security: direct connections need a password
+  const directOk = !!s.hasPassword; // direct connections need a password
   const o = useHostOptions(s);
-  // review fix: an untouched (empty) password field keeps the stored host password instead of wiping it
+  // an untouched (empty) password field keeps the stored host password instead of wiping it
   const save = function (pw) {
     send("saveHostSettings", name, session, pw !== undefined ? pw : password.length > 0 ? password : str(s.keepPassword) || KEEP_PASSWORD);
   };
@@ -3266,7 +3266,7 @@ function GameRoot() {
   const live = mode === "Hosting" || mode === "Client";
   const recoveryPhase = (s.recovery && s.recovery.phase) || "";
   React.useEffect(function () {
-    if (mode === "Recovering") setStore({ open: true }); // robust branch: the recovery choice must be seen
+    if (mode === "Recovering") setStore({ open: true }); // the recovery choice must be seen
   }, [mode, recoveryPhase]);
   const close = function () {
     setStore({ open: false, invitesOpen: false });
@@ -3277,7 +3277,7 @@ function GameRoot() {
   return h(
     "div",
     { style: S.layer },
-    live && !photo ? h(NameTags, null) : null, // presence branch: under the panel
+    live && !photo ? h(NameTags, null) : null, // under the panel
     live && !photo ? h(PerfHud, null) : null, // only while toggled on
     live && !photo && !social ? h(ChatDock, { state: s }) : null,
     !photo && (!topLeftRegistered || (noTopLeft && !st.topLeftMounted)) ? h(FallbackToggle, { state: s, onClick: function () { setStore({ open: !store.open }); } }) : null,

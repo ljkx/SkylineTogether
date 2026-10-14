@@ -805,7 +805,7 @@ namespace SkylineTogether.Session
         }
 
         /// <summary>
-        /// gameplay branch: the host toggles a player between builder and viewer (ARCHITECTURE.md#roles-and-moderation); a co-host
+        /// The host toggles a player between builder and viewer (ARCHITECTURE.md#roles-and-moderation); a co-host
         /// asks the host for the same (builders and viewers only; the host checks).
         /// </summary>
         public void ToggleRole(byte peer)
@@ -833,7 +833,7 @@ namespace SkylineTogether.Session
             if (_disposed) return;
             _main.Drain();
             if (!Features.Session.IsAvailable && Host == null && Client == null && !_rejoin.Recovering) return;
-            // perf pass: timed only in a city (the perf frame closes at the end of the in-game capture)
+            // timed only in a city (the perf frame closes at the end of the in-game capture)
             bool timed = Host != null || (Client != null && Client.State == ClientState.Live);
             long start = timed ? Perf.Start() : 0;
             try
@@ -1088,7 +1088,7 @@ namespace SkylineTogether.Session
         }
 
         /// <summary>
-        /// Review fix: every listener gets the end of the session even when an earlier one throws. Several of them turn
+        /// Every listener gets the end of the session even when an earlier one throws. Several of them turn
         /// vanilla systems back on (follower gate, follower clock, mover gate); a plain multicast invoke stopped at the
         /// first exception and left the game with its simulation systems disabled.
         /// </summary>

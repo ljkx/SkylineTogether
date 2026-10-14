@@ -1047,7 +1047,7 @@ namespace SkylineTogether.Sync
             uint u = s.UpdateFrame;
             uint baseTick = unchecked(render - 32);
             uint f1 = unchecked(baseTick - ((baseTick - u) & 15));
-            // perf pass: most slots were already written for this window (one in sixteen changes per frame); that is decided
+            // most slots were already written for this window (one in sixteen changes per frame); that is decided
             // before the entity lookups, which only the slots that write need
             if (s.Written && s.F1 == f1 && s.Version == version && !_force.Contains(slot.Value)) return;
             if (!em.Exists(e) || !em.HasBuffer<TransformFrame>(e)) return;

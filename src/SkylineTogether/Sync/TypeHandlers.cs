@@ -346,7 +346,7 @@ namespace SkylineTogether.Sync
             "Game.Common.BatchesUpdated",
             "Game.Common.EffectsUpdated",
             "Game.Common.PathfindUpdated",
-            // feat/integrity: maintained by IconCommandSystem on every peer (icons come from the host through IconSync);
+            // maintained by IconCommandSystem on every peer (icons come from the host through IconSync);
             // reconciling its presence would strip a client owner's buffer and orphan its icon entities
             "Game.Notifications.IconElement",
             // the flow-graph connections on net nodes, edges and buildings point at derived flow nodes and edges

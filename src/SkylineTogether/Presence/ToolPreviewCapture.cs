@@ -22,7 +22,7 @@ using WaterSourceData = Game.Simulation.WaterSourceData;
 namespace SkylineTogether.Presence
 {
     /// <summary>
-    /// Reads the local player's live tool preview from the game's own tool output (blueprint branch): the vanilla tools
+    /// Reads the local player's live tool preview from the game's own tool output: the vanilla tools
     /// (and mod tools built the same way) turn the player's input into <see cref="Temp"/> entities — the road being
     /// drawn, the building at the cursor, the district outline, the zone cells being painted, the line being edited,
     /// the things the bulldozer would remove — so no tool logic is repeated here. Each <see cref="Capture"/> reduces them

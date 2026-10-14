@@ -45,7 +45,7 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void ABroadcastToSeveralPeersIsEncodedOnceAndArrivesIntactEverywhere()
         {
-            // perf pass: with two or more peers the host encodes (and compresses, and fragments) the body once
+            // with two or more peers the host encodes (and compresses, and fragments) the body once
             var rig = new SessionRig();
             var (a, _, _) = rig.AddClient("Anna");
             var (b, _, _) = rig.AddClient("Ben");

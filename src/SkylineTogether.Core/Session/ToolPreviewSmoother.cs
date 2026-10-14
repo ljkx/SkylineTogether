@@ -3,9 +3,9 @@ using System;
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// Smooths a remote player's <see cref="ToolPreview"/> between the keyframes that arrive at the presence rate
-    /// (blueprint branch): while the shapes keep their layout (a curve being dragged, a building being rotated) the shown
-    /// preview eases toward the received one every frame; a changed layout or a jump snaps. Allocation-free.
+    /// Smooths a remote player's <see cref="ToolPreview"/> between the keyframes that arrive at the presence rate:
+    /// while the shapes keep their layout (a curve being dragged, a building being rotated) the shown preview eases
+    /// toward the received one every frame; a changed layout or a jump snaps. Allocation-free.
     /// </summary>
     [ThreadAffinity(ThreadKind.Main)]
     public static class ToolPreviewSmoother

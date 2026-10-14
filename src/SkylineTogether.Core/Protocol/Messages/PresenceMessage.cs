@@ -11,7 +11,7 @@ namespace SkylineTogether.Core.Protocol
     /// u8 from | f32 cursorX | f32 cursorY | f32 cursorZ | u8 toolKind | varint prefabRank+1 (0 = none) | u32 color
     /// | f32 brushRadius | varint n (≤ 1100) | n × u8 preview
     /// </code>
-    /// The preview bytes are opaque here (blueprint branch: <see cref="Session.ToolPreviewCodec"/>, versioned on its
+    /// The preview bytes are opaque here (<see cref="Session.ToolPreviewCodec"/>, versioned on its
     /// own; empty = no preview), so a relay never depends on their layout. The largest message stays one datagram
     /// (<see cref="Limits.MaxDatagramBytes"/>). Floats are written as 0 when not finite and rejected when read. The
     /// static codec methods are thread-safe.

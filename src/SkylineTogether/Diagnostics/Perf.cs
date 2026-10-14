@@ -25,7 +25,7 @@ namespace SkylineTogether.Diagnostics
         public const string AgentScan = "agent scan";
         public const string AgentApply = "agent apply";
         public const string FlowScan = "flow scan";
-        // perf pass: components that were not measured before
+        // components that were not measured before
         public const string SimValues = "sim values";          // host: attention values scan, samples, streams
         public const string PresenceWatch = "presence watch";  // host: component sets changed without a tag (events)
         public const string Icons = "icons";                   // host: icon set capture
@@ -95,7 +95,7 @@ namespace SkylineTogether.Diagnostics
             return ms;
         }
 
-        /// <summary>perf pass: components measured inside another one are counted once in the totals.</summary>
+        /// <summary>Components measured inside another one are counted once in the totals.</summary>
         private static PerfCounters CreateCounters()
         {
             var c = new PerfCounters();

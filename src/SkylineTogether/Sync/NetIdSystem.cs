@@ -83,7 +83,7 @@ namespace SkylineTogether.Sync
         public IdIndexSet AgentIds => _agents;
 
         /// <summary>
-        /// perf pass: bound ids of the structure families the host's rolling passes cover (objects, net edges and nodes,
+        /// Bound ids of the structure families the host's rolling passes cover (objects, net edges and nodes,
         /// areas: <see cref="FamilyClassifier.IsPresenceWatched"/>; the presence watch and the attention values scan), so
         /// refilling those passes copies this set instead of walking the whole id table (agents and movers included).
         /// </summary>

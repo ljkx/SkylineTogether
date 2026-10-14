@@ -29,7 +29,7 @@ namespace SkylineTogether.Core.Diagnostics
             public double PeakSince;
             public long Samples;
             public bool Started;
-            /// <summary>perf pass: the component this one runs inside (its time is part of the parent's), or null.</summary>
+            /// <summary>The component this one runs inside (its time is part of the parent's), or null.</summary>
             public string Parent;
         }
 
@@ -60,7 +60,7 @@ namespace SkylineTogether.Core.Diagnostics
         }
 
         /// <summary>
-        /// perf pass: declares that <paramref name="component"/> runs inside <paramref name="parent"/> (its time is already
+        /// Declares that <paramref name="component"/> runs inside <paramref name="parent"/> (its time is already
         /// part of the parent's), so totals count it once; the diagnostics show it as "component (in parent)".
         /// </summary>
         public void Nest(string component, string parent)

@@ -167,7 +167,7 @@ namespace SkylineTogether.Net
                     uint handle = msg.m_conn.m_HSteamNetConnection;
                     SteamNetworkingMessage_t.Release(ptr);
                     if (!_connections.TryGetValue(handle, out SteamConnection connection) || connection.Closed) continue;
-                    // Review fix: the "connected" status callback is dispatched by the game's SteamAPI.RunCallbacks,
+                    // The "connected" status callback is dispatched by the game's SteamAPI.RunCallbacks,
                     // which may run after this poll in the same frame, while the peer's first messages (its hello) are
                     // already in the poll group. They used to be dropped, leaving the handshake to time out. A message
                     // can only arrive on a connected connection, so report it now.
@@ -195,7 +195,7 @@ namespace SkylineTogether.Net
                 c.Closed = true;
             }
             _connections.Clear();
-            // Review fix: CloseListenSocket closes every connection accepted on it ungracefully, including lingering
+            // CloseListenSocket closes every connection accepted on it ungracefully, including lingering
             // ones, so the last reliable messages (SessionEnd, Kick) were lost and clients only saw "lost the
             // connection". The listen sockets now stay open a few seconds longer (see PumpDeferredCloses).
             DeferClose(_p2pSocket);

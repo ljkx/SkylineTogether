@@ -44,13 +44,13 @@ namespace SkylineTogether.Presence
         /// <summary>True while presence flows: hosting, or a live client.</summary>
         public bool Active => _sessions.Host != null || (_sessions.Client != null && _sessions.Client.State == ClientState.Live);
 
-        /// <summary>blueprint branch: false for a viewer (they build nothing, so they send no tool preview).</summary>
+        /// <summary>False for a viewer (they build nothing, so they send no tool preview).</summary>
         public bool MaySendPreview => _sessions.Client == null || RolePermissions.Predicts(_sessions.Client.LocalRole);
 
-        /// <summary>blueprint branch: bytes of the last preview sent (diagnostics).</summary>
+        /// <summary>Bytes of the last preview sent (diagnostics).</summary>
         public int LastPreviewBytes { get; set; }
 
-        /// <summary>blueprint branch: shapes of the last preview captured, and whether it did not fit (diagnostics).</summary>
+        /// <summary>Shapes of the last preview captured, and whether it did not fit (diagnostics).</summary>
         public int LastPreviewShapes { get; set; }
 
         public bool LastPreviewTruncated { get; set; }
@@ -69,7 +69,7 @@ namespace SkylineTogether.Presence
 
         public static uint ColorOf(PeerId peer) => Palette[peer.Value % Palette.Length];
 
-        /// <summary>perf pass: the CSS colour of each player colour, built once (the tags are rebuilt every frame).</summary>
+        /// <summary>The CSS colour of each player colour, built once (the tags are rebuilt every frame).</summary>
         public static string CssColor(uint rgba)
         {
             if (CssColors.TryGetValue(rgba, out string css)) return css;

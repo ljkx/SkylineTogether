@@ -8,7 +8,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Session
 {
-    /// <summary>blueprint branch: the tool preview model, its wire format and limits, smoothing, throttling and relay.</summary>
+    /// <summary>The tool preview model, its wire format and limits, smoothing, throttling and relay.</summary>
     public sealed class ToolPreviewTests
     {
         private static PreviewPoint P(float x, float y, float z) => new PreviewPoint(x, y, z);

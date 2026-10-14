@@ -61,7 +61,7 @@ namespace SkylineTogether.Diagnostics
         /// </summary>
         public static readonly FeatureHealth FlowStatus = Registry.Add("flow", "electricity and water flow status", false);
 
-        /// <summary>Gameplay branch: player actions outside the tools (dev tree, map tiles, milestones, UI writes).</summary>
+        /// <summary>Player actions outside the tools (dev tree, map tiles, milestones, UI writes).</summary>
         public static readonly FeatureHealth Actions = Registry.Add("actions", "player actions sync", false);
 
         /// <summary>
@@ -74,7 +74,7 @@ namespace SkylineTogether.Diagnostics
         public static readonly FeatureHealth Presence = Registry.Add("presence", "player cursors", false);
 
         /// <summary>
-        /// blueprint branch: every player's live tool preview (the road being drawn, the building at the cursor, zones
+        /// Every player's live tool preview (the road being drawn, the building at the cursor, zones
         /// being painted, ...) drawn for the others in the player's colour. Fallback: cursors and name tags only.
         /// </summary>
         public static readonly FeatureHealth Previews = Registry.Add("previews", "building previews", false);

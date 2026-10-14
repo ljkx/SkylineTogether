@@ -35,7 +35,7 @@ namespace SkylineTogether.Sync
             _ids = world.GetOrCreateSystemManaged<NetIdSystem>();
             _codec = new EntityCodec(world, _ids, _log);
             _watcher = new Compat.ModStateWatcher(_codec, _ids, _log);
-            Integrity.Attach(_codec, _ids); // feat/integrity
+            Integrity.Attach(_codec, _ids);
             _simValues.Attach(_codec, _ids);
             _flow.Attach(world, _ids);
             _agents.Attach(_codec, _ids);
@@ -63,7 +63,7 @@ namespace SkylineTogether.Sync
             _global.Attach(world, _codec, _ids);
             _events.Attach(world, _codec, _ids);
             _signals.Attach(world);
-            _actions.Attach(world, _codec, _ids); // gameplay branch
+            _actions.Attach(world, _codec, _ids);
             _generateEdges = world.GetOrCreateSystemManaged<Game.Tools.GenerateEdgesSystem>();
             return true;
         }
@@ -74,7 +74,7 @@ namespace SkylineTogether.Sync
             if (!EnsureWorld()) return;
             host.PeerJoining += OnPeerJoining;
             host.PeerLeft += OnPeerLeft;
-            host.PeerLeft += Integrity.OnPeerLeft; // feat/integrity
+            host.PeerLeft += Integrity.OnPeerLeft;
             Integrity.Reset();
             ResetGameplay();
             ResetHostState();
@@ -114,7 +114,7 @@ namespace SkylineTogether.Sync
             if (!EnsureWorld()) return;
             _clientLive = false;
             _pool.Clear();
-            Integrity.Reset(); // feat/integrity
+            Integrity.Reset();
             _shadow.Clear();
             _baselinesPending.Clear();
             ResetGameplay();
@@ -143,7 +143,7 @@ namespace SkylineTogether.Sync
                 // mod compatibility: mod systems that would derive host-owned state go off; untagged mod state is watched
                 SafeCall("mod client gates", () => Compat.ModCompat.OnClientLive(_log));
                 SafeCall("mod state watcher", () => _watcher?.Start(false));
-                Integrity.OnClientLive(); // feat/integrity
+                Integrity.OnClientLive();
                 _log.Info(LogCategory.Replication, "client live with " + _ids.BoundCount + " bound entities; following the host");
             };
         }
@@ -174,7 +174,7 @@ namespace SkylineTogether.Sync
             _ids?.Clear();
             _proposalHealth.Clear();
             _gate.Open();
-            Integrity.Reset(); // feat/integrity
+            Integrity.Reset();
             _inbox.Clear();
             _pool.Clear();
             _shadow.Clear();
@@ -196,7 +196,7 @@ namespace SkylineTogether.Sync
             _lastAckSent = -1;
         }
 
-        /// <summary>gameplay branch: forgets ledger, limits, sequence numbers and intent baselines (session start or end).</summary>
+        /// <summary>Forgets ledger, limits, sequence numbers and intent baselines (session start or end).</summary>
         private void ResetGameplay()
         {
             _actions.Reset();
@@ -292,7 +292,7 @@ namespace SkylineTogether.Sync
             PrimeBuildOrders(em);
         }
 
-        /// <summary>gameplay branch: the build-order allocator starts above every live edge (ARCHITECTURE.md#host-validation-and-commit).</summary>
+        /// <summary>The build-order allocator starts above every live edge (ARCHITECTURE.md#host-validation-and-commit).</summary>
         private void PrimeBuildOrders(EntityManager em)
         {
             try
@@ -330,7 +330,7 @@ namespace SkylineTogether.Sync
             double tableMs = Perf.Elapsed(tableStart);
             w.IdCeiling(_ids.Ids.Next);
             Grant(peer, w);
-            // gameplay branch: the joiner's snapshot contains every ledger epoch up to now, so its proposals start from here
+            // the joiner's snapshot contains every ledger epoch up to now, so its proposals start from here
             w.Epoch(_ledger.LastBroadcast);
             Send(peer, w, Perf.StructureBytes);
             _log.Info(LogCategory.Replication, peer + ": sent " + w.RecordCount + " prefab/range records (prefab table in " + tableMs.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms)");
@@ -344,7 +344,7 @@ namespace SkylineTogether.Sync
             _proposalHealth.Remove(peer.Value);
             _hostInboxQuota.Forget(peer);
             _ackStall.Forget(peer.Value);
-            // gameplay branch
+            // proposal limits
             _rate.Forget(peer.Value);
             _requests.Forget(peer.Value);
             _violations.Forget(peer.Value);

@@ -91,7 +91,7 @@ Status values:
 | 35 | Line delete (D1, D3) | UI delete | OK | |
 | 36 | Cargo lines | as rows 21, 22, 24, 34, 35 | OK | Cargo lines are transport lines. |
 | 37 | Outside connections (road or rail connected to the map edge) | Tool | OK | `OutsideConnectionInitializeSystem` is host-only. |
-| 38 | Water source add, edit, remove (water tool) | Tool | OK | `WaterSource` family. Mod water tools are handled on another branch. |
+| 38 | Water source add, edit, remove (water tool) | Tool | OK | `WaterSource` family. Mod water tools: Water Features adapter ([MOD-COMPATIBILITY.md](MOD-COMPATIBILITY.md)). |
 | 39 | Terraforming | Terrain stamps (`TerrainSync`) | OK | |
 | 40 | Disasters and emergencies | Host simulation | OK | No player trigger exists apart from rebuild (row 8) and policies (rows 18-19). |
 | 41 | Pause and speed (T1, T3) | Speed | OK | Clients send requests (viewers' requests are refused). On a host with live players, TimeUISystem's forced pause (pause menu, focus loss) no longer pauses everyone. A pause that someone chose is kept. |

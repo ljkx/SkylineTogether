@@ -29,7 +29,7 @@ namespace SkylineTogether.Presence
     /// belong to the local tool). Name tags are projected to the screen and handed to the UI. Runs in the Rendering
     /// phase right before <see cref="OverlayRenderSystem"/>.
     /// <para>
-    /// blueprint branch: with every send it also captures the local tool's live preview (<see cref="ToolPreviewCapture"/>,
+    /// With every send it also captures the local tool's live preview (<see cref="ToolPreviewCapture"/>,
     /// read from the game's own <c>Temp</c> output, never written) and sends it as a whole (a keyframe) in the same
     /// message, so a change goes out at once and a lost message heals with the next one; the remote previews are eased
     /// between keyframes (<see cref="ToolPreviewSmoother"/>) and drawn as overlay outlines in the player's colour
@@ -51,12 +51,12 @@ namespace SkylineTogether.Presence
         private readonly Dictionary<byte, (byte Tool, int Prefab, string Text)> _activity = new Dictionary<byte, (byte, int, string)>();
         private readonly PresenceMessage _outgoing = new PresenceMessage();
 
-        /// <summary>blueprint branch: the local tool preview, its encoded bytes (reused every send) and the reader of the game's tool output.</summary>
+        /// <summary>The local tool preview, its encoded bytes (reused every send) and the reader of the game's tool output.</summary>
         private readonly ToolPreview _preview = new ToolPreview();
         private readonly ByteWriter _previewBytes = new ByteWriter(PresenceMessage.MaxPreviewBytes + 64);
         private ToolPreviewCapture _capture;
 
-        /// <summary>blueprint branch: a remote preview not refreshed for this long (lost keepalives) is no longer drawn.</summary>
+        /// <summary>A remote preview not refreshed for this long (lost keepalives) is no longer drawn.</summary>
         private const double PreviewStaleSeconds = 2.5;
         private OverlayRenderSystem _overlay;
         private RaycastSystem _raycast;
@@ -196,7 +196,7 @@ namespace SkylineTogether.Presence
         }
 
         /// <summary>
-        /// blueprint branch: captures and encodes the local tool's preview into <see cref="_previewBytes"/>; returns its
+        /// Captures and encodes the local tool's preview into <see cref="_previewBytes"/>; returns its
         /// length (0: none — no building tool, a viewer, the feature off, or nothing in progress). Never throws.
         /// </summary>
         private int CapturePreview(PresenceController presence, PresenceTool kind)
@@ -334,7 +334,7 @@ namespace SkylineTogether.Presence
             presence.SetTags(tags);
         }
 
-        /// <summary>blueprint branch: one remote preview; a failure turns the previews off, never the cursors.</summary>
+        /// <summary>One remote preview; a failure turns the previews off, never the cursors.</summary>
         private static void DrawPreview(OverlayRenderSystem.Buffer buffer, ToolPreview preview, uint rgba, Camera camera)
         {
             try

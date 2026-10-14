@@ -149,7 +149,7 @@ namespace SkylineTogether.Sync
         public GlobalStateSync(ILog log)
         {
             _log = log;
-            // perf pass: the client runs the detectors twice and the baseline once per frame; their delegates are made once
+            // the client runs the detectors twice and the baseline once per frame; their delegates are made once
             _detectTax = () => DetectTax(_detectNow);
             _detectBudgets = () => DetectBudgets(_detectNow);
             _detectFees = () => DetectFees(_detectNow);
@@ -163,7 +163,7 @@ namespace SkylineTogether.Sync
         private readonly Action _detectTax, _detectBudgets, _detectFees, _detectLoan, _detectNames, _detectCityName, _detectFollowed, _rebaseline;
         private double _detectNow;
 
-        // ---- gameplay branch ----
+        // ---- player actions ----
 
         /// <summary>Semantic intents and the unlock set (their channels are routed there).</summary>
         public ActionSync Actions;
@@ -315,7 +315,7 @@ namespace SkylineTogether.Sync
         {
             _send.Clear();
             _pacer.Clear();
-            _late.Clear(); // gameplay branch
+            _late.Clear();
             _hold.Clear();
             _primed = false;
             _lastHost = double.NegativeInfinity;
@@ -340,7 +340,7 @@ namespace SkylineTogether.Sync
         public void HostCapture(SyncBatch.Writer w)
         {
             if (!Attached) return;
-            RunLate(); // gameplay branch: proposals that need EndFrameBarrier (names, budgets)
+            RunLate(); // proposals that need EndFrameBarrier (names, budgets)
             double now = Now;
             bool due = now - _lastHost >= HostInterval;
             if (!due && !_send.AnyDirty) return;
@@ -434,7 +434,7 @@ namespace SkylineTogether.Sync
         private void ApplyProposal(PeerId peer, uint channel, byte[] payload)
         {
             EntityManager em = _world.EntityManager;
-            // gameplay branch: semantic intents (dev tree, map tiles, historical, vehicles, districts, colours)
+            // semantic intents (dev tree, map tiles, historical, vehicles, districts, colours)
             if (channel == GlobalChannel.Action)
             {
                 Actions?.ApplyProposal(peer, payload);
@@ -465,7 +465,7 @@ namespace SkylineTogether.Sync
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
                 if (!WithinLimit(_intList.Count, channel)) return;
                 var budgets = new List<KeyValuePair<uint, int>>(_intList);
-                // gameplay branch: SetServiceBudget tags the budget entity through EndFrameBarrier: late phase
+                // SetServiceBudget tags the budget entity through EndFrameBarrier: late phase
                 _late.Add(() =>
                 {
                     EntityManager lem = _world.EntityManager;
@@ -514,7 +514,7 @@ namespace SkylineTogether.Sync
                 if (!WithinLimit(_policyList.Count, channel)) return;
                 foreach (PolicyChange c in _policyList)
                 {
-                    // gameplay branch: a target deleted meanwhile is a conflict (rollback of the client's prediction)
+                    // a target deleted meanwhile is a conflict (rollback of the client's prediction)
                     if (!CreateModifyEvent(em, c)) Reject?.Invoke(peer, RejectReason.Conflict, new[] { c.Target });
                 }
             }
@@ -524,7 +524,7 @@ namespace SkylineTogether.Sync
                 if (!WithinLimit(_stringList.Count, channel)) return;
                 var names = new List<KeyValuePair<uint, string>>(_stringList.Count);
                 foreach (KeyValuePair<uint, string> e in _stringList) names.Add(new KeyValuePair<uint, string>(e.Key, GlobalProposalRules.CleanName(e.Value)));
-                // gameplay branch: NameSystem.SetCustomName uses EndFrameBarrier (NameSystem.cs:214-241): late phase
+                // NameSystem.SetCustomName uses EndFrameBarrier (NameSystem.cs:214-241): late phase
                 _late.Add(() =>
                 {
                     EntityManager lem = _world.EntityManager;
@@ -566,7 +566,7 @@ namespace SkylineTogether.Sync
             return false;
         }
 
-        /// <summary>gameplay branch: the permission a channel proposal needs (ARCHITECTURE.md#roles-and-moderation).</summary>
+        /// <summary>The permission a channel proposal needs (ARCHITECTURE.md#roles-and-moderation).</summary>
         private static Permission RequiredPermission(uint channel)
         {
             if (channel == GlobalChannel.Tax || channel == GlobalChannel.Budget || channel == GlobalChannel.Fee || channel == GlobalChannel.Loan) return Permission.Economy;
@@ -644,7 +644,7 @@ namespace SkylineTogether.Sync
         private void ApplyFull(uint channel, byte[] payload)
         {
             EntityManager em = _world.EntityManager;
-            // gameplay branch: the unlock set and the host's sub-element deletions
+            // the unlock set and the host's sub-element deletions
             if (Actions != null && Actions.ApplyFromHost(channel, payload)) return;
             if (channel == GlobalChannel.Tax)
             {
@@ -692,7 +692,7 @@ namespace SkylineTogether.Sync
             else if (channel == GlobalChannel.Name)
             {
                 if (GlobalPayload.ReadStrings(payload, 0, payload.Length, Cleared(_stringList)) != GlobalPayloadMode.Full) return;
-                // gameplay branch: SetCustomName uses EndFrameBarrier, refused at frame start: applied in the late phase
+                // SetCustomName uses EndFrameBarrier, refused at frame start: applied in the late phase
                 var names = new List<KeyValuePair<uint, string>>(_stringList);
                 _late.Add(() =>
                 {
@@ -869,7 +869,7 @@ namespace SkylineTogether.Sync
             }
             DetectLocal(Now);
             CapturePolicies();
-            // gameplay branch: host state deferred to this point (names) is applied after the local edits were taken,
+            // host state deferred to this point (names) is applied after the local edits were taken,
             // and becomes the new baseline, so it is never proposed back
             if (_late.Count > 0)
             {

@@ -5,7 +5,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>Mover existence records of the movers branch (SyncRecordKind 20-22).</summary>
+    /// <summary>Mover existence records (SyncRecordKind 20-22).</summary>
     public sealed class MoverRecordTests
     {
         private static List<SyncRecord> RoundTrip(SyncBatch.Writer w)

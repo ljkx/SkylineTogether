@@ -7,7 +7,7 @@ namespace SkylineTogether.Core.Session
     /// while something changed, and every <see cref="IdleInterval"/> as a keepalive while nothing did, so an idle
     /// player costs almost nothing and a remote marker never expires while its player is still there.
     /// <para>
-    /// blueprint branch: a discrete change (tool, prefab, brush, tool preview) is followed by <see cref="Repeats"/>
+    /// A discrete change (tool, prefab, brush, tool preview) is followed by <see cref="Repeats"/>
     /// unchanged copies <see cref="RepeatInterval"/> apart. Every message carries the whole state, so a copy heals a lost
     /// message (the last preview before the player stops dragging, or the empty preview after an apply or a cancel)
     /// within a few hundred milliseconds instead of the keepalive second.
