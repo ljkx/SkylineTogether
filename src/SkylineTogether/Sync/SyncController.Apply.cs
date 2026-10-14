@@ -434,6 +434,7 @@ namespace SkylineTogether.Sync
                     return;
                 }
             }
+            if (facts.EntityCount == 0) _proposalMaxRefund = 0; // set by Validate otherwise
             List<BuildOrderRange> touchedEdges = TouchedEdgeBuildOrders(records);
             _proposalPeer = peer;
             ApplyResult r = _codec.Apply(records, data, 0, data.Length, _mayCreate);
@@ -449,7 +450,16 @@ namespace SkylineTogether.Sync
                 _grants.TryConsume(peer.Value, rec.NetId);
             }
             string summary = peer + ": " + r;
-            if (r.HasCost && r.Cost != 0) ChargeCity(r.Cost);
+            // w9/perf (trust): the client's cost within the host's bounds (construction costs of what was created, refunds
+            // of what was removed); a vanilla client's sum is never changed
+            long minCharge = (facts.Flags & ProposalFlags.DirectTool) != 0 ? 0 : MinimumCharge(r.SpawnedEntities);
+            long cost = ProposalRules.EffectiveCost(r.HasCost ? r.Cost : 0, minCharge, _proposalMaxRefund);
+            if (cost != (r.HasCost ? r.Cost : 0))
+            {
+                Perf.Counters.Count("proposal costs corrected by the host");
+                _log.Info(LogCategory.Replication, peer + ": proposal cost " + (r.HasCost ? r.Cost : 0) + " corrected to " + cost + " (created at least " + minCharge + ", refund at most " + _proposalMaxRefund + ")");
+            }
+            if (cost != 0) ChargeCity(cost);
             if (r.Problems.Count > 0) _log.Info(LogCategory.Replication, peer + " proposal problems: " + string.Join("; ", r.Problems));
             ApplyZoneRecords(records);
             ApplyGlobal(data, peer, true);

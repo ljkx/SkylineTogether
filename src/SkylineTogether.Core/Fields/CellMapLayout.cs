@@ -232,5 +232,21 @@ namespace SkylineTogether.Core.Fields
         public void MarkSent(int tile, ulong hash) => _sent[tile] = hash;
 
         public ulong SentHash(int tile) => _sent[tile];
+
+        /// <summary>
+        /// w9/perf: the digest of what was sent (<see cref="CellMapMessage.Digest"/>); false while some tile was never sent
+        /// or <paramref name="current"/> still has tiles to send (a digest is only comparable once the peer is up to date).
+        /// </summary>
+        public bool TryDigest(ulong[] current, out ulong digest)
+        {
+            digest = 0;
+            if (current == null || current.Length < _sent.Length) return false;
+            for (int i = 0; i < _sent.Length; i++)
+            {
+                if (_sent[i] == 0 || _sent[i] != current[i]) return false;
+            }
+            digest = CellMapMessage.Digest(_sent, _sent.Length);
+            return true;
+        }
     }
 }

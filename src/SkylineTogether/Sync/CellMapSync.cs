@@ -57,6 +57,11 @@ namespace SkylineTogether.Sync
             public AttentionTopic Topic;
             /// <summary>Bytes of a cell a resource-paint patch may change (null: not paintable).</summary>
             public byte[] PaintMask;
+            /// <summary>w9/perf (trust): the valid range of each painted field (what the game's brushes can produce).</summary>
+            public CellFieldClamp[] PaintClamps;
+            /// <summary>w9/perf (client): a digest of the host's sent tiles waiting to be compared after this frame's tiles.</summary>
+            public bool DigestPending;
+            public ulong Digest;
             public int ExpectedCellBytes;
             public CellMapLayout Layout;
             public byte[] Current = Array.Empty<byte>();
@@ -122,6 +127,8 @@ namespace SkylineTogether.Sync
             public readonly PeerByteBudget Budget = new PeerByteBudget(BytesPerSecond, BurstBytes, MaxBacklogBytes);
             public double NextAudit;
             public int AuditIndex;
+            public double NextDigest; // w9/perf
+            public int DigestIndex;
         }
 
         private readonly SessionManager _sessions;
@@ -142,6 +149,14 @@ namespace SkylineTogether.Sync
         private int _scanIndex;
         private double _lastSend = -1;
         private long _tilesSent, _tilesApplied, _patches;
+        // w9/perf (trust and resync)
+        private const double DigestInterval = 10.0;
+        private const double PaintQuietSeconds = 5.0;
+        private readonly CellMapResyncGate _resync = new CellMapResyncGate();
+        private readonly Stack<byte[]> _tilePool = new Stack<byte[]>();
+        private int _tilePoolSize;
+        private long _clamped, _resyncRequests, _resyncsServed, _digestsSent, _digestMismatches;
+        private double _lastPaint = double.NegativeInfinity;
 
         public CellMapSync(SessionManager sessions, ILog log)
         {
@@ -165,8 +180,15 @@ namespace SkylineTogether.Sync
         {
             get
             {
-                if (IsHost && _tilesSent > 0) return "cell maps: " + _tilesSent + " tiles sent" + (_patches > 0 ? ", " + _patches + " paint patches" : "");
-                if (IsLiveClient && _tilesApplied + _patches > 0) return "cell maps: " + _tilesApplied + " tiles applied" + (_patches > 0 ? ", " + _patches + " paint patches sent" : "");
+                if (IsHost && _tilesSent > 0)
+                {
+                    return "cell maps: " + _tilesSent + " tiles sent" + (_patches > 0 ? ", " + _patches + " paint patches" : "") + (_clamped > 0 ? ", " + _clamped + " painted values clamped" : "")
+                           + (_resyncsServed > 0 ? ", " + _resyncsServed + " map resyncs" : "");
+                }
+                if (IsLiveClient && _tilesApplied + _patches > 0)
+                {
+                    return "cell maps: " + _tilesApplied + " tiles applied" + (_patches > 0 ? ", " + _patches + " paint patches sent" : "") + (_resyncRequests > 0 ? ", " + _resyncRequests + " map resyncs asked" : "");
+                }
                 return "";
             }
         }
@@ -183,11 +205,15 @@ namespace SkylineTogether.Sync
             _byId.Clear();
             byte[] resources = Mask(16, 0, 1, 4, 5, 8, 9);       // NaturalResourceCell: m_Base of fertility, ore, oil
             byte[] groundwater = Mask(6, 0, 1, 4, 5);            // GroundWater: m_Amount, m_Max (not m_Polluted)
+            // w9/perf (trust): the brushes clamp what they paint to 0..10000 (ApplyBrushesSystem: resource m_Base as
+            // ushort, groundwater amount as short, m_Max = amount; GroundWaterSystem.kMaxGroundWater)
+            var resourceClamps = new[] { new CellFieldClamp(0, false, 0, 10000), new CellFieldClamp(4, false, 0, 10000), new CellFieldClamp(8, false, 0, 10000) };
+            var groundwaterClamps = new[] { new CellFieldClamp(0, true, 0, 10000), new CellFieldClamp(4, true, 0, 10000) };
             Add<AirPollution>(world.GetOrCreateSystemManaged<AirPollutionSystem>(), "AirPollution", AttentionTopic.Pollution, null, 2);
             Add<GroundPollution>(world.GetOrCreateSystemManaged<GroundPollutionSystem>(), "GroundPollution", AttentionTopic.Pollution, null, 4);
             Add<NoisePollution>(world.GetOrCreateSystemManaged<NoisePollutionSystem>(), "NoisePollution", AttentionTopic.Noise, null, 4);
-            Add<GroundWater>(world.GetOrCreateSystemManaged<GroundWaterSystem>(), "GroundWater", AttentionTopic.Groundwater, groundwater, 6);
-            Add<NaturalResourceCell>(world.GetOrCreateSystemManaged<NaturalResourceSystem>(), "NaturalResources", AttentionTopic.NaturalResources, resources, 16);
+            Add<GroundWater>(world.GetOrCreateSystemManaged<GroundWaterSystem>(), "GroundWater", AttentionTopic.Groundwater, groundwater, 6, groundwaterClamps);
+            Add<NaturalResourceCell>(world.GetOrCreateSystemManaged<NaturalResourceSystem>(), "NaturalResources", AttentionTopic.NaturalResources, resources, 16, resourceClamps);
             Add<LandValueCell>(world.GetOrCreateSystemManaged<LandValueSystem>(), "LandValue", AttentionTopic.LandValue, null, 4);
             Add<TelecomCoverage>(world.GetOrCreateSystemManaged<TelecomCoverageSystem>(), "TelecomCoverage", AttentionTopic.Telecom, null, 2);
             Add<TerrainAttractiveness>(world.GetOrCreateSystemManaged<TerrainAttractivenessSystem>(), "TerrainAttractiveness", AttentionTopic.None, null, 8);
@@ -206,10 +232,10 @@ namespace SkylineTogether.Sync
             return mask;
         }
 
-        private void Add<TCell>(CellMapSystem<TCell> system, string name, AttentionTopic topic, byte[] paintMask, int expectedCellBytes) where TCell : struct, ISerializable
+        private void Add<TCell>(CellMapSystem<TCell> system, string name, AttentionTopic topic, byte[] paintMask, int expectedCellBytes, CellFieldClamp[] clamps = null) where TCell : struct, ISerializable
         {
             if (system == null) return;
-            var c = new Channel<TCell> { System = system, Name = name, Id = CellMapMessage.MapId(name), Topic = topic, PaintMask = paintMask, ExpectedCellBytes = expectedCellBytes };
+            var c = new Channel<TCell> { System = system, Name = name, Id = CellMapMessage.MapId(name), Topic = topic, PaintMask = paintMask, PaintClamps = clamps, ExpectedCellBytes = expectedCellBytes };
             _channels.Add(c);
             _byId[c.Id] = c;
         }
@@ -227,6 +253,7 @@ namespace SkylineTogether.Sync
                     // the painted-field masks assume the decompiled layout; a patched game disables painting only
                     if (c.PaintMask != null) _log.Warn(LogCategory.Fields, c.Name + ": cell size " + cellBytes + " B (expected " + c.ExpectedCellBytes + "); resource paint proposals are off");
                     c.PaintMask = null;
+                    c.PaintClamps = null;
                 }
                 c.Layout = new CellMapLayout(w, h, cellBytes, TileCells);
                 c.Current = new byte[c.Layout.MapBytes];
@@ -267,6 +294,7 @@ namespace SkylineTogether.Sync
                 _peers.Remove(peer.Value);
                 _joinBaselines.Remove(peer.Value);
                 _hostQuota.Forget(peer);
+                _resync.ForgetPeer(peer.Value); // w9/perf
             };
         }
 
@@ -292,13 +320,17 @@ namespace SkylineTogether.Sync
             _inbox.Clear();
             _lastSend = -1;
             _tilesSent = _tilesApplied = _patches = 0;
+            _clamped = _resyncRequests = _resyncsServed = _digestsSent = _digestMismatches = 0;
+            _lastPaint = double.NegativeInfinity;
+            _resync.Clear();
             foreach (Channel c in _channels)
             {
                 c.Valid = false;
                 c.Hot = false;
                 c.NextScan = 0;
-                c.PendingTiles.Clear();
+                ReleaseTiles(c);
                 c.Painted = false;
+                c.DigestPending = false;
                 // the layout is re-read: a new map may have another size
                 c.Layout = null;
                 c.Failed = false;
@@ -377,6 +409,7 @@ namespace SkylineTogether.Sync
                             c.Hot = true; // rescan at this frame's end: everyone gets the painted tiles soon
                             continue;
                         }
+                        _lastPaint = Now; // w9/perf: the client's own prediction differs from the host's tiles for a while
                         if (!c.Painted)
                         {
                             c.Painted = true;
@@ -459,7 +492,11 @@ namespace SkylineTogether.Sync
                         _log.Warn(LogCategory.Fields, "dropped a malformed cell-map message from " + peer + ": " + ex.Message);
                     }
                 }
-                if (!IsHost) WritePendingTiles();
+                if (!IsHost)
+                {
+                    WritePendingTiles();
+                    CheckDigests(Now); // w9/perf: after this frame's tiles, which the digest covers
+                }
             }
             catch (Exception ex)
             {
@@ -480,6 +517,16 @@ namespace SkylineTogether.Sync
             }
             if (IsHost)
             {
+                if (h.Type == CellMapMessage.TypeResync)
+                {
+                    // w9/perf: the client's copy of this map differs from what it was sent: everything again (paced)
+                    if (!_peers.TryGetValue(peer.Value, out HostPeer hp) || !hp.States.TryGetValue(c.Id, out CellMapPeerState rs)) return;
+                    if (!_resync.TryAcceptHost(peer.Value, c.Id, Now)) return;
+                    rs.Reset(layout.TileCount);
+                    _resyncsServed++;
+                    _log.Info(LogCategory.Fields, peer + " asked for cell map " + c.Name + " again (its copy differed); resending it");
+                    return;
+                }
                 if (h.Type != CellMapMessage.TypePatch || c.PaintMask == null) return;
                 // resource painting is a terrain tool brush; a peer without the right is ignored (the
                 // periodic per-peer audit gives its replica the host's tiles back)
@@ -487,6 +534,13 @@ namespace SkylineTogether.Sync
                 if (peer != PeerId.Host && host != null && !RolePermissions.Allows(host.GetRole(peer), Permission.Terraform)) return;
                 CellMapMessage.ReadPatch(r, layout, out int x0, out int y0, out int w, out int hgt, ref _patchCells);
                 c.CopyOut(c.Current);
+                // w9/perf (trust): painted values beyond what the game's brushes produce are clamped before the merge
+                int clamped = CellMapMessage.ClampPatch(layout, c.Current, x0, y0, w, hgt, _patchCells, c.PaintClamps);
+                if (clamped > 0)
+                {
+                    if (_clamped == 0) _log.Warn(LogCategory.Fields, peer + " painted " + c.Name + " values outside the brush range; they were clamped");
+                    _clamped += clamped;
+                }
                 int changed = CellMapMessage.MergeMasked(layout, c.Current, x0, y0, w, hgt, _patchCells, c.PaintMask);
                 if (changed > 0) c.CopyIn(c.Current);
                 // Current no longer matches the tile hashes: rescanned at this frame's end, then streamed to everyone
@@ -495,11 +549,17 @@ namespace SkylineTogether.Sync
                 _patches++;
                 return;
             }
+            if (h.Type == CellMapMessage.TypeDigest)
+            {
+                c.Digest = CellMapMessage.ReadDigest(r);
+                c.DigestPending = true;
+                return;
+            }
             if (h.Type != CellMapMessage.TypeTiles) return;
             int count = CellMapMessage.ReadTileCount(r, layout);
             for (int i = 0; i < count; i++)
             {
-                var tile = new byte[layout.MaxTileBytes];
+                byte[] tile = RentTile(layout.MaxTileBytes); // w9/perf: pooled (was one allocation per tile)
                 int index = CellMapMessage.ReadTile(r, layout, tile);
                 c.PendingTiles.Add(new KeyValuePair<int, byte[]>(index, tile));
             }
@@ -522,7 +582,65 @@ namespace SkylineTogether.Sync
                     c.Failed = true;
                     _log.Warn(LogCategory.Fields, "writing cell map " + c.Name + " failed; it is no longer synchronised", ex);
                 }
-                c.PendingTiles.Clear();
+                ReleaseTiles(c);
+            }
+        }
+
+        private byte[] RentTile(int size)
+        {
+            if (size != _tilePoolSize)
+            {
+                _tilePool.Clear();
+                _tilePoolSize = size;
+            }
+            return _tilePool.Count > 0 ? _tilePool.Pop() : new byte[size];
+        }
+
+        private void ReleaseTiles(Channel c)
+        {
+            foreach (KeyValuePair<int, byte[]> t in c.PendingTiles)
+            {
+                if (t.Value.Length == _tilePoolSize && _tilePool.Count < 256) _tilePool.Push(t.Value);
+            }
+            c.PendingTiles.Clear();
+        }
+
+        /// <summary>
+        /// w9/perf (client): compares each map whose digest arrived with this replica's own tiles; a map that differs is
+        /// asked for again (<see cref="CellMapMessage.TypeResync"/>, backing off while it keeps differing). Skipped while
+        /// the player paints (the local prediction differs until the host's merged tiles arrive).
+        /// </summary>
+        private void CheckDigests(double now)
+        {
+            SessionClient client = _sessions.Client;
+            foreach (Channel c in _channels)
+            {
+                if (!c.DigestPending) continue;
+                c.DigestPending = false;
+                if (client == null || c.Layout == null || c.Failed || c.PendingTiles.Count > 0) continue;
+                if (c.Painted || now - _lastPaint < PaintQuietSeconds) continue;
+                try
+                {
+                    c.CopyOut(c.Current);
+                    c.Layout.HashTiles(c.Current, c.Hashes, _scratch);
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(LogCategory.Fields, "checking cell map " + c.Name + " failed: " + ex.Message);
+                    continue;
+                }
+                if (CellMapMessage.Digest(c.Hashes, c.Layout.TileCount) == c.Digest)
+                {
+                    _resync.ClientMatched(c.Id);
+                    continue;
+                }
+                _digestMismatches++;
+                if (!_resync.TryRequestClient(c.Id, now)) continue;
+                _out.Reset();
+                CellMapMessage.WriteResync(_out, c.Id, c.Layout);
+                client.SendToHost(MessageKind.CellMaps, _out.Buffer, 0, _out.Length);
+                _resyncRequests++;
+                _log.Info(LogCategory.Fields, "cell map " + c.Name + " differs from the host's; asked for it again");
             }
         }
 
@@ -612,6 +730,7 @@ namespace SkylineTogether.Sync
                     Channel audit = _channels[p.AuditIndex++ % _channels.Count];
                     if (audit.Layout != null && p.States.TryGetValue(audit.Id, out CellMapPeerState s)) s.Reset(audit.Layout.TileCount);
                 }
+                if (now >= p.NextDigest && _channels.Count > 0) SendDigest(host, p, now); // w9/perf
                 AttentionTopic topics = PeerTopics != null ? PeerTopics(peer) : AttentionTopic.None;
                 bool wanted = false;
                 foreach (Channel c in _channels) wanted |= c.Topic != AttentionTopic.None && (c.Topic & topics) != 0;
@@ -632,6 +751,27 @@ namespace SkylineTogether.Sync
                         allowance -= used;
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// w9/perf (host): every <see cref="DigestInterval"/>, the digest of one map (round-robin) as this peer was sent it,
+        /// once the peer is up to date with that map; the client compares it with its own tiles.
+        /// </summary>
+        private void SendDigest(SessionHost host, HostPeer p, double now)
+        {
+            p.NextDigest = now + DigestInterval;
+            for (int i = 0; i < _channels.Count; i++)
+            {
+                Channel c = _channels[(p.DigestIndex + i) % _channels.Count];
+                if (!c.Valid || c.Layout == null || !p.States.TryGetValue(c.Id, out CellMapPeerState state) || state.TileCount != c.Layout.TileCount) continue;
+                if (!state.TryDigest(c.Hashes, out ulong digest)) continue;
+                p.DigestIndex = (p.DigestIndex + i + 1) % _channels.Count;
+                _out.Reset();
+                CellMapMessage.WriteDigest(_out, c.Id, c.Layout, digest);
+                host.SendTo(p.Peer, MessageKind.CellMaps, _out.Buffer, 0, _out.Length);
+                _digestsSent++;
+                return;
             }
         }
 

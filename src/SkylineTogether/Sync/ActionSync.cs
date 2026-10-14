@@ -58,6 +58,10 @@ namespace SkylineTogether.Sync
         private EntityQuery _colorEvents;
         private EntityQuery _unlockEvents;
         private EntityQuery _tilesUpdated;
+        private EntityQuery _ownedTiles; // w9/perf (trust): the host prices purchases itself
+        private readonly List<float> _tileValues = new List<float>();
+        private readonly List<float> _featureAmounts = new List<float>();
+        private readonly List<float> _featureCosts = new List<float>();
         private EntityQuery _lockable;
         private EntityQuery _milestones;
         private EntityArchetype _unlockArchetype;
@@ -154,6 +158,11 @@ namespace SkylineTogether.Sync
                 {
                     All = new[] { ComponentType.ReadOnly<MapTile>(), ComponentType.ReadOnly<Updated>() },
                     None = new[] { ComponentType.ReadOnly<Native>(), ComponentType.ReadOnly<Temp>(), ComponentType.ReadOnly<Deleted>() },
+                });
+                _ownedTiles = em.CreateEntityQuery(new EntityQueryDesc
+                {
+                    All = new[] { ComponentType.ReadOnly<MapTile>() },
+                    None = new[] { ComponentType.ReadOnly<Native>() },
                 });
                 _lockable = em.CreateEntityQuery(new EntityQueryDesc
                 {
@@ -726,21 +735,23 @@ namespace SkylineTogether.Sync
         private RejectReason PurchaseTiles(PeerId peer, EntityManager em, ActionIntent a)
         {
             var tiles = new List<Entity>();
+            var seen = new HashSet<Entity>();
             foreach (uint id in a.Ids)
             {
                 Entity t = _ids.GetEntity(id);
-                if (t == Entity.Null || !em.Exists(t) || !em.HasComponent<MapTile>(t)) return RejectReason.Invalid;
-                if (em.HasComponent<Native>(t) && !tiles.Contains(t)) tiles.Add(t);
+                if (t == Entity.Null || !em.Exists(t) || !em.HasComponent<MapTile>(t) || em.HasComponent<Deleted>(t)) return RejectReason.Invalid;
+                if (em.HasComponent<Native>(t) && seen.Add(t)) tiles.Add(t);
             }
             if (tiles.Count == 0) return RejectReason.None; // somebody bought them already: nothing to charge
-            // permits as the host's own purchase computes them (milestones, mods patching it)
-            if (tiles.Count > _mapTiles.GetAvailableTiles()) return RejectReason.Locked;
             Entity city = _city.City;
             if (city == Entity.Null || !em.HasComponent<PlayerMoney>(city)) return RejectReason.HostError;
             PlayerMoney money = em.GetComponentData<PlayerMoney>(city);
-            int cost = (int)Math.Min(int.MaxValue, Math.Max(0, a.Amount));
-            if (tiles.Count < a.Ids.Length && a.Ids.Length > 0) cost = (int)((long)cost * tiles.Count / a.Ids.Length);
-            if (!money.m_Unlimited && cost > money.money) return RejectReason.NotEnoughMoney;
+            // w9/perf (trust): the host prices the tiles from its own world; the client's observed cost is only logged
+            int cost = PriceTiles(em, tiles);
+            // permits as the host's own purchase computes them (milestones, mods patching it)
+            RejectReason verdict = MapTilePricing.Validate(tiles.Count, _mapTiles.GetAvailableTiles(), cost, money.money, money.m_Unlimited);
+            if (verdict != RejectReason.None) return verdict;
+            if (MapTilePricing.Differs(a.Amount, cost)) _log.Info(LogCategory.Replication, peer + ": map tiles priced at " + cost + " by the host (the client saw " + a.Amount + ")");
             money.Subtract(cost); // MapTilePurchaseSystem.PurchaseSelection (:311-344) without the host's selection tool
             em.SetComponentData(city, money);
             foreach (Entity t in tiles)
@@ -750,6 +761,29 @@ namespace SkylineTogether.Sync
             }
             _log.Info(LogCategory.Replication, peer + " bought " + tiles.Count + " map tile(s) for " + cost);
             return RejectReason.None;
+        }
+
+        /// <summary>
+        /// w9/perf (trust): the price of buying <paramref name="tiles"/> (all still unowned) with the host's current owned
+        /// count, feature amounts and prefab costs (<see cref="MapTilePricing"/>).
+        /// </summary>
+        private int PriceTiles(EntityManager em, List<Entity> tiles)
+        {
+            _tileValues.Clear();
+            foreach (Entity t in tiles)
+            {
+                if (!em.HasBuffer<MapFeatureElement>(t) || !em.HasComponent<PrefabRef>(t)) continue; // the game prices such a tile at nothing, too
+                Entity prefab = em.GetComponentData<PrefabRef>(t).m_Prefab;
+                if (prefab == Entity.Null || !em.HasBuffer<MapFeatureData>(prefab) || !em.HasComponent<TilePurchaseCostFactor>(prefab)) continue;
+                DynamicBuffer<MapFeatureElement> amounts = em.GetBuffer<MapFeatureElement>(t, true);
+                DynamicBuffer<MapFeatureData> costs = em.GetBuffer<MapFeatureData>(prefab, true);
+                _featureAmounts.Clear();
+                _featureCosts.Clear();
+                for (int j = 0; j < amounts.Length; j++) _featureAmounts.Add(amounts[j].m_Amount);
+                for (int j = 0; j < costs.Length; j++) _featureCosts.Add(costs[j].m_Cost);
+                _tileValues.Add(MapTilePricing.TileValue(_featureAmounts, _featureCosts, em.GetComponentData<TilePurchaseCostFactor>(prefab).m_Amount));
+            }
+            return MapTilePricing.Cost(_tileValues, _ownedTiles.CalculateEntityCount());
         }
 
         // ================================================================== client: host channels

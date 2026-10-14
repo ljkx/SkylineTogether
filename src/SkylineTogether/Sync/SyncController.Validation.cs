@@ -117,6 +117,7 @@ namespace SkylineTogether.Sync
                     }
                 }
             }
+            _proposalMaxRefund = RefundBound(em, records);
             Entity city = _city.City;
             if (facts.HasCost && city != Entity.Null && em.HasComponent<Game.City.PlayerMoney>(city))
             {
@@ -285,6 +286,90 @@ namespace SkylineTogether.Sync
             {
                 _log.Warn(LogCategory.Replication, "re-basing build orders failed (zoning priority may differ)", ex);
             }
+        }
+
+        private long _proposalMaxRefund;
+        private EntityQuery _economyParameters;
+
+        /// <summary>
+        /// w9/perf (trust): the most a proposal may refund: the recent modification costs (<c>Recent</c>, what the game's
+        /// refunds are computed from) of every entity it removes or changes and of their sub-elements, times the largest
+        /// refund percentage of the economy parameters.
+        /// </summary>
+        private long RefundBound(EntityManager em, List<SyncRecord> records)
+        {
+            long recent = 0;
+            foreach (SyncRecord r in records)
+            {
+                if (r.Kind != SyncRecordKind.Despawn && r.Kind != SyncRecordKind.Upsert && r.Kind != SyncRecordKind.Values) continue;
+                Entity e = _ids.GetEntity(r.NetId);
+                if (e != Entity.Null && em.Exists(e)) recent += RecentCosts(em, e, 0);
+                if (recent >= int.MaxValue) break;
+            }
+            if (recent == 0) return 0;
+            double pct = 1.0;
+            try
+            {
+                if (_economyParameters == default) _economyParameters = em.CreateEntityQuery(ComponentType.ReadOnly<EconomyParameterData>());
+                if (!_economyParameters.IsEmptyIgnoreFilter)
+                {
+                    EconomyParameterData p = _economyParameters.GetSingleton<EconomyParameterData>();
+                    pct = Math.Max(Math.Max(Math.Max(p.m_BuildRefundPercentage.x, p.m_BuildRefundPercentage.y), Math.Max(p.m_BuildRefundPercentage.z, p.m_RoadRefundPercentage.x)),
+                                   Math.Max(p.m_RoadRefundPercentage.y, p.m_RoadRefundPercentage.z));
+                }
+            }
+            catch (Exception)
+            {
+                pct = 1.0;
+            }
+            return ProposalRules.RefundBound(recent, pct);
+        }
+
+        private static long RecentCosts(EntityManager em, Entity e, int depth)
+        {
+            if (e == Entity.Null || !em.Exists(e)) return 0;
+            long sum = 0;
+            if (em.HasComponent<Recent>(e)) sum += Math.Max(0, em.GetComponentData<Recent>(e).m_ModificationCost);
+            if (depth >= 2) return sum;
+            // sub-elements removed with their owner (derived, no net id) refund too
+            if (em.HasBuffer<Game.Net.SubNet>(e))
+            {
+                DynamicBuffer<Game.Net.SubNet> b = em.GetBuffer<Game.Net.SubNet>(e, true);
+                for (int i = 0; i < b.Length; i++) sum += RecentCosts(em, b[i].m_SubNet, depth + 1);
+            }
+            if (em.HasBuffer<Game.Objects.SubObject>(e))
+            {
+                DynamicBuffer<Game.Objects.SubObject> b = em.GetBuffer<Game.Objects.SubObject>(e, true);
+                for (int i = 0; i < b.Length; i++) sum += RecentCosts(em, b[i].m_SubObject, depth + 1);
+            }
+            if (em.HasBuffer<Game.Buildings.InstalledUpgrade>(e))
+            {
+                DynamicBuffer<Game.Buildings.InstalledUpgrade> b = em.GetBuffer<Game.Buildings.InstalledUpgrade>(e, true);
+                for (int i = 0; i < b.Length; i++) sum += RecentCosts(em, b[i].m_Upgrade, depth + 1);
+            }
+            return sum;
+        }
+
+        /// <summary>
+        /// w9/perf (trust): the least the created objects cost, as the game's object tool prices a new object (its
+        /// prefab's construction cost, or the upgrade cost of a service upgrade). Trees (age-dependent price) and nets
+        /// (priced by composition and length after the host composes them) are not counted.
+        /// </summary>
+        private long MinimumCharge(List<Entity> spawned)
+        {
+            if (spawned.Count == 0) return 0;
+            EntityManager em = _codec.EntityManager;
+            long sum = 0;
+            foreach (Entity e in spawned)
+            {
+                if (!em.Exists(e) || !em.HasComponent<PrefabRef>(e)) continue;
+                Entity prefab = em.GetComponentData<PrefabRef>(e).m_Prefab;
+                if (prefab == Entity.Null || !em.Exists(prefab) || em.HasComponent<TreeData>(prefab)) continue;
+                if (em.HasComponent<PlaceableObjectData>(prefab)) sum += em.GetComponentData<PlaceableObjectData>(prefab).m_ConstructionCost;
+                else if (em.HasComponent<ServiceUpgradeData>(prefab)) sum += em.GetComponentData<ServiceUpgradeData>(prefab).m_UpgradeCost;
+                if (sum >= int.MaxValue) return int.MaxValue;
+            }
+            return sum;
         }
 
         private void ChargeCity(long cost)

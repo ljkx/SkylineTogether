@@ -262,6 +262,33 @@ namespace SkylineTogether.Core.Sync
             return f.Cost > money ? RejectReason.NotEnoughMoney : RejectReason.None;
         }
 
+        /// <summary>
+        /// w9/perf (trust): what the host charges for an applied proposal. The client's own sum of its tool's costs is
+        /// kept whenever it is plausible; it is raised to the host's bounds when it is not: a proposal never costs less
+        /// than the construction cost of what it created (<paramref name="minCharge"/>, computed by the host from the
+        /// created objects' prefabs) minus the most it may refund (<paramref name="maxRefund"/>, from the recent
+        /// modification costs of the entities it removed or changed), and it never refunds more than that. A vanilla
+        /// client's cost always lies within these bounds, so only forged amounts change.
+        /// </summary>
+        public static long EffectiveCost(long clientCost, long minCharge, long maxRefund)
+        {
+            long refundCap = Math.Max(0, maxRefund);
+            long floor = Math.Max(0, minCharge) - refundCap;
+            long cost = Math.Max(clientCost, floor);
+            return Math.Max(-int.MaxValue, Math.Min(int.MaxValue, cost));
+        }
+
+        /// <summary>
+        /// w9/perf (trust): the most a removal may refund: the summed recent modification costs of the removed or changed
+        /// entities times the largest refund percentage of the economy parameters (clamped to 0..4; 1 when unknown).
+        /// </summary>
+        public static long RefundBound(long recentModificationCosts, double maxRefundPercentage)
+        {
+            double pct = double.IsNaN(maxRefundPercentage) || double.IsInfinity(maxRefundPercentage) ? 1.0 : Math.Max(0, Math.Min(4, maxRefundPercentage));
+            double bound = Math.Ceiling(Math.Max(0, recentModificationCosts) * pct);
+            return bound >= int.MaxValue ? int.MaxValue : (long)bound;
+        }
+
         /// <summary>Size rule 1.</summary>
         public static RejectReason CheckSize(in ProposalFacts f) => f.EntityCount > MaxEntities ? RejectReason.Invalid : RejectReason.None;
 

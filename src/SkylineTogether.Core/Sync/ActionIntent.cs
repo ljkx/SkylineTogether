@@ -14,7 +14,7 @@ namespace SkylineTogether.Core.Sync
     {
         /// <summary><c>DevTreeSystem.Purchase(node)</c>; <see cref="ActionIntent.Target"/> = node prefab.</summary>
         DevTreePurchase = 1,
-        /// <summary>Map tile purchase; <see cref="ActionIntent.Ids"/> = tiles, <see cref="ActionIntent.Amount"/> = the cost the client paid.</summary>
+        /// <summary>Map tile purchase; <see cref="ActionIntent.Ids"/> = tiles, <see cref="ActionIntent.Amount"/> = the cost the client saw (informational: the host prices the tiles itself, <see cref="MapTilePricing"/>).</summary>
         PurchaseMapTiles = 2,
         /// <summary><c>Building.m_Flags</c> Historical bit; <see cref="ActionIntent.Amount"/> 1 or 0.</summary>
         SetHistorical = 3,
@@ -186,7 +186,7 @@ namespace SkylineTogether.Core.Sync
                 case ActionKind.DevTreePurchase:
                     return a.Target != 0 ? RejectReason.None : RejectReason.Invalid;
                 case ActionKind.PurchaseMapTiles:
-                    return a.Ids.Length > 0 && a.Amount >= 0 && a.Amount <= int.MaxValue ? RejectReason.None : RejectReason.Invalid;
+                    return a.Ids.Length > 0 && a.Ids.Length <= MapTilePricing.MaxTilesPerPurchase && a.Amount >= 0 && a.Amount <= int.MaxValue ? RejectReason.None : RejectReason.Invalid; // w9/perf: the amount is only logged (the host prices the tiles)
                 case ActionKind.SetHistorical:
                     return a.Target != 0 && (a.Amount == 0 || a.Amount == 1) ? RejectReason.None : RejectReason.Invalid;
                 case ActionKind.SetVehicleModels:
