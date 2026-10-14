@@ -38,8 +38,10 @@ Everything received from the network is treated as untrusted:
   needs admission; presence and other messages need a fully joined player. The host never trusts the sender id or the
   Steam ID a message claims.
 - The handshake reveals nothing before authentication: bans and the join policy are checked first (on the
-  transport's identity), then the password; only a player who passed both learns whether their build, game version or
-  code mods differ (a protocol mismatch before the password is refused without versions).
+  transport's identity), then the password; only a player who passed both learns whether their build, game version,
+  code mods, DLC or asset packs differ (a protocol mismatch before the password is refused without versions). The
+  joining player's game sends its own lists (code mods, DLC, asset packs with their Paradox Mods ids, the values of the
+  mod settings a host pushes) to the host it connects to, with its hello.
 - Per-player rate limits apply to proposals (120 per second, burst 240), presence updates and integrity repair
   requests.
 
