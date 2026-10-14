@@ -65,6 +65,21 @@ python tools/test_inventory.py --unused        # types the game layer does not r
 The inventory is static (identifier references with comments and strings stripped, no coverage tool), so it shows
 which areas have no test at all, not which branches run.
 
+### What the mod never reaches
+
+```sh
+python tools/reachability.py                   # per Core folder: types the game layer reaches, dead lines
+python tools/reachability.py --types --files   # unreached types and files (marking those only tests reach)
+python tools/reachability.py --members         # unreached methods, properties and fields of reached types
+python tools/reachability.py --explain Name    # why a type is reached: the chain of references from the game layer
+python tools/reachability.py --roots tests     # the same from the test project
+```
+
+`reachability.py` splits every Core type into its members and follows references from the game layer member by member,
+resolving type names through namespaces, nested types, using directives and aliases (so a game type that shadows a
+Core type of the same name does not count). Members are matched by name, so "reached" may be too generous, never
+"unreached". It is the tool to check before deleting Core code; the compiler has the last word.
+
 ## UI checks
 
 ```sh

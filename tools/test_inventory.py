@@ -15,15 +15,15 @@ and string literals stripped:
 
 This is an approximation (it cannot tell which branches run), but it shows which areas have no test at all.
 
-The "game" column counts the types the game layer (src/SkylineTogether) reaches, directly or through Core sources,
-the same way: a type nothing reaches is a dead-code candidate, and an UNTESTED type the game reaches is a gap that
-matters.
+The "game" column counts the types the game layer (src/SkylineTogether) reaches, computed member by member with
+namespace-aware name resolution by tools/reachability.py (use that tool directly for dead-code questions): an
+UNTESTED type the game reaches is a gap that matters.
 
 Usage:  python tools/test_inventory.py [--area <Folder>] [--untested] [--members] [--unused] [--json]
   --area      restrict the detail lists to one Core folder (e.g. Session, Protocol)
   --untested  list the UNTESTED (and INDIRECT) types, marking those the game layer reaches
   --members   list unreferenced public members of tested types
-  --unused    list the types the game layer does not reach (tests do not count)
+  --unused    list the types the game layer does not reach (tools/reachability.py --types has the details)
   --json      machine-readable output of everything
 Exit code 0 always (it is a report, not a gate). Pure standard library.
 """
@@ -38,7 +38,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 CORE = os.path.join(REPO, "src", "SkylineTogether.Core")
 TESTS = os.path.join(REPO, "tests", "SkylineTogether.Core.Tests")
-GAME = os.path.join(REPO, "src", "SkylineTogether")
 
 TYPE_DECL = re.compile(
     r"\b(?P<mods>(?:(?:public|internal|private|protected|sealed|abstract|static|partial|readonly|unsafe|new|ref)\s+)*)"
@@ -202,35 +201,13 @@ def parse_tests():
     return files
 
 
-def reach(types, by_name, start_idents):
-    """Types named in start_idents, plus everything reachable from their source files (file-level approximation)."""
-    reached = set()
-    frontier = [t for t in types if t.name in start_idents]
-    for t in frontier:
-        reached.add(t.full)
-    seen_files = set()
-    while frontier:
-        nxt = []
-        for t in frontier:
-            if t.path in seen_files:
-                continue
-            seen_files.add(t.path)
-            for ident in t.body_idents:
-                for target in by_name.get(ident, ()):
-                    if target.full not in reached:
-                        reached.add(target.full)
-                        nxt.append(target)
-        frontier = nxt
-    return reached
-
-
-def parse_game():
-    idents = set()
-    if os.path.isdir(GAME):
-        for path in cs_files(GAME):
-            with open(path, encoding="utf-8-sig") as fh:
-                idents |= set(IDENT.findall(strip_code(fh.read())))
-    return idents
+def game_reach():
+    """Local names (Outer.Inner) of the Core types the game layer reaches, from tools/reachability.py."""
+    sys.path.insert(0, HERE)
+    import reachability
+    model = reachability.build_model()
+    reached, _ = reachability.reach(model, ("game",))
+    return {model.types[q].local for q in reached}
 
 
 def analyse():
@@ -284,7 +261,7 @@ def analyse():
             if not hit and len(member_owners[name]) == 1 and name in all_test_idents:
                 hit = True
             members[(t.full, name)] = (what, hit)
-    game = reach(types, by_name, parse_game())
+    game = game_reach()
     return types, status, members, game
 
 
