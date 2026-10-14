@@ -600,16 +600,33 @@ line state survives.
 
 ### Host validation and commit
 
-`SyncController.ApplyProposal` ([`SyncController.Validation.cs`](../src/SkylineTogether/Sync/SyncController.Validation.cs)):
+`SyncController.ApplyProposal` ([`SyncController.Apply.cs`](../src/SkylineTogether/Sync/SyncController.Apply.cs),
+[`SyncController.Validation.cs`](../src/SkylineTogether/Sync/SyncController.Validation.cs)):
 
+0. **Sender**: a proposal whose sender is no longer live (it left, or a reconnect replaced it, while the proposal
+   waited in the inbox) is dropped as `NotLive` (`ProposalRules.CheckSender`; logged, never delivered: there is nobody
+   to roll back). A departing peer's queued proposals are removed from the inbox at once (`DropQueuedProposals`), so a
+   peer id handed to the next joiner never inherits them.
 1. **Rate limit**: 120 proposals per second per player, burst 240 (`ProposalRateLimiter`); request-only batches have
    their own limits (`RequestThrottle`: id grants, re-sends).
-2. **Validate**: the sender's role must allow the categories (`ProposalRules.Required`: build, demolish, zoning, mod
-   tools); at most 200 000 entities; no spawn of host-only families (events); a creation needs an unused id of the
-   sender's own grants; an edited entity must exist (deleting a missing one is a no-op); a conflict is an entity whose last authored change
-   (by somebody else) is newer than the proposal's base epoch
-   ([`AuthoredLedger`](../src/SkylineTogether.Core/Sync/ProposalGuard.cs)); records naming a prefab the host lacks are
-   refused; the cost must be affordable unless money is unlimited.
+2. **Validate**, in this order (Core: [`ProposalGuard.cs`](../src/SkylineTogether.Core/Sync/ProposalGuard.cs),
+   [`PlacementRules.cs`](../src/SkylineTogether.Core/Sync/PlacementRules.cs)):
+   - **header**: a batch that changes the world (entity, zone or cost records) carries exactly one `ProposalHeader`
+     (`ProposalRules.CheckHeader`), otherwise `Invalid`; every client capture writes one, and without it the conflict
+     check would have no base. Request-only and global-state batches need none;
+   - **role**: the sender's role must allow the categories (`ProposalRules.Required`: build, demolish, zoning, mod
+     tools), otherwise `NoPermission`; at most 200 000 entities;
+   - **base epoch**: a base the host never broadcast is `Invalid`; a base older than the ledger reaches back
+     (`AuthoredLedger.Horizon` = 16 384 epochs, minutes of applying nothing) is `Timeout`
+     (`AuthoredLedger.CheckBase`), because the changes made since may already be pruned and a conflict would go
+     unnoticed;
+   - **records**: no spawn, edit or deletion of host-only families (events, chirps, journal entries: `HostOnly`); a
+     creation needs an unused id of the sender's own grants; an edited entity must exist (deleting a missing one is a
+     no-op); a conflict is an entity whose last authored change (by somebody else) is newer than the proposal's base
+     epoch ([`AuthoredLedger`](../src/SkylineTogether.Core/Sync/ProposalGuard.cs)); records naming a prefab the host
+     lacks are refused (`HostError`);
+   - **placement** ([below](#placement-checks)): prefab classes and unlocks, owned map tiles, geometry;
+   - **money**: the cost must be affordable unless money is unlimited.
 3. **Apply** with the same `EntityCodec.Apply`. On existing entities a proposal never writes the host-owned types
    (`EntityCodec.HostOwnedTypes`: line state, vehicle models, colours, simulation buffers of buildings, ...). The host
    charges the client's cost within its own bounds (`ProposalRules.EffectiveCost`: at least the construction cost of
@@ -621,12 +638,41 @@ line state survives.
    price, one unit of slack, minus the edges the proposal removed, plus real upgrades); a shortfall is charged then. A
    mod tool's proposal pays for the priced objects and edges it adds beyond those it removes, so moving stays free.
 4. **Refuse**: a `ProposalResult` record and a rollback to the originator: every touched entity as the host has it
-   (alive: full record; unknown: despawn) and the host's cells of every painted zone block. Rate, size and malformed
-   refusals count as violations; 20 within 10 s kick the player. A peer whose proposals keep failing to apply is
-   removed (`FeatureHealth` per peer).
+   (alive: full record; unknown: despawn, which removes the client's predicted creations) and the host's cells of every
+   painted zone block. The client shows one toast per reason and second in its own language
+   (`st.toast.rejected` with the reason's `st.reject.*` text, `ProposalRules.LocaleKey`). Rate, size, malformed and
+   host-only refusals count as violations (`ViolationTracker`); 20 within 10 s kick the player. Placement, conflict,
+   money and permission refusals never count (a vanilla client meets them in ordinary play, or through a mod the
+   rules do not know). A peer whose proposals keep failing to apply is removed (`FeatureHealth` per peer).
 
 Two counters must not be confused: **ledger epochs** number the host's structural broadcasts (conflict bases), and
 **release frames** number host frames for id reuse ([quarantine](#quarantine-and-reuse)).
+
+#### Placement checks
+
+The host applies proposals with the codec, not through the game's tool pipeline, so the game's own validation
+(`Game.Tools.ValidationSystem`, which only judges `Temp` entities of the local tool) never sees them; re-running it would
+mean recreating the proposal as `Temp` entities next to the host player's own tool. Instead the host reads each spawn
+and edit from its record without applying it (`EntityCodec.BeginPeek`, `TryPeek`, `TryPeekBuffer`, `TryPeekRefs`,
+`PeekPrefab`; [`EntityCodec.Peek.cs`](../src/SkylineTogether/Sync/EntityCodec.Peek.cs)), fills a
+`PlacementCandidate` with the host's facts ([`SyncController.Placement.cs`](../src/SkylineTogether/Sync/SyncController.Placement.cs))
+and lets Core's `PlacementValidator` decide. Every limit is looser than the game's own check, so a vanilla tool's
+result always passes; the rules only test points, chords and outlines:
+
+| Check | Refuses | Reason | Not checked |
+|---|---|---|---|
+| Class | a prefab of another class than the entity (object, net, area, line), or an edit that swaps the prefab across classes | `PrefabClass` | mod entities, aggregates; never relaxed |
+| Unlocks | a new free-standing object, edge, area or line whose prefab has `Locked` enabled on the host, or an edit that swaps such a prefab in; a painted zone type that is locked unless the host's block already has it | `Locked` | owned entities (a building's own sub-nets may use any net), nodes, new edges of a prefab the proposal also edits or deletes (splitting a pre-placed highway) |
+| Tiles | a new or moved (more than 0.5 m) free-standing object, node or area node inside a map tile with `Native` (not bought), farther than 2 m from every owned tile | `OutsideTiles` | owned entities, edges (their nodes are checked), markers, outside connections, airspace paths, maps without tiles |
+| Geometry | positions more than 1 m outside the playable area or 1 024 m beyond the terrain's height range; an edge from a node to itself, whose curve ends lie more than 1 m (horizontally) from its nodes, or whose chord exceeds the net's longest edge × 1.1 + 64 m; a closed area outline with fewer than three nodes, no area, or crossing edges | `Geometry` | owned entities, edits that do not move anything, curvature (needs the composition the host computes after the apply) |
+
+Unlock-all, the game's "unlock all map tiles" option and tile or unlock mods (529 Tiles, Historical Start) work
+through the same `Locked` and `Native` components, so they need no special case. Mods whose rules legitimately allow
+more relax checks while they are loaded on the host (`ModAdapter.RelaxedPlacementChecks`, logged at session start):
+Anarchy and Line Tool the tile and geometry checks, Find It and Plop the Growables the unlock check. A direct-write mod
+tool's proposal (`DirectTool`: Move It, Tree Controller's brush) skips every check but the class check, but only when
+the host runs a code mod at all (`PlacementPolicy.For`); on a host without mods the flag cannot be genuine. A refusal
+is logged on the host as `placement check refused #<id> (<reason>): <detail>`.
 
 ## Identity
 
@@ -1075,9 +1121,10 @@ the most ids alive at once plus the quarantine and are released at session end.
 - Every decoder works against hard limits ([`Limits`](../src/SkylineTogether.Core/Protocol/Limits.cs), per-kind body
   limits before decompression, record and component counts in `SyncBatch`) and throws `DecodeException`; a malformed
   envelope disconnects the sender, a batch that fails to apply counts against the sender until it is removed.
-- Proposals: record kinds (`AcceptedFromClient`), role permissions, size, id grants, existence and conflicts, money
-  and cost bounds, host-owned types, unknown prefabs, float sanity (including water sources); rate limits and
-  violation kicks ([validation](#host-validation-and-commit)). Intents are permission-checked, map tiles priced by the
+- Proposals: record kinds (`AcceptedFromClient`), a mandatory header, role permissions, size, the age of the base
+  epoch, host-only families, id grants, existence and conflicts, prefab classes and unlocks, owned map tiles, cheap
+  geometry limits ([placement checks](#placement-checks)), money and cost bounds, host-owned types, unknown prefabs,
+  float sanity (including water sources); rate limits and violation kicks ([validation](#host-validation-and-commit)). Intents are permission-checked, map tiles priced by the
   host; global-state edits are permission- and range-checked; terrain stamps and paint patches are rate-limited and
   clamped. All execute through vanilla entry points.
 - A client refuses net ids far above the host's announced frontier (`NetIdCeiling`).
@@ -1088,9 +1135,10 @@ the most ids alive at once plus the quarantine and are released at session end.
 ### What it does not validate
 
 - A builder can do anything a player can do, including demolishing the city.
-- Structure proposals are not checked for unlock state, placement on owned map tiles or geometric validity: the host trusts that the
-  client's vanilla tool produced a valid result ([known gaps](#known-gaps)).
-- A proposal without a `ProposalHeader` skips the conflict check (base epoch treated as newest).
+- The placement checks are coarse: points instead of footprints, no collisions, no curvature, no slope or water
+  rules, and owned entities, direct-write mod tools and mods that relax them are not checked
+  ([placement checks](#placement-checks), [known gaps](#known-gaps)). Within those limits the host still trusts the
+  client's vanilla tool.
 - The mod list a client reports is a compatibility check, not a security barrier.
 - Passwords are stored in plain text in each player's settings file.
 
@@ -1120,10 +1168,13 @@ Open design gaps and inconsistencies found while writing this document.
   and data files, but [`GameInfoProvider.GetDigests`](../src/SkylineTogether/Session/GameInfoProvider.cs) fills only
   protocol version, build id, game versions and locale, and the host compares only build id, game version and mods.
   Prefab or DLC differences show up later as missing assets.
-- **Structure proposal validation** does not check unlocks, placement on owned map tiles or geometry (`RejectReason.OutsideTiles`, `Geometry`,
-  `PrefabClass`, `HostOnly`, `NotLive`, `Timeout` are never produced).
-- **Optional proposal header.** The conflict check is skipped for proposals without `ProposalHeader` (meant for older
-  clients, which the build-id check already refuses).
+- **Placement checks are partial** ([placement checks](#placement-checks)): the game's validation is not re-run
+  (it judges only the local tool's `Temp` entities), so collisions, slopes, water, clearance, curvature and whole
+  footprints are not checked. Owned spawns are exempt, and the owner a spawn names is not verified, so a forged owner
+  reference exempts a structure from the unlock, tile and geometry checks. Line Tool and Find It relax checks because
+  their behaviour towards the game's errors and locks is unconfirmed; tighten them once confirmed in game.
+- **NotLive is never delivered.** A proposal of a peer that is no longer live is dropped with a log line; the peer
+  cannot receive a result.
 - **Permissions are per role.** There are no per-player overrides (`RolePermissions.Of` depends on the role only).
 - **Steam lanes.** Lanes are an outbox scheduling concept; Steam's own lanes are not configured, so lane B traffic
   shares Steam's single reliable stream with lane R (the outbox only hands B over while R is empty).

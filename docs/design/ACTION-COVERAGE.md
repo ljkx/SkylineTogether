@@ -16,11 +16,16 @@ actions. For each one it lists how the action syncs in both directions and where
 
 Every proposal is validated on the host ([host validation](../ARCHITECTURE.md#host-validation-and-commit), `SyncController.Validate`, `ProposalRules`):
 
+- **Live sender.** Proposals of a player who left while they waited are dropped (`NotLive`, logged only).
+- **Header.** A proposal that changes the world carries exactly one `ProposalHeader` (`Invalid` otherwise).
 - **Role permission.** `RolePermissions`: builder or co-host may do everything; a viewer may only chat. The host toggles the role in the player list.
 - **Rate limit.** 120 proposals per second per player, with a burst of 240.
 - **Size.** At most 200k entities per proposal.
+- **Base epoch.** The base must be an epoch the host broadcast, and not older than the conflict ledger reaches back (`Timeout`).
+- **Host-only families.** Events, chirps and journal entries come from the host's simulation only (`HostOnly`).
 - **Existence and conflicts.** Every entity the proposal edits or deletes must still exist. Its last authored change must not be newer than the client's base epoch, unless that change came from the same player (`AuthoredLedger`).
 - **Id ranges.** New entities must use ids from the player's granted ranges.
+- **Placement.** Prefab classes, unlocks (`Locked`), owned map tiles (`OutsideTiles`) and cheap geometry limits (`Geometry`); mods that legitimately allow more relax them ([placement checks](../ARCHITECTURE.md#placement-checks)).
 - **Money.** The charge must be affordable unless money is unlimited. A refund needs at least one removed or changed entity.
 
 When a proposal is refused, the originator receives `ProposalResult` and then a resend of every entity it touched:
@@ -30,7 +35,8 @@ When a proposal is refused, the originator receives `ProposalResult` and then a 
 - Every painted zone block comes back with the host's cells.
 
 The player sees a toast such as "The host undid your last change: another player changed the same thing first."
-Floods and malformed proposals count as violations, and 20 of them within 10 s kick the player.
+The toast is localized (`st.toast.rejected` with the reason's `st.reject.*` text).
+Floods, malformed and host-only proposals count as violations, and 20 of them within 10 s kick the player.
 
 A client edit of an existing entity never writes host-owned types (`EntityCodec.HostOwnedTypes`):
 

@@ -74,6 +74,12 @@ No version has been published yet. Everything below is the work toward the first
   and free-standing trees it creates (moving with mod tools stays free); game speed requests are rate-limited per
   player; viewers may send mod channel messages only of kinds the mod declares with `viewer-message`.
 - Protocol version 2; every wire change now increments it (see `docs/dev/releasing.md`).
+- The host refuses structure proposals a vanilla client cannot make: prefabs and zone types its progression has not
+  unlocked, new or moved structures on map tiles the city does not own, shapes outside the game's limits (outside the
+  map, edges off their nodes or too long, crossed area outlines), prefab swaps across classes, proposals without a
+  header and proposals based on a state of the city too old for the conflict check. Anarchy, Line Tool, Find It, Plop
+  the Growables and direct-write mod tools such as Move It relax the checks they legitimately bypass. The toast for a
+  refused change names the reason in the player's language.
 - Less work per frame: decoded records are pooled, scanned entities are hashed from the record just written, deferred
   and repair records are encoded once for all peers, link statistics are queried once per peer and frame, and clients
   hash edit baselines only when a tool may need them and detect global-state edits once per frame.
@@ -87,6 +93,8 @@ No version has been published yet. Everything below is the work toward the first
 - Direct IP connections without Steam authentication were admitted without a password, and a Steam ID claimed in the
   hello could replace another player's connection; both are refused now.
 - A player removed after loading the city saw "The session has ended" instead of the removal.
+- Proposals still queued on the host when their player left were applied afterwards, and could count as violations
+  against the next player who got the same id; they are dropped now.
 - The UI could throw (and disappear) on unexpected binding data (a missing field, a value of the wrong type, a null in
   a list); saving before the first state arrived could store "keep" as the host password; the player list re-rendered
   with every cursor movement.
