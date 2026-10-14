@@ -36,6 +36,35 @@ the game's `System.IO.Hashing.dll` need it (`HAVE_SYSTEM_IO_HASHING`).
   randomness, and `LoopbackTransport` / `NetSimTransport` for network scenarios.
 - `TestPaths.TryGetRepoFile` finds files in the repository (for tests of the shipped data files).
 
+### Property-based tests and the decoder contract
+
+`Framework/Gen.cs` holds a small seeded generator for randomized tests:
+
+- `Prop.ForAll(name, seed, iterations, g => ...)` runs a property with a fresh `Gen` per case; a failure names the
+  case seed, so it reproduces on its own. `Gen` leans towards edge cases (`Size`, `UIntEdgy`, hostile `String`s) and
+  mutates byte arrays (`Mutate`).
+- `DecoderContract.Check` / `DecoderContract.Fuzz` hold every decoder of untrusted bytes to its contract: it returns or
+  throws `DecodeException`, nothing else, and allocates in proportion to its input (a length field claiming megabytes
+  must not cost megabytes).
+- Model-based tests (for example `Sync/NetIdAllocatorModelTests.cs`) apply random operations to the real class and to
+  a plain reference model and compare them after every step. `Session/SessionSimulationTests.cs` is the multi-peer
+  simulation: a host and up to six clients over `NetSimTransport`, a random script of joins, leaves, kicks, cut links,
+  chat and presence, invariants every frame and full convergence at the end.
+
+Keep seeds fixed and iteration counts small enough that the whole suite stays well under a minute.
+
+### What is not tested yet
+
+```sh
+python tools/test_inventory.py                 # per Core folder: types, tested directly/indirectly, game-reachable
+python tools/test_inventory.py --untested      # types no test names (GAME = the game layer reaches it)
+python tools/test_inventory.py --members       # public members of tested types that no test names
+python tools/test_inventory.py --unused        # types the game layer does not reach (dead-code candidates)
+```
+
+The inventory is static (identifier references with comments and strings stripped, no coverage tool), so it shows
+which areas have no test at all, not which branches run.
+
 ## UI checks
 
 ```sh
