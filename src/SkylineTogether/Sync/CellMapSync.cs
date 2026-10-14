@@ -195,11 +195,11 @@ namespace SkylineTogether.Sync
                 if (IsHost && _tilesSent > 0)
                 {
                     return "cell maps: " + _tilesSent + " tiles sent" + (_patches > 0 ? ", " + _patches + " paint patches" : "") + (_clamped > 0 ? ", " + _clamped + " painted values clamped" : "")
-                           + (_resyncsServed > 0 ? ", " + _resyncsServed + " map resyncs" : "");
+                           + (_resyncsServed > 0 ? ", " + _resyncsServed + " map resyncs" : "") + (_digestsSent > 0 ? ", " + _digestsSent + " map digests" : "");
                 }
                 if (IsLiveClient && _tilesApplied + _patches > 0)
                 {
-                    return "cell maps: " + _tilesApplied + " tiles applied" + (_patches > 0 ? ", " + _patches + " paint patches sent" : "") + (_resyncRequests > 0 ? ", " + _resyncRequests + " map resyncs asked" : "");
+                    return "cell maps: " + _tilesApplied + " tiles applied" + (_patches > 0 ? ", " + _patches + " paint patches sent" : "") + (_digestMismatches > 0 ? ", " + _digestMismatches + " map digests differed" : "") + (_resyncRequests > 0 ? ", " + _resyncRequests + " map resyncs asked" : "");
                 }
                 return "";
             }
