@@ -318,6 +318,9 @@ namespace SkylineTogether.Sync
         /// <summary>Mod compatibility: assets the host uses that this game lacks, with the number of records skipped.</summary>
         public IReadOnlyDictionary<string, int> MissingAssets => _codec?.MissingAssets;
 
+        /// <summary>w8/mods: where a missing asset comes from and what to do about it (diagnostics).</summary>
+        public string ExplainMissing(string asset) => _codec?.ExplainMissing(asset) ?? asset;
+
         /// <summary>feat/integrity: divergence detection and repair, host icons, line check (see <see cref="IntegritySync"/>).</summary>
         public IntegritySync Integrity { get; }
 
@@ -1090,7 +1093,8 @@ namespace SkylineTogether.Sync
             if (!_missingNotified && _codec.MissingAssets.Count > 0)
             {
                 _missingNotified = true;
-                SessionManager.Notify("Some objects of the host's city use assets or mods you do not have; they are left out. See the diagnostics for the list.");
+                // w8/mods: name the packages and mods (and what to do) instead of only pointing at the diagnostics
+                SessionManager.Notify(Core.Modding.MissingAssets.Summary(_codec.MissingBySource()) ?? "Some objects of the host's city use assets or mods you do not have; they are left out. See the diagnostics for the list.", seconds: 15f);
             }
             foreach (Entity e in r.Touched) _appliedThisFrame.Add(e);
             foreach ((uint start, uint count) in r.IdRanges) _pool.Add(start, count);

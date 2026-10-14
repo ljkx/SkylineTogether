@@ -85,6 +85,12 @@ namespace SkylineTogether.Diagnostics
         /// </summary>
         public static readonly FeatureHealth Invites = Registry.Add("invites", "Steam invites and friends list", false);
 
+        /// <summary>
+        /// w8/mods: the integration API for other mods (session events, the mod channel; docs/MOD-INTEGRATION.md). Fallback:
+        /// mods see no session (their delegates report "not in a session") and their channel messages are not sent.
+        /// </summary>
+        public static readonly FeatureHealth Mods = Registry.Add("mods", "mod integration API", false);
+
         /// <summary>The in-game panel (UI module and its bindings). Fallback: the Options page.</summary>
         public static readonly FeatureHealth Ui = Registry.Add("ui", "in-game panel", false);
     }

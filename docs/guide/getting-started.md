@@ -183,8 +183,10 @@ The Options page also works as a fallback when the Skyline Together panel does n
 With **Require the same mods** on (the default), the host refuses players whose code mods differ, and the joining
 player gets a list of mods to enable, disable or update. Mods that only change the player's own screen (translations,
 tooltips, icon libraries, overlays, Skyve and similar) may differ: Skyline Together classifies them as local-only,
-from a built-in list and from a scan of each mod's code. A mod counts as affecting the world when it uses Harmony
-patches or defines saved components, saved systems, prefabs or tools.
+from a built-in list, from the mod's own declaration and from a scan of each mod's code. A mod counts as affecting the
+world when it defines saved components, saved systems, prefabs (also created at runtime) or tools, runs systems outside
+UI and rendering, or patches game code outside the UI with Harmony. The diagnostics file explains the decision for
+every mod.
 
 Gameplay mods such as Traffic, Move It or Anarchy must be enabled on every PC in the same version. Turning **Require
 the same mods** off lets players with different mods join, but the city can then look or behave differently for them.

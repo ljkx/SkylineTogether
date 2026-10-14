@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Fields;
 using SkylineTogether.Core.Integrity;
+using SkylineTogether.Core.Modding;
 using SkylineTogether.Core.Motion;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Sync;
@@ -76,6 +77,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 w.LineRows(new byte[] { 1, 0 }, 0, 2);
                 w.EnabledBits(8, new[] { new SyncEnabledBit(0x55UL, true) });
                 w.ModSettings(new[] { new SettingEntry { Mod = "m", Key = "k", Value = "v" } });
+                w.PrefabSource(3, new AssetSource { Kind = AssetSourceKind.Package, Name = "Pack", PlatformId = "100454" }); // w8/mods
             });
             byte[] movers = Batch(w =>
             {
@@ -328,7 +330,7 @@ namespace SkylineTogether.Core.Tests.Sync
 
         private static void WriteRandomRecord(Gen g, SyncBatch.Writer w)
         {
-            switch (g.Int(22))
+            switch (g.Int(23))
             {
                 case 0:
                 {
@@ -390,6 +392,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 case 18: w.EnabledBits(g.UIntEdgy(), g.List(20, x => new SyncEnabledBit(x.ULong(), x.Bool()))); break;
                 case 19: w.ModSettings(g.List(5, x => new SettingEntry { Mod = x.String(30), Key = x.String(30), Value = x.String(200) })); break;
                 case 20: w.Epoch(g.UIntEdgy()); break;
+                case 21: w.PrefabSource(g.UIntEdgy(), new AssetSource { Kind = g.Enum<AssetSourceKind>(), Name = g.String(120), PlatformId = g.String(12) }); break; // w8/mods
                 default:
                     if (g.Bool()) w.ProposalHeader(g.UIntEdgy(), g.UIntEdgy(), g.Enum<ProposalFlags>());
                     else w.ProposalResult(g.UIntEdgy(), g.Enum<RejectReason>());
@@ -438,6 +441,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 case SyncRecordKind.MoverAgents: w.MoverAgents(rec.NetId, rec.AgentLinks); break;
                 case SyncRecordKind.EnabledBits: w.EnabledBits(rec.NetId, rec.EnabledBits); break;
                 case SyncRecordKind.ModSettings: w.ModSettings(rec.Settings); break;
+                case SyncRecordKind.PrefabSource: w.PrefabSource(rec.NetId, rec.Source); break;
                 case SyncRecordKind.Epoch: w.Epoch(rec.EpochNumber); break;
                 case SyncRecordKind.ProposalHeader: w.ProposalHeader(rec.Seq, rec.BaseEpoch, rec.ProposalFlags); break;
                 case SyncRecordKind.ProposalResult: w.ProposalResult(rec.Seq, rec.Reason); break;

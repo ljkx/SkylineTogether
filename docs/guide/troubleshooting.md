@@ -124,9 +124,12 @@ All of these are bugs. Please report them with the diagnostics file and logs.
 ## Missing assets
 
 When the host uses an asset (a building, prop or other prefab) that a player's game does not have, objects of that
-asset are not created on that player's game. The sync status line, one notification and the diagnostics file list the
-missing assets. If that player tries to place an object whose asset the host lacks, the host refuses it and it is
-undone. Use the same asset subscriptions on every PC.
+asset are not created on that player's game. Before the city loads, the joining player gets a notification naming the
+missing asset packs (with their Paradox Mods ids) and mods whose generated prefabs are missing, and what to do; the
+sync status line, one notification during the session and the diagnostics file list every missing asset with where it
+comes from. Assets the host made locally (not published) cannot be downloaded: the host has to publish them or stop
+using them. If a player tries to place an object whose asset the host lacks, the host refuses it and it is undone. Use
+the same asset subscriptions on every PC.
 
 ## The panel does not appear
 

@@ -91,11 +91,14 @@ problems, things that look different for another player, and how to collect logs
 - **Code mods**: every player needs the same world-affecting mods in the same versions (the host can turn this check
   off). Local-only mods (translations, tooltips, icon libraries, overlays) may differ. Traffic, Move It, Anarchy, Better
   Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool
-  and Find It have dedicated support; see [MOD-COMPATIBILITY.md](docs/design/MOD-COMPATIBILITY.md).
+  and Find It have dedicated support. Every other mod is analysed automatically when a session starts: its saved data
+  replicates with its entities, its simulation runs on the host, its tools are captured like player edits, and the
+  decisions are explained in the diagnostics dump; see [MOD-COMPATIBILITY.md](docs/design/MOD-COMPATIBILITY.md).
 - **Assets**: use the same asset subscriptions on every PC; objects whose asset a player lacks are not created on that
-  player's game.
+  player's game, and the joining player is told which asset pack or mod is missing and what to subscribe to.
 - **Other multiplayer mods**: not compatible; disable them.
-- **Mod authors**: see [MOD-INTEGRATION.md](docs/MOD-INTEGRATION.md).
+- **Mod authors**: declare what your mod does, react to sessions and send data to your mod on other PCs, without a
+  reference to Skyline Together: see [MOD-INTEGRATION.md](docs/MOD-INTEGRATION.md).
 
 ## Building from source
 

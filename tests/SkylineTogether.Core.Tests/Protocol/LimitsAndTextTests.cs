@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using SkylineTogether.Core.Buffers;
+using SkylineTogether.Core.Modding;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Tests.Framework;
 
@@ -66,7 +67,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             for (int k = 0; k < 256; k++)
             {
                 var kind = (MessageKind)k;
-                Assert.Equal((k >= 1 && k <= 21) || k == 60 || (k >= 65 && k <= 67) || k == 90 || k == 91 || k == 100, Limits.IsKnownKind(kind), "kind " + k);
+                Assert.Equal((k >= 1 && k <= 21) || k == 60 || (k >= 65 && k <= 67) || k == 90 || k == 91 || k == 100 || k == 110, Limits.IsKnownKind(kind), "kind " + k);
                 int max = Limits.MaxBodyBytes(kind);
                 Assert.True(max > 0 && max <= Limits.MaxUncompressedBytes + Limits.MaxBulkChunkBytes, "limit of kind " + k);
             }
@@ -139,10 +140,21 @@ namespace SkylineTogether.Core.Tests.Protocol
             for (int i = 0; i < content.Length; i++) content[i] = new string('c', SnapshotManifestCodec.MaxContentBytes);
             var families = new Dictionary<Family, int>();
             for (int f = 0; f <= (int)Family.Generic; f++) families[(Family)f] = int.MaxValue;
+            // mod compatibility: the longest list of asset sources
+            var sources = new List<AssetSourceUse>();
+            for (int i = 0; i < SnapshotManifestCodec.MaxAssetSources; i++)
+            {
+                sources.Add(new AssetSourceUse
+                {
+                    Source = new AssetSource { Kind = AssetSourceKind.Package, Name = new string('n', AssetSource.MaxNameBytes), PlatformId = new string('p', AssetSource.MaxPlatformIdBytes) },
+                    Prefabs = int.MaxValue,
+                    Example = new string('e', AssetSourceUse.MaxExampleBytes),
+                });
+            }
             int manifest = Size<SnapshotManifest>(SnapshotManifestCodec.Write, new SnapshotManifest
             {
                 Size = SnapshotManifestCodec.MaxSnapshotBytes, ChunkSize = Limits.MaxBulkChunkBytes, GameModeName = new string('g', SnapshotManifestCodec.MaxGameModeBytes),
-                RenderPrefabIds = renders, ReferencedContent = content, FamilyCounts = families
+                RenderPrefabIds = renders, ReferencedContent = content, FamilyCounts = families, AssetSources = sources
             });
             Assert.True(manifest <= ControlMessage.MaxPayloadBytes, "snapshot manifest of " + manifest + " bytes");
             Assert.True(ManifestDetailMessage.MaxEncodedBytes <= ControlMessage.MaxPayloadBytes);

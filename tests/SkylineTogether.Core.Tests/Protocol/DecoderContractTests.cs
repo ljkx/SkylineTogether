@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using SkylineTogether.Core.Buffers;
+using SkylineTogether.Core.Modding;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Testing;
 using SkylineTogether.Core.Tests.Framework;
@@ -358,9 +359,18 @@ namespace SkylineTogether.Core.Tests.Protocol
                     {
                         SnapshotId = 1, Size = 123456, ChunkSize = 65536, Epoch = new EpochId(4), GameModeName = "Normal", RenderPrefabIds = new[] { "A", "B" },
                         ReferencedContent = new[] { "C" }, FamilyCounts = new Dictionary<Family, int> { { Family.Object, 5 }, { Family.Agent, 1000 } }
+                    }),
+                    // w8/mods: with the trailing asset sources
+                    Encode<SnapshotManifest>(SnapshotManifestCodec.Write, new SnapshotManifest
+                    {
+                        SnapshotId = 2, Size = 10, ChunkSize = 1024, GameModeName = "Normal", FamilyCounts = null,
+                        AssetSources = new List<AssetSourceUse> { new AssetSourceUse { Source = new AssetSource { Kind = AssetSourceKind.Package, Name = "Pack", PlatformId = "100454" }, Prefabs = 3, Example = "Pagoda" } }
                     })
                 }, b => SnapshotManifestCodec.Decode(b, 0, b.Length)),
                 ("ProposalReceived", new[] { Hex("e807") }, b => ProposalReceivedMessage.Decode(b, 0, b.Length)),
+                // w8/mods
+                ("ModChannel", new[] { Encode<ModChannelMessage>(ModChannelMessage.Write, new ModChannelMessage { Channel = "MyMod", From = new PeerId(2), Target = ModChannelTarget.Player, TargetPeer = new PeerId(3), Payload = new byte[] { 1, 2, 3 } }) },
+                 b => ModChannelMessage.Decode(b, 0, b.Length)),
             };
             ulong seed = 840;
             foreach ((string name, byte[][] seeds, Action<byte[]> decode) in table)

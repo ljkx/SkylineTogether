@@ -54,9 +54,10 @@ Not yet. **Kick** removes a player, but they can join again. Use a password to k
 With **Require the same mods** on (the default), every player must enable the same code mods in the same versions.
 Mods that only change a player's own screen (translations, tooltips, icon libraries, overlays) may differ. Several
 popular gameplay mods (for example Traffic, Move It, Anarchy, Better Bulldozer, Line Tool) have dedicated compatibility
-code; see [MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md) for the list and the known limits. Asset mods
-(buildings, props) must be the same on every PC, or objects using a missing asset are not created on the PC that lacks
-it.
+code, and every other mod is analysed automatically (its saved data replicates, its simulation runs on the host); see
+[MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md) for the list and the known limits. Asset mods (buildings, props)
+must be the same on every PC, or objects using a missing asset are not created on the PC that lacks it; the joining
+player is told which asset pack is missing.
 
 ### Can I use it together with another multiplayer mod?
 

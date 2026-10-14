@@ -28,6 +28,7 @@ target design, and the code implements a playable subset of it (see its "As buil
 | `Integrity` | Hash ledgers, bucket sums, `DivergenceTracker`; also a repair ladder that the game does not use yet |
 | `Intents` | Client proposals and semantic intents |
 | `Json` | Strict JSON reader/writer |
+| `Modding` | Mod analysis and integration: `ModClassifier` (decisions about any mod from its scanned `ModFacts`), `ModDeclarations`, `AdapterCheck`, `ModChannelRouter`/`ModChannelBudget`, `AssetSource`/`MissingAssets`, `IlScanner` |
 | `Motion` | Encoding of moving vehicles and citizens |
 | `Protocol` | Envelope framing, fragmentation, compression, epochs, handshake and other messages, `Limits`, `ProtocolVersion` |
 | `Replay` | Solo test: recording format, recorder peer, playback transport, `ReplayChecker`, `ReplayVerdict` |
@@ -43,7 +44,7 @@ target design, and the code implements a playable subset of it (see its "As buil
 | Folder | Contents |
 |---|---|
 | `Mod.cs` | The entry point: `OnLoad` creates the controllers and registers the systems; `OnDispose` |
-| `Compat` | Mod compatibility: `ModAdapter` and 12 adapters (Traffic, Move It, Anarchy, ...), `ModStateWatcher`, `ModSettingsSync`, `ModAssemblyScanner` |
+| `Compat` | Mod compatibility: `ModAdapter` and 12 adapters (Traffic, Move It, Anarchy, ...), `ModCompat` (registry, adapter checks), `ModAssemblyScanner` and `HarmonyPatches` (scan of any mod), `GenericModAdapter`, `ModIntegration` (the API for other mods, mod channel), `AssetSources`, `ModStateWatcher`, `ModSettingsSync` |
 | `Data` | Embedded locale tables (`locale.en-US.json`, `locale.de-DE.json`, `locale-keys.generated.json`) |
 | `Diagnostics` | `Probes` (self-test), `Features`, `Guard`, `Perf`, `GameLog`, `DiagnosticsDump` |
 | `Net` | `SteamSocketsTransport` (Steam Networking Sockets: P2P by Steam ID, optional direct IP) |

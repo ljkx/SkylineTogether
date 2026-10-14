@@ -78,6 +78,14 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<uint, byte[]> _unresolvedPrefabs = new Dictionary<uint, byte[]>();
         private readonly Dictionary<uint, string> _unresolvedPrefabNames = new Dictionary<uint, string>();
         private readonly SortedDictionary<string, int> _missingAssets = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // w8/mods: where the host's non-base-game prefabs come from (client: by prefab id, and by missing asset name for
+        // the reports; host: by prefab entity), the explanation of each missing asset, and the prefab count at the
+        // last name fallback attempt of an id (retried only when a mod added prefabs since)
+        private readonly Dictionary<uint, Core.Modding.AssetSource> _prefabSources = new Dictionary<uint, Core.Modding.AssetSource>();
+        private readonly Dictionary<string, Core.Modding.AssetSource> _missingSources = new Dictionary<string, Core.Modding.AssetSource>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _missingTexts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<uint, int> _fallbackTried = new Dictionary<uint, int>();
+        private readonly Dictionary<Entity, Core.Modding.AssetSource> _sourceOf = new Dictionary<Entity, Core.Modding.AssetSource>();
         private readonly List<SyncEnabledBit> _bits = new List<SyncEnabledBit>();
         private Context _writeContext;
         private Context _readContext;
@@ -142,6 +150,31 @@ namespace SkylineTogether.Sync
         public IReadOnlyDictionary<string, int> MissingAssets => _missingAssets;
 
         /// <summary>
+        /// Mod compatibility (w8/mods): the missing assets grouped by where the host said they come from
+        /// (<see cref="SyncRecordKind.PrefabSource"/>), with the number of distinct missing prefabs of each; prefabs
+        /// without a source record count under an unknown source.
+        /// </summary>
+        public List<KeyValuePair<Core.Modding.AssetSource, int>> MissingBySource()
+        {
+            var counts = new Dictionary<Core.Modding.AssetSource, int>();
+            var unknown = new Core.Modding.AssetSource();
+            foreach (string asset in _missingAssets.Keys)
+            {
+                Core.Modding.AssetSource source = _missingSources.TryGetValue(asset, out Core.Modding.AssetSource s) && s != null ? s : unknown;
+                counts.TryGetValue(source, out int n);
+                counts[source] = n + 1;
+            }
+            return new List<KeyValuePair<Core.Modding.AssetSource, int>>(counts);
+        }
+
+        /// <summary>Mod compatibility (w8/mods): the one-line explanation of a missing asset (source and what to do).</summary>
+        public string ExplainMissing(string asset)
+        {
+            if (_missingTexts.TryGetValue(asset ?? "", out string text)) return text;
+            return asset + ": this asset is missing here (subscribe to the same asset packs and mods as the other player)";
+        }
+
+        /// <summary>
         /// final review: session end. The missing-asset report and the unresolved prefab ids belong to one host's
         /// session; kept, they showed (and toasted) the previous session's assets, and an unresolved id could bind a
         /// later session's record to the old host's prefab name.
@@ -152,6 +185,11 @@ namespace SkylineTogether.Sync
             _missingAssets.Clear();
             _unresolvedPrefabs.Clear();
             _unresolvedPrefabNames.Clear();
+            _prefabSources.Clear();
+            _missingSources.Clear();
+            _missingTexts.Clear();
+            _fallbackTried.Clear();
+            _sourceOf.Clear();
         }
 
         public void Dispose()
@@ -636,6 +674,9 @@ namespace SkylineTogether.Sync
                 return;
             }
             if (p == null) return;
+            // w8/mods: where a prefab that is not base game comes from, so a client without it can say what is missing
+            if (!_sourceOf.TryGetValue(prefab, out Core.Modding.AssetSource source)) _sourceOf[prefab] = source = Compat.AssetSources.Of(p);
+            if (source != null) w.PrefabSource(id, source);
             PrefabID pid = p.GetPrefabID();
             _scratch.Clear();
             var inner = default(BinaryWriter);
@@ -658,11 +699,16 @@ namespace SkylineTogether.Sync
             // mod compatibility: remembered, so the binding is retried when a record needs this prefab (mods such as Find
             // It create prefabs at runtime, possibly after the join's prefab table arrived)
             _unresolvedPrefabs[rec.NetId] = data;
-            _unresolvedPrefabNames[rec.NetId] = string.IsNullOrEmpty(pid) ? (rec.PrefabName ?? "#" + rec.NetId) : pid;
+            string key = string.IsNullOrEmpty(pid) ? (rec.PrefabName ?? "#" + rec.NetId) : pid;
+            _unresolvedPrefabNames[rec.NetId] = key;
+            // w8/mods: the host's source record says where it comes from and what the player can do about it
+            _prefabSources.TryGetValue(rec.NetId, out Core.Modding.AssetSource source);
+            _missingSources[key] = source;
+            _missingTexts[key] = Core.Modding.MissingAssets.Describe(key, rec.PrefabName, source);
             if (_missingPrefabs.Add(rec.PrefabName ?? pid))
             {
                 result.Problems.Add("missing prefab " + pid);
-                _log.Warn(LogCategory.Replication, "the host uses a prefab this game does not have: " + pid + " (an asset or mod is missing)");
+                _log.Warn(LogCategory.Replication, "the host uses a prefab this game does not have: " + _missingTexts[key]);
             }
         }
 
@@ -685,7 +731,11 @@ namespace SkylineTogether.Sync
                 PrefabID pid = default;
                 pid.Deserialize(new NetReader(reader, _rs));
                 pidText = pid.ToString();
-                if (!_prefabs.TryGetPrefab(pid, out PrefabBase prefab)) return false;
+                if (!_prefabs.TryGetPrefab(pid, out PrefabBase prefab))
+                {
+                    prefab = NameFallback(netId, pid, pidText);
+                    if (prefab == null) return false;
+                }
                 _ids.Bind(_prefabs.GetEntity(prefab), netId, Family.Prefab);
                 return true;
             }
@@ -698,6 +748,24 @@ namespace SkylineTogether.Sync
             {
                 native.Dispose();
             }
+        }
+
+        /// <summary>
+        /// w8/mods: the name fallback of prefab binding. A prefab a mod creates at runtime is the same prefab on every peer
+        /// when its type and name are, even if its <c>PrefabID</c> hash differs (the mod reused a local file as its asset);
+        /// bound only when unambiguous (Core <c>MissingAssets.ChooseNameFallback</c>). Tried again for an id only after a
+        /// mod added prefabs (the prefab count changed), so records of a missing asset cost a dictionary lookup.
+        /// </summary>
+        private PrefabBase NameFallback(uint netId, PrefabID pid, string pidText)
+        {
+            int count = Compat.AssetSources.PrefabCount(_prefabs);
+            if (count < 0 || (_fallbackTried.TryGetValue(netId, out int tried) && tried == count)) return null;
+            _fallbackTried[netId] = count;
+            string name = pid.GetName();
+            if (!Core.Modding.MissingAssets.TryParsePrefabId(pidText, name, out string type, out bool hostHasHash)) return null;
+            PrefabBase match = Compat.AssetSources.FindByName(_prefabs, type, name, hostHasHash);
+            if (match != null) _log.Info(LogCategory.Replication, "prefab " + pidText + " bound by type and name to " + match.GetPrefabID() + " (a runtime prefab with a different hash)");
+            return match;
         }
 
         /// <summary>
@@ -780,7 +848,7 @@ namespace SkylineTogether.Sync
         {
             _missingAssets.TryGetValue(asset, out int n);
             _missingAssets[asset] = n + 1;
-            if (n == 0) _log.Warn(LogCategory.Replication, "skipped #" + netId + " and every other object that uses " + asset + ": this asset is missing here (subscribe to the same asset packs and mods as the other player)");
+            if (n == 0) _log.Warn(LogCategory.Replication, "skipped #" + netId + " and every other object that uses a missing asset: " + ExplainMissing(asset));
             result.Problems.Add("#" + netId + " needs missing " + asset);
         }
 
@@ -830,6 +898,9 @@ namespace SkylineTogether.Sync
                 }
                 switch (r.Kind)
                 {
+                    case SyncRecordKind.PrefabSource:
+                        if (r.Source != null) _prefabSources[r.NetId] = r.Source; // w8/mods: written right before its Prefab record
+                        break;
                     case SyncRecordKind.Prefab:
                         BindPrefab(r, result);
                         break;

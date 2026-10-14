@@ -97,6 +97,7 @@ namespace SkylineTogether
                 Toasts = new SessionToasts(Sessions);
                 Invites = new SteamInvites(Sessions, Settings, log);
                 Replay = new SkylineTogether.Replay.ReplayController(Sessions, log); // solo testing
+                Compat.ModIntegration.Attach(Sessions, log); // w8/mods: session events and the channel for other mods
             });
             if (!core)
             {

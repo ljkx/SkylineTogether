@@ -35,6 +35,12 @@ No version has been published yet. Everything below is the work toward the first
   (Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles,
   Historical Start, Zoning Toolkit, Line Tool, Find It), a watcher for mod state, host-owned mod settings, reporting of
   missing assets.
+- **Support for any mod**: every loaded code mod is analysed automatically (components, systems and their update
+  phases, tools, runtime prefabs, settings, Harmony patches; no mod code runs) and handled by conservative rules that the
+  diagnostics explain; built-in adapters switch themselves off when their mod changed; an integration API for mod
+  authors without a reference to Skyline Together (declarations, session events, a host-relayed mod channel, see
+  `docs/MOD-INTEGRATION.md`); missing assets name the asset pack (with its Paradox Mods id) or mod and what to do, also
+  before the joining player's load; deterministic runtime prefabs bind across PCs by type and name.
 - **Diagnostics**: startup self-test of every game internal used (failed checks switch their feature off), guarded
   features, "Write diagnostics" report, network line, performance counters.
 - **Solo testing**: "Record test session" records what a joining player receives; "Replay & verify" replays it through

@@ -27,6 +27,15 @@ namespace SkylineTogether.Compat
         public bool Loaded => Assembly != null;
 
         /// <summary>
+        /// The mod is loaded but a name this adapter relies on is gone (the mod was updated): the adapter is off and the mod
+        /// gets the generic treatment (<see cref="ModCompat"/>, Core <c>AdapterCheck</c>).
+        /// </summary>
+        public string DisabledReason { get; internal set; }
+
+        /// <summary>The mod is loaded and every name of the adapter resolved.</summary>
+        public bool Active => Loaded && DisabledReason == null;
+
+        /// <summary>
         /// Component types (full names, in the mod's assembly) that mark tool or UI entities: an entity carrying one is
         /// never replicated (Traffic's connectors and lane handles, Move It's control points and overlays).
         /// </summary>
@@ -73,6 +82,15 @@ namespace SkylineTogether.Compat
         /// <summary>Settings type full name when the mod has several <c>ModSetting</c> classes (null: the first one found).</summary>
         public virtual string SettingsTypeName => null;
 
+        /// <summary>The settings type that holds <paramref name="key"/> (adapters built from declarations span several).</summary>
+        public virtual string SettingsTypeFor(string key) => SettingsTypeName;
+
+        /// <summary>
+        /// Component types (full names, in the mod's assembly) the game saves but that must never be sent; the entities
+        /// carrying them still replicate (declared <c>never-replicate</c> by the mod, docs/MOD-INTEGRATION.md).
+        /// </summary>
+        public virtual IEnumerable<string> NeverReplicatedTypes => None;
+
         /// <summary>One line for the diagnostics dump and the compatibility table.</summary>
         public abstract string Summary { get; }
 
@@ -90,6 +108,6 @@ namespace SkylineTogether.Compat
             }
         }
 
-        public override string ToString() => ModName + (Loaded ? " (loaded)" : "");
+        public override string ToString() => ModName + (Active ? " (active)" : Loaded ? " (disabled)" : "");
     }
 }
