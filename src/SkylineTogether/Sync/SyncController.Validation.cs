@@ -437,10 +437,24 @@ namespace SkylineTogether.Sync
             /// <summary>What the edges the proposal removed would cost (<see cref="ConstructionCosts.RemovedEdgeCeiling"/>).</summary>
             public long RemovedCeilings;
             public readonly List<Entity> Created = new List<Entity>();
-            /// <summary>Existing edges it changed, with the price of their composition before the change.</summary>
-            public readonly List<(Entity Edge, uint Unit, uint Elevation)> Upgraded = new List<(Entity, uint, uint)>();
+            /// <summary>Existing edges it changed, with their prefab, upgrades and composition price before the change.</summary>
+            public readonly List<EdgeBefore> Upgraded = new List<EdgeBefore>();
             public int Frames;
         }
+
+        /// <summary>An existing edge as it was before a proposal changed it.</summary>
+        private struct EdgeBefore
+        {
+            public Entity Edge;
+            public Entity Prefab;
+            public CompositionFlags Upgrades;
+            public uint Unit;
+            public uint Elevation;
+        }
+
+        private static CompositionFlags UpgradesOf(EntityManager em, Entity edge) => em.HasComponent<Game.Net.Upgraded>(edge) ? em.GetComponentData<Game.Net.Upgraded>(edge).m_Flags : default;
+
+        private static Entity PrefabOf(EntityManager em, Entity e) => em.HasComponent<PrefabRef>(e) ? em.GetComponentData<PrefabRef>(e).m_Prefab : Entity.Null;
 
         private readonly List<NetCharge> _netCharges = new List<NetCharge>();
 
@@ -465,7 +479,7 @@ namespace SkylineTogether.Sync
                 if (r.Kind == SyncRecordKind.Despawn && direct) removedObjects += ObjectPrice(em, e);
                 if (!em.HasComponent<Game.Net.Edge>(e) || HasOwner(em, e) || !TryEdgePrice(em, e, out float length, out uint unit, out uint elevation, out _)) continue;
                 if (r.Kind == SyncRecordKind.Despawn) charge.RemovedCeilings += ConstructionCosts.RemovedEdgeCeiling(length, unit);
-                else if (!direct) charge.Upgraded.Add((e, unit, elevation));
+                else if (!direct) charge.Upgraded.Add(new EdgeBefore { Edge = e, Prefab = PrefabOf(em, e), Upgrades = UpgradesOf(em, e), Unit = unit, Elevation = elevation });
             }
             return charge;
         }
@@ -530,9 +544,11 @@ namespace SkylineTogether.Sync
                 {
                     if (TryEdgePrice(em, edge, out float length, out uint unit, out _, out _)) created += ConstructionCosts.CreatedEdgeFloor(length, unit);
                 }
-                foreach ((Entity edge, uint oldUnit, uint oldElevation) in c.Upgraded)
+                foreach (EdgeBefore before in c.Upgraded)
                 {
-                    if (TryEdgePrice(em, edge, out float length, out uint unit, out uint elevation, out int steps)) upgrades += ConstructionCosts.UpgradeFloor(length, steps, oldUnit, oldElevation, unit, elevation);
+                    // only an upgrade or a replacement is priced; an edge the game merely adjusted around a new road is free
+                    if (!em.Exists(before.Edge) || (PrefabOf(em, before.Edge) == before.Prefab && UpgradesOf(em, before.Edge) == before.Upgrades)) continue;
+                    if (TryEdgePrice(em, before.Edge, out float length, out uint unit, out uint elevation, out int steps)) upgrades += ConstructionCosts.UpgradeFloor(length, steps, before.Unit, before.Elevation, unit, elevation);
                 }
                 long netFloor = ConstructionCosts.NetFloor(created, c.RemovedCeilings, upgrades);
                 if (netFloor <= 0) continue;
@@ -548,9 +564,10 @@ namespace SkylineTogether.Sync
 
         private static bool Composed(EntityManager em, NetCharge c)
         {
+            // the component may already be there (the record carries its presence); composed means it names a composition
             foreach (Entity edge in c.Created)
             {
-                if (em.Exists(edge) && !em.HasComponent<Game.Net.Composition>(edge)) return false;
+                if (em.Exists(edge) && (!em.HasComponent<Game.Net.Composition>(edge) || em.GetComponentData<Game.Net.Composition>(edge).m_Edge == Entity.Null)) return false;
             }
             return true;
         }
