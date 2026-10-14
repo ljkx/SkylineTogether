@@ -116,6 +116,7 @@ namespace SkylineTogether.Sync
             _pool.Clear();
             Integrity.Reset(); // feat/integrity
             _shadow.Clear();
+            _baselinesPending.Clear();
             ResetGameplay();
             SafeCall("mod join gates", () => Compat.ModCompat.OnClientStarted(_log)); // mod compatibility: before the load
             _wasClient = true;
@@ -177,6 +178,7 @@ namespace SkylineTogether.Sync
             _inbox.Clear();
             _pool.Clear();
             _shadow.Clear();
+            _baselinesPending.Clear();
             _pendingZones.Clear();
             _clientLive = false;
             _routeWindowOpen = false;

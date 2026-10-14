@@ -27,12 +27,17 @@ namespace SkylineTogether.Sync
         {
             EntityManager em = _codec.EntityManager;
             UpdateRouteWindow(now);
-            // entities the applier wrote this frame: remember their converged state, never propose them back
+            // entities the applier wrote this frame: their converged state becomes the baseline, so they are never proposed
+            // back; it is hashed later (HashBaselines), at the latest right before a tool may edit them
             foreach (Entity e in _appliedThisFrame)
             {
                 if (!em.Exists(e)) continue;
                 uint id = _ids.GetNetId(e);
-                if (id != 0) _shadow[id] = _codec.HashEntity(e, false);
+                if (id != 0)
+                {
+                    _shadow.Remove(id);
+                    _baselinesPending.Mark(id);
+                }
                 _watcher?.Refresh(e); // mod compatibility: the applier's writes are not the player's edits
             }
             // vanilla tools always go through ApplyTool (captured via _toolApplied); only tools from other mods may
@@ -117,7 +122,7 @@ namespace SkylineTogether.Sync
                                 // a later record naming the id would otherwise resolve to a destroyed entity (a dangling
                                 // reference the game's jobs follow unchecked). Not proposed: the host deletes it itself.
                                 _ids.Unbind(id);
-                                _shadow.Remove(id);
+                                ForgetShadow(id);
                                 Integrity.OnLocalDelete(id);
                                 _cascadeUnbinds++;
                                 continue;
@@ -126,7 +131,7 @@ namespace SkylineTogether.Sync
                         }
                         _batch.Despawn(id);
                         _ids.Unbind(id);
-                        _shadow.Remove(id);
+                        ForgetShadow(id);
                         // until the host's despawn (or its rollback) arrives, records the host sent before it
                         // applied this deletion must not bring the entity back (in-flight repairs, upserts)
                         _localDeletes[id] = new LocalDelete { Seq = _seq + 1, Until = _sessions.Clock.Seconds + LocalDeleteSeconds };
@@ -151,7 +156,7 @@ namespace SkylineTogether.Sync
                     {
                         continue;
                     }
-                    _shadow[id] = hash;
+                    SetShadow(id, hash);
                     _codec.WriteEntity(_batch, kind, id, family, e);
                     written.Add(e);
                     proposed.Add(id);
@@ -190,6 +195,50 @@ namespace SkylineTogether.Sync
                 _sessions.Client?.SendToHost(MessageKind.Proposal, bytes.Array, bytes.Offset, bytes.Count);
                 Perf.Counters.AddBytes(Perf.ProposalBytes, bytes.Count, now);
             }
+            HashBaselines(false); // a budgeted slice of the applier's entities (all of them before a tool can edit)
+        }
+
+        /// <summary>Client: entities the applier wrote whose converged state is not hashed yet (<see cref="PendingBaselines"/>).</summary>
+        private readonly PendingBaselines _baselinesPending = new PendingBaselines();
+
+        private const double BaselineBudgetMs = 0.5;
+
+        /// <summary>
+        /// Client: hashes waiting baselines into the shadow, every one of them (<paramref name="all"/>: a tool may edit the
+        /// world next) or a budgeted slice. A baseline must be taken before the player can change the entity, or the edit
+        /// would count as the converged state: vanilla tools edit only in their apply phase (<see cref="OnToolApply"/>
+        /// hashes everything first) and other tools only while they are active (the frame start hashes everything first
+        /// while any tool but the default one is selected). Outside a tool path nothing is compared with the shadow.
+        /// </summary>
+        private void HashBaselines(bool all)
+        {
+            if (_baselinesPending.Count == 0 || _codec == null) return;
+            EntityManager em = _codec.EntityManager;
+            long start = Perf.Start();
+            long budget = all ? long.MaxValue : (long)(Perf.Allowance(Perf.BudgetBaselines, BaselineBudgetMs) * Stopwatch.Frequency / 1000.0);
+            int n = 0;
+            while (_baselinesPending.TryTake(out uint id))
+            {
+                Entity e = _ids.GetEntity(id);
+                if (e != Entity.Null && em.Exists(e)) _shadow[id] = _codec.HashEntity(e, false);
+                n++;
+                if (!all && (n & 7) == 0 && Stopwatch.GetTimestamp() - start > budget) break;
+            }
+            Perf.Spent(Perf.BudgetBaselines, start);
+        }
+
+        /// <summary>Client: a baseline taken right now (a proposal's own state).</summary>
+        private void SetShadow(uint id, ulong hash)
+        {
+            _shadow[id] = hash;
+            _baselinesPending.Remove(id);
+        }
+
+        /// <summary>The id no longer has a baseline (deleted or unbound).</summary>
+        private void ForgetShadow(uint id)
+        {
+            _shadow.Remove(id);
+            _baselinesPending.Remove(id);
         }
 
         /// <summary>

@@ -78,6 +78,7 @@ namespace SkylineTogether.Diagnostics
         // integrity (safety nets)
         public static readonly FrameBudgetService.Feature BudgetIntegrity = Budget.Register("integrity", BudgetPriority.Integrity, 1.5, 0.25);
         public static readonly FrameBudgetService.Feature BudgetPresenceWatch = Budget.Register("presence watch", BudgetPriority.Integrity, 0.25, 0.25);
+        public static readonly FrameBudgetService.Feature BudgetBaselines = Budget.Register("edit baselines", BudgetPriority.Integrity, 0.5, 0.25); // client
         // statistics and info views
         public static readonly FrameBudgetService.Feature BudgetFlow = Budget.Register("flow status", BudgetPriority.Statistics, 0.75, 0.2);
         public static readonly FrameBudgetService.Feature BudgetMaps = Budget.Register("maps+stats", BudgetPriority.Statistics, 2.0, 1.0);

@@ -54,6 +54,7 @@ namespace SkylineTogether.Sync
             }
             // gameplay branch: the host records its own tool's originals too (authored changes, conflict ledger)
             if (_codec == null || (!IsLiveClient && !IsHost) || !Features.Replication.IsAvailable) return;
+            if (!IsHost) HashBaselines(true); // the edit baselines of everything the tool may change, before it changes it
             EntityManager em = _codec.EntityManager;
             _toolApplied = true;
             if (_temps == default) _temps = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Tools.Temp>()); // cached

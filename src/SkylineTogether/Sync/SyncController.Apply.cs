@@ -92,6 +92,8 @@ namespace SkylineTogether.Sync
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
+                // a selected tool (other than the default one) may edit the world this frame: edit baselines first
+                if (_tools.activeTool != null && !(_tools.activeTool is DefaultToolSystem)) HashBaselines(true);
                 SafeCall("action detection", _actionDetectCall); // gameplay branch: dev tree, map tiles
                 if (Features.GlobalState.IsAvailable)
                 {
