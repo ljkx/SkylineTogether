@@ -1,6 +1,8 @@
 """Fails when a tracked text file contains something that looks like personal data.
 
-Usage (repo root):  python tools/check_personal_data.py
+Usage (repo root):  python tools/check_personal_data.py            (tracked files)
+                    python tools/check_personal_data.py --commits  (commit messages, authors and committers
+                                                                    reachable from HEAD, or from the given range)
 
 Checked in every file `git ls-files` lists (binary files are skipped):
   - absolute paths into a user's home folder (C:\\Users\\<name>, /c/Users/<name>, /home/<name>, /Users/<name>),
@@ -28,8 +30,40 @@ def tracked_files():
     return [p for p in out.decode('utf-8').split('\0') if p]
 
 
+def scan_line(where, line, problems):
+    for m in HOME_PATH.finditer(line):
+        if m.group(1).strip().lower() not in PLACEHOLDER_USERS:
+            problems.append(f'{where}: home folder path "{m.group(0)}"')
+    for m in STEAM_ID.finditer(line):
+        value = m.group(0)
+        if '00000' not in value[7:] and value != '76561197960265728':
+            problems.append(f'{where}: Steam ID {value}')
+    for m in EMAIL.finditer(line):
+        if not OK_EMAIL.search(m.group(0)):
+            problems.append(f'{where}: e-mail address {m.group(0)}')
+
+
+def scan_commits(rev_range, problems):
+    # merges pulled from a local clone get "Merge branch 'x' of C:/Users/<name>/..." as their default message
+    fmt = '%H%x1f%an <%ae>%x1f%cn <%ce>%x1f%B%x1e'
+    out = subprocess.run(['git', 'log', '--format=' + fmt, rev_range], capture_output=True, check=True).stdout
+    for record in out.decode('utf-8', errors='replace').split('\x1e'):
+        record = record.strip('\n')
+        if not record:
+            continue
+        sha, author, committer, body = record.split('\x1f', 3)
+        where = 'commit ' + sha[:10]
+        scan_line(where + ' author', author, problems)
+        scan_line(where + ' committer', committer, problems)
+        for line in body.splitlines():
+            scan_line(where + ' message', line, problems)
+
+
 def main():
     problems = []
+    if len(sys.argv) > 1 and sys.argv[1] == '--commits':
+        scan_commits(sys.argv[2] if len(sys.argv) > 2 else 'HEAD', problems)
+        return report(problems)
     for path in tracked_files():
         if path == 'tools/check_personal_data.py':
             continue  # its own patterns would match
@@ -41,16 +75,11 @@ def main():
             continue  # binary
         text = data.decode('utf-8', errors='replace')
         for lineno, line in enumerate(text.splitlines(), 1):
-            for m in HOME_PATH.finditer(line):
-                if m.group(1).strip().lower() not in PLACEHOLDER_USERS:
-                    problems.append(f'{path}:{lineno}: home folder path "{m.group(0)}"')
-            for m in STEAM_ID.finditer(line):
-                value = m.group(0)
-                if '00000' not in value[7:] and value != '76561197960265728':
-                    problems.append(f'{path}:{lineno}: Steam ID {value}')
-            for m in EMAIL.finditer(line):
-                if not OK_EMAIL.search(m.group(0)):
-                    problems.append(f'{path}:{lineno}: e-mail address {m.group(0)}')
+            scan_line(f'{path}:{lineno}', line, problems)
+    return report(problems)
+
+
+def report(problems):
     for p in problems:
         print(p)
     if problems:

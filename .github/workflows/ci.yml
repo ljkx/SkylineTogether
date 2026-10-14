@@ -53,10 +53,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: No personal data in tracked files
         run: python tools/check_personal_data.py
+      - name: No personal data in commit messages or identities
+        run: python tools/check_personal_data.py --commits
       - name: Relative links in Markdown files resolve
         run: python tools/check_links.py
