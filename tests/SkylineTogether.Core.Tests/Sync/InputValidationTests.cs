@@ -275,6 +275,31 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.True(stager.SlotCapacity < 100, "no ring was allocated for the bogus slot (" + stager.SlotCapacity + ")");
         }
 
+        // ------------------------------------------------------------------ sync batches
+
+        [Test]
+        public void SyncBatchesNamingAnUnknownFamilyAreMalformed()
+        {
+            byte[] Batch(byte family)
+            {
+                var w = new ByteWriter(32);
+                w.WriteByte(SyncBatch.Version);
+                w.WriteUInt32(1);
+                w.WriteByte((byte)SyncRecordKind.Spawn);
+                w.WriteVarUInt32(42);
+                w.WriteByte(family);
+                w.WriteBool(true);
+                w.WriteUInt16(0);
+                return w.ToArray();
+            }
+            byte[] ok = Batch((byte)Family.Object);
+            Assert.Equal(Family.Object, SyncBatch.Read(ok, 0, ok.Length)[0].Family);
+            byte[] last = Batch((byte)Family.Generic);
+            Assert.Equal(Family.Generic, SyncBatch.Read(last, 0, last.Length)[0].Family);
+            byte[] bad = Batch(200);
+            Assert.Throws<DecodeException>(() => SyncBatch.Read(bad, 0, bad.Length));
+        }
+
         // ------------------------------------------------------------------ envelopes and fragments
 
         [Test]

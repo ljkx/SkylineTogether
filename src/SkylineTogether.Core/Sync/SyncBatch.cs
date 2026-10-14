@@ -756,6 +756,17 @@ namespace SkylineTogether.Core.Sync
             }
         }
 
+        /// <summary>
+        /// w8/robust: a family byte, which must name a <see cref="Family"/> (the applier picks archetypes, id tables and
+        /// classification rules by it; an unknown value bound an entity to a family no rule knows).
+        /// </summary>
+        private static Family ReadFamily(ByteReader r)
+        {
+            byte b = r.ReadByte();
+            if (b > (byte)Family.Generic) throw new DecodeException("unknown family " + b);
+            return (Family)b;
+        }
+
         /// <summary>A list length, checked against its limit and the bytes left (each element needs at least <paramref name="minBytes"/>).</summary>
         private static uint ReadCount(ByteReader r, int max, int minBytes, string what)
         {
@@ -774,7 +785,7 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.Values:
                 {
                     rec.NetId = r.ReadVarUInt32();
-                    rec.Family = (Family)r.ReadByte();
+                    rec.Family = ReadFamily(r);
                     rec.CompleteSet = r.ReadBool();
                     int components = r.ReadUInt16();
                     if (components > MaxComponents) throw new DecodeException("record with " + components + " components");
@@ -972,7 +983,7 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.ReplayMembers:
                 {
                     rec.NetId = r.ReadVarUInt32();
-                    rec.Family = (Family)r.ReadByte();
+                    rec.Family = ReadFamily(r);
                     rec.Hash = r.ReadUInt64();
                     uint n = ReadCount(r, MaxComponents, 17, "checkpoint members");
                     rec.ComponentHashes = new List<ComponentHash>((int)n);
