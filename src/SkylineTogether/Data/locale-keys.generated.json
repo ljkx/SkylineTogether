@@ -342,6 +342,20 @@
     "st.ui.resync.now",
     "st.ui.resync.later",
     "st.toast.recovery.kicked",
-    "st.toast.recovery.banned"
+    "st.toast.recovery.banned",
+    "st.reject.conflict",
+    "st.reject.noPermission",
+    "st.reject.notEnoughMoney",
+    "st.reject.locked",
+    "st.reject.outsideTiles",
+    "st.reject.invalid",
+    "st.reject.rateLimited",
+    "st.reject.notLive",
+    "st.reject.hostError",
+    "st.reject.timeout",
+    "st.reject.hostOnly",
+    "st.reject.prefabClass",
+    "st.reject.geometry",
+    "st.reject.other"
   ]
 }

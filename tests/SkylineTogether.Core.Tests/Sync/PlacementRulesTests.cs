@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using SkylineTogether.Core.Json;
 using SkylineTogether.Core.Sync;
 using SkylineTogether.Core.Tests.Framework;
 
@@ -453,6 +456,30 @@ namespace SkylineTogether.Core.Tests.Sync
                 Assert.DoesNotContain("rejected (", ProposalRules.Describe(r), r + " has no English description");
             }
             Assert.Equal("st.reject.other", ProposalRules.LocaleKey((RejectReason)999));
+        }
+
+        [Test]
+        public void EveryReasonIsTranslatedInEnglishAndGerman()
+        {
+            string root = TestPaths.RepoRoot;
+            if (root == null) Assert.Skip("repository root not found");
+            foreach (string locale in new[] { "en-US", "de-DE" })
+            {
+                string path = Path.Combine(root, "src", "SkylineTogether", "Data", "locale." + locale + ".json");
+                if (!File.Exists(path)) Assert.Skip("no " + path);
+                JsonValue table = MiniJson.Parse(File.ReadAllText(path, Encoding.UTF8), Path.GetFileName(path));
+                var keys = new List<string> { "st.toast.rejected", ProposalRules.LocaleKey((RejectReason)999) };
+                foreach (RejectReason r in Enum.GetValues(typeof(RejectReason)))
+                {
+                    if (r != RejectReason.None) keys.Add(ProposalRules.LocaleKey(r));
+                }
+                foreach (string key in keys)
+                {
+                    JsonValue v = table[key];
+                    Assert.True(v.Kind == JsonKind.String && !string.IsNullOrEmpty(v.AsString()), locale + " lacks " + key);
+                }
+                Assert.Contains("{REASON}", table["st.toast.rejected"].AsString(), locale);
+            }
         }
     }
 }

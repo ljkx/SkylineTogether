@@ -401,5 +401,20 @@
   "st.toast.replay.failedVerdict": "Die Wiedergabe fand Unterschiede. {SUMMARY}",
   "st.chat.soloHost": "Solo-Testsitzung: Niemand kann beitreten; der Testrekorder spielt den Client.",
   "st.chat.replayStarted": "Die Aufnahme {NAME} wird abgespielt. Es wird nichts über das Netzwerk gesendet.",
-  "st.chat.resync": "Neubeitritt für eine frische Kopie der Stadt des Hosts…"
+  "st.chat.resync": "Neubeitritt für eine frische Kopie der Stadt des Hosts…",
+  "st.toast.rejected": "Der Host hat deine letzte Änderung rückgängig gemacht: {REASON}.",
+  "st.reject.conflict": "jemand anderes hat dasselbe zuerst geändert",
+  "st.reject.noPermission": "deine Rolle erlaubt das nicht (frag den Host)",
+  "st.reject.notEnoughMoney": "die Stadt kann es sich nicht leisten",
+  "st.reject.locked": "es ist noch nicht freigeschaltet",
+  "st.reject.outsideTiles": "es liegt außerhalb der Kartenfelder, die der Stadt gehören",
+  "st.reject.invalid": "der Host konnte sie nicht verwenden",
+  "st.reject.rateLimited": "zu viele Änderungen auf einmal",
+  "st.reject.notLive": "du bist nicht in der Sitzung",
+  "st.reject.hostError": "der Host konnte sie nicht übernehmen",
+  "st.reject.timeout": "sie beruhte auf einem zu alten Stand der Stadt",
+  "st.reject.hostOnly": "das kann nur die Simulation des Hosts ändern",
+  "st.reject.prefabClass": "dieser Austausch ist nicht erlaubt",
+  "st.reject.geometry": "diese Form erlaubt das Spiel nicht",
+  "st.reject.other": "sie wurde abgelehnt"
 }

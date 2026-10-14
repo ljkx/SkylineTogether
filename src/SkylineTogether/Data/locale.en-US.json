@@ -401,5 +401,20 @@
   "st.toast.replay.failedVerdict": "The replay found differences. {SUMMARY}",
   "st.chat.soloHost": "Solo test session: nobody can join; the test recorder plays the client.",
   "st.chat.replayStarted": "Replaying the recording {NAME}. Nothing is sent over the network.",
-  "st.chat.resync": "Rejoining for a fresh copy of the host's city…"
+  "st.chat.resync": "Rejoining for a fresh copy of the host's city…",
+  "st.toast.rejected": "The host undid your last change: {REASON}.",
+  "st.reject.conflict": "another player changed the same thing first",
+  "st.reject.noPermission": "your role does not allow this (ask the host)",
+  "st.reject.notEnoughMoney": "the city cannot afford it",
+  "st.reject.locked": "it is not unlocked yet",
+  "st.reject.outsideTiles": "it is outside the map tiles the city owns",
+  "st.reject.invalid": "the host could not use it",
+  "st.reject.rateLimited": "too many changes at once",
+  "st.reject.notLive": "you are not in the session",
+  "st.reject.hostError": "the host could not apply it",
+  "st.reject.timeout": "it was based on a state of the city that is too old",
+  "st.reject.hostOnly": "only the host's simulation can change that",
+  "st.reject.prefabClass": "that replacement is not allowed",
+  "st.reject.geometry": "its shape is not one the game allows",
+  "st.reject.other": "it was refused"
 }

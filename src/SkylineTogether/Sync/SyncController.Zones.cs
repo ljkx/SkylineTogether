@@ -92,12 +92,15 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>Client: the host refused one of this player's proposals; the resend in the same batch rolled it back.</summary>
+        /// <summary>
+        /// Client: the host refused one of this player's proposals; the resend in the same batch rolled it back. The toast
+        /// names the reason in the player's language (<see cref="ProposalRules.LocaleKey"/>).
+        /// </summary>
         private void OnProposalResult(SyncRecord r)
         {
             if (r.Reason == RejectReason.None) return;
-            string text = "The host undid your last change: " + ProposalRules.Describe(r.Reason) + ".";
-            _log.Info(LogCategory.Replication, "proposal " + r.Seq + " rejected (" + r.Reason + ")");
+            string text = Settings.LocaleSource.Resolve("st.toast.rejected", "REASON", Settings.LocaleSource.Resolve(ProposalRules.LocaleKey(r.Reason)));
+            _log.Info(LogCategory.Replication, "proposal " + r.Seq + " rejected (" + r.Reason + ": " + ProposalRules.Describe(r.Reason) + ")");
             double now = _sessions.Clock.Seconds;
             // one toast per reason and second, however many proposals were in flight
             if (r.Reason == _lastToastReason && now - _lastToast < 1.0) return;
