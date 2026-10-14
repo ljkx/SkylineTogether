@@ -29,6 +29,11 @@ namespace SkylineTogether.Core.Modding
         ClientLocal = 10,
         /// <summary>Mod: changes the shared world; must be on every peer in the same version.</summary>
         World = 11,
+        /// <summary>
+        /// Mod channel: viewers may send messages whose first payload byte is this kind (target <c>0</c> ... <c>255</c>), or
+        /// any message (target <c>*</c>). Without it a viewer only receives (<see cref="ModChannelPermissions"/>).
+        /// </summary>
+        ViewerMessage = 12,
     }
 
     /// <summary>One declaration with the place it came from (for the report).</summary>
@@ -73,6 +78,7 @@ namespace SkylineTogether.Core.Modding
             { "host-setting", DeclarationRole.HostSetting },
             { "client-local", DeclarationRole.ClientLocal },
             { "world", DeclarationRole.World },
+            { "viewer-message", DeclarationRole.ViewerMessage },
         };
 
         public readonly List<ModDeclaration> Items = new List<ModDeclaration>();
@@ -132,6 +138,15 @@ namespace SkylineTogether.Core.Modding
             if (IsModLevel(parsed))
             {
                 target = "";
+            }
+            else if (parsed == DeclarationRole.ViewerMessage)
+            {
+                if (!ViewerMessageKinds.TryParseKind(target, out string kind))
+                {
+                    Problems.Add(source + ": \"" + RoleName(parsed) + "\" needs a message kind: the first payload byte (0 ... 255), or * for every message");
+                    return;
+                }
+                target = kind;
             }
             else if (target.Length == 0)
             {

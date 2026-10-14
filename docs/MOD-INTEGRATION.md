@@ -89,6 +89,7 @@ namespace MyMod
 | `host-setting` | setting property | The host's value is used by everyone during a session; each player's own value comes back afterwards. bool, int, long, float, double, enum and string properties with a public getter and setter. |
 | `client-local` | assembly | Your mod only affects its own player (UI, tooltips, overlays); it never blocks a join. Takes precedence over the scan. |
 | `world` | assembly | Your mod must be on every machine in the same version. |
+| `viewer-message` | assembly, with a target: a message kind `0` ... `255` (decimal or `0x` hex), or `*` | Viewers may send mod channel messages whose first payload byte is that kind (`*`: every message). Without it a viewer only receives (see [4](#4-the-mod-channel)). |
 
 Roles are case-insensitive; `host_only` and `Host Only` also work. Contradicting roles on one target (`host-only` and
 `everywhere`, `replicate` and `never-replicate`, ...) cancel each other: neither applies and the conflict is reported.
@@ -111,6 +112,7 @@ internal static class SkylineTogetherIntegration
     {
         "host-only: MyMod.Systems.GrowthSystem",
         "host-setting: MyMod.Setting.GrowthRate",
+        "viewer-message: 1",                       // viewers may send messages starting with byte 1 (see section 4)
     };
 
     // set by Skyline Together (they stay null when it is not installed: always use ?.Invoke)
@@ -150,6 +152,12 @@ only your mod receives what you send; a machine without your mod drops it silent
 - Clients only talk to the host; the host relays. A client's message to everyone (`-1`) reaches the host and every
   other client; `0` reaches the host; `n` reaches player `n` through the host. Nothing comes back to the sender.
 - `fromPlayer` in `OnMessage` is set by the host, so a client cannot pretend to be someone else.
+- Roles: the host, co-hosts and builders may send. Viewers (the read-only role) receive everything but may send only
+  the message kinds your mod declares with `viewer-message` (the kind is the first byte of the payload; `*` allows
+  every message). A viewer's `Send` of another kind returns `false`, and the host drops such a message from a viewer
+  whatever the client did. The host's copy of your mod decides, so declare the same kinds in every version you ship.
+  Typical use: a viewer may *ask* the host for something (`viewer-message: 1` for a "request state" message), while
+  the messages that change things stay with builders.
 - At most **16 KiB** per message, and **30 messages / 64 KiB per second** per sender (with one second of burst).
   `Send` returns `false` (and sends nothing) when not in a session, over a limit, or to an unknown player. The host
   drops a client's messages beyond the budget.

@@ -49,6 +49,8 @@ namespace SkylineTogether.Compat
             public int Failures;
             public bool Off;
             public long Sent, Received, Refused;
+            /// <summary>Message kinds viewers may send on this channel (the mod's <c>viewer-message</c> declarations).</summary>
+            public ViewerMessageKinds ViewerKinds = ViewerMessageKinds.None;
             public readonly ModChannelBudget Budget = new ModChannelBudget();
             public readonly List<string> Callbacks = new List<string>();
         }
@@ -63,6 +65,7 @@ namespace SkylineTogether.Compat
         private static bool _discovered;
         private static bool _started;
         private static long _unknownChannel;
+        private static long _refusedFromViewers;
 
         /// <summary>Subscribes to the session events (once, at load).</summary>
         public static void Attach(SessionManager sessions, ILog log)
@@ -248,7 +251,7 @@ namespace SkylineTogether.Compat
         /// <summary>Sets the delegate fields and finds the callbacks of a mod's integration class.</summary>
         private static void Bind(Assembly assembly, Type type, ModDeclarations d)
         {
-            var b = new Bound { Channel = assembly.GetName().Name, TypeName = type.FullName };
+            var b = new Bound { Channel = assembly.GetName().Name, TypeName = type.FullName, ViewerKinds = ViewerMessageKinds.From(d) };
             Set(type, "IsInSession", new Func<bool>(() => InSession), d);
             Set(type, "IsHost", new Func<bool>(() => Available && _sessions?.Host != null), d);
             Set(type, "IsClient", new Func<bool>(() => IsLiveClient), d);
@@ -386,6 +389,14 @@ namespace SkylineTogether.Compat
                     b.Refused++;
                     return false;
                 }
+                // a viewer receives but sends only the kinds the mod declared viewer-allowed (the host checks it too)
+                SessionClient client = _sessions.Host == null ? _sessions.Client : null;
+                if (client != null && !ModChannelPermissions.MaySend(client.LocalRole, payload, b.ViewerKinds))
+                {
+                    WarnOnce(b.Channel + ".viewer", "mod channel: " + b.Channel + " tried to send as a viewer; viewers only receive unless the mod declares the message kind with \"viewer-message\"");
+                    b.Refused++;
+                    return false;
+                }
                 if (!b.Budget.TrySpend(payload.Length, Now))
                 {
                     WarnOnce(b.Channel + ".budget", "mod channel: " + b.Channel + " sends faster than " + ModChannelBudget.DefaultMessagesPerSecond + " messages or "
@@ -445,6 +456,15 @@ namespace SkylineTogether.Compat
             m.From = from; // a client never speaks for another
             SessionHost host = _sessions?.Host;
             if (host == null) return;
+            // role permissions: a viewer's message is relayed only when the mod lets viewers send its kind (the host's own
+            // declarations of the mod decide; a mod the host lacks declares nothing)
+            Channels.TryGetValue(m.Channel, out Bound declared);
+            if (!ModChannelPermissions.MaySend(host.GetRole(from), m.Payload, declared?.ViewerKinds ?? ViewerMessageKinds.None))
+            {
+                _refusedFromViewers++;
+                WarnOnce("viewer." + from.Value + "." + m.Channel, "mod channel: dropped a " + m.Channel + " message from " + from + ", a viewer (the mod does not declare that message kind viewer-allowed)");
+                return;
+            }
             ModChannelRoute route = ModChannelRouter.Route(from, m.Target, m.TargetPeer, LivePeers(host));
             if (route.Forward.Count > 0) Forward(host, m, route.Forward);
             if (route.DeliverToHost) Deliver(m);
@@ -519,6 +539,7 @@ namespace SkylineTogether.Compat
                           + "; channel sent " + b.Sent + ", received " + b.Received + ", refused " + b.Refused);
             }
             if (_unknownChannel > 0) lines.Add("  mod channel: " + _unknownChannel + " message(s) for mods not listening here");
+            if (_refusedFromViewers > 0) lines.Add("  mod channel: " + _refusedFromViewers + " message(s) from viewers dropped (kind not viewer-allowed)");
         }
     }
 }
