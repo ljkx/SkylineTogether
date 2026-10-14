@@ -224,6 +224,7 @@ namespace SkylineTogether.Sync
             _outList.Clear();
             _barrier = 0;
             _announcedFrontier = 0;
+            _prefabTable.Clear();
             _applyBudget.Reset();
             _catchUpBudget.Reset();
         }
@@ -262,7 +263,9 @@ namespace SkylineTogether.Sync
             _ids.Authority = false;
             int renumbered = _ids.Compact(); // also rebuilds the allocator (nothing quarantined)
             _ids.Authority = true;
-            int prefabs = _codec.BindAllPrefabs().Count;
+            List<(uint Id, Entity Prefab)> allPrefabs = _codec.BindAllPrefabs();
+            _prefabTable.Start(allPrefabs); // w9/perf: encoded over the next frames, not in a joiner's frame
+            int prefabs = allPrefabs.Count;
             int bound = 0;
             NativeArray<Entity> entities = _tracked.ToEntityArray(Allocator.Temp);
             try
@@ -319,13 +322,15 @@ namespace SkylineTogether.Sync
             _outList.Add(o);
             // first messages of the joiner's stream (buffered until its load finished): the prefab table and an id range
             var w = new SyncBatch.Writer();
-            foreach ((uint id, Entity prefab) in _codec.BindAllPrefabs()) _codec.WritePrefab(w, id, prefab);
+            long tableStart = Perf.Start();
+            _prefabTable.WriteTo(_codec, _codec.BindAllPrefabs(), w); // w9/perf: cached, only new bindings are encoded now
+            double tableMs = Perf.Elapsed(tableStart);
             w.IdCeiling(_ids.Ids.Next); // w9/perf
             Grant(peer, w);
             // gameplay branch: the joiner's snapshot contains every ledger epoch up to now, so its proposals start from here
             w.Epoch(_ledger.LastBroadcast);
             Send(peer, w, Perf.StructureBytes);
-            _log.Info(LogCategory.Replication, peer + ": sent " + w.RecordCount + " prefab/range records");
+            _log.Info(LogCategory.Replication, peer + ": sent " + w.RecordCount + " prefab/range records (prefab table in " + tableMs.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms)");
             _global.ResendAll(); // the joiner gets every global channel with the next capture
             _modSettings.ResendAll(); // mod compatibility: and every synchronised mod setting
             _actions.ResendUnlocks();

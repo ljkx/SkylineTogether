@@ -81,6 +81,7 @@ namespace SkylineTogether.Diagnostics
         // statistics and info views
         public static readonly FrameBudgetService.Feature BudgetFlow = Budget.Register("flow status", BudgetPriority.Statistics, 0.75, 0.2);
         public static readonly FrameBudgetService.Feature BudgetMaps = Budget.Register("maps+stats", BudgetPriority.Statistics, 2.0, 1.0);
+        public static readonly FrameBudgetService.Feature BudgetPrefabTable = Budget.Register("prefab table", BudgetPriority.Statistics, 1.0, 0.25);
 
         /// <summary>w9/perf: the allowance of <paramref name="feature"/> for this call (its own cap <paramref name="capMs"/>, clipped when the frame is full).</summary>
         public static double Allowance(FrameBudgetService.Feature feature, double capMs) => Budget.Begin(feature, capMs);

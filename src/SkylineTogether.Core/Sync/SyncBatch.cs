@@ -428,6 +428,19 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            /// <summary>
+            /// w9/perf: appends every record of <paramref name="other"/> (byte for byte; for example a cached prefab table),
+            /// as if they had been written here.
+            /// </summary>
+            public void Append(Writer other)
+            {
+                if (other == null) throw new ArgumentNullException(nameof(other));
+                if (ReferenceEquals(other, this)) throw new ArgumentException("a writer cannot append itself", nameof(other));
+                int body = other._w.Length - HeaderBytes;
+                if (body > 0) _w.WriteBytes(other._w.Buffer, HeaderBytes, body);
+                _count += other._count;
+            }
+
             public void Despawn(uint netId)
             {
                 _w.WriteByte((byte)SyncRecordKind.Despawn);

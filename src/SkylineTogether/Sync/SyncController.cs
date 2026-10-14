@@ -180,6 +180,7 @@ namespace SkylineTogether.Sync
         private PeerId _proposalPeer;
         private uint _barrier;
         private uint _announcedFrontier; // w9/perf: the id frontier last sent to the clients
+        private readonly PrefabTableCache _prefabTable = new PrefabTableCache(); // w9/perf: the joins' prefab table, built across frames
         private long _lastAckSent = -1;
         private double _lastAckTime;
         private double _lastFrameTime;
@@ -391,6 +392,7 @@ namespace SkylineTogether.Sync
         {
             if (_ids != null) lines.Add("net ids: " + _ids.Describe());
             if (_ids != null && !IsHost) lines.Add("net ids from the host: " + _ids.Ceiling.Describe()); // w9/perf
+            if (IsHost) lines.Add(_prefabTable.Describe()); // w9/perf
             if (IsHost) lines.Add("presence watch: " + _events.PresenceResends + " re-sends of component sets changed without a tag");
             if (IsHost)
             {

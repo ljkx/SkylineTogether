@@ -195,6 +195,21 @@ namespace SkylineTogether.Sync
                 long global = Perf.Start();
                 if (Features.GlobalState.IsAvailable) CaptureGlobal(now);
                 Perf.Stop(Perf.Global, global);
+                // w9/perf (host): the prefab table for the next joiner, a slice per frame
+                if (IsHost && !_prefabTable.Complete)
+                {
+                    long table = Perf.Start();
+                    try
+                    {
+                        _prefabTable.Advance(_codec, Perf.Allowance(Perf.BudgetPrefabTable, 1.0));
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warn(LogCategory.Replication, "encoding the prefab table failed; joins encode it themselves", ex);
+                        _prefabTable.Clear();
+                    }
+                    Perf.Spent(Perf.BudgetPrefabTable, table);
+                }
                 _authoredThisFrame.Clear();
                 _forceCapture.Clear();
                 if (IsLiveClient && Features.Replication.IsAvailable) SendApplyAck(now);
