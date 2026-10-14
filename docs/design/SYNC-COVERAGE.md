@@ -1,6 +1,6 @@
 # Sync coverage
 
-Branch `w3/audit`. This document answers one question for every piece of state Cities: Skylines II keeps: **does every
+This document answers one question for every piece of state Cities: Skylines II keeps: **does every
 player see exactly the same, and how?** It has two parts:
 
 1. **Runtime state the UI and the renderer read** (hand-written, below): totals that systems compute every frame,
@@ -47,7 +47,7 @@ again on the client from host data. The statuses:
 | `excluded` | irrelevant in a session (achievements, editor) |
 | `gap` | not synced and not justified: **there are none** (the generator fails on any) |
 
-## Gaps found and fixed in this branch
+## Gaps found and fixed by the sync audit
 
 | # | What players saw before | Root cause | Fix |
 |---|---|---|---|

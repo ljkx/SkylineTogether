@@ -1,111 +1,141 @@
 # Skyline Together
 
-A from-scratch, host-authoritative **co-op multiplayer mod for Cities: Skylines II**: 2 to 8 players build one city
-together over Steam (relay or direct connection), in cities of 100k+ population.
+[![CI](https://github.com/ljkx/SkylineTogether/actions/workflows/ci.yml/badge.svg)](https://github.com/ljkx/SkylineTogether/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The host runs the complete vanilla simulation. Clients join by loading a snapshot of the host's save and then
-follow the host: they never run the simulation themselves, they rebuild geometry and presentation locally from
-replicated source data, and every value and status indicator (money, line connectivity, warning icons, ...) comes
-from the host. A client's own actions are predicted with the unmodified game code, sent to the host as proposals,
-validated and committed there, and replicated back to everyone. Incremental hashes prove convergence and divergence
-is repaired automatically.
+Co-op multiplayer for **Cities: Skylines II**: build one city together with friends over Steam.
 
-- Design: [`docs/design/ARCHITECTURE.md`](docs/design/ARCHITECTURE.md) (authoritative) and
-  [`docs/design/IMPLEMENTATION-PLAN.md`](docs/design/IMPLEMENTATION-PLAN.md) (modules, contracts, milestones).
-- Research on the game's internals with code citations: [`docs/research/`](docs/research/00-DIGEST.md).
-- Decision records: [`docs/decisions/`](docs/decisions/).
+One player hosts their city. Friends join, get a copy of it, and from then on everything anyone builds is shared live.
+The host's game runs the simulation. The other players' games show the host's city and send their actions to the host,
+which checks and applies them for everyone. Differences are detected and repaired automatically.
 
-Status: **early testing.** Hosting, joining (Steam invites or Steam ID), structure/line/economy/terrain sync, agents,
-integrity repair, shared building previews and chat all work in builds; real two-PC sessions are under way and bugs
-are expected. Back up your save before hosting.
+> **Status: early testing.** Hosting, joining and the sync of the city work in test builds, and real two-PC sessions are
+> under way. Expect bugs, back up your saves and play on a copy of a city. No release has been published yet.
 
-**Install for testing:** build `dist/SkylineTogether-Setup.zip` (see *Building* below / `tools/installer/`), unzip,
-double-click `Install.cmd`. Both players must show the same build id. `Collect-Logs.cmd` zips logs for bug reports.
+## Features
 
-## Solo testing (no second PC)
+- **Host and join** by Steam ID, Steam invite or (optionally) direct IP. Optional session password, 2 to 16 players
+  (default 8).
+- **Shared city**: roads, buildings, zoning, districts, transport lines, terrain, water, budget, taxes, policies,
+  milestones, traffic, citizens and the numbers in the info panels.
+- **Every player builds** with the normal game tools; your own actions show instantly and the host confirms them.
+- **Roles**: builders can do everything; viewers can only watch and chat.
+- **Presence**: other players' cursors with name tags, their building previews in their colour, and chat.
+- **Host-controlled game speed** that builders can change for everyone.
+- **Automatic integrity checks** that find and repair objects that differ from the host.
+- **Reconnect** after a lost connection, with the city paused meanwhile.
+- **Mod compatibility checks**: the host can require the same code mods and the joining player gets a list of what to
+  change; dedicated support for 12 popular mods.
+- **Solo test**: record a session and replay it through the joining player's code path on one PC.
+- English and German UI.
 
-"Record test session" in the Skyline Together panel (in a city, or while hosting) adds a test recorder that joins the
-session like a player and records everything it receives into
-`%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\SkylineTogether\Recordings\`, with
-verification checkpoints. "Replay & verify" (panel, also from the main menu) loads the recorded snapshot as a joiner and
-plays the recording through the real client path without any network, then writes `verdict.txt` / `verdict.json`
-next to the recording (objects, lines, icons and global state compared with the host, apply errors, timings). See
-ARCHITECTURE §13.5.
+## Requirements
 
-## Repository layout
+- Cities: Skylines II, **Steam version**, with Steam running and logged in, on Windows.
+- Every player needs the **same build** of Skyline Together, the **same game version** and, by default, the **same code
+  mods**.
 
-```
-Directory.Build.props        shared properties: game paths, deploy folder, C# version, warnings as errors
-SkylineTogether.sln
-src/SkylineTogether.Core/    pure .NET core (no game references): contracts, buffers, hashing, JSON, protocol,
-                             replication engine, ... (one folder per module)
-src/SkylineTogether/         the game layer (the IMod), compiled against the game's own DLLs
-ui/                          the hand-written UI module (SkylineTogether.mjs)
-tests/SkylineTogether.Core.Tests/   unit tests of the core (a net8.0 console app with its own small test framework)
-tools/build.sh               Release build, checks, tests, deploy and packaging
-docs/                        design, research and decision records
-```
+## Install
 
-## Building
+1. Close the game.
+2. Get `SkylineTogether-Setup.zip` from the [Releases page](https://github.com/ljkx/SkylineTogether/releases) once a
+   release is published, or [build it yourself](docs/dev/building.md#packaging-and-the-player-installer).
+3. Unzip it and double-click **`Install.cmd`**. It installs the mod into
+   `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether` and prints a **build id**:
+   every player must see the same one.
+4. Disable any other multiplayer mod.
 
-Requirements:
+Details, manual installation and uninstalling: [Getting started](docs/guide/getting-started.md#install).
 
-- Windows with Cities: Skylines II installed (the build compiles against the DLLs in `Cities2_Data\Managed`).
-- The .NET SDK 8 or newer. No NuGet package is needed or downloaded
-  ([decision 0001](docs/decisions/0001-build-without-nuget.md)).
-- Git Bash (or another bash) for `tools/build.sh`. Node.js is optional (UI module checks).
+## Quick start
+
+**Host**
+
+1. Load a city.
+2. Click the round Skyline Together button in the top-left corner and press **Host this city**.
+3. Send your friends your Steam ID (copy icon at the top of the panel), or use **Invite friends**.
+
+**Join**
+
+1. On the title screen click **Multiplayer**, then **Join a friend**.
+2. Paste the host's Steam ID (or `IP:port`) and the password if there is one, and press **Join**.
+   Or accept the host's Steam invite.
+
+Your game downloads and loads the host's city; the host's game pauses until you are in. Press **Enter** to chat.
+
+More: [Getting started](docs/guide/getting-started.md) (roles, building previews, speed, saving, settings).
+
+## FAQ
+
+- **Port forwarding?** Not needed for Steam ID and invite joins. Only optional direct IP connections need a forwarded
+  UDP port (default 27015).
+- **Whose city is it?** The host's. Other players can save a copy, but the session continues in the host's save.
+- **Who controls the speed?** The host's game. Builders' speed changes apply for everyone.
+- **Which mods work?** With the default settings, every player needs the same code mods. Mods that only change a
+  player's own screen may differ.
+
+More in the [FAQ](docs/guide/faq.md).
+
+## Troubleshooting
+
+A refused join explains why (different builds, game versions or mods, full session, password). For those, connection
+problems, things that look different for another player, and how to collect logs for a bug report, see
+[Troubleshooting](docs/guide/troubleshooting.md). In short: click **Write diagnostics** in the panel, run
+`Collect-Logs.cmd` from the setup folder and attach the zip from every player to the
+[issue](https://github.com/ljkx/SkylineTogether/issues/new/choose).
+
+## Compatibility
+
+- **Game**: built against the current Steam version of Cities: Skylines II. A game update can switch features off
+  until the mod is updated; the startup self-test shows which.
+- **Code mods**: every player needs the same world-affecting mods in the same versions (the host can turn this check
+  off). Local-only mods (translations, tooltips, icon libraries, overlays) may differ. Traffic, Move It, Anarchy, Better
+  Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool
+  and Find It have dedicated support. Every other mod is analysed automatically when a session starts: its saved data
+  replicates with its entities, its simulation runs on the host, its tools are captured like player edits, and the
+  decisions are explained in the diagnostics dump; see [MOD-COMPATIBILITY.md](docs/design/MOD-COMPATIBILITY.md).
+- **Assets**: use the same asset subscriptions on every PC; objects whose asset a player lacks are not created on that
+  player's game, and the joining player is told which asset pack or mod is missing and what to subscribe to.
+- **Other multiplayer mods**: not compatible; disable them.
+- **Mod authors**: declare what your mod does, react to sessions and send data to your mod on other PCs, without a
+  reference to Skyline Together: see [MOD-INTEGRATION.md](docs/MOD-INTEGRATION.md).
+
+## Building from source
+
+Requires Windows, the game, the .NET SDK 8 or newer and Git Bash. No NuGet package is used.
 
 ```sh
-tools/build.sh                 # Release build + checks + tests
+tools/build.sh                 # Release build, UI checks, tests
 tools/build.sh --deploy        # ... then copy the mod into the local Mods folder
 tools/build.sh --package       # ... then write dist/SkylineTogether-<version>.zip
-tools/build.sh --game-dir "D:/Games/Cities Skylines II"   # game installed somewhere else
+python tools/installer/make_installer.py   # then build dist/SkylineTogether-Setup.zip
 ```
 
-The default game folder is `C:\Program Files (x86)\Steam\steamapps\common\Cities Skylines II`. Override it with
-`--game-dir`, or with the `GameDir` (or `GameManagedPath`) environment variable or MSBuild property. A plain
-`dotnet build` of the game project also deploys to the Mods folder after every build; add `-p:DeployMod=false` to
-skip that.
+Add `--game-dir "<path>"` if the game is not in the default Steam folder. Core and its tests also build without the
+game. See [docs/dev/building.md](docs/dev/building.md); the [code map](docs/dev/code-map.md) is the place to start
+reading the code.
 
-Running the unit tests directly:
+| Folder | Contents |
+|---|---|
+| `src/SkylineTogether.Core/` | Pure .NET core (no game references): protocol, codecs, hashing, sessions, replication logic |
+| `src/SkylineTogether/` | The game layer (the `IMod`), compiled against the game's own DLLs |
+| `ui/` | The hand-written UI module |
+| `tests/SkylineTogether.Core.Tests/` | Unit tests of the core |
+| `tools/` | Build script, installer, UI smoke test, repository checks |
+| `docs/` | [User guide, developer docs, design and research](docs/README.md) |
 
-```sh
-dotnet run --project tests/SkylineTogether.Core.Tests -c Release            # all tests
-dotnet run --project tests/SkylineTogether.Core.Tests -c Release -- Json   # only tests whose name contains "Json"
-```
+## Contributing
 
-The exit code is the number of failed tests. Tests are methods marked `[Test]` in
-`tests/SkylineTogether.Core.Tests/<Area>/*Tests.cs`, using the `Assert` helpers of `Framework/`.
+Bug reports from test sessions are the most useful contribution right now. For code, see
+[CONTRIBUTING.md](CONTRIBUTING.md); for security problems, [SECURITY.md](SECURITY.md). Changes are listed in the
+[CHANGELOG](CHANGELOG.md).
 
-## Installing
-
-Copy `SkylineTogether.dll`, `SkylineTogether.Core.dll` (plus the `.pdb` files and `SkylineTogether.mjs`, when
-present) into
-
-```
-%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether
-```
-
-`tools/build.sh --deploy` does exactly that; the packaged zip contains a `SkylineTogether` folder that you extract
-into the `Mods` folder. Local mods take precedence over Paradox Mods subscriptions of the same name. Every player
-of a session needs the same build of the mod, the same game version and the same versions of every mod that changes
-the shared world (mods that only change what one player sees, such as tooltips or icon packs, may differ). To
-uninstall, delete the folder.
-
-## Other mods
-
-Other code mods and asset packs work in a session: saved mod data replicates with its entities, mod simulation runs
-on the host, mod tools are captured like player edits, and a player who lacks an asset pack or a mod's generated
-prefabs is told which one and what to subscribe to. Twelve popular mods have hand-verified adapters, every other mod is
-analysed automatically when the game starts a session (explained in the diagnostics dump), and mod authors can declare
-what their mod does and talk to their mod on other machines without referencing Skyline Together:
-[`docs/MOD-INTEGRATION.md`](docs/MOD-INTEGRATION.md). Details: [`docs/design/MOD-COMPATIBILITY.md`](docs/design/MOD-COMPATIBILITY.md).
-
-## Clean room
-
-Skyline Together is designed and written only from its own research reports, the decompiled game code and the
-sources of third-party mods it must be compatible with. No other co-op project was consulted.
+Skyline Together is designed and written only from its own research reports, the decompiled game code and the sources
+of third-party mods it must be compatible with. No other co-op project was consulted, and contributions must follow
+the same [clean-room policy](CONTRIBUTING.md#clean-room-policy).
 
 ## License
 
-[MIT](LICENSE). Cities: Skylines II is a trademark of Paradox Interactive; this project is not affiliated with or endorsed by Paradox Interactive or Colossal Order. The game's assemblies are referenced at build time from your own installation and are never redistributed.
+[MIT](LICENSE). Cities: Skylines II is a trademark of Paradox Interactive; this project is not affiliated with or
+endorsed by Paradox Interactive or Colossal Order. The game's assemblies are referenced at build time from your own
+installation and are never redistributed.

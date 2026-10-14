@@ -5,15 +5,27 @@
     allowed (docs/decisions/0001-build-without-nuget.md). Only the framework assemblies below are referenced, and the
     code uses only APIs that exist in netstandard2.0, so the same sources also compile on .NET 8 (the test project
     compiles them directly).
+
+    Without a game install (CI, or a contributor who only works on Core) the game's mscorlib is missing; Core then
+    builds against the netstandard2.1 reference assemblies that ship with the .NET SDK (packs/NETStandard.Library.Ref),
+    still without any NuGet download. That output is only a compile check and is never shipped; the real build is
+    unchanged whenever $(GameManagedPath)\mscorlib.dll exists. See docs/dev/building.md.
   -->
   <PropertyGroup>
-    <TargetFramework>net472</TargetFramework>
+    <GameRuntimeAvailable Condition="Exists('$(GameManagedPath)\mscorlib.dll')">true</GameRuntimeAvailable>
+  </PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework Condition="'$(GameRuntimeAvailable)' == 'true'">net472</TargetFramework>
+    <TargetFramework Condition="'$(GameRuntimeAvailable)' != 'true'">netstandard2.1</TargetFramework>
     <AssemblyName>SkylineTogether.Core</AssemblyName>
     <RootNamespace>SkylineTogether.Core</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>$(Version)</FileVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(GameRuntimeAvailable)' == 'true'">
     <!-- compile against the game's own corlib, not a reference pack -->
     <NoStdLib>true</NoStdLib>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
@@ -21,9 +33,8 @@
     <FrameworkPathOverride>$(GameManagedPath)</FrameworkPathOverride>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <DebugType>portable</DebugType>
   </PropertyGroup>
-  <ItemGroup>
+  <ItemGroup Condition="'$(GameRuntimeAvailable)' == 'true'">
     <!-- the game's framework assemblies only; never copied, never shipped (R05 §1.2) -->
     <Reference Include="mscorlib"><HintPath>$(GameManagedPath)\mscorlib.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="System"><HintPath>$(GameManagedPath)\System.dll</HintPath><Private>false</Private></Reference>
@@ -36,4 +47,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="SkylineTogether.Core.Tests" />
   </ItemGroup>
+  <Target Name="ReportReferenceFallback" BeforeTargets="CoreCompile" Condition="'$(GameRuntimeAvailable)' != 'true'">
+    <Message Importance="high"
+             Text="SkylineTogether.Core: no game assemblies in '$(GameManagedPath)'; compiling against netstandard2.1 (compile check only, not a shippable build)" />
+  </Target>
 </Project>

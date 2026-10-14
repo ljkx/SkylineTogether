@@ -359,6 +359,10 @@ namespace SkylineTogether.Core.Sync
             }
         }
 
+        /// <summary>
+        /// Builds one batch: a version byte, a record count and the records. Reuse one writer with <see cref="Reset"/>.
+        /// Not thread-safe.
+        /// </summary>
         public sealed class Writer
         {
             private readonly ByteWriter _w = new ByteWriter(1 << 16);
