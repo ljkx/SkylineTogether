@@ -186,8 +186,9 @@ Rules the code follows (enforced by review and, where possible, by tests):
 - Core has no reference to Unity, Game or Colossal assemblies and reads time only through `IClock`.
 - Decoders of network input throw `DecodeException` and nothing else; fuzz tests check every decoder
   (`tests/.../Protocol/ProtocolFuzzTests.cs`).
-- Every wire layout change increments [`ProtocolVersion.Current`](../src/SkylineTogether.Core/Protocol/ProtocolVersion.cs);
-  golden byte vectors in the tests pin version 1. Enum values that travel on the wire never change.
+- Every wire layout change increments [`ProtocolVersion.Current`](../src/SkylineTogether.Core/Protocol/ProtocolVersion.cs)
+  (policy: [releasing](dev/releasing.md#protocol-version-policy)); golden byte vectors in the tests pin the layouts.
+  Enum values that travel on the wire never change.
 - Logging goes through `ILog` with a `LogCategory`; player-facing texts are locale keys, and a test checks that every
   key the game layer uses exists.
 - Hot paths reuse buffers and delegates (no allocation per message or per frame where it can be avoided).
@@ -366,8 +367,8 @@ automatic, because a deterministic fault would loop.
 Roles are `Host`, `CoHost`, `Builder` (the default) and `Viewer`
 ([`SessionRole`](../src/SkylineTogether.Core/Contracts/Taxonomy/SessionRole.cs)).
 [`RolePermissions`](../src/SkylineTogether.Core/Session/RolePermissions.cs) gives host, co-host and builder every
-`Permission` and viewers only `Chat`; the host checks the sender's role on every proposal, intent, global-state edit
-and speed request. Viewers' tools never apply locally (`ViewerGateSystem`), which is comfort; the host's check is the
+`Permission` and viewers only `Chat`; the host checks the sender's role on every proposal, intent, global-state edit,
+speed request and mod channel message. Viewers' tools never apply locally (`ViewerGateSystem`), which is comfort; the host's check is the
 rule. [`Moderation`](../src/SkylineTogether.Core/Session/JoinSecurity.cs): co-hosts may kick builders and viewers and
 switch them between builder and viewer; only the host bans, appoints co-hosts and changes session options.
 
@@ -494,7 +495,8 @@ flowchart TB
   [`ModStateWatcher`](#mod-compatibility) adds untagged mod state and the mod data entities values reference.
 - **Value scan.** `ScanValues` hashes the entities of the value-scanned families (routes, waypoints, segments, events;
   the city singleton once a second) in a 1 ms slice per frame, every 0.25 s; a changed hash marks the entity in every
-  peer's deferred queue.
+  peer's deferred queue. An entity of these families written by the capture gets its shadow hash from the record's own
+  serialization (`EntityCodec.WriteEntityHashed`).
 - **Clock.** Every 0.25 s the batch carries the host's `frameIndex` (`SyncRecordKind.Clock`).
 - **Integrity.** Icon sets and line rows go into the broadcast batch, bucket digests into a per-peer digest batch
   ([integrity](#integrity)).
@@ -536,7 +538,10 @@ Structure records always go into the broadcast. Values that change all the time 
 [`CoalescingQueue`](../src/SkylineTogether.Core/Scheduling/CoalescingQueue.cs) (one mark per id, latest value wins,
 serialised from the current state when sent). `FlushDeferred` sends each live peer as many records as
 `LinkBudget.DeferredBytes` allows: only while the peer's reliable backlog (outbox plus Steam's pending bytes) stays
-below 0.25 s at its send rate and below 512 KiB, within 1.5 ms of CPU per frame for all peers. The integrity digests
+below 0.25 s at its send rate and below 512 KiB, within 1.5 ms of CPU per frame for all peers. A record is encoded
+once per frame and appended byte for byte to every other peer's batch that needs it
+([`EncodedRecordCache`](../src/SkylineTogether.Core/Sync/EncodedRecordCache.cs); repair re-sends use one too). Link
+statistics come from one transport query per peer and frame (`PeerOutbox.Stats` under `StatsFrame`). The integrity digests
 of the frame go only to peers whose deferred queue is empty, because a digest is only comparable once everything it
 covers was sent. A client's request for a full re-send (`ResendRoutes`, `ResendAll`) is queued the same way; a full
 re-send marks 20 000 ids per frame.
@@ -568,7 +573,10 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
    (renters, workers, students, ...) that the gated vanilla cleanup systems would have removed.
 
 The game's Modification systems then rebuild geometry, lanes, zone blocks and sub-objects. On a client the applied
-entities are recorded so its own capture never proposes them back. Entities the player deleted locally wait for the
+entities are recorded so its own capture never proposes them back: their converged state becomes the baseline of the
+player's edits, hashed lazily ([`PendingBaselines`](../src/SkylineTogether.Core/Sync/PendingBaselines.cs)): all of it
+at the start of ApplyTool and at frame start while a tool other than the default one is selected, otherwise a slice per
+frame. Batches decode into pooled records ([`SyncRecordPool`](../src/SkylineTogether.Core/Sync/SyncRecordPool.cs)). Entities the player deleted locally wait for the
 host's despawn for up to 20 s (records the host sent before it applied the deletion do not bring them back); an
 entity the player is dragging with a direct-write mod tool is held against the host's echoes for 0.6 s
 (`EditHold`). An apply failure on a client counts against `Features.Replication`; repeated failures end the session
@@ -608,7 +616,11 @@ line state survives.
    charges the client's cost within its own bounds (`ProposalRules.EffectiveCost`: at least the construction cost of
    what was created minus the most the removed or changed entities may refund, from their `Recent` costs; a vanilla
    client's amount is never changed), rebases build orders of committed edges, marks the entities authored by the sender and lets the
-   next capture stream them to everyone.
+   next capture stream them to everyone. The construction cost counts objects, service upgrades and free-standing trees
+   (by growth stage) at once, and nets at the end of the frame, when the host's game has composed the new edges
+   ([`ConstructionCosts`](../src/SkylineTogether.Core/Sync/ConstructionCosts.cs): units of 8 m at the composition's
+   price, one unit of slack, minus the edges the proposal removed, plus real upgrades); a shortfall is charged then. A
+   mod tool's proposal pays for the priced objects and edges it adds beyond those it removes, so moving stays free.
 4. **Refuse**: a `ProposalResult` record and a rollback to the originator: every touched entity as the host has it
    (alive: full record; unknown: despawn) and the host's cells of every painted zone block. Rate, size and malformed
    refusals count as violations; 20 within 10 s kick the player. A peer whose proposals keep failing to apply is
@@ -719,7 +731,8 @@ any order. Everything is restored when the session ends.
 ### Speed authority
 
 [`SpeedAuthoritySystem`](../src/SkylineTogether/Systems/SpeedAuthoritySystem.cs): the host's speed is the session's,
-sent as `Control SpeedChanged`; a client player's speed change becomes a `SpeedRequest` (needs `Permission.Speed`).
+sent as `Control SpeedChanged`; a client player's speed change becomes a `SpeedRequest` (needs `Permission.Speed`;
+a token bucket per player, bursts of 4, then 2 per second, because each accepted request is broadcast).
 While a player joins, the host's simulation is held and resumes afterwards; the pause menu's forced pause is respected.
 
 ## Data channels
@@ -802,7 +815,10 @@ city policies, XP and population live on the City entity and travel with its val
 detected against the last converged state and sent as deltas; the host checks permission and ranges
 ([`GlobalProposalRules`](../src/SkylineTogether.Core/Sync/GlobalProposalRules.cs): tax limits, adjustable budgets and
 fees, one loan entry, policy slider ranges and locks, sanitised names) and applies them through the vanilla entry
-points (last writer wins). A panel channel that fails its exact-length decode is off for the session.
+points (last writer wins). A panel channel that fails its exact-length decode is off for the session. The client reads
+the state it compares at most three times a frame and usually once: before the first host write that may change it (a
+global channel, a singleton or agent record, a spawn or despawn), after the apply when there was one, and at the
+capture.
 
 ### Player actions
 
@@ -872,7 +888,9 @@ per second), distributed to every admitted peer with system messages for joins a
 [mod channel](MOD-INTEGRATION.md) ([`ModIntegration`](../src/SkylineTogether/Compat/ModIntegration.cs)) carries other
 mods' opaque messages (channel = assembly name, at most 16 KiB); the host routes them
 ([`ModChannelRouter`](../src/SkylineTogether.Core/Modding/ModChannelRouter.cs)) to itself, everyone or one player,
-never back to the sender, and enforces the budget again before relaying.
+never back to the sender, and enforces the budget again before relaying. Viewers receive everything but may send only
+the message kinds the mod declares with `viewer-message` (first payload byte); the host drops anything else a viewer
+sends ([`ModChannelPermissions`](../src/SkylineTogether.Core/Modding/ModChannelPermissions.cs)).
 
 ## Integrity
 
@@ -1031,7 +1049,7 @@ feature.
 |---|---|
 | Apply (never clipped) | client apply of host batches 6 ms with carry-over, ≤ 64 batches (catch-up 24 ms, ≤ 512); mover apply 4 ms |
 | Critical sends (floor 50 %) | value scan 1 ms (every 0.25 s); deferred sends 1.5 ms; agent scan 0.8 ms; attention values 1 ms; mover sampling 2 ms (≤ 16 ticks); terrain and water measured |
-| Integrity | digest pass 0.5 ms (detail answers 1 ms); presence watch 0.25 ms |
+| Integrity | digest pass 0.5 ms (detail answers 1 ms); presence watch 0.25 ms; client edit baselines 0.5 ms |
 | Statistics | flow status 0.75 ms; cell maps and statistics 2 ms; prefab table 1 ms |
 
 Per-peer byte budgets: simulation values 24 KB/s (burst 48 KB), agents 16 KB/s, flow status 16 KB/s, cell maps
@@ -1064,8 +1082,8 @@ the most ids alive at once plus the quarantine and are released at session end.
   host; global-state edits are permission- and range-checked; terrain stamps and paint patches are rate-limited and
   clamped. All execute through vanilla entry points.
 - A client refuses net ids far above the host's announced frontier (`NetIdCeiling`).
-- Inbound queues per peer (4096 messages, 64 MiB), chat and presence rates, id-grant and re-send throttles, mod
-  channel budget. Texts are sanitised (`ProtocolText.Sanitize`).
+- Inbound queues per peer (4096 messages, 64 MiB), chat, presence and speed-request rates, id-grant and re-send
+  throttles, mod channel budget and roles. Texts are sanitised (`ProtocolText.Sanitize`).
 - Moderation requests are checked against the sender's role (`Moderation`).
 
 ### What it does not validate

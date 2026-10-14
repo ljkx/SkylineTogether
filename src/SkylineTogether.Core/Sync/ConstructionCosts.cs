@@ -13,7 +13,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// The host's lower bounds of what the game charges for building (ARCH §5.4.1 rule 7, economy): a forged client can
+    /// The host's lower bounds of what the game charges for building (ARCHITECTURE.md#host-validation-and-commit): a forged client can
     /// claim any cost, so the host never charges less than these for what a proposal created (<see cref="ProposalRules.EffectiveCost"/>).
     /// Every bound stays at or below the vanilla price, so an honest client's own sum is never raised:
     /// <list type="bullet">
