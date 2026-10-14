@@ -83,6 +83,12 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>Chat lines a peer may send per second (on average; bursts of 5).</summary>
         public double ChatPerSecond = 2;
+
+        /// <summary>
+        /// Game speed requests a peer may send per second (on average; bursts of <see cref="SessionHost.SpeedRequestBurst"/>):
+        /// every accepted request changes the host's speed and is broadcast to everyone, so a flood is dropped.
+        /// </summary>
+        public double SpeedRequestsPerSecond = 2;
     }
 
     /// <summary>A chat line as the UI shows it.</summary>
@@ -162,6 +168,9 @@ namespace SkylineTogether.Core.Session
             /// <summary>Flood guards for chat lines and blob have-bitmaps.</summary>
             public double ChatTokens = 5;
             public double ChatRefilledAt;
+            public double SpeedTokens = SpeedRequestBurst;
+            public double SpeedRefilledAt;
+            public long SpeedRequestsDropped;
             public double LastHave = double.NegativeInfinity;
         }
 
@@ -175,6 +184,9 @@ namespace SkylineTogether.Core.Session
         private readonly ISnapshotProvider _snapshots;
         private readonly HostOptions _options;
         private readonly IClock _clock;
+
+        /// <summary>Speed requests a peer may send at once before <see cref="HostOptions.SpeedRequestsPerSecond"/> applies.</summary>
+        public const int SpeedRequestBurst = 4;
         private readonly ILog _log;
         private readonly Dictionary<IConnection, Peer> _peers = new Dictionary<IConnection, Peer>();
         private readonly ByteWriter _body = new ByteWriter(4096);
@@ -1147,10 +1159,27 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
                 case ControlKind.SpeedRequest:
+                {
                     if (p.State != PlayerState.Live || !RolePermissions.Allows(p.Role, Permission.Speed)) return;
+                    // a token bucket per peer (bursts of SpeedRequestBurst, then SpeedRequestsPerSecond); excess requests are dropped
+                    double t = _clock.Seconds;
+                    p.SpeedTokens = Math.Min(SpeedRequestBurst, p.SpeedTokens + Math.Max(0, t - p.SpeedRefilledAt) * _options.SpeedRequestsPerSecond);
+                    p.SpeedRefilledAt = t;
+                    if (p.SpeedTokens < 1)
+                    {
+                        p.SpeedRequestsDropped++;
+                        if (p.SpeedRequestsDropped == 1 || p.SpeedRequestsDropped % 100 == 0)
+                        {
+                            _log.Warn(LogCategory.Session, p.Name + " asks for speed changes faster than " + _options.SpeedRequestsPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                                                           + " per second; " + p.SpeedRequestsDropped + " dropped so far");
+                        }
+                        return;
+                    }
+                    p.SpeedTokens -= 1;
                     _reader.Reset(payload, 0, payload.Length);
                     SpeedRequested?.Invoke(p.Id, SessionPayloads.ReadSpeed(_reader));
                     return;
+                }
                 default:
                     return;
             }
