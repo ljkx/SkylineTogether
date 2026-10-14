@@ -212,6 +212,7 @@ namespace SkylineTogether.Sync
             _seq = 0;
             _subElementFrame = false;
             _buildOrders = new BuildOrderAllocator();
+            _netCharges.Clear();
         }
 
         /// <summary>Forgets release frames, grants and deferred queues (session start or end).</summary>

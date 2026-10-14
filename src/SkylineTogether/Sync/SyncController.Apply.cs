@@ -480,6 +480,10 @@ namespace SkylineTogether.Sync
             if (facts.EntityCount == 0) _proposalMaxRefund = 0; // set by Validate otherwise
             if (facts.EntityCount > 0 || facts.HasCost || isGlobal) Integrity.InvalidateResends(); // the world changes now
             List<BuildOrderRange> touchedEdges = TouchedEdgeBuildOrders(records);
+            bool direct = (facts.Flags & ProposalFlags.DirectTool) != 0;
+            // what the removed and upgraded edges (and a mod tool's removed objects) are worth, read before the apply
+            long removedObjects = 0;
+            NetCharge netCharge = facts.EntityCount > 0 ? CollectCostBasis(records, direct, out removedObjects) : null;
             _proposalPeer = peer;
             ApplyResult r = _codec.Apply(records, data, 0, data.Length, _mayCreate);
             RebaseBuildOrders(r.SpawnedEntities, touchedEdges);
@@ -495,15 +499,28 @@ namespace SkylineTogether.Sync
             }
             string summary = peer + ": " + r;
             // the client's cost within the host's bounds (construction costs of what was created, refunds
-            // of what was removed); a vanilla client's sum is never changed
-            long minCharge = (facts.Flags & ProposalFlags.DirectTool) != 0 ? 0 : MinimumCharge(r.SpawnedEntities);
-            long cost = ProposalRules.EffectiveCost(r.HasCost ? r.Cost : 0, minCharge, _proposalMaxRefund);
-            if (cost != (r.HasCost ? r.Cost : 0))
+            // of what was removed); a vanilla client's sum is never changed. A mod tool's proposal (Move It) pays for
+            // the priced objects it adds beyond those it removed: moving stays free, cloning does not
+            long minCharge = MinimumCharge(r.SpawnedEntities);
+            if (direct) minCharge = Math.Max(0, minCharge - removedObjects);
+            long clientCost = r.HasCost ? r.Cost : 0;
+            long cost = ProposalRules.EffectiveCost(clientCost, minCharge, _proposalMaxRefund);
+            if (cost != clientCost)
             {
                 Perf.Counters.Count("proposal costs corrected by the host");
-                _log.Info(LogCategory.Replication, peer + ": proposal cost " + (r.HasCost ? r.Cost : 0) + " corrected to " + cost + " (created at least " + minCharge + ", refund at most " + _proposalMaxRefund + ")");
+                _log.Info(LogCategory.Replication, peer + ": proposal cost " + clientCost + " corrected to " + cost + " (created at least " + minCharge + ", refund at most " + _proposalMaxRefund + ")");
             }
             if (cost != 0) ChargeCity(cost);
+            // nets are priced by the composition the host's game gives them later this frame (SettleNetCharges)
+            if (netCharge != null && AddCreatedEdges(netCharge, r.SpawnedEntities))
+            {
+                netCharge.Peer = peer;
+                netCharge.ClientCost = clientCost;
+                netCharge.ObjectFloor = minCharge;
+                netCharge.MaxRefund = _proposalMaxRefund;
+                netCharge.Charged = cost;
+                _netCharges.Add(netCharge);
+            }
             if (r.Problems.Count > 0) _log.Info(LogCategory.Replication, peer + " proposal problems: " + string.Join("; ", r.Problems));
             ApplyZoneRecords(records);
             ApplyGlobal(data, peer, true);

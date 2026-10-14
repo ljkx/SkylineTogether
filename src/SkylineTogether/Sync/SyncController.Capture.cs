@@ -276,6 +276,7 @@ namespace SkylineTogether.Sync
             EntityManager em = _codec.EntityManager;
             _batch.Reset();
             _writtenThisFrame.Clear();
+            SettleNetCharges(); // the nets of this frame's proposals, now that the game composed them
             // mod compatibility: mod data entities that replicated values reference are bound and sent with them
             _codec.DependencyBinder = HostBindDependency;
             // ids unbound without a despawn on the wire (their entity vanished without a Deleted tag): despawn them now,

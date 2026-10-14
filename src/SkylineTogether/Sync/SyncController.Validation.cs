@@ -354,8 +354,9 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// The least the created objects cost, as the game's object tool prices a new object (its
-        /// prefab's construction cost, or the upgrade cost of a service upgrade). Trees (age-dependent price) and nets
-        /// (priced by composition and length after the host composes them) are not counted.
+        /// prefab's construction cost, or the upgrade cost of a service upgrade); a free-standing tree costs its prefab's
+        /// price times the multiplier of its growth stage. Nets are priced once the host composed them
+        /// (<see cref="SettleNetCharges"/>).
         /// </summary>
         private long MinimumCharge(List<Entity> spawned)
         {
@@ -364,14 +365,194 @@ namespace SkylineTogether.Sync
             long sum = 0;
             foreach (Entity e in spawned)
             {
-                if (!em.Exists(e) || !em.HasComponent<PrefabRef>(e)) continue;
-                Entity prefab = em.GetComponentData<PrefabRef>(e).m_Prefab;
-                if (prefab == Entity.Null || !em.Exists(prefab) || em.HasComponent<TreeData>(prefab)) continue;
-                if (em.HasComponent<PlaceableObjectData>(prefab)) sum += em.GetComponentData<PlaceableObjectData>(prefab).m_ConstructionCost;
-                else if (em.HasComponent<ServiceUpgradeData>(prefab)) sum += em.GetComponentData<ServiceUpgradeData>(prefab).m_UpgradeCost;
+                sum += ObjectPrice(em, e);
                 if (sum >= int.MaxValue) return int.MaxValue;
             }
             return sum;
+        }
+
+        /// <summary>
+        /// What the game's object tool charges for creating <paramref name="e"/> (0 for anything it does not price).
+        /// Trees owned by another object (a road's or a building's) are part of their owner's price.
+        /// </summary>
+        private long ObjectPrice(EntityManager em, Entity e)
+        {
+            if (!em.Exists(e) || !em.HasComponent<PrefabRef>(e)) return 0;
+            Entity prefab = em.GetComponentData<PrefabRef>(e).m_Prefab;
+            if (prefab == Entity.Null || !em.Exists(prefab)) return 0;
+            if (em.HasComponent<TreeData>(prefab))
+            {
+                if (!em.HasComponent<PlaceableObjectData>(prefab) || HasOwner(em, e)) return 0;
+                uint baseCost = em.GetComponentData<PlaceableObjectData>(prefab).m_ConstructionCost;
+                TreeGrowth growth = em.HasComponent<Game.Objects.Tree>(e) ? GrowthOf(em.GetComponentData<Game.Objects.Tree>(e).m_State) : TreeGrowth.Base;
+                Unity.Mathematics.int3 m = TreeCostMultipliers(em);
+                return ConstructionCosts.TreeCost(baseCost, growth, m.x, m.y, m.z);
+            }
+            if (em.HasComponent<PlaceableObjectData>(prefab)) return em.GetComponentData<PlaceableObjectData>(prefab).m_ConstructionCost;
+            if (em.HasComponent<ServiceUpgradeData>(prefab)) return em.GetComponentData<ServiceUpgradeData>(prefab).m_UpgradeCost;
+            return 0;
+        }
+
+        /// <summary>The growth stage the game prices a tree by (its state masked to the age flags, as the object tool does).</summary>
+        private static TreeGrowth GrowthOf(Game.Objects.TreeState state)
+        {
+            const Game.Objects.TreeState Ages = Game.Objects.TreeState.Teen | Game.Objects.TreeState.Adult | Game.Objects.TreeState.Elderly
+                                                | Game.Objects.TreeState.Dead | Game.Objects.TreeState.Stump;
+            switch (state & Ages)
+            {
+                case Game.Objects.TreeState.Teen: return TreeGrowth.Teen;
+                case Game.Objects.TreeState.Adult: return TreeGrowth.Adult;
+                case Game.Objects.TreeState.Elderly: return TreeGrowth.Elderly;
+                default: return TreeGrowth.Base;
+            }
+        }
+
+        /// <summary>The economy's tree cost multipliers (teen, adult, elderly); 1 when unknown, which only lowers the bound.</summary>
+        private Unity.Mathematics.int3 TreeCostMultipliers(EntityManager em)
+        {
+            try
+            {
+                if (_economyParameters == default) _economyParameters = em.CreateEntityQuery(ComponentType.ReadOnly<EconomyParameterData>());
+                if (!_economyParameters.IsEmptyIgnoreFilter) return _economyParameters.GetSingleton<EconomyParameterData>().m_TreeCostMultipliers;
+            }
+            catch (Exception)
+            {
+                // fall through
+            }
+            return new Unity.Mathematics.int3(1, 1, 1);
+        }
+
+        private static bool HasOwner(EntityManager em, Entity e) => em.HasComponent<Game.Common.Owner>(e) && em.GetComponentData<Game.Common.Owner>(e).m_Owner != Entity.Null;
+
+        // ------------------------------------------------------------------ nets: priced after the host composed them
+
+        /// <summary>A proposal's nets, priced at the end of the frame (the game composes new edges during the frame).</summary>
+        private sealed class NetCharge
+        {
+            public PeerId Peer;
+            public long ClientCost;
+            public long ObjectFloor;
+            public long MaxRefund;
+            public long Charged;
+            /// <summary>What the edges the proposal removed would cost (<see cref="ConstructionCosts.RemovedEdgeCeiling"/>).</summary>
+            public long RemovedCeilings;
+            public readonly List<Entity> Created = new List<Entity>();
+            /// <summary>Existing edges it changed, with the price of their composition before the change.</summary>
+            public readonly List<(Entity Edge, uint Unit, uint Elevation)> Upgraded = new List<(Entity, uint, uint)>();
+            public int Frames;
+        }
+
+        private readonly List<NetCharge> _netCharges = new List<NetCharge>();
+
+        /// <summary>Frames a proposal's new edges may stay uncomposed before they are priced with what is there.</summary>
+        private const int NetChargeFrames = 4;
+
+        /// <summary>
+        /// Host, before a proposal is applied: the price of the free-standing edges it removes and the composition price
+        /// of those it changes (vanilla tools only: a mod tool that moves an edge changes its composition for free), and
+        /// for a mod tool's proposal the price of the objects it removes. Null when it touches no edge.
+        /// </summary>
+        private NetCharge CollectCostBasis(List<SyncRecord> records, bool direct, out long removedObjects)
+        {
+            removedObjects = 0;
+            EntityManager em = _codec.EntityManager;
+            var charge = new NetCharge();
+            foreach (SyncRecord r in records)
+            {
+                if (r.Kind != SyncRecordKind.Despawn && r.Kind != SyncRecordKind.Upsert) continue;
+                Entity e = _ids.GetEntity(r.NetId);
+                if (e == Entity.Null || !em.Exists(e)) continue;
+                if (r.Kind == SyncRecordKind.Despawn && direct) removedObjects += ObjectPrice(em, e);
+                if (!em.HasComponent<Game.Net.Edge>(e) || HasOwner(em, e) || !TryEdgePrice(em, e, out float length, out uint unit, out uint elevation, out _)) continue;
+                if (r.Kind == SyncRecordKind.Despawn) charge.RemovedCeilings += ConstructionCosts.RemovedEdgeCeiling(length, unit);
+                else if (!direct) charge.Upgraded.Add((e, unit, elevation));
+            }
+            return charge;
+        }
+
+        /// <summary>Adds the proposal's new free-standing edges; true when there is anything to price later.</summary>
+        private bool AddCreatedEdges(NetCharge charge, List<Entity> spawned)
+        {
+            EntityManager em = _codec.EntityManager;
+            foreach (Entity e in spawned)
+            {
+                if (em.Exists(e) && em.HasComponent<Game.Net.Edge>(e) && !HasOwner(em, e)) charge.Created.Add(e);
+            }
+            return charge.Created.Count > 0 || charge.Upgraded.Count > 0;
+        }
+
+        /// <summary>
+        /// The price data of a composed edge: its length, its composition's construction and elevation cost per unit, and
+        /// its elevation steps (from the lower elevation of each end node, as the game computes them).
+        /// </summary>
+        private static bool TryEdgePrice(EntityManager em, Entity edge, out float length, out uint unit, out uint elevation, out int steps)
+        {
+            length = 0;
+            unit = 0;
+            elevation = 0;
+            steps = 0;
+            if (!em.Exists(edge) || !em.HasComponent<Game.Net.Curve>(edge) || !em.HasComponent<Game.Net.Composition>(edge) || !em.HasComponent<Game.Net.Edge>(edge)) return false;
+            Entity composition = em.GetComponentData<Game.Net.Composition>(edge).m_Edge;
+            if (composition == Entity.Null || !em.Exists(composition) || !em.HasComponent<PlaceableNetComposition>(composition)) return false;
+            PlaceableNetComposition price = em.GetComponentData<PlaceableNetComposition>(composition);
+            length = em.GetComponentData<Game.Net.Curve>(edge).m_Length;
+            unit = price.m_ConstructionCost;
+            elevation = price.m_ElevationCost;
+            Game.Net.Edge ends = em.GetComponentData<Game.Net.Edge>(edge);
+            steps = ConstructionCosts.ElevationSteps(LowestElevation(em, ends.m_Start), LowestElevation(em, ends.m_End));
+            return true;
+        }
+
+        private static float LowestElevation(EntityManager em, Entity node)
+        {
+            if (node == Entity.Null || !em.Exists(node) || !em.HasComponent<Game.Net.Elevation>(node)) return 0f;
+            Unity.Mathematics.float2 e = em.GetComponentData<Game.Net.Elevation>(node).m_Elevation;
+            return Math.Min(e.x, e.y);
+        }
+
+        /// <summary>
+        /// Host, end of frame: prices the nets of the proposals applied this frame (or a few frames ago, while their new edges
+        /// were not composed yet) and charges what the client paid less than the bound (<see cref="ConstructionCosts"/>):
+        /// new edges by length and composition, minus the edges they replaced, plus composition upgrades.
+        /// </summary>
+        private void SettleNetCharges()
+        {
+            if (_netCharges.Count == 0) return;
+            EntityManager em = _codec.EntityManager;
+            for (int i = _netCharges.Count - 1; i >= 0; i--)
+            {
+                NetCharge c = _netCharges[i];
+                c.Frames++;
+                if (c.Frames < NetChargeFrames && !Composed(em, c)) continue;
+                _netCharges.RemoveAt(i);
+                long created = 0, upgrades = 0;
+                foreach (Entity edge in c.Created)
+                {
+                    if (TryEdgePrice(em, edge, out float length, out uint unit, out _, out _)) created += ConstructionCosts.CreatedEdgeFloor(length, unit);
+                }
+                foreach ((Entity edge, uint oldUnit, uint oldElevation) in c.Upgraded)
+                {
+                    if (TryEdgePrice(em, edge, out float length, out uint unit, out uint elevation, out int steps)) upgrades += ConstructionCosts.UpgradeFloor(length, steps, oldUnit, oldElevation, unit, elevation);
+                }
+                long netFloor = ConstructionCosts.NetFloor(created, c.RemovedCeilings, upgrades);
+                if (netFloor <= 0) continue;
+                long cost = ProposalRules.EffectiveCost(c.ClientCost, c.ObjectFloor + netFloor, c.MaxRefund);
+                long extra = cost - c.Charged;
+                if (extra <= 0) continue;
+                ChargeCity(extra);
+                Perf.Counters.Count("net costs corrected by the host");
+                _log.Info(LogCategory.Replication, c.Peer + ": proposal cost " + c.ClientCost + " corrected to " + cost + " (nets at least " + netFloor + ", objects at least " + c.ObjectFloor
+                                                   + ", refund at most " + c.MaxRefund + ")");
+            }
+        }
+
+        private static bool Composed(EntityManager em, NetCharge c)
+        {
+            foreach (Entity edge in c.Created)
+            {
+                if (em.Exists(edge) && !em.HasComponent<Game.Net.Composition>(edge)) return false;
+            }
+            return true;
         }
 
         private void ChargeCity(long cost)
