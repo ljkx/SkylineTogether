@@ -61,7 +61,6 @@ namespace SkylineTogether.Sync
         private const int ReassertFrames = 120;
         private const double RescanSeconds = 10.0;
 
-        private readonly SessionManager _sessions;
         private readonly ILog _log;
         // the host's samples stop while it stalls (autosave, join snapshot): hold instead of running ahead of it
         private readonly FollowerClockModel _model = new FollowerClockModel { MaxExtrapolationSeconds = 1.0 };
@@ -80,7 +79,6 @@ namespace SkylineTogether.Sync
 
         public FollowerClock(SessionManager sessions, ILog log)
         {
-            _sessions = sessions;
             _log = log;
             Instance = this;
             sessions.ClientStarted += client =>

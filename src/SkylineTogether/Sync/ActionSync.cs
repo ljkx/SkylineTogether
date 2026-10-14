@@ -111,7 +111,7 @@ namespace SkylineTogether.Sync
             else _pending.Add(intent);
         }
 
-        /// <summary>Host: an intent made <paramref name="e"/> change; the capture streams it, authored by <paramref name="peer"/>.</summary>
+        /// <summary>Host: an intent made an entity change; the capture streams it, authored by the given peer.</summary>
         public Action<Entity, PeerId> Touch;
 
         /// <summary>Host: an intent was refused; the controller tells the peer and re-sends <c>ids</c> (rollback).</summary>

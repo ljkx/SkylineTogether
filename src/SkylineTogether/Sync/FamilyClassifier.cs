@@ -65,9 +65,7 @@ namespace SkylineTogether.Sync
 
         private readonly Dictionary<int, FamilyMarker> _markerByType = new Dictionary<int, FamilyMarker>();
         private readonly Dictionary<EntityArchetype, ArchetypeClass> _classes = new Dictionary<EntityArchetype, ArchetypeClass>();
-        private readonly ComponentType _owner;
         private readonly ComponentType _prefabRef;
-        private readonly ComponentType _subObject;
 
         /// <summary>The marker component names (probed at startup, <see cref="Diagnostics.Probes"/>).</summary>
         public static IEnumerable<string> MarkerTypeNames
@@ -92,9 +90,7 @@ namespace SkylineTogether.Sync
                 if (index == TypeIndex.Null) continue;
                 _markerByType[index.Value] = _markerByType.TryGetValue(index.Value, out FamilyMarker m) ? m | marker : marker;
             }
-            _owner = ComponentType.ReadOnly<Game.Common.Owner>();
             _prefabRef = ComponentType.ReadOnly<Game.Prefabs.PrefabRef>();
-            _subObject = ComponentType.ReadOnly<Game.Objects.SubObject>();
         }
 
         public static Type FindType(string fullName)

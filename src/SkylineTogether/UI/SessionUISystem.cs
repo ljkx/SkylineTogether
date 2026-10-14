@@ -232,7 +232,7 @@ namespace SkylineTogether.UI
                 _net = show ? NetIdleShown : NetIdleHidden;
                 return _net;
             }
-            string text = "";
+            string text;
             {
                 SessionNetStats n = s.Host != null ? s.Host.GetNetStats() : s.Client.GetNetStats();
                 text = (n.PingMs >= 0 ? "ping " + n.PingMs.ToString(CultureInfo.InvariantCulture) + " ms · " : "")

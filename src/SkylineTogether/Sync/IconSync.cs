@@ -1036,5 +1036,8 @@ namespace SkylineTogether.Sync
 
         /// <summary>Commands issued by the reconciliation since creation (diagnostics).</summary>
         public long CommandsIssued => _commandsIssued;
+
+        /// <summary>Icons left out for a non-finite location since creation (diagnostics).</summary>
+        public long InvalidIcons => _invalidIcons;
     }
 }

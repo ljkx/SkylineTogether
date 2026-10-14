@@ -51,7 +51,11 @@ There is no automatic search for the game: if it is not in the default Steam fol
 script or set `GameDir` (or `GameManagedPath`, for a copy of only the Managed folder).
 
 It also sets C# 10, deterministic builds, warnings as errors (`CS1591`, missing XML comments, is the only global
-exception), nullable and implicit usings off, and the version.
+exception), nullable and implicit usings off, and the version. The .NET analyzers that ship inside the SDK run on
+every build (analysis level 8.0, no package): the default rules plus the ones `.editorconfig` raises (culture-invariant
+formatting and comparison, disposal, ignored results, unused private state), so a finding fails the build like any
+other warning. `.editorconfig` also says which rules stay off on purpose and why. Both projects generate XML
+documentation only so that the compiler checks doc comments (`cref`s, parameter names); the files are not shipped.
 
 Both projects compile against the game's own runtime (`NoStdLib`, `FrameworkPathOverride=$(GameManagedPath)`), not
 against a reference pack. The game project references every DLL in the Managed folder (`Private=false`, never copied)

@@ -22,15 +22,13 @@ namespace SkylineTogether.Presence
         };
 
         private readonly SessionManager _sessions;
-        private readonly ILog _log;
         private readonly Dictionary<byte, string> _names = new Dictionary<byte, string>();
         private int _namesVersion = -1;
         private List<PresenceTag> _tags = new List<PresenceTag>();
 
-        public PresenceController(SessionManager sessions, ILog log)
+        public PresenceController(SessionManager sessions)
         {
             _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
-            _log = log;
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;

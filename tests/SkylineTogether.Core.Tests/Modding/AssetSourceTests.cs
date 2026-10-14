@@ -121,7 +121,7 @@ namespace SkylineTogether.Core.Tests.Modding
             Assert.True(MissingAssets.TryParsePrefabId("NetPrefab:Road 2", "Road 2", out string type, out bool hash));
             Assert.Equal("NetPrefab", type);
             Assert.False(hash);
-            Assert.True(MissingAssets.TryParsePrefabId("NetPrefab:Road (2) (9f00)", "Road (2)", out type, out hash));
+            Assert.True(MissingAssets.TryParsePrefabId("NetPrefab:Road (2) (9f00)", "Road (2)", out _, out hash));
             Assert.True(hash);
             Assert.True(MissingAssets.TryParsePrefabId("NetPrefab:Road (2)", "Road (2)", out _, out hash));
             Assert.False(hash, "a name that ends in brackets is not a hash");

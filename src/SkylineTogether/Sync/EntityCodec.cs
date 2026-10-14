@@ -814,7 +814,7 @@ namespace SkylineTogether.Sync
         /// <summary>
         /// Mod compatibility (host validation of a proposal): true when an entity record's <c>PrefabRef</c> names no
         /// prefab the host has (the client used an asset or a mod's runtime prefab the host lacks, so it could not even
-        /// name it). Reads the decoded record's own bytes, so it works before <see cref="Apply"/>.
+        /// name it). Reads the decoded record's own bytes, so it works before it is applied.
         /// </summary>
         public bool NamesUnknownPrefab(SyncRecord r)
         {
@@ -858,6 +858,10 @@ namespace SkylineTogether.Sync
         /// Applies a batch. <paramref name="mayCreate"/> (host, for proposals) decides whether a spawn of an unknown id
         /// is allowed; null allows everything (client). The result is reused by the next apply.
         /// </summary>
+        /// <param name="data">The batch buffer.</param>
+        /// <param name="offset">Start of the batch in <paramref name="data"/>.</param>
+        /// <param name="count">Length of the batch.</param>
+        /// <param name="mayCreate">Whether an unknown id may be spawned; null allows everything.</param>
         /// <param name="skip">Mod compatibility (client): entity records to leave alone this time (the local player is
         /// still dragging them with a direct-write tool; see <c>SyncController</c>'s edit hold). Despawns are never skipped.</param>
         public ApplyResult Apply(byte[] data, int offset, int count, Func<uint, Family, bool> mayCreate, Func<SyncRecord, bool> skip = null)

@@ -171,7 +171,7 @@ namespace SkylineTogether.Core.Tests.Session
                 Buffer.BlockCopy(buffer, offset, data, 0, count);
                 Fault f = _owner.Pick(_owner._outbound);
                 if (f != Fault.None) _owner.Count(f);
-                SendResult result = SendResult.Ok;
+                SendResult result;
                 switch (f)
                 {
                     case Fault.Drop:

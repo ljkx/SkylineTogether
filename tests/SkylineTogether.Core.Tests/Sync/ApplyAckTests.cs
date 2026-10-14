@@ -146,7 +146,6 @@ namespace SkylineTogether.Core.Tests.Sync
             var t = new ApplyAckTracker();
             var random = new DeterministicRandom(7);
             var held = new List<long>();
-            long expected = 0;
             for (int i = 0; i < 50_000; i++)
             {
                 long seq = t.OnReceived();
@@ -161,7 +160,7 @@ namespace SkylineTogether.Core.Tests.Sync
                     t.Release(held[k]);
                     held.RemoveAt(k);
                 }
-                expected = held.Count == 0 ? seq : MinOf(held) - 1;
+                long expected = held.Count == 0 ? seq : MinOf(held) - 1;
                 Assert.Equal(expected, t.AppliedThrough);
             }
             foreach (long s in held) t.Release(s);

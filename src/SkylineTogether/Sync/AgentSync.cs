@@ -169,7 +169,7 @@ namespace SkylineTogether.Sync
         private readonly Stopwatch _watch = new Stopwatch();
         private List<TypeHandler> _ownerHandlers;
         private double _lastStream = -1;
-        private long _scanned, _changes, _structural, _keyUpserts, _ownerRecords, _bytesSent, _requests;
+        private long _changes, _structural, _keyUpserts, _ownerRecords, _bytesSent, _requests;
 
         // client
         private readonly Queue<byte[]> _inbox = new Queue<byte[]>();
@@ -313,7 +313,7 @@ namespace SkylineTogether.Sync
             _inbox.Clear();
             _throttle.Clear();
             _lastStream = -1;
-            _scanned = _changes = _structural = _keyUpserts = _ownerRecords = _bytesSent = _requests = 0;
+            _changes = _structural = _keyUpserts = _ownerRecords = _bytesSent = _requests = 0;
             _valuesApplied = _messagesApplied = _orphans = 0;
             _warnedApply = false;
         }
@@ -573,7 +573,6 @@ namespace SkylineTogether.Sync
                 return;
             }
             if (em.HasComponent<Game.Common.Deleted>(e)) return; // the tag sweep despawns it
-            _scanned++;
             AgentState now = Observe(em, e);
             if (!_states.TryGetValue(id, out AgentState old) || old.Entity != e)
             {

@@ -157,6 +157,18 @@ namespace SkylineTogether.Core.Tests.Replay
         }
 
         [Test]
+        public void ARefusedRecordingClosesAnOwnedStreamOnly()
+        {
+            byte[] bad = { 1, 2, 3, 4, 5, 6, 7, 8 };
+            var owned = new MemoryStream(bad);
+            Assert.Throws<DecodeException>(() => new RecordingReader(owned));
+            Assert.False(owned.CanRead, "the reader owned the stream: a refused header closes it");
+            var borrowed = new MemoryStream(bad);
+            Assert.Throws<DecodeException>(() => new RecordingReader(borrowed, ownsStream: false));
+            Assert.True(borrowed.CanRead, "a borrowed stream stays open");
+        }
+
+        [Test]
         public void AFailingStreamStopsTheRecordingWithoutThrowing()
         {
             var stream = new BrokenStream();

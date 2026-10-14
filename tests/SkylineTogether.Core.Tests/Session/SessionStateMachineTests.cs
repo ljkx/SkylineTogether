@@ -21,7 +21,6 @@ namespace SkylineTogether.Core.Tests.Session
         public readonly List<(ControlKind Kind, byte[] Payload)> Controls = new List<(ControlKind, byte[])>();
         public PeerChannel Channel;
         public bool Disconnected;
-        private readonly ManualClock _clock;
         private readonly ByteWriter _w = new ByteWriter();
 
         public RawPeer(SessionRig rig, string name, ulong steamId)
@@ -35,7 +34,6 @@ namespace SkylineTogether.Core.Tests.Session
         /// </summary>
         public RawPeer(SessionRig rig, PeerIdentity identity, ulong claimedSteamId)
         {
-            _clock = rig.Clock;
             Transport = rig.HostTransport.CreateClient(identity);
             Name = identity.DisplayName ?? "raw";
             SteamId = claimedSteamId;

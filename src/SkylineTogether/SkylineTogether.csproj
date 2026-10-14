@@ -19,6 +19,8 @@
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <DebugType>portable</DebugType>
+    <!-- only for the compiler's doc-comment checks (crefs, param names); the XML file is not shipped -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
     <!-- every assembly of the game's Managed folder (incl. mscorlib, netstandard, cohtml.Net, Colossal.UI,

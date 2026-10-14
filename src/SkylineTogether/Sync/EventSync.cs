@@ -111,7 +111,6 @@ namespace SkylineTogether.Sync
         private EntityQuery _batchesQuery;
         private EntityQuery _phenomena;
         private EntityQuery _chirps;
-        private bool _hasWatchQuery;
         private double _lastRefill = double.NegativeInfinity;
 
         public EventSync(ILog log)
@@ -159,7 +158,6 @@ namespace SkylineTogether.Sync
                 _watches.Clear();
                 if (watched.Count > 0) _watches.Add(new Watch { Query = em.CreateEntityQuery(new EntityQueryDesc { Any = watched.ToArray(), None = none }), Interval = WatchInterval });
                 if (slow.Count > 0) _watches.Add(new Watch { Query = em.CreateEntityQuery(new EntityQueryDesc { Any = slow.ToArray(), None = none }), Interval = SlowWatchInterval });
-                _hasWatchQuery = _watches.Count > 0;
                 _batchesQuery = em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Game.Common.BatchesUpdated>() }, None = none });
                 _phenomena = em.CreateEntityQuery(new EntityQueryDesc
                 {

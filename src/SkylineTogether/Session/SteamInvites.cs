@@ -83,7 +83,6 @@ namespace SkylineTogether.Session
         private ulong _clientLobbyCandidate;
         private bool _clientLobbyTried;
         private EnterPurpose _entering;
-        private ulong _enteringLobby;
 
         // an invite whose lobby is being read
         private ulong _resolveLobby;
@@ -429,7 +428,7 @@ namespace SkylineTogether.Session
                 if (_presence.Count > 0) ClearPresence();
                 return;
             }
-            int players = 0;
+            int players;
             string status;
             if (_sessions.Host != null)
             {
@@ -624,7 +623,6 @@ namespace SkylineTogether.Session
                 return;
             }
             _entering = purpose;
-            _enteringLobby = lobby;
             _lobbyEntered.Set(call);
         }
 
@@ -634,7 +632,6 @@ namespace SkylineTogether.Session
             {
                 EnterPurpose purpose = _entering;
                 _entering = EnterPurpose.None;
-                _enteringLobby = 0;
                 ulong lobby = result.m_ulSteamIDLobby;
                 bool ok = !ioFailure && result.m_EChatRoomEnterResponse == (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess && lobby != 0;
                 if (purpose == EnterPurpose.Resolve)

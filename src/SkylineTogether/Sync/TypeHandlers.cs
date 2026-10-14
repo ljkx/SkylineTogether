@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Colossal.Serialization.Entities;
 using SkylineTogether.Core;
 using SkylineTogether.Core.Sync;
@@ -396,7 +397,7 @@ namespace SkylineTogether.Sync
             if (index != TypeIndex.Null) handler = Get(index);
             if (handler == null && UnknownHashes.Add(hash))
             {
-                Mod.Log?.Warn(LogCategory.Replication, "a replicated component type is unknown here (stable hash 0x" + hash.ToString("X16") + "); is a mod missing?");
+                Mod.Log?.Warn(LogCategory.Replication, "a replicated component type is unknown here (stable hash 0x" + hash.ToString("X16", CultureInfo.InvariantCulture) + "); is a mod missing?");
             }
             return handler;
         }

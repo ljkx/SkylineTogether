@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using Colossal.Serialization.Entities;
 using Game.City;
@@ -529,7 +530,7 @@ namespace SkylineTogether.Sync
             }
             else
             {
-                Once("unknown proposal " + channel, "global state: " + peer + " proposed unknown channel 0x" + channel.ToString("X8"), null);
+                Once("unknown proposal " + channel, "global state: " + peer + " proposed unknown channel 0x" + channel.ToString("X8", CultureInfo.InvariantCulture), null);
             }
         }
 
@@ -679,7 +680,7 @@ namespace SkylineTogether.Sync
                     ApplyBlob(b, payload);
                     return;
                 }
-                Once("unknown state " + channel, "global state: unknown channel 0x" + channel.ToString("X8") + " from the host; ignored", null);
+                Once("unknown state " + channel, "global state: unknown channel 0x" + channel.ToString("X8", CultureInfo.InvariantCulture) + " from the host; ignored", null);
             }
         }
 
@@ -1170,7 +1171,7 @@ namespace SkylineTogether.Sync
             {
                 if (b.Id == channel) return b.Name;
             }
-            return "channel 0x" + channel.ToString("X8");
+            return "channel 0x" + channel.ToString("X8", CultureInfo.InvariantCulture);
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Protocol;
@@ -482,8 +483,8 @@ namespace SkylineTogether.Core.Session
             if (connection != _connection || State == ClientState.Ended) return;
             bool connecting = State == ClientState.Connecting;
             End(connecting
-                ? "Could not connect to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString() : text) + ")."
-                : "Lost the connection to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString() : text) + ").",
+                ? "Could not connect to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString(CultureInfo.InvariantCulture) : text) + ")."
+                : "Lost the connection to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString(CultureInfo.InvariantCulture) : text) + ").",
                 connecting ? ClientEndKind.Unreachable : ClientEndKind.ConnectionLost);
         }
 

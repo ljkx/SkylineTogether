@@ -2129,7 +2129,6 @@ namespace SkylineTogether.Sync
         {
             if (!_out.TryGetValue(peer.Value, out PeerOut o)) return;
             EntityManager em = _codec.EntityManager;
-            NativeArray<Entity> table = _ids.ReaderTable;
             double now = Perf.Now;
             int n = 0;
             if (routesOnly)

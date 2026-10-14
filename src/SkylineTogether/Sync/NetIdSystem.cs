@@ -24,6 +24,7 @@ namespace SkylineTogether.Sync
     /// <c>SnapshotService</c> around its save); every other save, including the host's own saves and autosaves during a
     /// session, carries an empty block of 12 bytes. Loaded bindings are kept only by a joining client; anyone else
     /// reads and drops them. The tables never grow without a session.
+    /// </para>
     /// <para>
     /// w2/ids: ids are reused. On the host (<see cref="Authority"/>) every unbinding hands the id to the quarantine of
     /// <see cref="Ids"/> (<see cref="NetIdAllocator"/>), which frees it only after every peer applied the despawn; an

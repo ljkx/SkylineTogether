@@ -26,7 +26,7 @@ namespace SkylineTogether.Sync
     /// their join-snapshot state and info panels, infoviews and tooltips go stale.
     /// <para>
     /// <b>Host.</b> A time-sliced scan (about 1 ms per frame) hashes the simulation values of buildings, extensions,
-    /// edges and areas (<see cref="EntityCodec.HashSimValues"/>); entities around a client's camera and the selected
+    /// edges and areas (<see cref="EntityCodec.HashSimValues(Entity, Family)"/>); entities around a client's camera and the selected
     /// entities are rescanned first, everything else on a rolling cursor. A changed hash marks the entity dirty for
     /// every live peer (<see cref="AttentionPlanner"/>). Each frame every peer gets its dirty entities within its byte
     /// budget (<see cref="PeerByteBudget"/>, never while its link is backlogged): in-view first, then the rolling

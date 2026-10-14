@@ -149,6 +149,9 @@ namespace SkylineTogether.Sync
 
         private double Now => _sessions.Clock.Seconds;
 
+        /// <summary>Client terrain stamps the host refused as implausible or over the per-frame budget (diagnostics).</summary>
+        public long StampsRefused => _stampsRefused;
+
         /// <summary>Short diagnostics for the session panel ("" when idle).</summary>
         public string Status
         {

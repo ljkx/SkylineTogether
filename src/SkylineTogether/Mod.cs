@@ -98,7 +98,7 @@ namespace SkylineTogether
                 if (Settings == null) throw new InvalidOperationException("the settings did not load");
                 Sessions = new SessionManager(Settings, log);
                 Sync = new SyncController(Sessions, log);
-                Presence = new PresenceController(Sessions, log); // presence branch
+                Presence = new PresenceController(Sessions); // presence branch
                 // movers branch: follower clock (time runs, gameplay simulation off) and mover replication
                 Clock = new FollowerClock(Sessions, log);
                 Movers = new MoverSync(Sessions, log);

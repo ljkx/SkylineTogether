@@ -282,11 +282,12 @@ namespace SkylineTogether.Session
                 return;
             }
             SessionHost created = null;
+            SteamSocketsTransport transport = null;
             try
             {
                 Features.Registry.RearmAll();
                 string name = PlayerName;
-                var transport = new SteamSocketsTransport(TransportKind.SteamP2P, _log);
+                transport = new SteamSocketsTransport(TransportKind.SteamP2P, _log);
                 // w8/security: the direct-IP socket opens only with a password (the host would refuse every direct
                 // joiner without one anyway, HostOptions.PasswordForUnauthenticated)
                 bool direct = _settings.AllowDirectConnections && !string.IsNullOrEmpty(_settings.HostPassword);
@@ -348,10 +349,12 @@ namespace SkylineTogether.Session
                 _log.Error(LogCategory.Session, "hosting failed", ex);
                 if (Host == null)
                 {
-                    // review fix: Start() failed (no listen socket), so the transport's Steam callback and poll group leaked
+                    // review fix: Start() failed (no listen socket), so the transport's Steam callback and poll group leaked;
+                    // the host owns the transport once it exists
                     try
                     {
-                        created?.Dispose();
+                        if (created != null) created.Dispose();
+                        else transport?.Dispose();
                     }
                     catch (Exception)
                     {
@@ -539,11 +542,13 @@ namespace SkylineTogether.Session
         {
             _lastEndpoint = endpoint;
             _lastPassword = password ?? "";
+            SteamSocketsTransport transport = null;
             try
             {
                 Features.Registry.RearmAll();
-                var transport = new SteamSocketsTransport(endpoint.SteamId != 0 ? TransportKind.SteamP2P : TransportKind.SteamIp, _log);
+                transport = new SteamSocketsTransport(endpoint.SteamId != 0 ? TransportKind.SteamP2P : TransportKind.SteamIp, _log);
                 var client = new SessionClient(transport, _info, _loader, new ClientOptions { PlayerName = PlayerName, SteamId = LocalSteamId, Password = _lastPassword }, _clock, _log);
+                transport = null; // the client owns it
                 client.ChatReceived += AddChat;
                 client.PlayersChanged += () => _playersVersion++;
                 client.ToastReceived += text => Notify(text);
@@ -583,6 +588,7 @@ namespace SkylineTogether.Session
                     _playersVersion++;
                     RaiseSessionEnded();
                 }
+                transport?.Dispose(); // the client could not be created
                 // an attempt that could not even start counts as unreachable (the next one follows the backoff)
                 if (rejoin) OnRecoveryEnded(ClientEndKind.Unreachable, "Could not start the connection: " + ex.Message, false);
             }

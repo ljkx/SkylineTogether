@@ -353,6 +353,20 @@ namespace SkylineTogether.Core.Replay
         {
             _stream = stream ?? throw new ArgumentNullException(nameof(stream));
             _ownsStream = ownsStream;
+            try
+            {
+                Header = ReadHeader();
+            }
+            catch
+            {
+                // an owned stream (the file of a damaged recording) must not stay open until the finalizer runs
+                if (ownsStream) stream.Dispose();
+                throw;
+            }
+        }
+
+        private RecordingHeader ReadHeader()
+        {
             int fixedBytes = RecordingFormat.Magic.Length + 1;
             if (!ReadExactly(_buffer, 0, fixedBytes)) throw new DecodeException("not a Skyline Together recording (too short)");
             for (int i = 0; i < RecordingFormat.Magic.Length; i++)
@@ -369,7 +383,7 @@ namespace SkylineTogether.Core.Replay
             _reader.Reset(_buffer, at, (int)length);
             try
             {
-                Header = RecordingHeader.Read(_reader);
+                return RecordingHeader.Read(_reader);
             }
             catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException || ex is IndexOutOfRangeException)
             {

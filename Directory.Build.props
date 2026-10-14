@@ -16,6 +16,12 @@
     <!-- CS1591 (missing XML comment) would turn every undocumented public member into an error together with
          GenerateDocumentationFile; contracts are documented in the plan, not necessarily in XML -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- the .NET analyzers that ship inside the SDK (no package): the default rule set of analysis level 8.0 plus the
+         rules raised in .editorconfig; EnforceCodeStyleInBuild runs the IDE rules raised there. With
+         TreatWarningsAsErrors every finding fails the build. -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>8.0</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <Version>0.1.0</Version>

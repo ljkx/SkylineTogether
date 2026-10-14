@@ -54,7 +54,7 @@ namespace SkylineTogether.Settings
         /// </summary>
         public static string Resolve(string key, params string[] args)
         {
-            string text = null;
+            string text;
             try
             {
                 var dictionary = GameManager.instance?.localizationManager?.activeDictionary;

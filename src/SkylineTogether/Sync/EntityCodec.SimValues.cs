@@ -115,7 +115,7 @@ namespace SkylineTogether.Sync
         private readonly ByteWriter _simHashWriter = new ByteWriter(1024);
         private Func<Entity, bool> _simNullRefs;
 
-        private const byte SimNo = 0, SimStructure = 1, SimMover = 2, SimBoth = 3;
+        private const byte SimNo = 0, SimStructure = 1, SimMover = 2; // both: SimStructure | SimMover
 
         /// <summary>True when the type travels as a simulation value of a structure entity (or of a mover).</summary>
         public bool IsSimValueType(TypeHandler h, bool mover)
@@ -206,7 +206,8 @@ namespace SkylineTogether.Sync
             return n;
         }
 
-        /// <summary>A 64-bit hash of what <see cref="WriteSimValues"/> would send (0: nothing travels).</summary>
+        /// <summary>A 64-bit hash of what <see cref="WriteSimValues(ByteWriter, uint, Family, Entity)"/> would send
+        /// (0: nothing travels).</summary>
         public ulong HashSimValues(Entity e, Family family) => HashSimValues(e, family, null);
 
         /// <summary>The hash of <see cref="WriteSimValues(ByteWriter, uint, Family, Entity, TypeHandler)"/> without <paramref name="skip"/>.</summary>

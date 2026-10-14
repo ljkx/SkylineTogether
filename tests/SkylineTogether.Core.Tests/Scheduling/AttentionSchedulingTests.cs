@@ -282,7 +282,7 @@ namespace SkylineTogether.Core.Tests.Scheduling
             Assert.True(q.TryDequeueReady(1100, 13.2, out s, out _), "held at most MaxHoldSeconds");
             Assert.Equal("b", s);
             q.Enqueue(100000, 20.0, "far");
-            Assert.True(q.TryDequeueReady(1000, 20.0, out s, out _), "far ahead: a clock discontinuity");
+            Assert.True(q.TryDequeueReady(1000, 20.0, out _, out _), "far ahead: a clock discontinuity");
             q.Enqueue(0xFFFFFFF8u, 30.0, "wrap");
             Assert.True(q.TryDequeueReady(0x10u, 30.0, out s, out _), "a tick just before the wrap is in the past");
             Assert.Equal("wrap", s);

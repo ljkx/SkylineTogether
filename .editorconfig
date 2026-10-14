@@ -47,3 +47,37 @@ dotnet_style_qualification_for_property = false:suggestion
 dotnet_style_qualification_for_method = false:suggestion
 dotnet_style_qualification_for_event = false:suggestion
 
+
+# Analyzers (enabled in Directory.Build.props; findings are build errors through TreatWarningsAsErrors). Raised above
+# the default set: culture-independent formatting, parsing and comparison (protocol text, file names, logs), disposal,
+# ignored results, unused private state. Not raised on purpose: ConfigureAwait (CA2007) and catch-all handlers (CA1031),
+# which the game code needs at every entry point; IDisposable design rules (CA1001, CA2213), since ECS systems and
+# controllers release resources in OnDestroy/Dispose by convention; unused private methods (IDE0051), since Unity calls
+# MonoBehaviour messages such as Update by name; and the API/performance suggestions that need .NET Core APIs.
+[*.cs]
+dotnet_diagnostic.CA1304.severity = warning
+dotnet_diagnostic.CA1305.severity = warning
+dotnet_diagnostic.CA1309.severity = warning
+dotnet_diagnostic.CA1310.severity = warning
+dotnet_diagnostic.CA1311.severity = warning
+dotnet_diagnostic.CA1806.severity = warning
+dotnet_diagnostic.CA1823.severity = warning
+dotnet_diagnostic.CA2000.severity = warning
+# a disposable passed to a constructor belongs to the constructed object (transports, streams)
+dotnet_code_quality.CA2000.dispose_ownership_transfer_at_constructor = true
+dotnet_diagnostic.CA2002.severity = warning
+dotnet_diagnostic.CA2201.severity = warning
+dotnet_diagnostic.CA2208.severity = warning
+dotnet_diagnostic.CA2215.severity = warning
+dotnet_diagnostic.CA2219.severity = warning
+dotnet_diagnostic.IDE0052.severity = warning
+dotnet_diagnostic.IDE0059.severity = warning
+
+# Tests construct objects only to see them throw, hand disposables to rigs, keep streams open on Dispose and use plain
+# exceptions in fakes.
+[tests/**.cs]
+dotnet_diagnostic.CA1806.severity = none
+dotnet_diagnostic.CA2000.severity = none
+dotnet_diagnostic.CA2002.severity = none
+dotnet_diagnostic.CA2201.severity = none
+dotnet_diagnostic.CA2215.severity = none

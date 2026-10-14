@@ -119,6 +119,9 @@ namespace SkylineTogether.Sync
 
         public int MoverCount => _movers.Count;
 
+        /// <summary>Frames whose view sampling ran out of its time budget and continued next frame (diagnostics).</summary>
+        public long SampleCarryOvers => _sampleCarryOvers;
+
         public void OnHostStarted(SessionHost host)
         {
             _encoder = new MotionHostEncoder(_log);
