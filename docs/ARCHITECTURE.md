@@ -296,7 +296,9 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
 A joiner receives the host's city as a save game and loads it through the game's normal load path.
 
 1. **Stream start.** On `PeerJoining` the host's `SyncController` creates the peer's deferred queue and sends the
-   prefab table (every prefab's `PrefabID` with its net id), a granted id range and the current ledger epoch. From
+   prefab table (every prefab's `PrefabID` with its net id; encoded once per session in slices across frames by
+   [`PrefabTableCache`](../src/SkylineTogether/Sync/PrefabTableCache.cs), a join only adds prefabs bound since), a
+   granted id range and the current ledger epoch. From
    admission on, every broadcast is queued for the joiner too; the client buffers everything it receives until it is
    live.
 2. **Snapshot.** The host requests a snapshot after the admission, so it contains everything the joiner's stream does
@@ -507,7 +509,7 @@ global record never loses entity data. Every channel runs in its own guard and f
 A [`SyncBatch`](../src/SkylineTogether.Core/Sync/SyncBatch.cs) is `u8 version | u32 record count | records`. Entity
 records are `kind | varint netId | u8 family | bool completeSet | u16 count | components`, each component
 `u64 StableTypeHash | u8 kind (data, buffer, presence) | varint length | bytes`. Other records: `Prefab`,
-`PrefabSource`, `ZoneCells`, `IdRange`, `Cost`, `Clock`, `Request`, `Global`, integrity and icon records (40-46), mover
+`PrefabSource`, `ZoneCells`, `IdRange`, `Cost`, `Clock`, `Request`, `Global`, `IdCeiling`, integrity and icon records (40-46), mover
 records (20-22, 120), `EnabledBits` and `ModSettings` (110-111), `Epoch`, `ProposalHeader`, `ProposalResult`
 (80-82), and solo-test checkpoint records (160-162). Batches of mover records are recognised by their first record and
 handled by `MoverClient` only.
@@ -603,7 +605,9 @@ line state survives.
    refused; the cost must be affordable unless money is unlimited.
 3. **Apply** with the same `EntityCodec.Apply`. On existing entities a proposal never writes the host-owned types
    (`EntityCodec.HostOwnedTypes`: line state, vehicle models, colours, simulation buffers of buildings, ...). The host
-   charges the cost, rebases build orders of committed edges, marks the entities authored by the sender and lets the
+   charges the client's cost within its own bounds (`ProposalRules.EffectiveCost`: at least the construction cost of
+   what was created minus the most the removed or changed entities may refund, from their `Recent` costs; a vanilla
+   client's amount is never changed), rebases build orders of committed edges, marks the entities authored by the sender and lets the
    next capture stream them to everyone.
 4. **Refuse**: a `ProposalResult` record and a rollback to the originator: every touched entity as the host has it
    (alive: full record; unknown: despawn) and the host's cells of every painted zone block. Rate, size and malformed
@@ -627,7 +631,10 @@ loads such a save (by its size).
 
 The host is the id authority ([`NetIdAllocator`](../src/SkylineTogether.Core/Sync/NetIdRanges.cs)): it binds at
 session start (`BindCity`, after compacting), every frame before `SaveGameSystem` (`BindCreated`, so a snapshot of
-this frame already has the ids) and at capture. Clients create entities only with ids from their grants.
+this frame already has the ids) and at capture. Clients create entities only with ids from their grants. The host
+announces its id frontier (in the snapshot, with every grant and as an `IdCeiling` record when it moved); a client
+refuses ids more than 2^20 above it ([`NetIdCeiling`](../src/SkylineTogether.Core/Sync/NetIdCeiling.cs)), so a
+corrupted or hostile record cannot grow its id tables to the full 24-bit range.
 
 ### Quarantine and reuse
 
@@ -672,8 +679,9 @@ their flow nodes' owners and roles (`FlowNodeKey`).
 
 ### Prefabs
 
-Prefabs get net ids too: at session start the host binds every prefab and sends each joiner the table (`Prefab`
-records with the encoded `PrefabID`); a prefab bound later is sent in front of its first use (`EnsurePrefab`). A
+Prefabs get net ids too: at session start the host binds every prefab, encodes the table in the background of the
+frame budget (`PrefabTableCache`) and sends each joiner the cached `Prefab` records (the encoded `PrefabID`); a prefab
+bound later is sent in front of its first use (`EnsurePrefab`). A
 non-base-game prefab is preceded by a `PrefabSource` record (package and id, local asset, or the mod creating it), so a
 client lacking it can say what is missing. A client resolves the `PrefabID` in its own prefab system, falling back to
 the name for deterministic runtime prefabs of mods. Presence and tool previews use prefab **ranks** instead (position
@@ -791,15 +799,19 @@ keyframe): tax rates, service budgets, custom names, city name, the demand syste
 [`GlobalStateSync.Panels.cs`](../src/SkylineTogether/Sync/GlobalStateSync.Panels.cs), the system state info panels
 read (production, trade, garbage, mail, weather amounts, chirper names, placed signature buildings). Money, loan, fees,
 city policies, XP and population live on the City entity and travel with its value scan. A client's UI edits are
-detected against the last converged state and sent as deltas; the host applies them through the vanilla entry points
-(last writer wins, permission checked). A panel channel that fails its exact-length decode is off for the session.
+detected against the last converged state and sent as deltas; the host checks permission and ranges
+([`GlobalProposalRules`](../src/SkylineTogether.Core/Sync/GlobalProposalRules.cs): tax limits, adjustable budgets and
+fees, one loan entry, policy slider ranges and locks, sanitised names) and applies them through the vanilla entry
+points (last writer wins). A panel channel that fails its exact-length decode is off for the session.
 
 ### Player actions
 
 [`ActionSync`](../src/SkylineTogether/Sync/ActionSync.cs) carries actions whose vanilla handlers write without a
 capturable tag as [`ActionIntent`](../src/SkylineTogether.Core/Sync/ActionIntent.cs)s: dev-tree and map-tile
 purchases, the historical toggle, vehicle models, service districts, mesh and line colours, bulldozer sub-element
-deletions. The host checks permission, money and unlock state and executes them through vanilla data paths; its
+deletions. The host checks permission, money and unlock state, prices map tiles itself
+([`MapTilePricing`](../src/SkylineTogether.Core/Sync/MapTilePricing.cs), the client's observed cost is only logged)
+and executes them through vanilla data paths; its
 unlocked-prefab set reaches clients on change (at most once a second) and is replayed as `Unlock` events. See
 [design/ACTION-COVERAGE.md](design/ACTION-COVERAGE.md).
 
@@ -809,10 +821,13 @@ unlocked-prefab set reaches clients on change (at most once a second) and is rep
   the receiver is retried briefly.
 - **Cell maps** ([`CellMapSync`](../src/SkylineTogether/Sync/CellMapSync.cs)): pollution, groundwater, resources, land
   value, coverage, attractiveness, population and availability grids, traffic ambience, soil water. Changed 16×16-cell
-  tiles go to each peer within its budget (more while its infoview shows the map); a slow audit re-sends whole maps.
-  Resource painting is predicted locally and sent to the host as patches.
+  tiles go to each peer within its budget (more while its infoview shows the map); every 10 s the host sends a
+  per-map digest of what it sent the peer, and a client whose copy differs requests that map again (paced with
+  back-off, `CellMapResync`). Resource painting is predicted locally and sent to the host as patches, which the host
+  clamps to the brushes' range before merging.
 - **Terrain** ([`TerrainSync`](../src/SkylineTogether/Sync/TerrainSync.cs)): brush stamps are captured at ApplyTool; a
-  client's stroke is predicted, replayed by the host (frame-time compensated) and forwarded. When a stroke settles the
+  client's stroke is predicted, replayed by the host (frame-time compensated, at most 600 stamps per second and peer)
+  and forwarded. When a stroke settles the
   host reads back the touched 64×64 tiles without blocking and broadcasts the changed ones; a rolling audit of tile
   hashes catches the rest. Without GPU readback only stamp replay runs.
 - **Water** ([`WaterSync`](../src/SkylineTogether/Sync/WaterSync.cs)) is a per-machine GPU simulation; the host sends
@@ -984,7 +999,8 @@ to the log: session state, players, link numbers, replication counters (id table
 acks, reference safety, input validation), mod analysis, perf counters, versions and recent log lines; never passwords
 or chat. `SyncController.Status` is the one-line summary in the panel; [`Perf`](../src/SkylineTogether/Diagnostics/Perf.cs)
 and [`PerfCounters`](../src/SkylineTogether.Core/Diagnostics/PerfCounters.cs) time each component per frame and count
-bytes per channel. See [dev/debugging.md](dev/debugging.md).
+bytes per channel; [`PerfOverlay`](../src/SkylineTogether/UI/PerfOverlay.cs) shows the frame budget per feature,
+bytes per peer and the apply queue in game. See [dev/debugging.md](dev/debugging.md).
 
 ### Reference audit
 
@@ -1004,26 +1020,25 @@ written next to the recording. See [guide/testing.md](guide/testing.md#solo-test
 
 ## Performance budgets
 
-Main-thread budgets per frame (constants in the named classes):
+Per-frame main-thread work draws from one shared budget of 10 ms
+([`FrameBudgetService`](../src/SkylineTogether.Core/Diagnostics/FrameBudgetService.cs), registered in
+[`Perf`](../src/SkylineTogether/Diagnostics/Perf.cs)). Each feature has a cap; a normal frame clips nothing. When a frame
+is already over budget, lower priorities get less (never below their floor) and wait for later frames; overruns carry
+over for at most two frames. The dump and the performance overlay show average, 95th percentile and maximum per
+feature.
 
-| Work | Budget |
+| Priority | Feature (cap per frame) |
 |---|---|
-| Client apply of host batches | 6 ms with carry-over, ≤ 64 batches (catch-up: 24 ms, ≤ 512) — `SyncController` |
-| Host value scan | 1 ms, every 0.25 s; city singleton every 1 s — `SyncController` |
-| Host deferred flush (all peers) | 1.5 ms — `SyncController` |
-| Integrity hashing (host) | 0.5 ms; detail answers 1 ms — `IntegritySync` |
-| Agent scan (host) | 0.8 ms — `AgentSync` |
-| Simulation value scan (host) | 1 ms — `AttentionValues` |
-| Flow status pass | 0.75 ms — `FlowStatusSync` |
-| Mover sampling (host) | 2 ms, ≤ 16 ticks per frame — `MoverHost` |
-| Presence watch rolling pass | 0.25 ms — `EventSync` |
-| Transport poll | ≤ 8192 messages or 25 ms — `SteamSocketsTransport` |
+| Apply (never clipped) | client apply of host batches 6 ms with carry-over, ≤ 64 batches (catch-up 24 ms, ≤ 512); mover apply 4 ms |
+| Critical sends (floor 50 %) | value scan 1 ms (every 0.25 s); deferred sends 1.5 ms; agent scan 0.8 ms; attention values 1 ms; mover sampling 2 ms (≤ 16 ticks); terrain and water measured |
+| Integrity | digest pass 0.5 ms (detail answers 1 ms); presence watch 0.25 ms |
+| Statistics | flow status 0.75 ms; cell maps and statistics 2 ms; prefab table 1 ms |
 
 Per-peer byte budgets: simulation values 24 KB/s (burst 48 KB), agents 16 KB/s, flow status 16 KB/s, cell maps
 8 KB/s (burst 64 KB), motion 72 KB/s (doubled at speed 2 and above), mod channel 64 KiB/s per sender; deferred
-structure values only while the link backlog is below 0.25 s. Memory: the outbox may hold up to 64 MiB per peer before
-the peer is dropped; the id tables grow with the most ids alive at once plus the quarantine and are released at session
-end.
+structure values only while the link backlog is below 0.25 s. The transport poll delivers at most 8192 messages or
+25 ms per frame. Memory: the outbox may hold up to 64 MiB per peer before the peer is dropped; the id tables grow with
+the most ids alive at once plus the quarantine and are released at session end.
 
 ## Security model
 
@@ -1043,10 +1058,12 @@ end.
 - Every decoder works against hard limits ([`Limits`](../src/SkylineTogether.Core/Protocol/Limits.cs), per-kind body
   limits before decompression, record and component counts in `SyncBatch`) and throws `DecodeException`; a malformed
   envelope disconnects the sender, a batch that fails to apply counts against the sender until it is removed.
-- Proposals: record kinds (`AcceptedFromClient`), role permissions, size, id grants, existence and conflicts, money,
-  host-owned types, unknown prefabs, float sanity; rate limits and violation kicks
-  ([validation](#host-validation-and-commit)). Intents and global-state edits are permission-checked and executed
-  through vanilla entry points.
+- Proposals: record kinds (`AcceptedFromClient`), role permissions, size, id grants, existence and conflicts, money
+  and cost bounds, host-owned types, unknown prefabs, float sanity (including water sources); rate limits and
+  violation kicks ([validation](#host-validation-and-commit)). Intents are permission-checked, map tiles priced by the
+  host; global-state edits are permission- and range-checked; terrain stamps and paint patches are rate-limited and
+  clamped. All execute through vanilla entry points.
+- A client refuses net ids far above the host's announced frontier (`NetIdCeiling`).
 - Inbound queues per peer (4096 messages, 64 MiB), chat and presence rates, id-grant and re-send throttles, mod
   channel budget. Texts are sanitised (`ProtocolText.Sanitize`).
 - Moderation requests are checked against the sender's role (`Moderation`).
@@ -1054,7 +1071,7 @@ end.
 ### What it does not validate
 
 - A builder can do anything a player can do, including demolishing the city.
-- Structure proposals are not checked for unlock state, map tiles or geometric validity: the host trusts that the
+- Structure proposals are not checked for unlock state, placement on owned map tiles or geometric validity: the host trusts that the
   client's vanilla tool produced a valid result ([known gaps](#known-gaps)).
 - A proposal without a `ProposalHeader` skips the conflict check (base epoch treated as newest).
 - The mod list a client reports is a compatibility check, not a security barrier.
@@ -1086,7 +1103,7 @@ Open design gaps and inconsistencies found while writing this document.
   and data files, but [`GameInfoProvider.GetDigests`](../src/SkylineTogether/Session/GameInfoProvider.cs) fills only
   protocol version, build id, game versions and locale, and the host compares only build id, game version and mods.
   Prefab or DLC differences show up later as missing assets.
-- **Proposal validation** does not check unlocks, map tiles or geometry (`RejectReason.OutsideTiles`, `Geometry`,
+- **Structure proposal validation** does not check unlocks, placement on owned map tiles or geometry (`RejectReason.OutsideTiles`, `Geometry`,
   `PrefabClass`, `HostOnly`, `NotLive`, `Timeout` are never produced).
 - **Optional proposal header.** The conflict check is skipped for proposals without `ProposalHeader` (meant for older
   clients, which the build-id check already refuses).

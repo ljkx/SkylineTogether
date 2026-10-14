@@ -21,7 +21,7 @@ namespace SkylineTogether.Core.Diagnostics
     }
 
     /// <summary>
-    /// One per-frame time budget shared by every feature that does bounded per-frame work (ARCH §13 perf). Each
+    /// One per-frame time budget shared by every feature that does bounded per-frame work (ARCHITECTURE.md#performance-budgets). Each
     /// feature asks for its allowance right before it works (<see cref="Begin(Feature)"/>) and reports what it spent
     /// (<see cref="End"/>); the allowance is the feature's own cap, reduced only when the frame is already over budget:
     /// the frame total minus what was spent so far and minus what the higher-priority features that did not run yet this
