@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using SkylineTogether.Core.Identity;
-using SkylineTogether.Core.Json;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Scheduling;
 using SkylineTogether.Core.Tests.Framework;
@@ -11,7 +9,7 @@ namespace SkylineTogether.Core.Tests.Scheduling
     /// <summary>
     /// Attention topics (ARCH §4.8.3), which the game layer uses to decide which values a player with an infoview or a
     /// panel open gets first: the infomode tables, the view-report encoding (infoview + infomode mask + panel flags),
-    /// topic scopes, and the per-type topic map built from the policy table and the built-in defaults.
+    /// and topic scopes.
     /// </summary>
     public sealed class TopicMapTests
     {
@@ -52,7 +50,6 @@ namespace SkylineTogether.Core.Tests.Scheduling
             {
                 Assert.Equal(InfomodeTopics.ForBuildingStatus(i), InfomodeTopics.ForBuildingStatus(i) & TopicMap.AllTopics, "defined bits only");
             }
-            Assert.Equal(AttentionTopic.None, TopicMap.CreateDefault(EmptyCatalog()).TopicsOf(new TypeRank(0)), "an empty catalog maps nothing");
         }
 
         [Test]
@@ -81,58 +78,6 @@ namespace SkylineTogether.Core.Tests.Scheduling
             });
             Assert.Equal(AttentionTopic.None, TopicMap.FromView(null));
             Assert.Equal(TopicScope.None, TopicMap.ScopeOf(AttentionTopic.None));
-        }
-
-        private static ITypeCatalog EmptyCatalog() => new TypeCatalogBuilder(PolicyTableModel.Parse(MiniJson.Parse("{\"version\": 4, \"types\": []}"))).Build();
-
-        private static TypeDescriptorInput T(ulong hash, string name) => new TypeDescriptorInput
-        {
-            StableTypeHash = hash, FullName = name, AssemblyName = "Game", Kind = TypeKind.Serializable, SizeInChunk = 8
-        };
-
-        [Test]
-        public void TheTopicMapTakesPolicyTopicsFirstThenTheDefaults()
-        {
-            const string policies = "{\"version\": 4, \"types\": [ { \"type\": \"Game.Net.Road\", \"topics\": [ \"Noise\" ] } ]}";
-            var builder = new TypeCatalogBuilder(PolicyTableModel.Parse(MiniJson.Parse(policies)));
-            builder.Add(T(0x1, "Game.Net.Road"));                  // policy says Noise; the default would say Traffic
-            builder.Add(T(0x2, "Game.Citizens.Citizen"));          // default: the resident topics
-            builder.Add(T(0x3, "Game.Routes.TransportLine"));      // default: Transport
-            builder.Add(T(0x4, "Game.Objects.Unrelated"));         // nothing
-            ITypeCatalog catalog = builder.Build();
-            TopicMap map = TopicMap.CreateDefault(catalog);
-            AttentionTopic Of(string name)
-            {
-                Assert.True(catalog.TryGetByName(name, out TypeDescriptor d));
-                return map.TopicsOf(d.Rank);
-            }
-            Assert.Equal(AttentionTopic.Noise, Of("Game.Net.Road"), "the policy table wins");
-            Assert.Equal(InfomodeTopics.ResidentTopics, Of("Game.Citizens.Citizen"));
-            Assert.Equal(AttentionTopic.Transport, Of("Game.Routes.TransportLine"));
-            Assert.Equal(AttentionTopic.None, Of("Game.Objects.Unrelated"));
-            Assert.Equal(AttentionTopic.None, map.TopicsOf(new TypeRank(60000)), "ranks outside the catalog have no topics");
-
-            catalog.TryGetByName("Game.Objects.Unrelated", out TypeDescriptor unrelated);
-            Assert.True(map.TryMap("Game.Objects.Unrelated", AttentionTopic.Crime | (AttentionTopic)0x80000000u));
-            Assert.Equal(AttentionTopic.Crime, map.TopicsOf(unrelated.Rank), "undefined bits are dropped");
-            Assert.True(map.Matches(unrelated.Rank, AttentionTopic.Crime | AttentionTopic.Mail));
-            Assert.False(map.Matches(unrelated.Rank, AttentionTopic.None), "no topic matches nothing");
-            Assert.False(map.Matches(unrelated.Rank, AttentionTopic.Mail));
-            map.Map("Game.Objects.Unrelated", AttentionTopic.None);
-            Assert.Equal(AttentionTopic.None, map.TopicsOf(unrelated.Rank), "None clears");
-
-            Assert.False(map.TryMap("Game.Not.There", AttentionTopic.Crime));
-            map.Map("Game.Not.There", AttentionTopic.Mail);
-            Assert.False(map.TryMap("", AttentionTopic.Crime));
-            Assert.False(map.TryMap(null, AttentionTopic.Crime));
-            Assert.SequenceEqual(new[] { "Game.Not.There" }, map.UnresolvedNames, "unknown names are remembered once");
-
-            var names = new HashSet<string>();
-            foreach (KeyValuePair<string, AttentionTopic> entry in TopicMap.DefaultTypeTopics)
-            {
-                Assert.True(names.Add(entry.Key), "default listed twice: " + entry.Key);
-                Assert.True(entry.Value != AttentionTopic.None && (entry.Value & ~TopicMap.AllTopics) == 0, entry.Key);
-            }
         }
     }
 }

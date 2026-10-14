@@ -4,7 +4,7 @@ namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
     /// Which entities beyond the in-view static set an active topic needs (ARCH §4.8.3 table): the host's attention
-    /// queries (game-host-capture) collect them into <see cref="AttentionSets.SetTopicSlots(PeerId, System.Collections.Generic.IReadOnlyList{NetSlot})"/>
+    /// queries (game-host-capture) collect them into the peer's attention sets
     /// for a peer whose topics ask for them. See <see cref="TopicMap.ScopeOf"/>.
     /// </summary>
     [Flags]

@@ -12,7 +12,7 @@ namespace SkylineTogether.Core.Scheduling
     /// <c>recoverySeconds</c> ("until that peer has had 60 s of headroom") the cap rises one step, and again after each
     /// further period of headroom, until it no longer limits the requested speed.
     /// <para>
-    /// Input: one flag per live peer, normally <see cref="IPeerScheduler.IsP0Overloaded"/>, which already requires the
+    /// Input: one flag per live peer, normally the peer scheduler's "P0 overloaded" flag, which already requires the
     /// backlog to stay above 2 s for 30 s. The first step down therefore happens as soon as a flag is set, and
     /// <c>overloadSeconds</c> is the time each step is given to take effect before the next one. Speeds are the session's
     /// speed steps (1 = slowest); the cap never goes below <see cref="MinimumSpeed"/> and never pauses the game; a

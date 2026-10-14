@@ -2,8 +2,6 @@ namespace SkylineTogether.Core
 {
     /// <summary>
     /// Replication classes (ARCH §4.2.2). The numeric values travel on the wire (HASH beacons) and must not change.
-    /// In <see cref="TypeDescriptor.ClassOverride"/>, <see cref="Excluded"/> means "no override, use the family default";
-    /// exclusion of a type is expressed by <see cref="TypeFlags.Excluded"/>.
     /// </summary>
     public enum ReplicationClass : byte
     {

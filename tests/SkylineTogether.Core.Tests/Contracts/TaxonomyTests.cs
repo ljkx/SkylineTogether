@@ -75,13 +75,6 @@ namespace SkylineTogether.Core.Tests.Contracts
         }
 
         [Test]
-        public void RecordKindsStartAtOne()
-        {
-            SequentialFrom<RecordKind>(1, "TypeSetDef", "Spawn", "Despawn", "Struct", "Value", "Touch", "Bind", "Pose", "Keyed", "KeyedDelete",
-                                       "Zone", "Icon", "Name", "PrefabState", "SysState", "Result", "Hash", "Event", "TerrainStamp", "TypeSetKeyframe");
-        }
-
-        [Test]
         public void RejectReasonsAreStable()
         {
             SequentialFrom<RejectReason>(0, "None", "Conflict", "NoPermission", "NotEnoughMoney", "Locked", "OutsideTiles", "Invalid", "RateLimited",
@@ -96,17 +89,8 @@ namespace SkylineTogether.Core.Tests.Contracts
             Pin((Lane.Reliable, 0), (Lane.Unreliable, 1), (Lane.Bulk, 2));
             Pin((Delivery.ReliableOrdered, 0), (Delivery.Unreliable, 1));
             SequentialFrom<NetRefKind>(0, "Null", "Local", "Slot", "Prefab", "Provisional", "Derived");
-            SequentialFrom<TypeKind>(0, "Serializable", "EmptyTag", "EmptyData", "SharedSerializable");
-            SequentialFrom<CodecKind>(0, "Serializable", "EmptyTag", "EnableBit", "EntityRefList", "UpdateFrame", "Shared", "Custom");
             SequentialFrom<SessionRole>(0, "Host", "CoHost", "Builder", "Viewer");
-            SequentialFrom<IconOp>(0, "Add", "Remove", "RemoveAll", "Event");
-            SequentialFrom<EventRecordKind>(0, "XpToast", "MilestoneHint", "JournalChanged", "RadioTag", "HostBusy", "SpeedChanged");
-            SequentialFrom<ApplyOpKind>(0, "Unbind", "MarkDeleted", "CreateGroup", "Bind", "ReconcileSignature", "WriteValue", "SetEnabled", "Park",
-                                        "Hold", "AddTags", "ClosureTag", "Finalize", "DeriveStreetLights", "SynthesizeEvent");
-            SequentialFrom<SynthesizedEventKind>(0, "RentersUpdated", "ColorUpdated", "SubObjectsUpdated", "PathUpdated");
             SequentialFrom<ObserveSource>(0, "Spawn", "Edc", "Sdc", "HotSet", "Motion", "Coalesced", "Repair", "Commit", "Prime", "CoCapture", "PathResult");
-            SequentialFrom<FaultCategory>(0, "StructuralApply", "ValueApply", "Capture", "Commit", "Snapshot", "Transport", "Decode", "Ui", "Probe", "Handover");
-            SequentialFrom<GateAction>(0, "Off", "OffAndFeed", "Keep", "OffDuringSessionLoad", "ToolScoped");
             SequentialFrom<CompressionKind>(0, "None", "ManagedLz4", "Zstd", "Lz4");
             SequentialFrom<ThreadKind>(0, "Main", "Network", "Worker", "Any");
             SequentialFrom<LogLevel>(0, "Trace", "Debug", "Info", "Warn", "Error", "Critical");
@@ -117,25 +101,6 @@ namespace SkylineTogether.Core.Tests.Contracts
         {
             Pin((TouchFlags.None, 0), (TouchFlags.Updated, 1), (TouchFlags.BatchesUpdated, 2), (TouchFlags.PathfindUpdated, 4), (TouchFlags.EffectsUpdated, 8));
             Pin((SpawnFlags.None, 0), (SpawnFlags.Mover, 1), (SpawnFlags.HasUpdateFrame, 2), (SpawnFlags.Repair, 4));
-            Pin((ValueHeaderFlags.None, 0), (ValueHeaderFlags.HasEnabledBit, 1), (ValueHeaderFlags.Enabled, 2), (ValueHeaderFlags.PresenceOnly, 4));
-            Assert.Equal(1u, (uint)TypeFlags.Buffer);
-            Assert.Equal(2u, (uint)TypeFlags.Enableable);
-            Assert.Equal(4u, (uint)TypeFlags.SerializeAsEnabled);
-            Assert.Equal(8u, (uint)TypeFlags.PlayerAuthorable);
-            Assert.Equal(16u, (uint)TypeFlags.HashAsSet);
-            Assert.Equal(32u, (uint)TypeFlags.NoReapply);
-            Assert.Equal(64u, (uint)TypeFlags.OnDemand);
-            Assert.Equal(128u, (uint)TypeFlags.Excluded);
-            Assert.Equal(256u, (uint)TypeFlags.Merge);
-            Assert.Equal(512u, (uint)TypeFlags.DataReplicatedPresence);
-            Assert.Equal(1024u, (uint)TypeFlags.Source);
-            Assert.Equal(2048u, (uint)TypeFlags.AuthorableMask);
-            Assert.Equal(4096u, (uint)TypeFlags.PresenceAuthorable);
-            Assert.Equal(8192u, (uint)TypeFlags.ForwardReference);
-            Assert.Equal(16384u, (uint)TypeFlags.CacheReceived);
-            Assert.Equal(32768u, (uint)TypeFlags.Guarded);
-            Assert.Equal(65536u, (uint)TypeFlags.PresenceSafe);
-            Assert.Equal(131072u, (uint)TypeFlags.DeferredFields);
             Assert.Equal(2097152u, (uint)AttentionTopic.Statistics);
             Assert.Equal(1048576u, (uint)AttentionTopic.Transport);
             Assert.Equal(1u, (uint)AttentionTopic.Happiness);
@@ -144,7 +109,7 @@ namespace SkylineTogether.Core.Tests.Contracts
         [Test]
         public void EveryFlagEnumMemberIsASingleBit()
         {
-            foreach (Type type in new[] { typeof(TouchFlags), typeof(SpawnFlags), typeof(TypeFlags), typeof(AttentionTopic), typeof(Permission), typeof(ValueHeaderFlags) })
+            foreach (Type type in new[] { typeof(TouchFlags), typeof(SpawnFlags), typeof(AttentionTopic), typeof(Permission) })
             {
                 Assert.NotNull(type.GetCustomAttribute<FlagsAttribute>(), type.Name + " is [Flags]");
                 foreach (object value in Enum.GetValues(type))
@@ -170,14 +135,6 @@ namespace SkylineTogether.Core.Tests.Contracts
         }
 
         [Test]
-        public void SessionPhasesAreComplete()
-        {
-            SequentialFrom<SessionPhase>(0, "Idle", "PreparingSession", "Hosting", "Connecting", "Handshake", "Mismatch", "AwaitingSnapshot",
-                                         "Downloading", "Loading", "CatchingUp", "LiveVerifying", "Synced", "Repairing", "Resyncing", "HostBusy",
-                                         "Lagging", "Degraded", "Disconnected", "Faulted", "Ended");
-        }
-
-        [Test]
         public void ThreadAffinityAttributeCarriesItsKind()
         {
             var attribute = new ThreadAffinityAttribute(ThreadKind.Network);
@@ -187,7 +144,6 @@ namespace SkylineTogether.Core.Tests.Contracts
             var windowUsage = typeof(CaptureWindowAttribute).GetCustomAttribute<AttributeUsageAttribute>();
             Assert.Equal(AttributeTargets.Method, windowUsage.ValidOn);
             Assert.Equal(ThreadKind.Any, typeof(ILog).GetCustomAttribute<ThreadAffinityAttribute>().Kind);
-            Assert.Equal(ThreadKind.Worker, typeof(IPeerScheduler).GetCustomAttribute<ThreadAffinityAttribute>().Kind);
             MethodInfo bind = typeof(IHostReplicationEngine).GetMethod("Bind");
             Assert.NotNull(bind.GetCustomAttribute<CaptureWindowAttribute>(), "Bind is a capture-window member");
             MethodInfo poll = typeof(ITransport).GetMethod("Poll");

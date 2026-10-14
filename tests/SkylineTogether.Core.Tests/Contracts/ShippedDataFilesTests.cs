@@ -34,22 +34,7 @@ namespace SkylineTogether.Core.Tests.Contracts
         {
             string dir = DataDirectory();
             if (dir == null || !Directory.Exists(dir)) Assert.Skip("no " + DataFolder + " folder yet");
-            var parsers = new Dictionary<string, Action<JsonValue>>
-            {
-                { GateTable.FileName, json => GateTable.Parse(json) },
-                { CosmeticList.FileName, json => CosmeticList.Parse(json) },
-                { PolicyTableModel.FileName, json => PolicyTableModel.Parse(json) },
-                { AdapterModel.FileName, json => AdapterModel.ParseList(json) },
-                { SystemStateEntryModel.FileName, json => SystemStateEntryModel.ParseList(json) },
-            };
             int parsed = 0;
-            foreach (KeyValuePair<string, Action<JsonValue>> parser in parsers)
-            {
-                string path = Path.Combine(dir, parser.Key);
-                if (!File.Exists(path)) continue;
-                parser.Value(ParseFile(path));
-                parsed++;
-            }
             foreach (string path in Directory.GetFiles(dir, "locale.*.json"))
             {
                 string name = Path.GetFileName(path);

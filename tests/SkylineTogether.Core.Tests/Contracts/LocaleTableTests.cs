@@ -4,41 +4,9 @@ using static SkylineTogether.Core.Tests.Contracts.DataFileSamples;
 
 namespace SkylineTogether.Core.Tests.Contracts
 {
-    /// <summary>cosmetic.json (ARCH §6.1) and locale tables (ARCH §11.7).</summary>
-    public sealed class CosmeticAndLocaleTests
+    /// <summary>Locale tables (ARCH §11.7).</summary>
+    public sealed class LocaleTableTests
     {
-        [Test]
-        public void ParsesTheCosmeticSample()
-        {
-            CosmeticList list = CosmeticList.Parse(J(Cosmetic));
-            Assert.Equal(9, list.SystemTypeNames.Count);
-            Assert.Equal("Game.Simulation.TimeSystem", list.SystemTypeNames[0]);
-            Assert.Equal("Game.Simulation.DirtynessSystem", list.SystemTypeNames[8]);
-        }
-
-        [Test]
-        public void CosmeticListAcceptsABareArray()
-        {
-            CosmeticList list = CosmeticList.Parse(J("[ 'Game.Simulation.TimeSystem', 'Game.Simulation.ClimateSystem' ]"));
-            Assert.SequenceEqual(new[] { "Game.Simulation.TimeSystem", "Game.Simulation.ClimateSystem" }, list.SystemTypeNames);
-            Assert.Equal(0, CosmeticList.Parse(J("[]")).SystemTypeNames.Count);
-        }
-
-        [Test]
-        public void CosmeticListRejectsInvalidContent()
-        {
-            ConfigValidationException street = Assert.Throws<ConfigValidationException>(() =>
-                CosmeticList.Parse(J("{ 'systems': [ 'Game.Simulation.TimeSystem', 'Game.Simulation.StreetLightSystem' ] }")));
-            Assert.Contains("never be cosmetic", street.Message);
-            Assert.Equal("$.systems[1]", street.Path);
-            Assert.Equal("$[0]", Assert.Throws<ConfigValidationException>(() => CosmeticList.Parse(J("[ 'Game.Simulation.StreetLightSystem' ]"))).Path);
-            Assert.Contains("duplicate entry", Assert.Throws<ConfigValidationException>(() => CosmeticList.Parse(J("[ 'A.B', 'A.B' ]"))).Message);
-            Assert.Contains("required member \"systems\"", Assert.Throws<ConfigValidationException>(() => CosmeticList.Parse(J("{ 'version': 1 }"))).Message);
-            Assert.Contains("expected a string", Assert.Throws<ConfigValidationException>(() => CosmeticList.Parse(J("[ 1 ]"))).Message);
-            Assert.Contains("unknown member", Assert.Throws<ConfigValidationException>(() => CosmeticList.Parse(J("{ 'systems': [], 'extra': 1 }"))).Message);
-            Assert.Contains("expected an object", Assert.Throws<ConfigValidationException>(() => CosmeticList.Parse(J("'text'"))).Message);
-        }
-
         [Test]
         public void ParsesTheLocaleSample()
         {

@@ -55,9 +55,6 @@ namespace SkylineTogether.Core.Tests.Protocol
             Assert.True((largestMessage + Fragmenter.ChunkBytes - 1) / Fragmenter.ChunkBytes <= Limits.MaxFragmentsPerMessage, "fragments of the largest message");
             Assert.True(2 + 5 + 1 <= Limits.EnvelopeOverheadBytes, "kind, flags, size varint and codec byte");
 
-            int partPayload = Limits.MaxUncompressedBytes - EpochFormat.MaxHeaderBytes;
-            Assert.True((Limits.MaxEpochTotalBytes + partPayload - 1) / partPayload <= Limits.MaxEpochParts, "parts of the largest epoch");
-            Assert.True(EpochFormat.HeaderSize(Limits.MaxEpochParts - 1, Limits.MaxEpochParts) <= EpochFormat.MaxHeaderBytes);
             Assert.True(Limits.MaxComponentsPerRecord == 64, "type-set ordinals are below 64 (enabled bits and dirty masks are ulong)");
         }
 
@@ -113,8 +110,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                 {
                     Prefab = new PrefabRank(int.MaxValue), Preview = new byte[PresenceMessage.MaxPreviewBytes], PreviewLength = PresenceMessage.MaxPreviewBytes
                 }), "Presence"),
-                (MessageKind.Clock, Size<ClockSample>(ClockSample.Write, new ClockSample()), "Clock"),
-                (MessageKind.Ack, Size<AckMessage>(AckMessage.Write, new AckMessage { LastApplied = new EpochId(uint.MaxValue), LastMotionControlSeq = uint.MaxValue }), "Ack"),
                 (MessageKind.Ping, Size<PingMessage>(PingMessage.Write, new PingMessage { Sequence = uint.MaxValue }), "Ping")
             };
 

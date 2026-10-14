@@ -73,7 +73,7 @@ namespace SkylineTogether.Core.Scheduling
 
         /// <summary>
         /// Evaluates one peer: returns the motion quality to use and, in <paramref name="radiusScale"/>, the factor
-        /// (minimum radius / maximum radius ... 1) to apply to the motion radius (<see cref="AttentionSets"/> keeps the
+        /// (minimum radius / maximum radius ... 1) to apply to the motion radius (the attention sets keep the
         /// result at or above the minimum radius).
         /// </summary>
         public MotionQuality Evaluate(PeerId peer, int p2Budget, int p2Demand, out float radiusScale)

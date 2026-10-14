@@ -18,14 +18,6 @@ namespace SkylineTogether.Core.Tests.Contracts
         }
 
         [Test]
-        public void UnknownTypeSetExceptionNamesTheId()
-        {
-            var e = new UnknownTypeSetException(new TypeSetId(42));
-            Assert.Equal(new TypeSetId(42), e.Id);
-            Assert.Contains("42", e.Message);
-        }
-
-        [Test]
         public void ConfigValidationExceptionFormatsFilePathAndPosition()
         {
             var full = new ConfigValidationException("gates.json", "$.entries[3].action", 12, 17, "unknown action");
@@ -75,15 +67,6 @@ namespace SkylineTogether.Core.Tests.Contracts
             Assert.Equal("10.0.0.2:27015", new Endpoint { Host = "10.0.0.2", Port = 27015 }.ToString());
             Assert.Equal("steam:7/3", new Endpoint { SteamId = 7, VirtualPort = 3 }.ToString());
             Assert.Contains("policies.json", new DataFileDigestEntry { File = "policies.json", Digest = 0xABC, Overridden = true }.ToString());
-        }
-
-        [Test]
-        public void TypeDescriptorHasChecksAllBits()
-        {
-            var descriptor = new TypeDescriptor { Flags = TypeFlags.Buffer | TypeFlags.HashAsSet };
-            Assert.True(descriptor.Has(TypeFlags.Buffer));
-            Assert.True(descriptor.Has(TypeFlags.Buffer | TypeFlags.HashAsSet));
-            Assert.False(descriptor.Has(TypeFlags.Buffer | TypeFlags.Excluded));
         }
 
         [Test]

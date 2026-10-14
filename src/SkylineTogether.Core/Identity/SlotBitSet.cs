@@ -5,8 +5,9 @@ namespace SkylineTogether.Core.Identity
     /// <summary>
     /// Growable two-level bit set over the integers <c>0 .. maxItems-1</c> (slot values): one bit per item plus one
     /// summary bit per 64-bit word, so ascending iteration and "lowest set bit" searches skip empty regions in O(1) per
-    /// 4096 items. Used for the bound and unspawned sets of <see cref="SlotTable"/> and the free pool of
-    /// <see cref="SlotAllocator"/>: deterministic (ascending) order, no allocation except when growing.
+    /// 4096 items. Used for the allocated, free and quarantined sets of
+    /// <see cref="SkylineTogether.Core.Sync.NetIdAllocator"/>: deterministic (ascending) order, no allocation except when
+    /// growing.
     /// Memory grows with the highest item ever set (2 MiB for the whole 24-bit slot space), never with a hostile
     /// value beyond <c>maxItems</c>. Not thread-safe.
     /// </summary>

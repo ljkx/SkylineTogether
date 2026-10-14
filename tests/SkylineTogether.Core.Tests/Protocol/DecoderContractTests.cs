@@ -336,9 +336,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                     Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { From = new PeerId(2), Preview = new byte[] { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, PreviewLength = 16, BrushRadius = 3 }),
                     Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage())
                 }, b => PresenceMessage.Decode(b, 0, b.Length)),
-                ("Clock", new[] { Encode<ClockSample>(ClockSample.Write, new ClockSample { HostFrame = 99, FrameTime = 0.5f, SmoothSpeed = 1, Paused = true, HostTimeSeconds = 12.5 }) },
-                 b => ClockSample.Decode(b, 0, b.Length)),
-                ("Ack", new[] { Hex("ac02 05") }, b => AckMessage.Decode(b, 0, b.Length)),
                 ("Ping", new[] { Encode<PingMessage>(PingMessage.Write, new PingMessage { Sequence = 5, SentSeconds = 1.25, IsReply = true }) },
                  b => PingMessage.Decode(b, 0, b.Length)),
                 ("HashDetail", new[]
@@ -367,7 +364,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                         AssetSources = new List<AssetSourceUse> { new AssetSourceUse { Source = new AssetSource { Kind = AssetSourceKind.Package, Name = "Pack", PlatformId = "100454" }, Prefabs = 3, Example = "Pagoda" } }
                     })
                 }, b => SnapshotManifestCodec.Decode(b, 0, b.Length)),
-                ("ProposalReceived", new[] { Hex("e807") }, b => ProposalReceivedMessage.Decode(b, 0, b.Length)),
                 // w8/mods
                 ("ModChannel", new[] { Encode<ModChannelMessage>(ModChannelMessage.Write, new ModChannelMessage { Channel = "MyMod", From = new PeerId(2), Target = ModChannelTarget.Player, TargetPeer = new PeerId(3), Payload = new byte[] { 1, 2, 3 } }) },
                  b => ModChannelMessage.Decode(b, 0, b.Length)),

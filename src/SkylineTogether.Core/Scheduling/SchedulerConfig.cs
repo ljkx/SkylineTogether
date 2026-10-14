@@ -3,7 +3,7 @@ namespace SkylineTogether.Core.Scheduling
     /// <summary>
     /// Tunables of budgets and attention (ARCH §4.8, Appendix D). The first block is the contract of
     /// IMPLEMENTATION-PLAN §7.7; the fields after it are additive tunables of this implementation, each with the default
-    /// that the design implies. Consumers (<see cref="LinkEstimator"/>, <see cref="AttentionSets"/>,
+    /// that the design implies. Consumers (<see cref="LinkEstimator"/>, <c>AttentionSets</c>,
     /// <c>PeerScheduler</c>, <see cref="DegradationController"/>) copy and sanitise the values when they are
     /// constructed, so changing a field afterwards has no effect on an existing instance, and invalid values (NaN,
     /// negative shares, an unsorted quanta list) fall back to the defaults instead of failing at run time.

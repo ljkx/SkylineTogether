@@ -67,7 +67,6 @@ namespace SkylineTogether.Core.Tests.Json
             JsonValue v = J("{ 'list': [ { 'x': 1 }, [], {}, 'str', false ], 'nested': { 'deep': { 'deeper': [ 0.125 ] } } }");
             JsonValue back = MiniJson.Parse(v.ToString());
             Assert.Equal(v.ToString(), back.ToString());
-            Assert.Equal(DataFileDigest.Compute(v), DataFileDigest.Compute(back));
         }
 
         [Test]

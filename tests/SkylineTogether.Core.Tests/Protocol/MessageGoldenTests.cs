@@ -183,32 +183,6 @@ namespace SkylineTogether.Core.Tests.Protocol
         }
 
         [Test]
-        public void ControlCarryingProposalReceived()
-        {
-            // kind ProposalReceived (24) | payload length 2 | payload: varint seq 1000
-            const string hex = "18 | 02 e807";
-            var payload = new ByteWriter();
-            ProposalReceivedMessage.Write(payload, new ProposalReceivedMessage { Seq = 1000 });
-            AssertBytes("e807", payload);
-            var control = new ControlMessage { Kind = ControlKind.ProposalReceived, Payload = payload.ToArray() };
-            AssertBytes(hex, Write<ControlMessage>(ControlMessage.Write, control));
-            var direct = new ByteWriter();
-            ControlMessage.Write(direct, ControlKind.ProposalReceived, payload.Buffer, 0, payload.Length);
-            AssertBytes(hex, direct, "the array-segment overload writes the same bytes");
-
-            byte[] bytes = Hex(hex);
-            ControlMessage read = ControlMessage.Decode(bytes, 0, bytes.Length);
-            Assert.Equal(ControlKind.ProposalReceived, read.Kind);
-            Assert.Equal(1000u, ProposalReceivedMessage.Decode(read.Payload, 0, read.Payload.Length).Seq);
-
-            // the control kinds are pinned on the wire
-            Assert.Equal(0, (int)ControlKind.PasswordChallenge);
-            Assert.Equal(18, (int)ControlKind.SnapshotManifest);
-            Assert.Equal(24, (int)ControlKind.ProposalReceived);
-            Assert.Equal(28, (int)ControlKind.LineRows);
-        }
-
-        [Test]
         public void Chat()
         {
             // from 3 | "hi" | system
@@ -279,32 +253,8 @@ namespace SkylineTogether.Core.Tests.Protocol
         }
 
         [Test]
-        public void Clock()
-        {
-            // u32 hostFrame | f32 frameTime 0.25 | f32 smoothSpeed 1 | speed 2 | paused | f64 host time 1.5
-            const string hex = "03020100 | 0000803e | 0000803f | 02 | 01 | 000000000000f83f";
-            var m = new ClockSample { HostFrame = 0x00010203, FrameTime = 0.25f, SmoothSpeed = 1f, SessionSpeed = 2, Paused = true, HostTimeSeconds = 1.5 };
-            AssertBytes(hex, Write<ClockSample>(ClockSample.Write, m));
-            byte[] bytes = Hex(hex);
-            ClockSample read = ClockSample.Decode(bytes, 0, bytes.Length);
-            Assert.Equal(m.HostFrame, read.HostFrame);
-            Assert.Equal(0.25f, read.FrameTime);
-            Assert.Equal(1f, read.SmoothSpeed);
-            Assert.Equal((byte)2, read.SessionSpeed);
-            Assert.True(read.Paused);
-            Assert.Equal(1.5, read.HostTimeSeconds);
-        }
-
-        [Test]
         public void AckAndPing()
         {
-            // varint lastApplied 300 | varint lastMotionControlSeq 5
-            AssertBytes("ac02 05", Write<AckMessage>(AckMessage.Write, new AckMessage { LastApplied = new EpochId(300), LastMotionControlSeq = 5 }));
-            byte[] ack = Hex("ac02 05");
-            AckMessage readAck = AckMessage.Decode(ack, 0, ack.Length);
-            Assert.Equal(new EpochId(300), readAck.LastApplied);
-            Assert.Equal(5u, readAck.LastMotionControlSeq);
-
             // varint sequence 7 | f64 sent 2.0 | reply
             const string pingHex = "07 | 0000000000000040 | 01";
             AssertBytes(pingHex, Write<PingMessage>(PingMessage.Write, new PingMessage { Sequence = 7, SentSeconds = 2.0, IsReply = true }));

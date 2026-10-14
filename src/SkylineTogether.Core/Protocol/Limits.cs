@@ -21,7 +21,7 @@ namespace SkylineTogether.Core.Protocol
         /// <summary>Largest uncompressed message body: one message, one epoch part (ARCH §4.6.5).</summary>
         public const int MaxUncompressedBytes = 8 * 1024 * 1024;
 
-        /// <summary>All parts of one epoch together (ARCH §4.6.2); above it the client resyncs (<see cref="PartResult.Oversized"/>).</summary>
+        /// <summary>All parts of one epoch together (ARCH §4.6.2); above it the client resyncs.</summary>
         public const long MaxEpochTotalBytes = 256L * 1024 * 1024;
 
         /// <summary>Payload of one blob chunk on the bulk lane (ARCH §7.5).</summary>

@@ -18,25 +18,23 @@ target design, and the code implements a playable subset of it (see its "As buil
 | Folder | Contents |
 |---|---|
 | `Buffers` | `ByteWriter` / `ByteReader` (little-endian, LEB128 varints), `BufferPool` |
-| `Codec` | `CanonicalWriter` / `CanonicalReader`: the game's serialization layout with network entity references |
-| `Contracts` | Shared interfaces and models: identity (`NetId`, `NetRef`, `PeerId`), transport (`ITransport`, `IConnection`), apply, catalog, data files, environment (`ILog`, `IClock`) |
+| `Contracts` | Shared interfaces and models: identity (`NetId`, `NetRef`, `PeerId`), transport (`ITransport`, `IConnection`), session and handshake models, locale tables, environment (`ILog`, `IClock`), and the engine interfaces the repair ladder is written against (`IHostReplicationEngine`, `IHashShadowView`, `ISlotTable`) |
 | `Diagnostics` | `FeatureHealth` (guards that switch a failing feature off), `PerfCounters` |
-| `Fields` | Terrain and water tiles: tile codecs, grids, deltas |
-| `Follower` | Client-side gating of the game's own systems, follower clock model |
+| `Fields` | Terrain and water tiles and cell maps: tile codecs, grids, stroke settling |
+| `Follower` | `FollowerClockModel`: the client's clock model (the gates themselves are in the game layer's `ClientGate`) |
 | `Hashing` | xxHash3/xxHash64, digests, set hashes |
-| `Identity` | Network id allocation, type catalog, prefab index, family rules, build order |
-| `Integrity` | Hash ledgers, bucket sums, `DivergenceTracker`; also a repair ladder that the game does not use yet |
+| `Identity` | Family rules, build order, `SlotBitSet` (network id allocation itself is `Sync/NetIdAllocator`) |
+| `Integrity` | Bucket sums, `DivergenceTracker`, line and icon checks, `RepairEscalation` (rebaseline and resync above per-entity repair); also the beacon-based repair ladder (`RepairCoordinator`, `HostRepairResponder`, `HashLedger`, `BeaconPlanner`) that the game does not use |
 | `Intents` | Client proposals and semantic intents |
 | `Json` | Strict JSON reader/writer |
 | `Modding` | Mod analysis and integration: `ModClassifier` (decisions about any mod from its scanned `ModFacts`), `ModDeclarations`, `AdapterCheck`, `ModChannelRouter`/`ModChannelBudget`, `AssetSource`/`MissingAssets`, `IlScanner` |
 | `Motion` | Encoding of moving vehicles and citizens |
-| `Protocol` | Envelope framing, fragmentation, compression, epochs, handshake and other messages, `Limits`, `ProtocolVersion` |
+| `Protocol` | Envelope framing, fragmentation, compression, handshake and other messages, `Limits`, `ProtocolVersion` |
 | `Replay` | Solo test: recording format, recorder peer, playback transport, `ReplayChecker`, `ReplayVerdict` |
-| `Replication` | Policy table and value shadows |
-| `Scheduling` | Bandwidth budgets, token buckets, attention and agent planners |
+| `Scheduling` | Token buckets, byte budgets, attention and agent planners, rolling scans; also bandwidth controls the game does not use yet (`HostUploadBudget`, `LinkEstimator`, `AutoSpeedCap`, `DegradationController`) |
 | `Session` | `SessionHost`, `SessionClient`, `PeerChannel`, `RejoinController`, presence, mod compatibility, `SessionCrypto`, `JoinSecurity` (bans, join policy, password lockout, co-host rules), `BuildId` |
 | `Sync` | `SyncBatch` records, proposal guards (rate limit, conflicts), id allocation, global channels, terrain/water/mover/integrity records |
-| `Testing` | Fakes for tests and tools (`ManualClock`, `DeterministicRandom`, `ListLog`) |
+| `Testing` | Fakes for tests and tools (`ManualClock`, `DeterministicRandom`, `ListLog`, `NullLog`) |
 | `Transport` | Loopback, network simulator, composite transport, outbox, blob transfer, send rate control |
 
 ## Game layer folders (`src/SkylineTogether`)

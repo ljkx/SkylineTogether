@@ -163,29 +163,6 @@ namespace SkylineTogether.Core.Tests.Protocol
         }
 
         [Test(TimeoutSeconds = 300)]
-        public void RecordReader()
-        {
-            var random = new DeterministicRandom(200);
-            var seeds = new List<byte[]>();
-            for (int i = 0; i < 60; i++)
-            {
-                var target = new ByteWriter();
-                var writer = new RecordWriter(target);
-                int records = random.Next(1, 8);
-                for (int r = 0; r < records; r++) RecordRoundTripTests.WriteRandomRecord(writer, random);
-                seeds.Add(target.ToArray());
-            }
-            Fuzz("RecordReader (read)", seeds, 30000, 201, (buffer, offset, count) =>
-                RecordReaderValidationTests.ReadAll(buffer, offset, count, new FakeTypeSetRegistry()));
-            var skipper = new RecordReader();
-            Fuzz("RecordReader (skip)", seeds, 30000, 202, (buffer, offset, count) =>
-            {
-                skipper.Reset(buffer, offset, count);
-                while (skipper.Next(out _)) { }
-            });
-        }
-
-        [Test(TimeoutSeconds = 300)]
         public void NetRefsZoneOverlaysAndProtocolVersionPeek()
         {
             var random = new DeterministicRandom(300);
@@ -270,7 +247,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                  3000, 406, (b, o, c) => PasswordResponseMessage.Decode(b, o, c));
             Fuzz("Control", new[] { Encode<ControlMessage>(ControlMessage.Write, new ControlMessage { Kind = ControlKind.Toast, Payload = new byte[] { 1, 2, 3 } }), Hex("18 01 2a") },
                  3000, 407, (b, o, c) => ControlMessage.Decode(b, o, c));
-            Fuzz("ProposalReceived", new[] { Hex("e807"), Hex("00") }, 2000, 408, (b, o, c) => ProposalReceivedMessage.Decode(b, o, c));
             Fuzz("Chat", new[] { Encode<ChatMessage>(ChatMessage.Write, new ChatMessage { From = new PeerId(1), Text = "hello there", IsSystem = false }) },
                  3000, 409, (b, o, c) => ChatMessage.Decode(b, o, c));
             Fuzz("View", new[] { Encode<ViewReport>(ViewReport.Write, new ViewReport { Zoom = 50, Selected = new NetSlot(1000), PanelTarget = new NetSlot(3) }) },
@@ -280,9 +256,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                 Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage { From = new PeerId(2), Preview = new byte[] { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, PreviewLength = 16, BrushRadius = 3 }),
                 Encode<PresenceMessage>(PresenceMessage.Write, new PresenceMessage())
             }, 3000, 411, (b, o, c) => PresenceMessage.Decode(b, o, c));
-            Fuzz("Clock", new[] { Encode<ClockSample>(ClockSample.Write, new ClockSample { HostFrame = 99, FrameTime = 0.5f, SmoothSpeed = 1, Paused = true, HostTimeSeconds = 12.5 }) },
-                 3000, 412, (b, o, c) => ClockSample.Decode(b, o, c));
-            Fuzz("Ack", new[] { Hex("ac02 05"), Hex("00 00") }, 2000, 413, (b, o, c) => AckMessage.Decode(b, o, c));
             Fuzz("Ping", new[] { Encode<PingMessage>(PingMessage.Write, new PingMessage { Sequence = 5, SentSeconds = 1.25, IsReply = true }) },
                  2000, 414, (b, o, c) => PingMessage.Decode(b, o, c));
             Fuzz("HashDetail", new[]
@@ -305,94 +278,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                     ReferencedContent = new[] { "C" }, FamilyCounts = new Dictionary<Family, int> { { Family.Object, 5 }, { Family.Agent, 1000 } }
                 })
             }, 5000, 417, (b, o, c) => SnapshotManifestCodec.Decode(b, o, c));
-        }
-
-        [Test(TimeoutSeconds = 300)]
-        public void EpochReadersAndThePartAssembler()
-        {
-            var random = new DeterministicRandom(500);
-            var seeds = new List<byte[]>();
-            for (int i = 0; i < 30; i++)
-            {
-                var sections = new List<EpochFramingTests.Section>();
-                for (int s = random.Next(0, 5); s > 0; s--)
-                {
-                    var body = new byte[random.Next(0, 40)];
-                    random.NextBytes(body, 0, body.Length);
-                    sections.Add(new EpochFramingTests.Section { Type = (SectionType)random.Next(1, 14), Body = body });
-                }
-                bool multi = random.NextBool();
-                int partCount = multi ? random.Next(2, 4) : 1;
-                seeds.Add(EpochFramingTests.WriteEpoch(new EpochId((uint)random.Next(1, 4)), 7, (EpochFlags)random.Next(8), sections,
-                                                       multi ? random.Next(partCount) : 0, partCount));
-            }
-
-            var reader = new EpochReader();
-            Fuzz("EpochReader", seeds, 20000, 501, (buffer, offset, count) =>
-            {
-                reader.Open(buffer, offset, count);
-                while (reader.NextSection(out _, out _, out _)) { }
-            });
-
-            var streamReader = new EpochStreamReader();
-            var body8 = new byte[Limits.MaxUncompressedBytes];
-            var choice = new DeterministicRandom(502);
-            Fuzz("EpochStreamReader", seeds, 20000, 503, (buffer, offset, count) =>
-            {
-                using (var stream = new MemoryStream(buffer, offset, count, false))
-                {
-                    streamReader.Open(stream);
-                    while (streamReader.NextSection(out _, out int length))
-                    {
-                        if (choice.NextBool()) streamReader.ReadBody(body8, 0);
-                    }
-                }
-            });
-
-            // the assembler gets every message that passes EpochReader.Open and must never throw, whatever it is
-            var assembler = new EpochPartAssembler(null, 32L << 20, null, 64 * 1024);
-            var openReader = new EpochReader();
-            var mutations = new DeterministicRandom(504);
-            var results = new int[4];
-            for (int i = 0; i < 30000 * Scale; i++)
-            {
-                byte[] input = Mutate(seeds[mutations.Next(seeds.Count)], mutations, out int offset, out int count);
-                EpochHeader header;
-                try
-                {
-                    header = openReader.Open(input, offset, count);
-                }
-                catch (DecodeException)
-                {
-                    continue;
-                }
-                if (mutations.Next(10) == 0) header.PartIndex = mutations.Next(4);    // a header that may not describe the bytes
-                try
-                {
-                    PartResult result = assembler.Accept(in header, input, offset, count, out Stream complete);
-                    results[(int)result]++;
-                    if (result == PartResult.Complete)
-                    {
-                        Assert.NotNull(complete);
-                        using (complete)
-                        {
-                            var check = new EpochStreamReader();
-                            check.Open(complete);
-                            while (check.NextSection(out _, out _)) { }
-                        }
-                    }
-                    else
-                    {
-                        Assert.Null(complete);
-                    }
-                }
-                catch (Exception e)
-                {
-                    Assert.Fail("EpochPartAssembler.Accept threw " + e.GetType().Name + ": " + e.Message + " for " + ToHex(input, offset, count) + Environment.NewLine + e.StackTrace);
-                }
-                if (mutations.Next(200) == 0) assembler.Reset();
-            }
-            Assert.True(results[(int)PartResult.Complete] > 0 && results[(int)PartResult.Incomplete] > 0, "both outcomes occur");
         }
     }
 }

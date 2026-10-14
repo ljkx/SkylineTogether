@@ -378,10 +378,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                 Assert.SequenceEqual(response.ClientNonce, pr.ClientNonce);
                 Assert.SequenceEqual(response.Mac, pr.Mac);
 
-                var received = new ProposalReceivedMessage { Seq = random.NextUInt() };
-                byte[] r = Encode<ProposalReceivedMessage>(ProposalReceivedMessage.Write, received);
-                Assert.Equal(received.Seq, ProposalReceivedMessage.Decode(r, 0, r.Length).Seq);
-
                 var control = new ControlMessage { Kind = (ControlKind)random.Next(256), Payload = RandomBytes(random, 2000) };
                 byte[] k = Encode<ControlMessage>(ControlMessage.Write, control);
                 ControlMessage kr = ControlMessage.Decode(k, 0, k.Length);
@@ -393,7 +389,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                     AssertTrailingByteRejected(c, PasswordChallengeMessage.Decode);
                     AssertEveryTruncationRejected(c, PasswordChallengeMessage.Decode);
                     AssertTrailingByteRejected(p, PasswordResponseMessage.Decode);
-                    AssertTrailingByteRejected(r, ProposalReceivedMessage.Decode);
                     AssertTrailingByteRejected(k, ControlMessage.Decode);
                     AssertEveryTruncationRejected(k, ControlMessage.Decode);
                 }
@@ -435,12 +430,10 @@ namespace SkylineTogether.Core.Tests.Protocol
         }
 
         [Test]
-        public void ViewPresenceClockAckPingRoundTrip()
+        public void ViewPresencePingRoundTrip()
         {
             var random = new DeterministicRandom(7);
             var viewInto = new ViewReport();
-            var clockInto = new ClockSample();
-            var ackInto = new AckMessage();
             var pingInto = new PingMessage();
             for (int round = 0; round < 200; round++)
             {
@@ -497,26 +490,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                 Assert.Equal(presence.Prefab, presenceInto.Prefab);
                 Assert.Equal(presence.BrushRadius, presenceInto.BrushRadius);
 
-                var clock = new ClockSample
-                {
-                    HostFrame = random.NextUInt(), FrameTime = RandomFloat(random), SmoothSpeed = RandomFloat(random), SessionSpeed = (byte)random.Next(256),
-                    Paused = random.NextBool(), HostTimeSeconds = random.NextDouble() * 1e7
-                };
-                byte[] c = Encode<ClockSample>(ClockSample.Write, clock);
-                ClockSample.ReadInto(Reader(c), clockInto);
-                Assert.Equal(clock.HostFrame, clockInto.HostFrame);
-                Assert.Equal(clock.FrameTime, clockInto.FrameTime);
-                Assert.Equal(clock.SmoothSpeed, clockInto.SmoothSpeed);
-                Assert.Equal(clock.SessionSpeed, clockInto.SessionSpeed);
-                Assert.Equal(clock.Paused, clockInto.Paused);
-                Assert.Equal(clock.HostTimeSeconds, clockInto.HostTimeSeconds);
-
-                var ack = new AckMessage { LastApplied = new EpochId(random.NextUInt()), LastMotionControlSeq = random.NextUInt() };
-                byte[] a = Encode<AckMessage>(AckMessage.Write, ack);
-                AckMessage.ReadInto(Reader(a), ackInto);
-                Assert.Equal(ack.LastApplied, ackInto.LastApplied);
-                Assert.Equal(ack.LastMotionControlSeq, ackInto.LastMotionControlSeq);
-
                 var ping = new PingMessage { Sequence = random.NextUInt(), SentSeconds = random.NextDouble() * 1e5, IsReply = random.NextBool() };
                 byte[] g = Encode<PingMessage>(PingMessage.Write, ping);
                 PingMessage.ReadInto(Reader(g), pingInto);
@@ -530,10 +503,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                     AssertEveryTruncationRejected(v, ViewReport.Decode);
                     AssertTrailingByteRejected(p, PresenceMessage.Decode);
                     AssertEveryTruncationRejected(p, PresenceMessage.Decode);
-                    AssertTrailingByteRejected(c, ClockSample.Decode);
-                    AssertEveryTruncationRejected(c, ClockSample.Decode);
-                    AssertTrailingByteRejected(a, AckMessage.Decode);
-                    AssertEveryTruncationRejected(a, AckMessage.Decode);
                     AssertTrailingByteRejected(g, PingMessage.Decode);
                     AssertEveryTruncationRejected(g, PingMessage.Decode);
                 }
@@ -559,12 +528,6 @@ namespace SkylineTogether.Core.Tests.Protocol
             PresenceMessage p = PresenceMessage.Decode(presence, 0, presence.Length);
             Assert.Equal(0f, p.CursorX);
             Assert.Equal(1f, p.BrushRadius);
-
-            byte[] clock = Encode<ClockSample>(ClockSample.Write, new ClockSample { HostTimeSeconds = double.NaN });
-            Assert.Equal(0.0, ClockSample.Decode(clock, 0, clock.Length).HostTimeSeconds);
-            clock[clock.Length - 1] = 0x7F;
-            clock[clock.Length - 2] = 0xF0;                                         // +infinity
-            Assert.Throws<DecodeException>(() => ClockSample.Decode(clock, 0, clock.Length));
 
             byte[] ping = Encode<PingMessage>(PingMessage.Write, new PingMessage { SentSeconds = double.NegativeInfinity });
             Assert.Equal(0.0, PingMessage.Decode(ping, 0, ping.Length).SentSeconds);
