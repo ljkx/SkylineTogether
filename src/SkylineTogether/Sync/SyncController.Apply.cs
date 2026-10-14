@@ -48,7 +48,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Terrain, "terrain apply", ex);
                 }
-                Perf.Stop(Perf.Terrain, terrain);
+                Perf.Budget.End(Perf.BudgetApply, Perf.Stop(Perf.Terrain, terrain)); // w9/perf: applying what arrived
             }
             if (Features.Water.IsAvailable)
             {
@@ -61,7 +61,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Water, "water apply", ex);
                 }
-                Perf.Stop(Perf.Water, water);
+                Perf.Budget.End(Perf.BudgetApply, Perf.Stop(Perf.Water, water));
             }
             if (Features.SimValues.IsAvailable)
             {
@@ -75,7 +75,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.SimValues, "map tiles and statistics apply", ex);
                 }
-                Perf.Stop(Perf.Maps, maps);
+                Perf.Budget.End(Perf.BudgetMaps, Perf.Stop(Perf.Maps, maps));
             }
             if (_codec == null || !Features.Replication.IsAvailable) return;
             if (!IsHost && !IsLiveClient)
@@ -121,7 +121,8 @@ namespace SkylineTogether.Sync
             bool catchingUp = joining != null && joining.Timeline.Has(JoinStage.Live) && !joining.Timeline.Has(JoinStage.CaughtUp);
             FrameBudget budget = catchingUp ? _catchUpBudget : _applyBudget;
             int maxBatches = catchingUp ? CatchUpMaxBatchesPerFrame : MaxBatchesPerFrame;
-            double allowance = budget.BeginFrame();
+            // w9/perf: apply is the shared budget's first priority (never clipped; measured for the others' reservations)
+            double allowance = Perf.Allowance(Perf.BudgetApply, budget.BeginFrame());
             int n = 0;
             while (_inbox.Count > 0 && n < maxBatches)
             {
@@ -216,7 +217,9 @@ namespace SkylineTogether.Sync
             if (IsHost) UpdateQuarantine(now);
             // client: the rolling audit of references the game follows unchecked (diagnostics only)
             if (!IsHost && Features.Integrity.IsAvailable) _audit.Update(now);
-            budget.EndFrame(Perf.Stop(Perf.Apply, start));
+            double applied = Perf.Stop(Perf.Apply, start);
+            budget.EndFrame(applied);
+            Perf.Budget.End(Perf.BudgetApply, applied);
         }
 
         /// <summary>

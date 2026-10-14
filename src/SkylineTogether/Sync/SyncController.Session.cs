@@ -70,6 +70,7 @@ namespace SkylineTogether.Sync
 
         private void OnHostStarted(SessionHost host)
         {
+            Perf.Budget.Reset(); // w9/perf: per-session budget statistics
             if (!EnsureWorld()) return;
             host.PeerJoining += OnPeerJoining;
             host.PeerLeft += OnPeerLeft;
@@ -109,6 +110,7 @@ namespace SkylineTogether.Sync
 
         private void OnClientStarted(SessionClient client)
         {
+            Perf.Budget.Reset(); // w9/perf: per-session budget statistics
             if (!EnsureWorld()) return;
             _clientLive = false;
             _pool.Clear();

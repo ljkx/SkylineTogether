@@ -94,7 +94,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Terrain, "terrain capture", ex);
                 }
-                Perf.Stop(Perf.Terrain, terrain);
+                Perf.Budget.End(Perf.BudgetTerrain, Perf.Stop(Perf.Terrain, terrain));
             }
             if (Features.Water.IsAvailable)
             {
@@ -107,7 +107,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Water, "water capture", ex);
                 }
-                Perf.Stop(Perf.Water, water);
+                Perf.Budget.End(Perf.BudgetTerrain, Perf.Stop(Perf.Water, water));
             }
             if (Features.SimValues.IsAvailable)
             {
@@ -121,7 +121,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.SimValues, "map tiles and statistics capture", ex);
                 }
-                Perf.Stop(Perf.Maps, maps);
+                Perf.Budget.End(Perf.BudgetMaps, Perf.Stop(Perf.Maps, maps));
             }
             double dt = _lastFrameTime > 0 ? Math.Min(0.25, Math.Max(0.0, now - _lastFrameTime)) : 1.0 / 60.0;
             _lastFrameTime = now;
@@ -150,7 +150,7 @@ namespace SkylineTogether.Sync
                                 {
                                     Guard.Report(Features.SimValues, "attention values and inspection samples", ex);
                                 }
-                                Perf.Stop(Perf.SimValues, simValues);
+                                Perf.Budget.End(Perf.BudgetSimValues, Perf.Stop(Perf.SimValues, simValues));
                             }
                             if (Features.FlowStatus.IsAvailable)
                             {
@@ -200,6 +200,7 @@ namespace SkylineTogether.Sync
                 if (IsLiveClient && Features.Replication.IsAvailable) SendApplyAck(now);
             }
             Perf.Counters.EndFrame(now);
+            Perf.Budget.EndFrame(); // w9/perf: the shared budget's frame is apply (frame start) + capture (frame end)
         }
 
         /// <summary>
@@ -319,7 +320,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Events, "presence watch", ex);
                 }
-                Perf.Stop(Perf.PresenceWatch, watch);
+                Perf.Budget.End(Perf.BudgetPresenceWatch, Perf.Stop(Perf.PresenceWatch, watch));
             }
             // gameplay branch: entities that intents or the host's own UI changed without any tag
             foreach (Entity e in _forceCapture)
@@ -339,7 +340,7 @@ namespace SkylineTogether.Sync
             SafeCall("mod settings capture", _hostModSettingsCall);
             long scan = Perf.Start();
             ScanValues(now);
-            Perf.Stop(Perf.Scan, scan);
+            Perf.Budget.End(Perf.BudgetScan, Perf.Stop(Perf.Scan, scan));
             if (now - _lastClock >= ClockInterval)
             {
                 _lastClock = now;
@@ -364,7 +365,7 @@ namespace SkylineTogether.Sync
                     Guard.Report(Features.Integrity, "integrity (host capture)", ex);
                 }
             }
-            Perf.Stop(Perf.Integrity, integrity);
+            Perf.Budget.End(Perf.BudgetIntegrity, Perf.Stop(Perf.Integrity, integrity));
             if (!_batch.IsEmpty)
             {
                 // gameplay branch: the ledger epoch goes last, so the first-record routing of batches is unchanged
@@ -373,7 +374,7 @@ namespace SkylineTogether.Sync
             }
             long deferred = Perf.Start();
             FlushDeferred(now, dt);
-            Perf.Stop(Perf.Deferred, deferred);
+            Perf.Budget.End(Perf.BudgetDeferred, Perf.Stop(Perf.Deferred, deferred));
             _agents.HostStream(now); // owner buffers, then each peer's agents by attention (after the batch)
         }
 
@@ -490,7 +491,7 @@ namespace SkylineTogether.Sync
                 if (_scanCity) _lastCity = now;
             }
             long start = Stopwatch.GetTimestamp();
-            long budget = (long)(ScanBudgetMs * Stopwatch.Frequency / 1000.0);
+            long budget = (long)(Perf.Allowance(Perf.BudgetScan, ScanBudgetMs) * Stopwatch.Frequency / 1000.0); // w9/perf: shared budget
             int n = 0;
             while (_scanCursor < _scanIds.Count)
             {
@@ -535,7 +536,7 @@ namespace SkylineTogether.Sync
             if (host == null || _outList.Count == 0) return;
             EntityManager em = _codec.EntityManager;
             long start = Stopwatch.GetTimestamp();
-            long cpuBudget = (long)(DeferredBudgetMs * Stopwatch.Frequency / 1000.0);
+            long cpuBudget = (long)(Perf.Allowance(Perf.BudgetDeferred, DeferredBudgetMs) * Stopwatch.Frequency / 1000.0); // w9/perf: shared budget
             for (int p = 0; p < _outList.Count; p++)
             {
                 PeerOut o = _outList[p];

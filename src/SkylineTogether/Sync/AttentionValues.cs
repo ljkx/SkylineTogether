@@ -281,7 +281,7 @@ namespace SkylineTogether.Sync
             if (_hotDirty) RebuildHot();
             _watch.Restart();
             // alone, the host only keeps baselines current (a joiner then needs only what changed after its snapshot)
-            double budget = _planner.PeerCount > 0 ? ScanBudgetMs : ScanBudgetMs * 0.35;
+            double budget = Diagnostics.Perf.Allowance(Diagnostics.Perf.BudgetSimValues, _planner.PeerCount > 0 ? ScanBudgetMs : ScanBudgetMs * 0.35); // w9/perf: shared budget
             double hotBudget = _peers.Count > 0 ? budget * HotShare : 0;
             int hotLeft = _hotIds.Count;
             while (hotLeft-- > 0 && _watch.Elapsed.TotalMilliseconds < hotBudget)

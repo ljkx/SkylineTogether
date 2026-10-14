@@ -420,6 +420,7 @@ namespace SkylineTogether.Sync
                 if (!IsHost) lines.Add(_audit.Describe());
             }
             _agents.Describe(lines);
+            Perf.Budget.Describe(lines); // w9/perf: the shared frame budget, per feature avg/p95/max
             Perf.Counters.Describe(Perf.Now, lines);
         }
 

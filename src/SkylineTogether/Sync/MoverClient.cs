@@ -278,7 +278,12 @@ namespace SkylineTogether.Sync
                     if (seq != 0) _sessions.Client?.ApplyAcks.Release(seq);
                 }
             }
-            if (n > 0) _applyBudget.EndFrame(Perf.Stop(Perf.MoverApply, start));
+            if (n > 0)
+            {
+                double applied = Perf.Stop(Perf.MoverApply, start);
+                _applyBudget.EndFrame(applied);
+                Perf.Budget.End(Perf.BudgetMoverApply, applied); // w9/perf: shared budget telemetry (apply priority)
+            }
             if (_pendingLinks.Count > 0) RetryLinks(em);
         }
 

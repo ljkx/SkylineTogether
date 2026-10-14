@@ -592,6 +592,7 @@ namespace SkylineTogether.Sync
                     if (v.HasReport) _views.Add(v);
                 }
                 long sampleStart = System.Diagnostics.Stopwatch.GetTimestamp();
+                double sampleBudgetMs = Perf.Allowance(Perf.BudgetMotion, SampleBudgetMs); // w9/perf: shared budget
                 while (_lastSampled != frame)
                 {
                     if (_views.Count == 0)
@@ -599,7 +600,7 @@ namespace SkylineTogether.Sync
                         _lastSampled = frame; // nobody watches: nothing to sample
                         break;
                     }
-                    if ((System.Diagnostics.Stopwatch.GetTimestamp() - sampleStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > SampleBudgetMs)
+                    if ((System.Diagnostics.Stopwatch.GetTimestamp() - sampleStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > sampleBudgetMs)
                     {
                         _sampleCarryOvers++;
                         break;
@@ -614,6 +615,7 @@ namespace SkylineTogether.Sync
                         Diagnostics.Guard.Report(Diagnostics.Features.Movers, "motion sampling of tick " + _lastSampled, ex);
                     }
                 }
+                Perf.Spent(Perf.BudgetMotion, sampleStart);
                 _framed.ResetFilter();
                 PruneInterest(frame);
             }

@@ -289,9 +289,10 @@ namespace SkylineTogether.Sync
             if (!needElectricity && !needWater) return;
             long start = Perf.Start();
             _watch.Restart();
-            if (needElectricity) Advance(_electricity, now, ScanBudgetMs, true);
-            if (needWater) Advance(_water, now, ScanBudgetMs, true);
-            Perf.Stop(Perf.FlowScan, start);
+            double allowance = Perf.Allowance(Perf.BudgetFlow, ScanBudgetMs); // w9/perf: shared budget
+            if (needElectricity) Advance(_electricity, now, allowance, true);
+            if (needWater) Advance(_water, now, allowance, true);
+            Perf.Budget.End(Perf.BudgetFlow, Perf.Stop(Perf.FlowScan, start));
             Stream(now);
         }
 
@@ -661,16 +662,20 @@ namespace SkylineTogether.Sync
             }
             AttentionTopic topics = LocalTopics != null ? LocalTopics() : AttentionTopic.None;
             _watch.Restart();
-            foreach (Graph g in new[] { _electricity, _water })
+            long start = Perf.Start();
+            double allowance = Perf.Allowance(Perf.BudgetFlow, ScanBudgetMs * 0.5); // w9/perf: shared budget
+            for (int i = 0; i < 2; i++) // w9/perf: no array per frame
             {
+                Graph g = i == 0 ? _electricity : _water;
                 if ((topics & g.Topic) == 0)
                 {
                     if (g.Stage != Stage.Idle) EndPass(g);
                     continue;
                 }
                 CheckFlowSystemOff(g);
-                Advance(g, now, ScanBudgetMs * 0.5, false);
+                Advance(g, now, allowance, false);
             }
+            Perf.Spent(Perf.BudgetFlow, start);
         }
 
         /// <summary>Completes every job that reads or writes the edge type before the main thread writes it.</summary>

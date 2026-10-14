@@ -55,6 +55,44 @@ namespace SkylineTogether.Diagnostics
 
         public static PerfCounters Counters { get; } = CreateCounters();
 
+        // ---- w9/perf: the shared per-frame budget (FrameBudgetService); features draw from it in priority order ----
+
+        /// <summary>
+        /// The shared budget of one frame. The features' own caps add up to about this, so a normal frame clips nothing;
+        /// only a frame already over budget (a catch-up, a big proposal) makes the lower priorities wait for later frames.
+        /// </summary>
+        public const double SharedFrameMs = 10.0;
+
+        public static FrameBudgetService Budget { get; } = new FrameBudgetService(SharedFrameMs);
+
+        // apply incoming (never limited by the others)
+        public static readonly FrameBudgetService.Feature BudgetApply = Budget.Register("apply", BudgetPriority.Apply, 6.0);
+        public static readonly FrameBudgetService.Feature BudgetMoverApply = Budget.Register("mover apply", BudgetPriority.Apply, 4.0);
+        // critical sends (keep at least half of their cap)
+        public static readonly FrameBudgetService.Feature BudgetScan = Budget.Register("value scan", BudgetPriority.CriticalSend, 1.0, 0.5);
+        public static readonly FrameBudgetService.Feature BudgetDeferred = Budget.Register("deferred sends", BudgetPriority.CriticalSend, 1.5, 0.5);
+        public static readonly FrameBudgetService.Feature BudgetAgents = Budget.Register("agent scan", BudgetPriority.CriticalSend, 0.8, 0.5);
+        public static readonly FrameBudgetService.Feature BudgetSimValues = Budget.Register("attention values", BudgetPriority.CriticalSend, 1.0, 0.5);
+        public static readonly FrameBudgetService.Feature BudgetMotion = Budget.Register("motion sample", BudgetPriority.CriticalSend, 2.0, 1.0);
+        public static readonly FrameBudgetService.Feature BudgetTerrain = Budget.Register("terrain+water", BudgetPriority.CriticalSend, 2.0, 1.0); // measured only
+        // integrity (safety nets)
+        public static readonly FrameBudgetService.Feature BudgetIntegrity = Budget.Register("integrity", BudgetPriority.Integrity, 1.5, 0.25);
+        public static readonly FrameBudgetService.Feature BudgetPresenceWatch = Budget.Register("presence watch", BudgetPriority.Integrity, 0.25, 0.25);
+        // statistics and info views
+        public static readonly FrameBudgetService.Feature BudgetFlow = Budget.Register("flow status", BudgetPriority.Statistics, 0.75, 0.2);
+        public static readonly FrameBudgetService.Feature BudgetMaps = Budget.Register("maps+stats", BudgetPriority.Statistics, 2.0, 1.0);
+
+        /// <summary>w9/perf: the allowance of <paramref name="feature"/> for this call (its own cap <paramref name="capMs"/>, clipped when the frame is full).</summary>
+        public static double Allowance(FrameBudgetService.Feature feature, double capMs) => Budget.Begin(feature, capMs);
+
+        /// <summary>w9/perf: records the milliseconds since <paramref name="start"/> as spent by <paramref name="feature"/>; returns them.</summary>
+        public static double Spent(FrameBudgetService.Feature feature, long start)
+        {
+            double ms = Elapsed(start);
+            Budget.End(feature, ms);
+            return ms;
+        }
+
         /// <summary>perf pass: components measured inside another one are counted once in the totals.</summary>
         private static PerfCounters CreateCounters()
         {

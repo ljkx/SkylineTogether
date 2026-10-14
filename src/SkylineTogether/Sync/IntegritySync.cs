@@ -333,7 +333,7 @@ namespace SkylineTogether.Sync
         {
             if (_cycleStart < 0) _cycleStart = now;
             uint end = Math.Max((uint)_ids.ReaderTable.Length, _ids.Ids.Next);
-            long budget = (long)(HostBudgetSeconds * Stopwatch.Frequency);
+            long budget = (long)(Diagnostics.Perf.Allowance(Diagnostics.Perf.BudgetIntegrity, HostBudgetSeconds * 1000.0) / 1000.0 * Stopwatch.Frequency); // w9/perf: shared budget
             long start = Stopwatch.GetTimestamp();
             int n = 0;
             while (true)
