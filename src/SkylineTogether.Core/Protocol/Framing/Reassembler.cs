@@ -90,7 +90,10 @@ namespace SkylineTogether.Core.Protocol
                     Kind = fragment.Kind,
                     FragmentCount = (int)count,
                     TotalLength = (int)total,
-                    Buffer = new byte[Math.Min((int)total, Math.Max(chunk, 64 * 1024))]
+                    // w8/tests: grown as fragments arrive (Grow below) instead of allocated at the declared total: a
+                    // first fragment of a few bytes declaring 8 MiB made the host allocate 8 MiB (32 MiB for four),
+                    // even from a peer that had not finished its handshake. Memory now follows the bytes received.
+                    Buffer = new byte[Math.Min((int)total, chunk)]
                 };
                 _partials.Add(partial);
                 _partialBytes += total;
@@ -115,13 +118,7 @@ namespace SkylineTogether.Core.Protocol
                 Drop(partial);
                 throw new DecodeException(what + ": fragments exceed the declared length " + partial.TotalLength.ToString(CultureInfo.InvariantCulture));
             }
-            if (partial.Received + chunk > partial.Buffer.Length)
-            {
-                // w8/robust: grow with the data (doubling, never beyond the declared total)
-                int size = partial.Buffer.Length;
-                while (size < partial.Received + chunk) size = (int)Math.Min((long)partial.TotalLength, (long)size * 2);
-                Array.Resize(ref partial.Buffer, size);
-            }
+            Grow(partial, partial.Received + chunk);
             Buffer.BlockCopy(body, position, partial.Buffer, partial.Received, chunk);
             partial.Received += chunk;
             partial.NextIndex++;
@@ -148,6 +145,16 @@ namespace SkylineTogether.Core.Protocol
         {
             _partials.Clear();
             _partialBytes = 0;
+        }
+
+        /// <summary>Makes room for <paramref name="needed"/> bytes (doubling, capped at the declared total).</summary>
+        private static void Grow(Partial partial, int needed)
+        {
+            if (partial.Buffer.Length >= needed) return;
+            int capacity = (int)Math.Min(partial.TotalLength, Math.Max(needed, 2L * partial.Buffer.Length));
+            var grown = new byte[capacity];
+            Buffer.BlockCopy(partial.Buffer, 0, grown, 0, partial.Received);
+            partial.Buffer = grown;
         }
 
         private Partial Find(uint messageId)

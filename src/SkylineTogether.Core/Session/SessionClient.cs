@@ -7,11 +7,16 @@ using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Session
 {
+    /// <summary>Settings of a <see cref="SessionClient"/> join attempt: who joins, the password, the timeouts.</summary>
     public sealed class ClientOptions
     {
+        /// <summary>The name the other players see.</summary>
         public string PlayerName = "Player";
+        /// <summary>The player's Steam ID, sent in the hello; the host recognises a repeated connection by it.</summary>
         public ulong SteamId;
+        /// <summary>The session password; empty when none was entered.</summary>
         public string Password = "";
+        /// <summary>Longest time for connecting and the handshake together.</summary>
         public double ConnectTimeoutSeconds = 30;
         /// <summary>Longest wait for the host's snapshot after the welcome (the host saves the city first).</summary>
         public double SnapshotWaitTimeoutSeconds = 300;
@@ -28,7 +33,7 @@ namespace SkylineTogether.Core.Session
         public double LoadTimeoutSeconds = 1200;
     }
 
-
+    /// <summary>Stages of a client session, in order; Ended is final (why: <see cref="ClientEndKind"/>).</summary>
     public enum ClientState
     {
         Idle,
@@ -101,6 +106,10 @@ namespace SkylineTogether.Core.Session
         private readonly ByteWriter _payload = new ByteWriter(4096);
         private readonly ByteReader _reader = new ByteReader();
         private readonly Queue<Buffered> _buffered = new Queue<Buffered>();
+        // w8/tests: snapshot chunks that overtook the manifest (see Handle, BlobChunk)
+        private readonly List<byte[]> _earlyChunks = new List<byte[]>();
+        private long _earlyChunkBytes;
+        private const long MaxEarlyChunkBytes = 16L << 20;
         private readonly byte[] _clientNonce = SessionCrypto.RandomBytes(16);
         private IConnection _connection;
         private PeerChannel _channel;
@@ -497,15 +506,23 @@ namespace SkylineTogether.Core.Session
                     HandleControl(ControlMessage.Decode(e.Body, e.BodyOffset, e.BodyCount));
                     return;
                 case MessageKind.BlobChunk:
-                    if (_receiver == null || State != ClientState.Downloading) return;
-                    _lastChunkAt = _clock.Seconds;
-                    _receiver.OnChunk(e.Body, e.BodyOffset, e.BodyCount);
-                    if (_receiver.IsFailed)
+                    if (_receiver == null && State == ClientState.WaitingForSnapshot)
                     {
-                        End("The city download failed: " + _receiver.FailureReason, ClientEndKind.JoinFailed);
+                        // w8/tests: chunks travel on the bulk lane, the manifest on the reliable lane, and lanes are
+                        // ordered independently: chunks can arrive before the manifest. They used to be dropped, and
+                        // when every chunk was (a snapshot of one chunk) nothing asked for them again: the join hung
+                        // until the 120 s stall watchdog. They are kept (bounded) and fed in once the receiver exists.
+                        if (_earlyChunkBytes + e.BodyCount <= MaxEarlyChunkBytes)
+                        {
+                            var early = new byte[e.BodyCount];
+                            Buffer.BlockCopy(e.Body, e.BodyOffset, early, 0, e.BodyCount);
+                            _earlyChunks.Add(early);
+                            _earlyChunkBytes += early.Length;
+                        }
                         return;
                     }
-                    if (_receiver.IsComplete) OnDownloadComplete();
+                    if (_receiver == null || State != ClientState.Downloading) return;
+                    AcceptChunk(e.Body, e.BodyOffset, e.BodyCount);
                     return;
                 case MessageKind.Ping:
                 {
@@ -627,6 +644,26 @@ namespace SkylineTogether.Core.Session
             _payload.Reset();
             SendControl(ControlKind.ReadyForSnapshot, _payload);
             _log.Info(LogCategory.Join, "downloading the city (" + manifest.Size + " bytes)");
+            List<byte[]> early = new List<byte[]>(_earlyChunks);
+            _earlyChunks.Clear();
+            _earlyChunkBytes = 0;
+            foreach (byte[] chunk in early)
+            {
+                if (State != ClientState.Downloading) return;
+                AcceptChunk(chunk, 0, chunk.Length);
+            }
+            if (State == ClientState.Downloading && _receiver.IsComplete) OnDownloadComplete();
+        }
+
+        private void AcceptChunk(byte[] buffer, int offset, int count)
+        {
+            _lastChunkAt = _clock.Seconds;
+            _receiver.OnChunk(buffer, offset, count);
+            if (_receiver.IsFailed)
+            {
+                End("The city download failed: " + _receiver.FailureReason, ClientEndKind.JoinFailed);
+                return;
+            }
             if (_receiver.IsComplete) OnDownloadComplete();
         }
 
@@ -806,6 +843,8 @@ namespace SkylineTogether.Core.Session
             _log.Info(LogCategory.Session, "session ended: " + reason);
             CloseTarget();
             _buffered.Clear();
+            _earlyChunks.Clear();
+            _earlyChunkBytes = 0;
             if (_channel != null && _connection != null)
             {
                 try

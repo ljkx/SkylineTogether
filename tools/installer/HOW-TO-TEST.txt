@@ -10,9 +10,10 @@ SETUP (both players, 2 minutes)
 4. Have Steam running and be logged in on both PCs.
 
 CONNECT
-Host:   load a city (a copy of a save you don't mind breaking) -> top-left round "Multiplayer" button
-        -> Host tab -> "Host this city" -> "Copy Steam ID" and send it to your friend (or "Invite through Steam").
-Friend: title screen -> "Multiplayer" (below Load Game) -> Join tab -> paste the Steam ID -> Join.
+Host:   load a city (a copy of a save you don't mind breaking) -> round Skyline Together button (top left)
+        -> Host tab -> "Host this city" -> copy "Your Steam ID" (copy icon) and send it to your friend
+        (or "Invite friends" -> "Invite").
+Friend: title screen -> "Multiplayer" (below Load Game) -> "Join a friend" -> paste the Steam ID -> Join.
         You see the download and loading progress; the host's game pauses until you are in.
 
 TEST CHECKLIST (do each step, then both look at the same spot and compare)
@@ -41,7 +42,7 @@ TEST CHECKLIST (do each step, then both look at the same spot and compare)
          with them (Move It: move a building; Traffic: lane connections).
 
 IF SOMETHING IS WRONG (or after the session)
-- In the multiplayer panel click "Write diagnostics" (both players).
+- In the multiplayer panel open "Network & diagnostics" and click "Write diagnostics" (both players).
 - Then double-click Collect-Logs.cmd -> a zip appears on your Desktop. Send both zips plus a short note:
   which step, what each player saw (screenshots help).
 

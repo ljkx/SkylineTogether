@@ -942,6 +942,13 @@ namespace SkylineTogether.Core.Session
                         return;
                     }
                     p.AwaitingPassword = false;
+                    // w8/tests: the capacity check in TryAdmit ran before the challenge; other players may have been
+                    // admitted while this one typed its password (several pending handshakes all passed it)
+                    if (IsFull())
+                    {
+                        Refuse(p, RefuseReason.Full, "The session is full.");
+                        return;
+                    }
                     Admit(p);
                     return;
                 }
@@ -1050,9 +1057,7 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
             }
-            int admitted = 0;
-            foreach (Peer o in _peers.Values) if (o.Admitted) admitted++;
-            if (admitted + 1 >= _options.MaxPlayers)
+            if (IsFull())
             {
                 Refuse(p, RefuseReason.Full, "The session is full.");
                 return;
@@ -1067,6 +1072,14 @@ namespace SkylineTogether.Core.Session
                 return;
             }
             Admit(p);
+        }
+
+        /// <summary>True when no further player fits (<see cref="HostOptions.MaxPlayers"/> counts the host).</summary>
+        private bool IsFull()
+        {
+            int admitted = 0;
+            foreach (Peer o in _peers.Values) if (o.Admitted) admitted++;
+            return admitted + 1 >= _options.MaxPlayers;
         }
 
         private void Admit(Peer p)
