@@ -483,6 +483,25 @@ namespace SkylineTogether.Core.Sync
                 _count += other._count;
             }
 
+            /// <summary>
+            /// Appends <paramref name="records"/> whole records already encoded in <paramref name="data"/> (byte for byte,
+            /// e.g. from an <see cref="EncodedRecordCache"/>), as if they had been written here.
+            /// </summary>
+            public void AppendEncoded(byte[] data, int offset, int count, int records)
+            {
+                if (data == null) throw new ArgumentNullException(nameof(data));
+                if (records < 0 || count < 0 || offset < 0 || offset > data.Length - count) throw new ArgumentOutOfRangeException(nameof(count));
+                if (count > 0) _w.WriteBytes(data, offset, count);
+                _count += (uint)records;
+            }
+
+            /// <summary>Copies <paramref name="count"/> bytes written from position <paramref name="start"/> (a former <see cref="Length"/>).</summary>
+            public void CopyBytes(int start, int count, byte[] target, int targetOffset)
+            {
+                if (start < HeaderBytes || count < 0 || start > _w.Length - count) throw new ArgumentOutOfRangeException(nameof(start));
+                Buffer.BlockCopy(_w.Buffer, start, target, targetOffset, count);
+            }
+
             public void Despawn(uint netId)
             {
                 _w.WriteByte((byte)SyncRecordKind.Despawn);

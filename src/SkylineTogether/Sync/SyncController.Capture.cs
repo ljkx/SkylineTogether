@@ -551,6 +551,7 @@ namespace SkylineTogether.Sync
             SessionHost host = _sessions.Host;
             if (host == null || _outList.Count == 0) return;
             EntityManager em = _codec.EntityManager;
+            _deferredCache.Clear(); // records of this frame's state only
             long start = Stopwatch.GetTimestamp();
             long cpuBudget = (long)(Perf.Allowance(Perf.BudgetDeferred, DeferredBudgetMs) * Stopwatch.Frequency / 1000.0); // shared budget
             for (int p = 0; p < _outList.Count; p++)
@@ -584,7 +585,15 @@ namespace SkylineTogether.Sync
                 try
                 {
                     if (cls == DeferredClass.Upsert && em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _peerBatch);
-                    _codec.WriteEntity(_peerBatch, cls == DeferredClass.Upsert ? SyncRecordKind.Upsert : SyncRecordKind.Values, id, family, e);
+                    SyncRecordKind kind = cls == DeferredClass.Upsert ? SyncRecordKind.Upsert : SyncRecordKind.Values;
+                    // the same entity waiting for several peers is serialized once per frame (the prefab record stays per batch)
+                    ulong key = EncodedRecordCache.Key(id, kind);
+                    if (!_deferredCache.TryAppend(key, _peerBatch))
+                    {
+                        int length = _peerBatch.Length, records = _peerBatch.RecordCount;
+                        _codec.WriteEntity(_peerBatch, kind, id, family, e);
+                        _deferredCache.Store(key, _peerBatch, length, records);
+                    }
                 }
                 catch (Exception ex)
                 {

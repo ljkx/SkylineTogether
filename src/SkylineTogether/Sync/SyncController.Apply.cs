@@ -88,6 +88,7 @@ namespace SkylineTogether.Sync
             // everything the previous frame sent is out: close its release frame
             if (IsHost) _ids.Ids.Seal(_acks.SealFrame(_epochSent), now);
             if (IsHost) KickQueued();
+            if (IsHost) Integrity.InvalidateResends(); // repair records are encoded once per unchanged world state
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
@@ -438,6 +439,7 @@ namespace SkylineTogether.Sync
                 }
             }
             if (facts.EntityCount == 0) _proposalMaxRefund = 0; // set by Validate otherwise
+            if (facts.EntityCount > 0 || facts.HasCost || isGlobal) Integrity.InvalidateResends(); // the world changes now
             List<BuildOrderRange> touchedEdges = TouchedEdgeBuildOrders(records);
             _proposalPeer = peer;
             ApplyResult r = _codec.Apply(records, data, 0, data.Length, _mayCreate);

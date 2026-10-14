@@ -566,7 +566,8 @@ namespace SkylineTogether.Sync
         private void ServeResends(PeerId peer, uint[] ids, PeerGates gates, double now, bool lines)
         {
             EntityManager em = _codec.EntityManager;
-            var w = new SyncBatch.Writer();
+            SyncBatch.Writer w = _resendWriter; // reused: the host copies what it sends
+            w.Reset();
             int sent = 0;
             foreach (uint id in ids)
             {
@@ -587,7 +588,7 @@ namespace SkylineTogether.Sync
                         continue;
                     }
                     if (!IntegrityHasher.IsVerified(family)) continue;
-                    _codec.WriteEntity(w, SyncRecordKind.Spawn, id, family, e);
+                    WriteResend(w, id, family, e);
                     sent++;
                     NoteResent(id, family);
                     if (lines && family == Family.Route)
@@ -620,7 +621,7 @@ namespace SkylineTogether.Sync
                 if (w.RecordCount >= RecordsPerResponse)
                 {
                     Send(peer, w);
-                    w = new SyncBatch.Writer();
+                    w.Reset();
                 }
             }
             if (!w.IsEmpty) Send(peer, w);
@@ -640,11 +641,33 @@ namespace SkylineTogether.Sync
             {
                 uint id = _ids.GetNetId(child);
                 if (id == 0 || !em.Exists(child)) continue;
-                _codec.WriteEntity(w, SyncRecordKind.Spawn, id, _ids.GetFamily(id), child);
+                WriteResend(w, id, _ids.GetFamily(id), child);
                 n++;
             }
             return n;
         }
+
+        private readonly SyncBatch.Writer _resendWriter = new SyncBatch.Writer();
+        private readonly EncodedRecordCache _resendCache = new EncodedRecordCache();
+
+        /// <summary>
+        /// A repair record, encoded once per frame start: several peers asking for the same bucket (a rebaseline after a
+        /// burst) get the same bytes instead of a serialization each.
+        /// </summary>
+        private void WriteResend(SyncBatch.Writer w, uint id, Family family, Entity e)
+        {
+            ulong key = EncodedRecordCache.Key(id, SyncRecordKind.Spawn);
+            if (_resendCache.TryAppend(key, w)) return;
+            int length = w.Length, records = w.RecordCount;
+            _codec.WriteEntity(w, SyncRecordKind.Spawn, id, family, e);
+            _resendCache.Store(key, w, length, records);
+        }
+
+        /// <summary>
+        /// Host: the world may change (a new frame, or a proposal about to be applied); repair records encoded so far
+        /// are stale.
+        /// </summary>
+        public void InvalidateResends() => _resendCache.Clear();
 
         private void ServeExplains(PeerId peer, uint[] ids, PeerGates gates, double now)
         {

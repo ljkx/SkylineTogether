@@ -117,6 +117,8 @@ namespace SkylineTogether.Sync
         private readonly List<PendingZone> _pendingZones = new List<PendingZone>();
         private readonly SyncBatch.Writer _batch = new SyncBatch.Writer();
         private readonly SyncBatch.Writer _peerBatch = new SyncBatch.Writer();
+        /// <summary>Host: deferred records already encoded this frame, appended as they are for the next peer that needs them.</summary>
+        private readonly EncodedRecordCache _deferredCache = new EncodedRecordCache();
         private readonly SyncBatch.Writer _digestBatch = new SyncBatch.Writer();
         // global state (taxes, budgets, fees, loan, policies, names, demand): own batch, so a peer that cannot decode a
         // global record never loses entity data
@@ -405,6 +407,7 @@ namespace SkylineTogether.Sync
                     lines.Add("peer " + o.Peer + ": applied frame " + _acks.AckedFrame(o.Peer.Value) + ", deferred " + o.Queue.Count + " (coalesced " + o.Queue.CoalescedCount
                               + " of " + o.Queue.MarkedCount + "), sent " + o.SentRecords + " deferred records");
                 }
+                lines.Add("deferred records: " + _deferredCache.Stores + " encoded, " + _deferredCache.Hits + " reused for another peer in the same frame");
             }
             else if (_sessions.Client != null)
             {
