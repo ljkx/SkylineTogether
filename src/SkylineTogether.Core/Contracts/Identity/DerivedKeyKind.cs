@@ -1,8 +1,8 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Kinds of derived keys (ARCH §3.7). The numeric values are the subkinds of the extended <c>NetRef</c> tag on the
-    /// wire (ARCH §4.3.3) and must never change.
+    /// Kinds of derived keys (docs/history/ARCHITECTURE-original.md §3.7). The numeric values are the subkinds of the extended <c>NetRef</c> tag on the
+    /// wire (docs/history/ARCHITECTURE-original.md §4.3.3) and must never change.
     /// </summary>
     public enum DerivedKeyKind : byte
     {

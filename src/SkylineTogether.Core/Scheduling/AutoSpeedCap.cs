@@ -6,7 +6,7 @@ using System.Text;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// The automatic speed cap (ARCH §4.8.5, session option "automatic speed cap", default on): when a peer's link cannot
+    /// The automatic speed cap (docs/history/ARCHITECTURE-original.md §4.8.5, session option "automatic speed cap", default on): when a peer's link cannot
     /// sustain P0 at the current speed, the host lowers the session speed one step, and again every
     /// <c>overloadSeconds</c> while some peer stays overloaded; once no peer has been overloaded for
     /// <c>recoverySeconds</c> ("until that peer has had 60 s of headroom") the cap rises one step, and again after each

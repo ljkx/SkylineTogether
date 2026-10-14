@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Message body compressors (ARCH §4.6.5); the codec is negotiated in the handshake.</summary>
+    /// <summary>Message body compressors (ARCHITECTURE.md#fragmentation-and-compression); the codec is negotiated in the handshake.</summary>
     public enum CompressionKind : byte
     {
         None,

@@ -5,7 +5,7 @@ namespace SkylineTogether.Core
 {
     /// <summary>
     /// Dictionary code of a replicated signature (the sorted set of an entity's replicated type ranks) in the
-    /// session-global, append-only type-set registry (ARCH §3.6). 0 is <see cref="None"/>; the registry assigns ids
+    /// session-global, append-only type-set registry (docs/history/ARCHITECTURE-original.md §3.6). 0 is <see cref="None"/>; the registry assigns ids
     /// from 1 upwards.
     /// </summary>
     public readonly struct TypeSetId : IEquatable<TypeSetId>

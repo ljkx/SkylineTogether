@@ -9,7 +9,7 @@ using ILog = SkylineTogether.Core.ILog;
 namespace SkylineTogether.Presence
 {
     /// <summary>
-    /// Remote presence (ARCH K15, §11.4), session side: keeps the <see cref="PresenceTable"/> fed from the host or
+    /// Remote presence (ARCHITECTURE.md#presence-and-tool-previews), session side: keeps the <see cref="PresenceTable"/> fed from the host or
     /// client session, sends the local player's presence through it, and holds the tags the UI shows. The drawing and
     /// the local raycast live in <see cref="PresenceSystem"/>. Main thread only.
     /// </summary>

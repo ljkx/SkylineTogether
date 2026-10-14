@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// A portable entity reference inside canonical bytes (ARCH §4.3.3): null, local (not replicated), a slot, a prefab
+    /// A portable entity reference inside canonical bytes (docs/history/ARCHITECTURE-original.md §4.3.3): null, local (not replicated), a slot, a prefab
     /// rank, a provisional <see cref="LocalId"/> (proposals only) or a derived key. The same bytes are hashed, so
     /// references are canonical; the wire codec is core-protocol's <c>NetRefCodec</c>.
     /// Values are created only through the factories, so equal references are equal field by field.

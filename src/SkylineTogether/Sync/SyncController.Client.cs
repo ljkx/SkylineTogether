@@ -193,7 +193,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Route-tool preview window (ARCH §4.11.4, simplified): while the player draws or edits a line, the local
+        /// Route-tool preview window (ARCHITECTURE.md#client-proposals): while the player draws or edits a line, the local
         /// route path and waypoint systems run so the preview follows the roads; afterwards the host's line state is
         /// requested again, so no locally derived line state survives.
         /// </summary>

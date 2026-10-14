@@ -6,7 +6,7 @@ using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Tests.Transport
 {
-    /// <summary>LoopbackTransport (ARCH §9.1): connection events, per-lane ordering, back-pressure, close semantics.</summary>
+    /// <summary>LoopbackTransport (ARCHITECTURE.md#transport): connection events, per-lane ordering, back-pressure, close semantics.</summary>
     public sealed class LoopbackTransportTests
     {
         private static (LoopbackTransport host, LoopbackTransport client, IConnection clientConn, IConnection hostConn, RecordingSink hostSink, RecordingSink clientSink) Connected()

@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Intents
 {
     /// <summary>
-    /// One applied terrain brush stamp (ARCH §4.10.9, §5.3 <c>TerrainStroke</c>): the arguments of
+    /// One applied terrain brush stamp (docs/history/ARCHITECTURE-original.md §4.10.9, §5.3 <c>TerrainStroke</c>): the arguments of
     /// <c>TerrainSystem.ApplyBrush(TerraformingType type, Bounds2 area, Brush brush, Texture texture)</c>
     /// (<c>Game.Simulation/TerrainSystem.cs:3968</c>) with the <c>Brush</c> fields (<c>Game.Tools/Brush.cs</c>), the
     /// tool prefab of <c>Brush.m_Tool</c> (it selects the tool strength through <c>TerraformingBrushData</c> and the
@@ -14,7 +14,7 @@ namespace SkylineTogether.Core.Intents
     /// <c>Time.unscaledDeltaTime</c> clamped to [0.05, 1] (<c>TerrainSystem.cs:3766-3775</c>), so a replaying machine
     /// pre-scales the strength from <see cref="ClampedDeltaTime"/> (core-fields <c>BrushStrengthCompensation</c>).
     /// <para>
-    /// Body (also the payload of a TERRAIN record when the host forwards stamps, ARCH §4.10.9):
+    /// Body (also the payload of a TERRAIN record when the host forwards stamps, docs/history/ARCHITECTURE-original.md §4.10.9):
     /// <code>
     /// u8 terraformingType | f32 posX posY posZ targetX targetY targetZ startX startY startZ angle size strength opacity
     /// | varint toolPrefab+1 | varint brushPrefab+1 | f32 areaMinX areaMinZ areaMaxX areaMaxZ | f32 clampedDeltaTime
@@ -45,7 +45,7 @@ namespace SkylineTogether.Core.Intents
         /// <summary>The <c>Bounds2 area</c> argument of <c>ApplyBrush</c> (x/z metres).</summary>
         public float AreaMinX, AreaMinZ, AreaMaxX, AreaMaxZ;
 
-        /// <summary>The originator's <c>clamp(Time.unscaledDeltaTime, 0.05, 1)</c> (ARCH §4.10.9).</summary>
+        /// <summary>The originator's <c>clamp(Time.unscaledDeltaTime, 0.05, 1)</c> (docs/history/ARCHITECTURE-original.md §4.10.9).</summary>
         public float ClampedDeltaTime;
 
         /// <summary>Appends the stamp body.</summary>

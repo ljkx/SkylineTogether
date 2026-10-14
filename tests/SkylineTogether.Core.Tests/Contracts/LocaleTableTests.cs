@@ -4,7 +4,7 @@ using static SkylineTogether.Core.Tests.Contracts.DataFileSamples;
 
 namespace SkylineTogether.Core.Tests.Contracts
 {
-    /// <summary>Locale tables (ARCH §11.7).</summary>
+    /// <summary>Locale tables (ARCHITECTURE.md#ui-module).</summary>
     public sealed class LocaleTableTests
     {
         [Test]

@@ -5,7 +5,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Buffers
 {
-    /// <summary>Every overrun and every invalid encoding throws DecodeException and nothing else (IMPLEMENTATION-PLAN §4).</summary>
+    /// <summary>Every overrun and every invalid encoding throws DecodeException and nothing else (ARCHITECTURE.md#code-rules).</summary>
     public sealed class ByteReaderErrorTests
     {
         private static ByteReader Reader(params byte[] bytes) => new ByteReader(bytes, 0, bytes.Length);

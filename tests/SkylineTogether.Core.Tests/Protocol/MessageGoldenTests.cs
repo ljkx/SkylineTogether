@@ -8,7 +8,7 @@ using static SkylineTogether.Core.Tests.Protocol.ProtocolTestUtil;
 namespace SkylineTogether.Core.Tests.Protocol
 {
     /// <summary>
-    /// Golden byte vectors of every message and control payload codec (ARCH Appendix C): with the record vectors they
+    /// Golden byte vectors of every message and control payload codec (ARCHITECTURE.md#envelope-and-message-kinds): with the record vectors they
     /// freeze ProtocolVersion 1. Each vector is written by hand from the documented layout (comments name the fields),
     /// checked against the writer and decoded back.
     /// </summary>

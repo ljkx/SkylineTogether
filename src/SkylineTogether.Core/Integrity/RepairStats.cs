@@ -2,7 +2,7 @@ namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
     /// Counters of the client repair coordinator since its creation (shown in the network panel and written into the
-    /// diagnostics dump, ARCH §13.2, §13.6). <see cref="RepairCoordinator.Reset"/> keeps them.
+    /// diagnostics dump, docs/history/ARCHITECTURE-original.md §13.2, §13.6). <see cref="RepairCoordinator.Reset"/> keeps them.
     /// </summary>
     public struct RepairStats
     {

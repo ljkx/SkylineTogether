@@ -5,9 +5,9 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// The wire form of a <see cref="NetRef"/> in records (ICON owners and targets, NAME targets; ARCH §4.6.3
+    /// The wire form of a <see cref="NetRef"/> in records (ICON owners and targets, NAME targets; docs/history/ARCHITECTURE-original.md §4.6.3
     /// "NetRef = §4.3.3") and of a <see cref="DerivedKey"/> (KEYED, KEYED_DEL, ZONE). It is byte-identical to the
-    /// canonical-bytes encoding of core-codec, because the same references are hashed (ARCH §4.3.3):
+    /// canonical-bytes encoding of core-codec, because the same references are hashed (docs/history/ARCHITECTURE-original.md §4.3.3):
     /// <code>
     /// NetRef = varint head [extension]          head = (payload &lt;&lt; 2) | tag, LEB128 (up to 64 bits)
     ///   tag 0   payload 0 = Null, 1 = Local       (one byte: 00 or 04)

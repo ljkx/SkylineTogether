@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Dense 24-bit network identity of a replicated entity (ARCH §3.1): 1 ... 16 777 215, 0 = none. References carry
+    /// Dense 24-bit network identity of a replicated entity (ARCHITECTURE.md#net-ids): 1 ... 16 777 215, 0 = none. References carry
     /// slots on the wire (a varint of at most 4 bytes); peers keep their side tables as flat arrays indexed by slot.
     /// </summary>
     public readonly struct NetSlot : IEquatable<NetSlot>, IComparable<NetSlot>
@@ -12,7 +12,7 @@ namespace SkylineTogether.Core
         /// <summary>The largest valid slot value (24 bits).</summary>
         public const uint MaxValue = 0x00FFFFFF;
 
-        /// <summary>Slots per hash bucket: bucket = slot >> 10 (ARCH §8.2).</summary>
+        /// <summary>Slots per hash bucket: bucket = slot >> 10 (ARCHITECTURE.md#bucket-digests).</summary>
         public const int BucketShift = 10;
 
         /// <summary>The "no slot" value (0); equal to <c>default(NetSlot)</c>.</summary>
@@ -34,7 +34,7 @@ namespace SkylineTogether.Core
         /// <summary>True for the "no slot" value 0.</summary>
         public bool IsNone => Value == 0;
 
-        /// <summary>The hash bucket of this slot: <c>Value >> 10</c> (1024 slots per bucket, ARCH §8.2).</summary>
+        /// <summary>The hash bucket of this slot: <c>Value >> 10</c> (1024 slots per bucket, ARCHITECTURE.md#bucket-digests).</summary>
         public int Bucket => (int)(Value >> BucketShift);
 
         /// <summary>True when <paramref name="value"/> fits into a slot (decoders validate wire values with it).</summary>

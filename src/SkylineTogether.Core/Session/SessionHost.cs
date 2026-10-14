@@ -148,7 +148,7 @@ namespace SkylineTogether.Core.Session
             public bool Admitted;
             /// <summary>Reliable <c>Epoch</c> messages queued for this peer (the watermarks of <c>ApplyAckBook</c>).</summary>
             public long EpochSent;
-            /// <summary>gameplay branch: the player's role (ARCH §5.6); the host toggles builder ↔ viewer in the panel.</summary>
+            /// <summary>gameplay branch: the player's role (ARCHITECTURE.md#roles-and-moderation); the host toggles builder ↔ viewer in the panel.</summary>
             public SessionRole Role = SessionRole.Builder;
             /// <summary>The stage timings of this player's join (from its admission).</summary>
             public JoinTimeline Timeline;
@@ -510,7 +510,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// The send-side state of an admitted peer for the bandwidth scheduler (ARCH §4.8): whether it is live,
+        /// The send-side state of an admitted peer for the bandwidth scheduler (ARCHITECTURE.md#deferred-values-and-link-pacing): whether it is live,
         /// the reliable bytes waiting in its outbox, the bytes the transport still holds and its send rate.
         /// </summary>
         public bool TryGetLink(PeerId peer, out PeerSendState link)
@@ -616,7 +616,7 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>
         /// Movers branch: the raw send side of a live peer, for engines that write complete envelopes themselves
-        /// (the motion encoder, ARCH §4.9.3); null when the peer is unknown or not live.
+        /// (the motion encoder, ARCHITECTURE.md#movers); null when the peer is unknown or not live.
         /// </summary>
         public IPeerOutput GetPeerOutput(PeerId peer)
         {
@@ -1384,7 +1384,7 @@ namespace SkylineTogether.Core.Session
             p.Timeline = new JoinTimeline { Who = p.Name };
             p.Timeline.Mark(JoinStage.Start, admittedAt);
             p.Timeline.Mark(JoinStage.Welcome, admittedAt);
-            // the joiner's main thread will stall while its game loads the city (ARCH §9.7)
+            // the joiner's main thread will stall while its game loads the city (ARCHITECTURE.md#live-session)
             ConnectionTimeouts.Apply(p.Channel.Connection, joining: true, _log);
             _payload.Reset();
             SessionPayloads.WriteSessionInfo(_payload, new SessionInfo { SessionName = _options.SessionName, HostName = _options.HostName });

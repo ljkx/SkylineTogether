@@ -8,14 +8,14 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Transport
 {
     /// <summary>
-    /// Wire format of the blob transfer messages (ARCH §7.5, Appendix C), all little-endian. Every body starts with the
+    /// Wire format of the blob transfer messages (ARCHITECTURE.md#blob-transfer, #envelope-and-message-kinds), all little-endian. Every body starts with the
     /// <c>u32 blobId</c>, so a receiver can route it with <see cref="TryPeekBlobId"/> before decoding.
     /// <code>
     /// BlobManifest (lane R) = u32 blobId | varint64 size | varint chunkSize | u64 digestLo | u64 digestHi | varint purposeLength | purpose (UTF-8)
     /// BlobChunk    (lane B) = u32 blobId | u32 index | u32 length | u64 xxHash64(payload) | payload (length bytes)
     /// BlobHave     (lane R) = u32 blobId | varint bitmapLength | bitmap   (bit i = byte i/8, bit i%8 LSB first: chunk i is held)
     /// </code>
-    /// Readers throw <see cref="DecodeException"/> for anything outside the limits (blob ≤ 2 GiB, ARCH §14.5; chunks of
+    /// Readers throw <see cref="DecodeException"/> for anything outside the limits (blob ≤ 2 GiB, ARCHITECTURE.md#security-model; chunks of
     /// <see cref="MinChunkBytes"/> to <see cref="Limits.MaxBulkChunkBytes"/> bytes; purpose ≤ <see cref="MaxPurposeBytes"/>
     /// bytes); writers throw <see cref="ArgumentException"/> for values a reader would reject.
     /// </summary>
@@ -25,13 +25,13 @@ namespace SkylineTogether.Core.Transport
         /// <summary>Bytes of the chunk header (blob id, index, length, hash).</summary>
         public const int ChunkHeaderBytes = 20;
 
-        /// <summary>Largest blob a manifest may announce (ARCH §14.5: "manifest size ≤ 2 GB").</summary>
+        /// <summary>Largest blob a manifest may announce (ARCHITECTURE.md#blob-transfer: at most 2 GiB).</summary>
         public const long MaxBlobBytes = 2L << 30;
 
         /// <summary>Smallest chunk size; bounds the chunk count (and the have-bitmap) of the largest blob.</summary>
         public const int MinChunkBytes = 512;
 
-        /// <summary>The chunk size of snapshots and other blobs (ARCH §7.5).</summary>
+        /// <summary>The chunk size of snapshots and other blobs (ARCHITECTURE.md#blob-transfer).</summary>
         public const int DefaultChunkBytes = Limits.MaxBulkChunkBytes;
 
         /// <summary>UTF-8 bytes of the purpose label.</summary>

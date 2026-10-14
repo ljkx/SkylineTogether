@@ -225,7 +225,7 @@ namespace SkylineTogether.Sync
         /// <summary>
         /// A batch could not be applied. On a client the replica may now differ from the host's city: failures count
         /// against replication (critical), so repeated ones end the session and the player is offered a rejoin with a
-        /// fresh snapshot (ARCH D6 "fail into resync"). On the host, one peer's broken proposals never end the
+        /// fresh snapshot (ARCHITECTURE.md#feature-health-and-guards "fail into resync"). On the host, one peer's broken proposals never end the
         /// session: they are logged with a rate limit and the peer is removed once they keep failing.
         /// </summary>
         private void ApplyFailed(PeerId peer, Exception ex)
@@ -418,7 +418,7 @@ namespace SkylineTogether.Sync
         private void ApplyProposal(PeerId peer, byte[] data)
         {
             List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length);
-            // gameplay branch: validation (ARCH §5.4.1); a refused proposal is rolled back on its originator by a resend
+            // gameplay branch: validation (ARCHITECTURE.md#host-validation-and-commit); a refused proposal is rolled back on its originator by a resend
             ProposalFacts facts = Facts(records, out uint seq, out uint baseEpoch);
             bool isGlobal = SyncBatch.FirstRecordKind(data, 0, data.Length) == (byte)SyncRecordKind.Global;
             if ((facts.EntityCount > 0 || facts.HasCost || isGlobal) && !_rate.TryTake(peer.Value, _sessions.Clock.Seconds))

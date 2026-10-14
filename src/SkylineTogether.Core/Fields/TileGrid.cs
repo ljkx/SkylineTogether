@@ -6,7 +6,7 @@ namespace SkylineTogether.Core.Fields
 {
     /// <summary>
     /// Splits a texel grid (the 4096² terrain heightmap into 64×64 tiles, the 2048² water texture into 256×256 tiles;
-    /// ARCH §4.10.9-4.10.10) into square tiles, numbered row-major from the top-left texel. When the grid size is not a
+    /// ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water) into square tiles, numbered row-major from the top-left texel. When the grid size is not a
     /// multiple of the tile size, the tiles of the last column and row are smaller (<see cref="GetRect"/>).
     /// <para>
     /// Texel rectangles are given as <b>inclusive</b> bounds <c>[minX..maxX] × [minY..maxY]</c>, the convention of the

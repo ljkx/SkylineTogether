@@ -8,7 +8,7 @@ namespace SkylineTogether.Core.Tests.Contracts
 {
     /// <summary>
     /// The locale schema survives parse, print (compact and indented) and re-parse: the printed text parses with the
-    /// same model parser and prints the same (IMPLEMENTATION-PLAN §7.1 tests: MiniJson parse/print of every schema).
+    /// same model parser and prints the same (MiniJson parse/print of every schema).
     /// </summary>
     public sealed class DataFileRoundTripTests
     {

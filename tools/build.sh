@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Skyline Together build script (IMPLEMENTATION-PLAN §2.7; the plan's build.ps1 is this POSIX shell script).
+# Skyline Together build script (docs/dev/building.md).
 #
 #   tools/build.sh [--deploy] [--package] [--game-dir <path>] [--deploy-dir <path>] [--skip-ui-checks]
 #

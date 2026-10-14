@@ -20,7 +20,7 @@ using Unity.Mathematics;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Attention-driven simulation values (ARCH D5, §4.7.9, §4.8, playable subset). Clients run no gameplay
+    /// Attention-driven simulation values (ARCHITECTURE.md#simulation-values, #deferred-values-and-link-pacing). Clients run no gameplay
     /// simulation, so without this the values on structure entities (building condition, efficiency, consumers,
     /// stored resources, service facilities, road traffic and condition, land value, coverage, area amounts) stay at
     /// their join-snapshot state and info panels, infoviews and tooltips go stale.
@@ -34,7 +34,7 @@ namespace SkylineTogether.Sync
     /// this class extends with the selected entity and the active infoview's topics (<see cref="FillViewReport"/>).
     /// </para>
     /// <para>
-    /// <b>Time-aligned inspection (K7).</b> Whenever the host's frame index crosses a multiple of 256, the selected
+    /// <b>Time-aligned inspection.</b> Whenever the host's frame index crosses a multiple of 256, the selected
     /// entity of every peer (plus its installed upgrades) is sampled and sent stamped with that tick, and the host
     /// refreshes its own selected-info panel. A new selection gets one immediate sample. Between samples the
     /// selected entity is withheld from the attention stream. Clients hold a sample until their follower clock reaches
@@ -460,7 +460,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        // ------------------------------------------------------------------ inspection samples (K7)
+        // ------------------------------------------------------------------ inspection samples
 
         private void Samples()
         {
@@ -478,7 +478,7 @@ namespace SkylineTogether.Sync
             _lastFrame = frame;
             if (crossed)
             {
-                // the host's own panel refreshes on the same phase as every client's (ARCH §4.7.9)
+                // the host's own panel refreshes on the same phase as every client's (ARCHITECTURE.md#simulation-values)
                 try
                 {
                     if (_selectedInfo.selectedEntity != Entity.Null) _selectedInfo.RequestUpdate();
@@ -612,7 +612,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>The attention topics of every infomode of an infoview (ARCH §4.8.3; over-approximates optional modes).</summary>
+        /// <summary>The attention topics of every infomode of an infoview (ARCHITECTURE.md#simulation-values; over-approximates optional modes).</summary>
         private AttentionTopic TopicsOf(InfoviewPrefab infoview)
         {
             if (infoview == null || _tools == null) return AttentionTopic.None;

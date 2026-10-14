@@ -7,7 +7,7 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Transport
 {
     /// <summary>
-    /// The per-peer reliable outbox (ARCH §9.3, K18): an application-level queue per lane in front of an
+    /// The per-peer reliable outbox (ARCHITECTURE.md#outbox-lanes-and-rate-control): an application-level queue per lane in front of an
     /// <see cref="IConnection"/>, so a reliable message is never lost when the transport's send buffer is full.
     /// <para>
     /// Steam refuses a reliable message with <c>k_EResultLimitExceeded</c> (<see cref="SendResult.Busy"/>) when the
@@ -25,7 +25,7 @@ namespace SkylineTogether.Core.Transport
     /// above <see cref="Limits.MaxMessageBytes"/> are refused at once with <see cref="SendResult.TooLarge"/> (the caller
     /// fragments first, <see cref="Fragmenter"/>); every other reliable send answers <see cref="SendResult.Ok"/> or,
     /// once the connection is closed, <see cref="SendResult.Closed"/>. The queued bytes count toward the peer's P0
-    /// backlog and trip <see cref="OverLimit"/> at the "connection too slow" thresholds (64 MB or 60 s, ARCH §4.8.5).
+    /// backlog and trip <see cref="OverLimit"/> at the "connection too slow" thresholds (64 MB or 60 s, ARCHITECTURE.md#live-session).
     /// </para>
     /// <para>
     /// Thread-safe: any thread may send and read the counters; <see cref="Pump"/> runs on the network thread (a
@@ -114,7 +114,7 @@ namespace SkylineTogether.Core.Transport
         /// <summary>The transport's real-time statistics (queried from the connection; the last known values when it fails).</summary>
         public ConnectionStats Stats => QueryStats();
 
-        /// <summary>Bytes waiting in the outbox, all lanes (they count as P0 backlog, ARCH §4.8.5).</summary>
+        /// <summary>Bytes waiting in the outbox, all lanes (they count as P0 backlog, ARCHITECTURE.md#live-session).</summary>
         public long QueuedBytes => Interlocked.Read(ref _queuedBytes);
 
         /// <summary>Bytes of reliable messages waiting on lanes R and U.</summary>
@@ -146,7 +146,7 @@ namespace SkylineTogether.Core.Transport
         }
 
         /// <summary>
-        /// Queued bytes or the age of the oldest queued message above the disconnect thresholds (ARCH §4.8.5); the
+        /// Queued bytes or the age of the oldest queued message above the disconnect thresholds (ARCHITECTURE.md#live-session); the
         /// host then disconnects the peer with "connection too slow for this session". Also true once the outbox is
         /// faulted (<see cref="IsFaulted"/>), because its reliable stream cannot continue either.
         /// </summary>
@@ -244,8 +244,8 @@ namespace SkylineTogether.Core.Transport
         /// <summary>
         /// True when lane R's window has room for <paramref name="bytes"/> more: the reliable bytes queued here plus
         /// the transport's pending bytes plus the request stay within <see cref="OutboxConfig.SendBufferBytes"/> −
-        /// <see cref="OutboxConfig.ReliableHeadroomBytes"/>. The scheduler asks before it builds P1/P3 sections (ARCH
-        /// §4.8.4); false once the outbox is closed.
+        /// <see cref="OutboxConfig.ReliableHeadroomBytes"/>. Callers ask before they queue deferrable traffic
+        /// (ARCHITECTURE.md#deferred-values-and-link-pacing); false once the outbox is closed.
         /// </summary>
         public bool CanAcceptReliable(int bytes)
         {

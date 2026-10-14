@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Infoview and panel topics of the attention model (ARCH §4.8.3): data matching an active topic of a peer is
+    /// Infoview and panel topics of the attention model (ARCHITECTURE.md#simulation-values): data matching an active topic of a peer is
     /// promoted to P1 for that peer.
     /// </summary>
     [Flags]

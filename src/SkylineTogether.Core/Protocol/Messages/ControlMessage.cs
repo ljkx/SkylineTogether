@@ -4,12 +4,12 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// A <c>Control</c> message (ARCH Appendix C): a <see cref="ControlKind"/> and its payload.
+    /// A <c>Control</c> message (ARCHITECTURE.md#envelope-and-message-kinds): a <see cref="ControlKind"/> and its payload.
     /// <code>
     /// u8 kind | bytes payload (≤ 8 MiB − 16)
     /// </code>
     /// Unknown kinds are read without error (<see cref="IsKnownKind"/> tells them apart); the router drops them
-    /// (ARCH §14.3). The static codec methods are thread-safe.
+    /// (ARCHITECTURE.md#security-model). The static codec methods are thread-safe.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
     public sealed class ControlMessage

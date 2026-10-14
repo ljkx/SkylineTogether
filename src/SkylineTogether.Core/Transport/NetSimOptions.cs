@@ -3,7 +3,7 @@ using System.Globalization;
 namespace SkylineTogether.Core.Transport
 {
     /// <summary>
-    /// The impairments <see cref="NetSimTransport"/> applies to what its side sends (ARCH §9.1: loss, latency, jitter,
+    /// The impairments <see cref="NetSimTransport"/> applies to what its side sends (ARCHITECTURE.md#transport: loss, latency, jitter,
     /// reordering, duplication, bandwidth cap). The model mirrors a reliable-UDP transport such as Steam Networking
     /// Sockets: unreliable messages are really lost, duplicated and reordered, while reliable lanes stay exactly-once
     /// and ordered and pay for loss with retransmission delay and bandwidth. Rates outside 0..1 are clamped, negative
@@ -40,12 +40,12 @@ namespace SkylineTogether.Core.Transport
         /// <summary>
         /// The simulated send buffer: while this many bytes wait for the bandwidth, sends answer
         /// <see cref="SendResult.Busy"/> (Steam's <c>k_EResultLimitExceeded</c>). 0 = unlimited. Default 16 MiB, the
-        /// size the game configures on Steam connections (ARCH §7.5).
+        /// size the game configures on Steam connections (ARCHITECTURE.md#blob-transfer).
         /// </summary>
         public int SendBufferBytes = 16 << 20;
 
         /// <summary>
-        /// Steam lane priorities (ARCH §9.2): lanes R and U are served before lane B, which only gets leftover
+        /// Steam lane priorities (ARCHITECTURE.md#outbox-lanes-and-rate-control): lanes R and U are served before lane B, which only gets leftover
         /// bandwidth. False serves every lane from one queue, like a single connection without lanes.
         /// </summary>
         public bool PrioritizeLanes = true;

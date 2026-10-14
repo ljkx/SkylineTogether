@@ -9,7 +9,7 @@ using SkylineTogether.Session;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// gameplay branch: the no-predict gate for viewers (ARCH §5.3, R10 §7.4). Runs in ToolUpdate right before
+    /// gameplay branch: the no-predict gate for viewers (ARCHITECTURE.md#roles-and-moderation, R10 §7.4). Runs in ToolUpdate right before
     /// <c>ToolOutputSystem</c>: when the local player is a viewer and the active tool chose <c>Apply</c>, it rewrites the
     /// tool's <c>applyMode</c> to <c>Clear</c> through its protected setter (<c>ToolBaseSystem.cs:182</c>), so the vanilla
     /// <c>ToolClearSystem</c> removes the preview exactly as on a mouse move and nothing is committed or proposed

@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>How a mod relates to the shared world (ARCH §10.4-10.5).</summary>
+    /// <summary>How a mod relates to the shared world (ARCHITECTURE.md#mod-compatibility).</summary>
     public enum ModClass : byte
     {
         /// <summary>Changes the world: must match exactly on every peer (the default for unknown mods).</summary>

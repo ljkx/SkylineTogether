@@ -6,7 +6,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Hashing
 {
     /// <summary>
-    /// A 128-bit content digest: XXH3-128 with seed 0 ("xxHash128" in ARCH §7.5, §7.10), used for snapshot blobs and
+    /// A 128-bit content digest: XXH3-128 with seed 0 (ARCHITECTURE.md#blob-transfer, #snapshot-join), used for snapshot blobs and
     /// warm-join blocks. <see cref="Lo"/> and <see cref="Hi"/> are the low and high 64 bits of the XXH128 value.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]

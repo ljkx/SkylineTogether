@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>What a <see cref="NetRef"/> points at (ARCH §4.3.3).</summary>
+    /// <summary>What a <see cref="NetRef"/> points at (docs/history/ARCHITECTURE-original.md §4.3.3).</summary>
     public enum NetRefKind : byte
     {
         /// <summary><c>Entity.Null</c> (wire tag 0, payload 0).</summary>

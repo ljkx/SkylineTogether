@@ -1,8 +1,8 @@
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// The host's answer to a client repair request (ARCH §8.5 "Who decides"). The host never disconnects a peer for
-    /// its repair-request rate (ARCH §5.6, §14.3); only a systematic repair loop ends the connection.
+    /// The host's answer to a client repair request (docs/history/ARCHITECTURE-original.md §8.5 "Who decides"). The host never disconnects a peer for
+    /// its repair-request rate (docs/history/ARCHITECTURE-original.md §5.6, §14.3); only a systematic repair loop ends the connection.
     /// </summary>
     public enum RepairDecision : byte
     {

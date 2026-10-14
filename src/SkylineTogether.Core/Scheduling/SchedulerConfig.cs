@@ -1,8 +1,8 @@
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Tunables of budgets and attention (ARCH §4.8, Appendix D). The first block is the contract of
-    /// IMPLEMENTATION-PLAN §7.7; the fields after it are additive tunables of this implementation, each with the default
+    /// Tunables of budgets and attention (docs/history/ARCHITECTURE-original.md §4.8, Appendix D). The first block is the contract of
+    /// docs/history/IMPLEMENTATION-PLAN.md §7.7; the fields after it are additive tunables of this implementation, each with the default
     /// that the design implies. Consumers (<see cref="LinkEstimator"/>, <c>AttentionSets</c>,
     /// <c>PeerScheduler</c>, <see cref="DegradationController"/>) copy and sanitise the values when they are
     /// constructed, so changing a field afterwards has no effect on an existing instance, and invalid values (NaN,
@@ -10,36 +10,36 @@ namespace SkylineTogether.Core.Scheduling
     /// </summary>
     public sealed class SchedulerConfig
     {
-        // ---------- contract (IMPLEMENTATION-PLAN §7.7) ----------
+        // ---------- contract (docs/history/IMPLEMENTATION-PLAN.md §7.7) ----------
 
-        /// <summary>Shares of what remains after P0 (ARCH §4.8.4): attention values, motion, rolling refresh. Work-conserving.</summary>
+        /// <summary>Shares of what remains after P0 (docs/history/ARCHITECTURE-original.md §4.8.4): attention values, motion, rolling refresh. Work-conserving.</summary>
         public double P1Share = 0.40, P2Share = 0.45, P3Share = 0.15, MinP1ShareAfterP0 = 0.30;
 
         /// <summary>The per-peer budget never drops below this (or below the user's own cap, if that is lower).</summary>
         public int FloorBytesPerSecond = 48_000;
 
-        /// <summary>AIMD on Steam's queue time (ARCH §4.8.2): above <see cref="QueueHighMs"/> the budget is multiplied by
+        /// <summary>AIMD on Steam's queue time (docs/history/ARCHITECTURE-original.md §4.8.2): above <see cref="QueueHighMs"/> the budget is multiplied by
         /// <see cref="DecreaseFactor"/>; below <see cref="QueueLowMs"/> while backlogged it grows by
         /// <see cref="IncreasePerSecond"/> per second. The ceiling is min(user cap, <see cref="SendRateFraction"/> × send rate).</summary>
         public double QueueHighMs = 150, QueueLowMs = 30, DecreaseFactor = 0.8, IncreasePerSecond = 0.05, SendRateFraction = 0.85;
 
-        /// <summary>A dirty page older than each quantum is promoted one level (ARCH §4.8.4); ascending seconds.</summary>
+        /// <summary>A dirty page older than each quantum is promoted one level (docs/history/ARCHITECTURE-original.md §4.8.4); ascending seconds.</summary>
         public double[] PromotionQuantaSeconds = { 2, 4, 8, 16, 32 };
 
         /// <summary>A peer is P0-overloaded when its P0 backlog (outbox plus Steam's pending reliable bytes, in seconds of
-        /// its link) stays above <see cref="P0BacklogSeconds"/> for <see cref="P0OverloadSeconds"/> (ARCH §4.8.5).</summary>
+        /// its link) stays above <see cref="P0BacklogSeconds"/> for <see cref="P0OverloadSeconds"/> (docs/history/ARCHITECTURE-original.md §4.8.5).</summary>
         public double P0OverloadSeconds = 30, P0BacklogSeconds = 2;
 
         /// <summary>Motion interest disc: radius = clamp(<see cref="MotionRadiusPerZoom"/> × zoom, min, max), left at
-        /// <see cref="LeaveFactor"/> × radius (ARCH §4.8.3 item 1, R15 §7.1).</summary>
+        /// <see cref="LeaveFactor"/> × radius (docs/history/ARCHITECTURE-original.md §4.8.3 item 1, R15 §7.1).</summary>
         public float MinMotionRadius = 300, MaxMotionRadius = 2500, MotionRadiusPerZoom = 1.0f, LeaveFactor = 1.25f;
 
         // ---------- budget tunables (additive) ----------
 
-        /// <summary>The P3 share at ladder step 3 of ARCH §4.8.5 ("the P3 share shrinks to 5 %").</summary>
+        /// <summary>The P3 share at ladder step 3 of docs/history/ARCHITECTURE-original.md §4.8.5 ("the P3 share shrinks to 5 %").</summary>
         public double ReducedP3Share = 0.05;
 
-        /// <summary>Budget ceiling when neither the user cap nor Steam's send rate is known (the direct/LAN default cap, ARCH §4.8.2).</summary>
+        /// <summary>Budget ceiling when neither the user cap nor Steam's send rate is known (the direct/LAN default cap, docs/history/ARCHITECTURE-original.md §4.8.2).</summary>
         public int UnknownLinkBytesPerSecond = 2_000_000;
 
         /// <summary>Token-bucket depth in seconds of the peer's rate (at least <see cref="MinBurstBytes"/>).</summary>
@@ -62,7 +62,7 @@ namespace SkylineTogether.Core.Scheduling
         /// has content, so rolling values can never starve it; unused reserve flows back to values.</summary>
         public double ChannelReserveFractionP3 = 0.2;
 
-        /// <summary>Weights of the rolling refresh per replication class ("V before A before A-low", ARCH §4.8.4); used only
+        /// <summary>Weights of the rolling refresh per replication class ("V before A before A-low", docs/history/ARCHITECTURE-original.md §4.8.4); used only
         /// when <c>PeerScheduler.SlotClass</c> is set. "Other" covers movers' discrete state and unknown classes.</summary>
         public double RollingWeightV = 0.5, RollingWeightA = 0.3, RollingWeightALow = 0.1, RollingWeightOther = 0.1;
 
@@ -81,13 +81,13 @@ namespace SkylineTogether.Core.Scheduling
 
         // ---------- attention tunables (additive) ----------
 
-        /// <summary>Add the camera's frustum footprint to the motion interest region (ARCH §4.8.3 item 1). The view report
+        /// <summary>Add the camera's frustum footprint to the motion interest region (docs/history/ARCHITECTURE-original.md §4.8.3 item 1). The view report
         /// carries no field of view, so the footprint uses these assumed half angles.</summary>
         public bool UseFrustumFootprint = true;
 
         public float FrustumHalfAngleDegrees = 40f, FrustumVerticalHalfAngleDegrees = 22.5f;
 
-        /// <summary>The in-view static set is refreshed at this period or after a large camera move (ARCH §4.8.3 item 2).</summary>
+        /// <summary>The in-view static set is refreshed at this period or after a large camera move (docs/history/ARCHITECTURE-original.md §4.8.3 item 2).</summary>
         public double InViewRefreshSeconds = 1.0;
 
         /// <summary>A pivot or camera move beyond this fraction of the motion radius, or a zoom change beyond
@@ -97,7 +97,7 @@ namespace SkylineTogether.Core.Scheduling
         /// <summary>Upper bound of slots in one in-view, closure or topic set (oversized sets are truncated and logged).</summary>
         public int MaxAttentionSetSize = 1 << 20;
 
-        // ---------- degradation ladder tunables (additive, ARCH §4.8.5) ----------
+        // ---------- degradation ladder tunables (additive, docs/history/ARCHITECTURE-original.md §4.8.5) ----------
 
         /// <summary>Motion demand above this multiple of its budget counts as over budget.</summary>
         public double OverBudgetRatio = 1.05;

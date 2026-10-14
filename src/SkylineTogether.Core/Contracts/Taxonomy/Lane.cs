@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Transport lanes (ARCH §9.2); the values are the Steam lane indices.</summary>
+    /// <summary>Transport lanes (ARCHITECTURE.md#outbox-lanes-and-rate-control); the values are the Steam lane indices.</summary>
     public enum Lane : byte
     {
         /// <summary>R: control, proposals, epochs, beacons, repair (reliable ordered).</summary>

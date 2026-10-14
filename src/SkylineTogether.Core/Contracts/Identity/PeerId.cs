@@ -5,7 +5,7 @@ namespace SkylineTogether.Core
 {
     /// <summary>
     /// Session-local id of a peer: 0 is the host, clients get 1 ... 255 when admitted (<c>Welcome.AssignedPeer</c>).
-    /// Origins of RESULT and BIND records are peer ids (ARCH §4.6.3).
+    /// Origins of RESULT and BIND records are peer ids (ARCHITECTURE.md#batch-encoding).
     /// </summary>
     public readonly struct PeerId : IEquatable<PeerId>
     {

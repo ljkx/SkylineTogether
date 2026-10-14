@@ -26,7 +26,7 @@ namespace SkylineTogether.Core.Transport
         /// <summary>The peer speaks another transport protocol version (UDP transport).</summary>
         public const int ProtocolMismatch = 5106;
 
-        /// <summary>The address is temporarily blocked after repeated authentication failures (UDP transport, ARCH §14.2).</summary>
+        /// <summary>The address is temporarily blocked after repeated authentication failures (UDP transport, ARCHITECTURE.md#security-model).</summary>
         public const int AddressBlocked = 5107;
 
         /// <summary>A malformed or unauthenticated packet stream, or a receive buffer overflow (UDP transport).</summary>

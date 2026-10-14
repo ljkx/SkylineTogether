@@ -4,7 +4,7 @@ using System.Text;
 namespace SkylineTogether.Core.Buffers
 {
     /// <summary>
-    /// Growable little-endian byte writer for every Core wire format (ARCH §4.6: LEB128 varints, zig-zag for signed
+    /// Growable little-endian byte writer for every Core wire format (ARCHITECTURE.md#batch-encoding: LEB128 varints, zig-zag for signed
     /// varints, raw IEEE-754 bits for floats so NaN payloads survive). Reuse one writer with <see cref="Reset"/> to avoid
     /// allocations per message. <see cref="Buffer"/> is replaced when the writer grows: never keep it across a write.
     /// Not thread-safe.

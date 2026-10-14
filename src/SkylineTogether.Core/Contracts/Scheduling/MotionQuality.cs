@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Steps of the motion degradation ladder (ARCH §4.8.5).</summary>
+    /// <summary>Steps of the motion degradation ladder (ARCHITECTURE.md#live-session).</summary>
     public enum MotionQuality : byte
     {
         Full,

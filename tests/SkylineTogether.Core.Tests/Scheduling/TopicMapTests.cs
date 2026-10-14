@@ -7,7 +7,7 @@ using SkylineTogether.Core.Tests.Framework;
 namespace SkylineTogether.Core.Tests.Scheduling
 {
     /// <summary>
-    /// Attention topics (ARCH §4.8.3), which the game layer uses to decide which values a player with an infoview or a
+    /// Attention topics (ARCHITECTURE.md#simulation-values), which the game layer uses to decide which values a player with an infoview or a
     /// panel open gets first: the infomode tables, the view-report encoding (infoview + infomode mask + panel flags),
     /// and topic scopes.
     /// </summary>

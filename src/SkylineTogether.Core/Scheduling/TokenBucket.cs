@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// A byte token bucket (ARCH §4.8.4: <c>budget = tokenBucket.Take(frameDt)</c>). <see cref="Take"/> refills
+    /// A byte token bucket (ARCHITECTURE.md#deferred-values-and-link-pacing: <c>budget = tokenBucket.Take(frameDt)</c>). <see cref="Take"/> refills
     /// <see cref="RateBytesPerSecond"/> × elapsed seconds, up to <see cref="BurstBytes"/>, and returns what may be spent
     /// now without removing it; <c>Consume</c> spends. Spending may drive the balance negative: P0 is accounted,
     /// never refused, and the debt then delays the lower priorities until the link has carried it. Tokens are kept as a

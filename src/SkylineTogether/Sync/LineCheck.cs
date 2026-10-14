@@ -15,7 +15,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// The UI-level line check (ARCH §4.11.6, the user's main complaint): per transport line, one
+    /// The UI-level line check (ARCHITECTURE.md#line-check-and-icon-digest, the user's main complaint): per transport line, one
     /// <see cref="LineStateRow"/> of exactly what the vanilla line UI shows, computed with the UI's own functions on both
     /// sides: the stop count (<c>TransportUIUtils.GetStopCount</c>), the length (<c>GetRouteLength</c>), schedule and
     /// active state (<c>Route</c> options as in <c>BuildTransportLine</c>), <c>Route.m_Flags</c> (complete), the broken
@@ -26,7 +26,7 @@ namespace SkylineTogether.Sync
     /// right after the batch that carried them was applied, and <see cref="LineCheckTracker"/> decides which lines to
     /// re-send (route, waypoints, segments) and which to tolerate. Every confirmed difference is logged.
     /// <para>
-    /// Not compared: vehicles, cargo and capacity (moving agents are not replicated in this version) and
+    /// Not compared: vehicles, cargo and capacity (movers replicate by interest, so a line's vehicles may lag) and
     /// <c>TransportLine.m_Flags</c>: <c>TransportLine</c> references the line's pending vehicle request, which is never
     /// replicated, so the component travels as presence only while a request is pending; its visible effect, the
     /// "not enough vehicles" warning, is compared through the icon hash.

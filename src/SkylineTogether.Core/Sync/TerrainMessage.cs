@@ -90,7 +90,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// Wire format of <see cref="MessageKind.Terrain"/> (ARCH §4.10.9). Every message starts with
+    /// Wire format of <see cref="MessageKind.Terrain"/> (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water). Every message starts with
     /// <c>u8 version | u8 type</c>; the rest depends on <see cref="TerrainMessageType"/>:
     /// <code>
     /// Stamps      u8 origin peer | varuint n | n × (varuint tool, varuint brush, 14 × f32: position xyz, target xyz,

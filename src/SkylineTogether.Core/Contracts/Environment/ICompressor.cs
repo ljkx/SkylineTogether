@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Block compressor seam (ARCH §4.6.5): core-protocol's <c>ManagedLz4Compressor</c> and game-bootstrap's
+    /// Block compressor seam (ARCHITECTURE.md#fragmentation-and-compression): core-protocol's <c>ManagedLz4Compressor</c> and game-bootstrap's
     /// <c>NativeCompressor</c> (ZSTD, LZ4). Implementations are thread-safe (stateless or internally synchronised).
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]

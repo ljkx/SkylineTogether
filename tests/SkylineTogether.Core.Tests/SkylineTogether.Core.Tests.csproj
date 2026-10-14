@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    Unit tests of SkylineTogether.Core (IMPLEMENTATION-PLAN §2.5, adapted by docs/decisions/0001-build-without-nuget.md):
+    Unit tests of SkylineTogether.Core (docs/decisions/0001-build-without-nuget.md):
     a net8.0 console application without any package. It compiles the Core sources directly, plus its own small test
     framework (Framework/). Tests live in <Area>/*Tests.cs. Run: dotnet run -c Release [name filters...];
     the exit code is the number of failed tests (capped at 125).

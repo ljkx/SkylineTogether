@@ -56,7 +56,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// ARCH §5.4.1 rules 1-4 and 7 over the host's world: permission of the sender's role, size, existence and
+        /// ARCHITECTURE.md#host-validation-and-commit over the host's world: permission of the sender's role, size, existence and
         /// conflicts of every entity the proposal edits or deletes, id grants of its creations, and money.
         /// </summary>
         private RejectReason Validate(PeerId peer, List<SyncRecord> records, in ProposalFacts facts, uint baseEpoch)
@@ -129,7 +129,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Host: refuses a proposal and rolls it back on its originator (ARCH §5.5.2): a result record, then every entity
+        /// Host: refuses a proposal and rolls it back on its originator (ARCHITECTURE.md#host-validation-and-commit): a result record, then every entity
         /// the proposal touched in the host's state (alive: full record; unknown here: despawn, which removes the
         /// client's predicted creations) and the host's cells of every zone block it painted.
         /// </summary>
@@ -244,7 +244,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Host: re-bases the build orders of a client's fresh edges onto the host counter (ARCH §5.4.3), so zone-block
+        /// Host: re-bases the build orders of a client's fresh edges onto the host counter (ARCHITECTURE.md#host-validation-and-commit), so zone-block
         /// priority and node-lane order are identical on every peer; edges split from host edges keep their inherited
         /// sub-ranges. The committed edges then advance vanilla's counter themselves (<c>UpdateBuildOrderJob</c>).
         /// </summary>

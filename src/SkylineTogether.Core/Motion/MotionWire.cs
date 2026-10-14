@@ -3,8 +3,8 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Motion
 {
     /// <summary>
-    /// Message layouts of the motion channel (ARCH §4.9.3, Appendix C). Both are complete envelopes
-    /// (<c>u8 kind | u8 flags = None | body</c>, ARCH §4.6.1, decodable by <see cref="EnvelopeCodec"/>); the router
+    /// Message layouts of the motion channel (ARCHITECTURE.md#movers, #envelope-and-message-kinds). Both are complete envelopes
+    /// (<c>u8 kind | u8 flags = None | body</c>, ARCHITECTURE.md#envelope-and-message-kinds, decodable by <see cref="EnvelopeCodec"/>); the router
     /// hands the receiver the body only.
     /// <code>
     /// Motion (lane U, unreliable no-delay, at most 1200 bytes including the envelope):
@@ -30,7 +30,7 @@ namespace SkylineTogether.Core.Motion
         /// <summary>Envelope plus datagram header.</summary>
         public const int DatagramOverheadBytes = EnvelopeHeaderBytes + DatagramHeaderBytes;
 
-        /// <summary>Largest motion datagram including the envelope (ARCH §9.3).</summary>
+        /// <summary>Largest motion datagram including the envelope (ARCHITECTURE.md#movers).</summary>
         public const int MaxDatagramBytes = Limits.MaxDatagramBytes;
 
         /// <summary><c>u32 seq | u16 opCount</c>.</summary>
@@ -54,7 +54,7 @@ namespace SkylineTogether.Core.Motion
         public const byte OpRelease = 2;
         public const byte OpReleaseAll = 3;
 
-        /// <summary>Release flag (bit 4 of the release byte): pin the mover at its last pose (ARCH §4.9.5).</summary>
+        /// <summary>Release flag (bit 4 of the release byte): pin the mover at its last pose (ARCHITECTURE.md#movers).</summary>
         public const byte PinFlag = 0x10;
 
         /// <summary>Interest slot 0xFFFF is never assigned (the table holds at most 65535 slots, 0..65534).</summary>

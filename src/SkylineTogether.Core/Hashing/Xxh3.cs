@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Hashing
 {
     /// <summary>
-    /// XXH3 128-bit ("xxHash128" in ARCH §7.5) with seed 0 and the default secret, transcribed from the algorithm of the
+    /// XXH3 128-bit (ARCHITECTURE.md#blob-transfer) with seed 0 and the default secret, transcribed from the algorithm of the
     /// reference xxHash library (one-shot paths for 0-16, 17-128, 129-240 bytes and the striped long-input path).
     /// Cross-checked in the tests against Microsoft's System.IO.Hashing implementation when it is available.
     /// </summary>

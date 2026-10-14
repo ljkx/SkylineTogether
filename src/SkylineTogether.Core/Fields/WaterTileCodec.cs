@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Fields
 {
     /// <summary>
-    /// Quantisation and codec of one water correction tile (ARCH §4.10.10, R07 §6.7). The host reads a region of
+    /// Quantisation and codec of one water correction tile (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water, R07 §6.7). The host reads a region of
     /// <c>WaterSystem.WaterTexture</c> (RGBA32F per texel: x = depth in metres, y/z = velocity, w = pollution fraction;
     /// <c>SurfaceWater.cs</c>, <c>BaseDataReader.cs:108-112</c> [V]: the depth scale is 1, so depths are metres) and
     /// clients write the decoded floats back with <c>Graphics.CopyTexture</c>. Water affects visuals only (gameplay

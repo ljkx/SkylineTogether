@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Chooses the HASH beacons of each peer's epoch message (ARCH §8.4). A beacon carries the host's bucket sum and
+    /// Chooses the HASH beacons of each peer's epoch message (docs/history/ARCHITECTURE-original.md §8.4). A beacon carries the host's bucket sum and
     /// member count of one class and bucket; it must describe what that peer has <b>been sent</b>:
     /// <list type="bullet">
     /// <item>S and G (shared P0): the hash shadow is updated when a record is emitted (§4.4.5), so a beacon placed after

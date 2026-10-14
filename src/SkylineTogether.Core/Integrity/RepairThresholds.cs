@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Thresholds of the client repair ladder (ARCH §8.5, Appendix D) used by <see cref="RepairCoordinator"/>; read at use
+    /// Thresholds of the client repair ladder (ARCHITECTURE.md#escalation-and-resync-offer, #performance-budgets) used by <see cref="RepairCoordinator"/>; read at use
     /// time, so a change takes effect immediately. The <c>Min...</c> floors are not in the architecture's table: they
     /// keep a fractional rule from escalating a tiny class or a small city on a single bucket or pair, where entity
     /// repair (level 2) already covers every difference and a rebaseline would only consume the host's rebaseline budget

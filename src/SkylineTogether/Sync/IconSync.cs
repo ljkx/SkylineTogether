@@ -16,7 +16,7 @@ using Unity.Mathematics;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Notification icons are host data (D11, ARCH §4.10.4, §4.11.5): building warnings, network connection warnings,
+    /// Notification icons are host data (ARCHITECTURE.md#statistics-icons-and-flow-status): building warnings, network connection warnings,
     /// line and waypoint "path not found" and "not enough vehicles" icons that a client sees are the host's.
     /// <para>
     /// <b>Host.</b> Every <see cref="HostScanInterval"/> s it reads the default-layer icons of every owner with an
@@ -966,7 +966,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        // ================================================================== solo testing (record/replay verdict, ARCH §13.5)
+        // ================================================================== solo testing (record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay)
 
         /// <summary>Host: the digest of every icon set sent so far, per owner and in total (the recorder's checkpoints).</summary>
         public bool HostOwnerDigests(List<Core.Replay.IconOwnerDigest> output, out uint owners, out uint icons, out ulong sum)

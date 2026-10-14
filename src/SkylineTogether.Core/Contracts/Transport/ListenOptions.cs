@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Host listen configuration (ARCH §9.1, §14.2).</summary>
+    /// <summary>Host listen configuration (ARCHITECTURE.md#transport, #security-model).</summary>
     public sealed class ListenOptions
     {
         /// <summary>Steam P2P virtual port.</summary>

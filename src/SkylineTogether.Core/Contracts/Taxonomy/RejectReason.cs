@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Why the host rejected a proposal (ARCH §5.4.1, §5.5.2). The values travel in RESULT records
+    /// Why the host rejected a proposal (ARCHITECTURE.md#host-validation-and-commit). The values travel in RESULT records
     /// (<c>varint reasonCode</c>) and must not change; each has a localised toast.
     /// </summary>
     public enum RejectReason : ushort
@@ -24,9 +24,9 @@ namespace SkylineTogether.Core
         Timeout,
         /// <summary>The action is declared host-only (adapters' hostOnlyActions).</summary>
         HostOnly,
-        /// <summary>A PrefabRef change across prefab classes or families (ARCH §5.4.1 rule 5).</summary>
+        /// <summary>A PrefabRef change across prefab classes or families (ARCHITECTURE.md#host-validation-and-commit).</summary>
         PrefabClass,
-        /// <summary>Curve end points do not match their nodes (ARCH §5.4.1 rule 6).</summary>
+        /// <summary>Curve end points do not match their nodes (ARCHITECTURE.md#host-validation-and-commit).</summary>
         Geometry
     }
 }

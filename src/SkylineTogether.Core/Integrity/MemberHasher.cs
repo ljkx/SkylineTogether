@@ -4,19 +4,19 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Member hashes of the convergence proof (ARCH §4.3.4, §8.1-8.2). Every function has a fixed, documented definition:
+    /// Member hashes of the convergence proof (docs/history/ARCHITECTURE-original.md §4.3.4, §8.1-8.2). Every function has a fixed, documented definition:
     /// the host's hash shadow, the client's ledger and every bucket beacon depend on both sides computing identical
     /// values, so these formulas are part of the wire contract and must never change within a protocol version.
     /// <list type="bullet">
     /// <item><b>Member hash</b> <c>h(slot, type)</c> = <c>Fold32(xxHash64(canonical bytes, seed = type rank))</c>
     /// (<see cref="HashCanonical"/>), or the order-insensitive <see cref="HashEntityRefMultiset"/> for <c>hashAsSet</c>
-    /// types (ARCH §4.2.4). A hash is never 0: 0 means "absent" in ledgers and shadows.</item>
+    /// types (docs/history/ARCHITECTURE-original.md §4.2.4). A hash is never 0: 0 means "absent" in ledgers and shadows.</item>
     /// <item><b>Member</b> (the 64-bit value a bucket sum adds): <see cref="Member"/> for a (slot, type) value,
     /// <see cref="ExistenceMember"/> for the existence of a slot, <see cref="KeyedMember"/> for K-class state on a
     /// derived key. A member is never 0 for present data; 0 means "absent" (<see cref="IBucketSink"/>).</item>
     /// <item><b>Bucket sum</b> = Σ <see cref="Contribution"/>(member) = Σ <c>Mix64(member)</c> modulo 2⁶⁴, so the
     /// iteration order never matters and every change is O(1) (<see cref="BucketSums"/>).</item>
-    /// <item><b>Slot digest</b> (one entry of a bucket detail, ARCH §8.5 level 1) =
+    /// <item><b>Slot digest</b> (one entry of a bucket detail, docs/history/ARCHITECTURE-original.md §8.5 level 1) =
     /// <c>Fold32(Σ Contribution(member))</c> over the slot's members of one class (<see cref="SlotDigest"/>).</item>
     /// </list>
     /// All functions are pure, allocation-free and thread-safe.
@@ -41,7 +41,7 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>
         /// The member hash of a value: <c>Fold32(xxHash64(canonical[offset .. offset+count), seed = type.Value))</c>, with a
         /// result of 0 replaced by <see cref="NonZeroHash"/>. Buffers are hashed as their canonical bytes, i.e. count plus
-        /// elements (ARCH §4.3.4). <paramref name="canonical"/> may be null when <paramref name="count"/> is 0 (presence-only
+        /// elements (docs/history/ARCHITECTURE-original.md §4.3.4). <paramref name="canonical"/> may be null when <paramref name="count"/> is 0 (presence-only
         /// types hash their empty payload, which still differs per type).
         /// </summary>
         public static uint HashCanonical(TypeRank type, byte[] canonical, int offset, int count)
@@ -54,10 +54,10 @@ namespace SkylineTogether.Core.Integrity
         }
 
         /// <summary>
-        /// The order-insensitive member hash of a data-replicated reverse buffer (<c>hashAsSet</c>, ARCH §4.2.4), whose
+        /// The order-insensitive member hash of a data-replicated reverse buffer (<c>hashAsSet</c>, docs/history/ARCHITECTURE-original.md §4.2.4), whose
         /// element order differs between peers after a join (the Deserialize-phase rebuild fills them in chunk order while
         /// the host keeps insertion order, R04 §5). Input layout of the <c>EntityRefList</c> codec: <c>varint n</c>, then
-        /// exactly <c>n</c> canonical <c>NetRef</c>s (ARCH §4.3.3). Definition:
+        /// exactly <c>n</c> canonical <c>NetRef</c>s (docs/history/ARCHITECTURE-original.md §4.3.3). Definition:
         /// <code>
         /// s = Σ Mix64(xxHash64(bytes of element i, seed = type.Value))   (mod 2^64)
         /// h = Fold32(Combine(s ^ MultisetDomain, n))                      (0 → NonZeroHash)
@@ -91,7 +91,7 @@ namespace SkylineTogether.Core.Integrity
         }
 
         /// <summary>
-        /// The member hash of an enableable type (ARCH §4.3.4 "enabled bits included"): the value hash when the
+        /// The member hash of an enableable type (docs/history/ARCHITECTURE-original.md §4.3.4 "enabled bits included"): the value hash when the
         /// component is enabled, otherwise <c>Fold32(Combine(DisabledDomain, hash))</c> (0 → <see cref="NonZeroHash"/>).
         /// A <paramref name="hash"/> of 0 (absent) stays 0.
         /// </summary>
@@ -113,7 +113,7 @@ namespace SkylineTogether.Core.Integrity
         }
 
         /// <summary>
-        /// The existence member of a slot (ARCH §4.3.4): <c>Combine(Combine(ExistenceDomain, slot &lt;&lt; 8 | generation),
+        /// The existence member of a slot (docs/history/ARCHITECTURE-original.md §4.3.4): <c>Combine(Combine(ExistenceDomain, slot &lt;&lt; 8 | generation),
         /// (uint)typeSet &lt;&lt; 8 | family)</c> (0 → <see cref="NonZeroMember"/>). It changes with a respawn (generation),
         /// a signature change (type set) and a family change, so a structural difference shows in the bucket even when
         /// every value matches. Slot 0 yields 0.
@@ -127,7 +127,7 @@ namespace SkylineTogether.Core.Integrity
         }
 
         /// <summary>
-        /// The member of K-class state on a derived entity (ARCH §8.6: hashed per key, bucketed by the key's owner slot):
+        /// The member of K-class state on a derived entity (docs/history/ARCHITECTURE-original.md §8.6: hashed per key, bucketed by the key's owner slot):
         /// <c>Combine(Combine(KeyedDomain, keyHash), type &lt;&lt; 32 | hash)</c> where <c>keyHash</c> chains every key field
         /// in declaration order through <see cref="HashMix.Combine"/>. A <paramref name="hash"/> of 0 yields 0. The member
         /// belongs to the bucket of <c>key.Owner</c>.
@@ -152,7 +152,7 @@ namespace SkylineTogether.Core.Integrity
         public static ulong Contribution(ulong member) => member == 0 ? 0 : HashMix.Mix64(member);
 
         /// <summary>
-        /// The per-slot entry of a bucket detail (ARCH §8.5 level 1): <c>Fold32</c> of the sum of the slot's member
+        /// The per-slot entry of a bucket detail (docs/history/ARCHITECTURE-original.md §8.5 level 1): <c>Fold32</c> of the sum of the slot's member
         /// contributions in one class. The host's hash shadow (<see cref="IHashShadowView.CollectBucket"/>) and the
         /// client's ledger (<see cref="HashLedger.TryGetSlotDigest"/>) must both use this definition.
         /// </summary>
@@ -175,7 +175,7 @@ namespace SkylineTogether.Core.Integrity
             }
         }
 
-        // ---- allocation-free, non-throwing scanner of the canonical NetRef layout (ARCH §4.3.3, core-codec CanonicalNetRef) ----
+        // ---- allocation-free, non-throwing scanner of the canonical NetRef layout (docs/history/ARCHITECTURE-original.md §4.3.3, core-codec CanonicalNetRef) ----
 
         /// <summary>Advances over one canonical reference; false (position undefined) for malformed input.</summary>
         private static bool TrySkipNetRef(byte[] buffer, ref int position, int end)

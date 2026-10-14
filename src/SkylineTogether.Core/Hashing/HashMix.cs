@@ -10,7 +10,7 @@ namespace SkylineTogether.Core.Hashing
         /// <summary>
         /// The SplitMix64 output function: <c>z = x + 0x9E3779B97F4A7C15</c>, then
         /// <c>z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9</c>, <c>z = (z ^ (z >> 27)) * 0x94D049BB133111EB</c>,
-        /// <c>z ^ (z >> 31)</c>. A bijection with full avalanche; bucket sums add <c>Mix64(member)</c> (ARCH §8.2).
+        /// <c>z ^ (z >> 31)</c>. A bijection with full avalanche; bucket sums add <c>Mix64(member)</c> (ARCHITECTURE.md#bucket-digests).
         /// </summary>
         public static ulong Mix64(ulong x)
         {
@@ -32,7 +32,7 @@ namespace SkylineTogether.Core.Hashing
             }
         }
 
-        /// <summary>XOR of the two halves: <c>(uint)x ^ (uint)(x >> 32)</c> (e.g. system-state stable ids, ARCH §4.10.1).</summary>
+        /// <summary>XOR of the two halves: <c>(uint)x ^ (uint)(x >> 32)</c> (e.g. system-state stable ids, ARCHITECTURE.md#global-state-and-panels).</summary>
         public static uint Fold32(ulong x) => unchecked((uint)x ^ (uint)(x >> 32));
     }
 }

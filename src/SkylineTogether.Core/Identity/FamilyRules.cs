@@ -1,9 +1,9 @@
 namespace SkylineTogether.Core.Identity
 {
     /// <summary>
-    /// The family rule table of ARCH §3.2, implemented once and pure: the game layer only builds the
+    /// The family rule table of ARCHITECTURE.md#families, implemented once and pure: the game layer only builds the
     /// <see cref="FamilyMarker"/> mask (once per archetype) and, where <see cref="NeedsPerEntityFacts"/> says so, the
-    /// <see cref="FamilyFacts"/> of an entity. First match wins; rule numbers are those of ARCH §3.2:
+    /// <see cref="FamilyFacts"/> of an entity. First match wins; rule numbers are those of docs/history/ARCHITECTURE-original.md §3.2:
     /// <list type="number">
     /// <item>Temp, LivePath, null prefab or adapter-local type → ToolLocal</item>
     /// <item>PrefabData → Prefab</item>
@@ -35,14 +35,14 @@ namespace SkylineTogether.Core.Identity
     /// vehicles need no per-entity lookup; and a waypoint or segment whose owner route is not tracked belongs to a
     /// derived owned route (a gate bypass path, whose route and two segments every peer creates in
     /// <c>Game.Buildings/InitializeSystem.cs:154-168</c>), so rule 15 classifies it as <see cref="Family.OwnedRoute"/>
-    /// (derived, addressed by owned-route element keys, ARCH §3.7) instead of letting it fall through to Generic, which
+    /// (derived, addressed by owned-route element keys, ARCHITECTURE.md#derived-keys) instead of letting it fall through to Generic, which
     /// would replicate a duplicate of what clients derive. An element whose own prefab is a gate bypass path is decided
     /// without the per-entity fact.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
     public static class FamilyRules
     {
-        /// <summary>Number of rules (ARCH §3.2).</summary>
+        /// <summary>Number of rules (ARCHITECTURE.md#families).</summary>
         public const int RuleCount = 23;
 
         private static readonly string[] RuleTexts =
@@ -89,7 +89,7 @@ namespace SkylineTogether.Core.Identity
         }
 
         /// <summary>
-        /// The built-in default replication class of a family (ARCH §3.2, §4.2.2); <c>policies.json</c>
+        /// The built-in default replication class of a family (ARCHITECTURE.md#families, #host-capture); <c>policies.json</c>
         /// <c>familyDefaults</c> may override it. Derived families are <see cref="ReplicationClass.Derived"/> (their keyed
         /// state is K per type, by policy); prefab state and icons travel on channels; Event is S (existence and target
         /// presence; chirps and journal entries get A per type by policy). Undefined values → Excluded (fail closed).
@@ -138,7 +138,7 @@ namespace SkylineTogether.Core.Identity
             }
         }
 
-        /// <summary>True for families that every peer derives locally and that never get slots (ARCH §3.7).</summary>
+        /// <summary>True for families that every peer derives locally and that never get slots (ARCHITECTURE.md#derived-keys).</summary>
         public static bool IsDerived(Family family) => DefaultClass(family) == ReplicationClass.Derived;
 
         /// <summary>A short text of a rule for the per-rule counts of the diagnostics dump.</summary>

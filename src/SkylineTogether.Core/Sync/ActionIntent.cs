@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// Semantic UI intents (ARCH §5.3) for player actions whose vanilla handler writes the world directly, without any
+    /// Semantic UI intents (ARCHITECTURE.md#client-proposals) for player actions whose vanilla handler writes the world directly, without any
     /// tag a capture could scope (R10 §2: M4/M5/M6 mechanisms) or through an API that only the host may run (dev tree,
     /// map tiles). They travel in the <see cref="GlobalChannel.Action"/> channel (client → host, delta mode); the host
     /// validates each one and runs the vanilla executor, and the result reaches everyone through normal replication.
@@ -154,7 +154,7 @@ namespace SkylineTogether.Core.Sync
             }
         }
 
-        /// <summary>The permission an intent needs (ARCH §5.6).</summary>
+        /// <summary>The permission an intent needs (ARCHITECTURE.md#roles-and-moderation).</summary>
         public static Permission Required(ActionKind kind)
         {
             switch (kind)
@@ -206,7 +206,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// The host's set of unlocked prefabs (<see cref="GlobalChannel.Unlocks"/>, host → client full state, ARCH §4.10.3):
+    /// The host's set of unlocked prefabs (<see cref="GlobalChannel.Unlocks"/>, host → client full state, ARCHITECTURE.md#player-actions):
     /// the net ids of every prefab whose <c>Locked</c> component is disabled, ascending and delta-coded.
     /// </summary>
     public static class UnlockSet

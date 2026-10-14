@@ -7,7 +7,7 @@ namespace SkylineTogether.Core.Tests.Contracts
 {
     /// <summary>
     /// Pins the numeric values of every enum that travels on the wire, is stored in side tables or feeds a fingerprint:
-    /// changing one would break compatibility between builds (IMPLEMENTATION-PLAN §3 rule 12).
+    /// changing one would break compatibility between builds (ARCHITECTURE.md#code-rules).
     /// </summary>
     public sealed class TaxonomyTests
     {

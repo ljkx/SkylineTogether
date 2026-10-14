@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Fields
 {
     /// <summary>
-    /// Frame-time compensation of replayed terrain brush stamps (ARCH §4.10.9). <c>TerrainSystem.ApplyBrush</c> passes
+    /// Frame-time compensation of replayed terrain brush stamps (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water). <c>TerrainSystem.ApplyBrush</c> passes
     /// the calling machine's <c>Time.unscaledDeltaTime</c> to <c>ApplyToTerrain</c>, which computes the height change of
     /// a stamp as
     /// <code>

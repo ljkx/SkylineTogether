@@ -19,7 +19,7 @@ namespace SkylineTogether.Sync
 {
     /// <summary>
     /// gameplay branch: the player actions whose vanilla handlers write the world without any tag the entity capture
-    /// could scope, or through an API only the host may run (R10 §2-§5, ARCH §5.2 stage A, §5.3). See
+    /// could scope, or through an API only the host may run (R10 §2-§5, ARCHITECTURE.md#player-actions). See
     /// docs/design/ACTION-COVERAGE.md for the full action table.
     /// <list type="bullet">
     /// <item><b>Client → host</b> (<see cref="GlobalChannel.Action"/> intents): dev-tree purchases and map-tile purchases
@@ -830,7 +830,7 @@ namespace SkylineTogether.Sync
             UnlockSet.Diff(hostUnlocked, local, known, unlock, relock);
             foreach (uint id in unlock)
             {
-                // vanilla UnlockSystem (kept on) flips the bit and every UI consumer refreshes (ARCH §4.10.3)
+                // vanilla UnlockSystem (kept on) flips the bit and every UI consumer refreshes (ARCHITECTURE.md#player-actions)
                 Entity prefab = _ids.GetEntity(id);
                 Entity ev = em.CreateEntity(_unlockArchetype);
                 em.SetComponentData(ev, new Unlock(prefab));
@@ -941,7 +941,7 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// Tutorial prefabs are unlocked by each player's own tutorial progress (TutorialSystem.ManualUnlock), so they
-        /// stay out of the shared unlock set (ARCH §4.10.3, R10 F3).
+        /// stay out of the shared unlock set (ARCHITECTURE.md#player-actions, R10 F3).
         /// </summary>
         private bool IsTutorial(EntityManager em, Entity prefab)
         {

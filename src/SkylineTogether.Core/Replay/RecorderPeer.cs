@@ -36,7 +36,7 @@ namespace SkylineTogether.Core.Replay
     }
 
     /// <summary>
-    /// The virtual client of solo testing (ARCH §13.5): joins the host's own session in-process and records everything it
+    /// The virtual client of solo testing (ARCHITECTURE.md#solo-test-record-and-replay): joins the host's own session in-process and records everything it
     /// receives. It is a real <see cref="SessionClient"/> on a <see cref="LoopbackTransport"/> pair whose host end is
     /// attached to the host's <see cref="CompositeTransport"/>, so the host admits it through the normal handshake, takes
     /// a join snapshot for it (the same <c>ISnapshotProvider</c> path a joiner gets), streams the snapshot, queues its

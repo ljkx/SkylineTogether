@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Identity
 {
     /// <summary>
-    /// Which build-order ranges of a client's newly created edges the host re-bases (ARCH §5.4.3). A fresh edge got
+    /// Which build-order ranges of a client's newly created edges the host re-bases (ARCHITECTURE.md#host-validation-and-commit). A fresh edge got
     /// its range from the client's own <c>GenerateEdgesSystem</c> counter, which may collide with the host's; it is
     /// re-based onto <see cref="BuildOrderAllocator"/>. An edge created by splitting or replacing an existing edge got
     /// a sub-range of that edge's host range (<c>GenerateEdgesSystem.cs:905-915</c>), which keeps the original zoning

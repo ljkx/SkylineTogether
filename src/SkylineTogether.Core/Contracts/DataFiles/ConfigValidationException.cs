@@ -6,7 +6,7 @@ namespace SkylineTogether.Core
     /// <summary>
     /// A data file (gates, cosmetic list, policies, adapters, system state, locale) is malformed or violates its schema.
     /// Names the file, the JSON path of the offending value (for example <c>$.entries[3].action</c>) and, when known,
-    /// its line and column. Critical tables that fail to parse stop hosting and joining with this message (ARCH §6.3).
+    /// its line and column. As built, the only data files the game layer reads are the locale tables (ARCHITECTURE.md#ui-module).
     /// </summary>
     public sealed class ConfigValidationException : Exception
     {

@@ -6,7 +6,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// The payload of <see cref="ControlKind.SnapshotManifest"/>: a <see cref="SnapshotManifest"/> (ARCH §7.1 step 6, §7.4).
+    /// The payload of <see cref="ControlKind.SnapshotManifest"/>: a <see cref="SnapshotManifest"/> (ARCHITECTURE.md#handshake-and-admission, #snapshot-join).
     /// <code>
     /// u32 snapshotId | varint64 size (≤ 2 GiB) | u64 digestLo | u64 digestHi | varint chunkSize (1 ... 256 KiB) | varint epoch
     /// | u32 frameIndex | u32 hostBuildOrderNext | string gameModeName (≤ 256 B)
@@ -14,7 +14,7 @@ namespace SkylineTogether.Core.Protocol
     /// | familyCounts: varint (n + 1; 0 = null) | n × (u8 family | varint count)   (families strictly ascending)
     /// [ | assetSources: varint n | n × (u8 kind | string name | string platformId | varint prefabs | string example) ]
     /// </code>
-    /// Lists are <c>varint (count + 1)</c> with 0 = null. The blob size is capped at 2 GiB (ARCH §14.5). The family
+    /// Lists are <c>varint (count + 1)</c> with 0 = null. The blob size is capped at 2 GiB (ARCHITECTURE.md#security-model). The family
     /// counts are written in ascending family order, so equal manifests give equal bytes.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]

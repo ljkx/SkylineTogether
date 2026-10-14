@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Structured logging seam (ARCH §13.1, IMPLEMENTATION-PLAN §3 rule 10). Implementations are thread-safe and
+    /// Structured logging seam (ARCHITECTURE.md#logs, #code-rules). Implementations are thread-safe and
     /// rate-limit repeated messages; the game layer writes to the mod's log file (game-bootstrap <c>FileLog</c>).
     /// Callers check <see cref="IsEnabled"/> before building expensive messages (always for <see cref="LogLevel.Trace"/>).
     /// </summary>

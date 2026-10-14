@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Produces HASH beacons for a peer's message (ARCH §8.4): only for enabled classes and only for buckets in which
+    /// Produces HASH beacons for a peer's message (docs/history/ARCHITECTURE-original.md §8.4): only for enabled classes and only for buckets in which
     /// the peer has nothing dirty. Implemented by core-integrity's <c>BeaconPlanner</c>.
     /// </summary>
     public interface IBeaconSource

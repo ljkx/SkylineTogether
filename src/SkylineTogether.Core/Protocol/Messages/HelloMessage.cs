@@ -4,9 +4,9 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// <c>Hello</c> (client → host, the first message, ARCH §7.1 step 2): the handshake digests, the client's Steam
-    /// identity and display name, its nonce for the direct-IP password challenge (ARCH §14.2) and the codecs it can
-    /// decompress (ARCH §4.6.5, <see cref="CompressionNegotiation"/>).
+    /// <c>Hello</c> (client → host, the first message, ARCHITECTURE.md#handshake-and-admission): the handshake digests, the client's Steam
+    /// identity and display name, its nonce for the direct-IP password challenge (ARCHITECTURE.md#security-model) and the codecs it can
+    /// decompress (ARCHITECTURE.md#fragmentation-and-compression, <see cref="CompressionNegotiation"/>).
     /// <code>
     /// digests (see below; starts with varint protocolVersion) | u64 steamId | text displayName (≤ 64 chars) | bytes clientNonce (≤ 64)
     /// | u8 compressionMask (bits of CompressionNegotiation.DefinedBits)

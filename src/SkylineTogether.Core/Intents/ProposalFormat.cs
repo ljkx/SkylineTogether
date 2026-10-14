@@ -4,9 +4,9 @@ namespace SkylineTogether.Core.Intents
 {
     /// <summary>
     /// The wire format of a proposal (the body of a <see cref="MessageKind.Proposal"/> message on the reliable lane,
-    /// ARCH §5.3, Appendix C) and its limits (ARCH §5.4.1 rule 1, §5.6, §14.3). A proposal travels as one part or, when
+    /// docs/history/ARCHITECTURE-original.md §5.3, Appendix C) and its limits (docs/history/ARCHITECTURE-original.md §5.4.1 rule 1, §5.6, §14.3). A proposal travels as one part or, when
     /// it is larger than <see cref="Limits.MaxProposalBytes"/>, as several parts split at item boundaries, like epoch
-    /// parts (ARCH §4.6.2); the host assembles them with <c>ProposalAssembler</c> and validates only the complete
+    /// parts (docs/history/ARCHITECTURE-original.md §4.6.2); the host assembles them with <c>ProposalAssembler</c> and validates only the complete
     /// proposal.
     /// <code>
     /// part       = u8 version (1) | u8 flags {bit 0: more parts follow} | varint seq (≥ 1) | varint partIndex
@@ -31,15 +31,15 @@ namespace SkylineTogether.Core.Intents
     /// Floats are raw little-endian IEEE-754 bits (non-finite values are a validation failure, not a decode failure).
     /// The encoding is canonical: every proposal has exactly one byte sequence per split, and the decoders reject every
     /// other one (strict varints, unknown tags, flags and enum values, decreasing tags, values out of range) with
-    /// <see cref="DecodeException"/>. Text is the exception: decoders strip control characters (ARCH §14.3).
+    /// <see cref="DecodeException"/>. Text is the exception: decoders strip control characters (docs/history/ARCHITECTURE-original.md §14.3).
     /// <para>
     /// Limits: a malformed part, a part above <see cref="Limits.MaxProposalBytes"/>, and violations of the per-item caps
     /// below that the format defines (components per item, cells per zone edit, text, arrays) are decode errors (the host
-    /// disconnects the peer, ARCH §14.3). A well-formed proposal that exceeds a per-proposal cap
+    /// disconnects the peer, docs/history/ARCHITECTURE-original.md §14.3). A well-formed proposal that exceeds a per-proposal cap
     /// (<see cref="Limits.MaxProposalTotalBytes"/>, <see cref="Limits.MaxProposalEntities"/>, <see cref="MaxTouches"/>,
     /// <see cref="MaxStamps"/>, <see cref="MaxIntents"/>, <see cref="MaxComponentsTotal"/>, <see cref="MaxZoneCellsTotal"/>)
     /// is decoded as an empty shell with <see cref="Proposal.LimitViolation"/> set: the host rejects it (RESULT
-    /// <see cref="RejectReason.Invalid"/>) and counts the violation (repeated violations kick, ARCH §5.6).
+    /// <see cref="RejectReason.Invalid"/>) and counts the violation (repeated violations kick, docs/history/ARCHITECTURE-original.md §5.6).
     /// </para>
     /// </summary>
     public static class ProposalFormat
@@ -59,7 +59,7 @@ namespace SkylineTogether.Core.Intents
         /// <summary>Semantic intents of one proposal (stage A batches the UI actions of one frame).</summary>
         public const int MaxIntents = 1024;
 
-        /// <summary>Components of one create or update (type-set ordinals are below 64, ARCH §3.6).</summary>
+        /// <summary>Components of one create or update (type-set ordinals are below 64, docs/history/ARCHITECTURE-original.md §3.6).</summary>
         public const int MaxComponentsPerItem = Limits.MaxComponentsPerRecord;
 
         /// <summary>Components of all creates and updates of one proposal (200k entities with ~20 valued types each).</summary>
@@ -74,7 +74,7 @@ namespace SkylineTogether.Core.Intents
         /// <summary>UTF-8 bytes of <see cref="ToolHeader.ToolTypeName"/> (an identifier, never truncated).</summary>
         public const int MaxToolTypeNameBytes = 256;
 
-        /// <summary>Characters (UTF-16 code units) of <see cref="SemanticIntent.Text"/>: names (ARCH §14.3).</summary>
+        /// <summary>Characters (UTF-16 code units) of <see cref="SemanticIntent.Text"/>: names (docs/history/ARCHITECTURE-original.md §14.3).</summary>
         public const int MaxTextChars = Limits.MaxNameChars;
 
         /// <summary>Elements of <see cref="SemanticIntent.IntArray"/>.</summary>

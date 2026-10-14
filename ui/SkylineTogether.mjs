@@ -22,7 +22,7 @@ const api = window["cs2/api"];
 const UI = window["cs2/ui"] || null;
 const L10N = window["cs2/l10n"] || null;
 const GAME_BINDINGS = window["cs2/bindings"] || null;
-// Review fix: the module used to throw at import when a global was missing; now it registers nothing (ARCH §11.2).
+// Review fix: the module used to throw at import when a global was missing; now it registers nothing (ARCHITECTURE.md#ui-module).
 const ready = !!(React && React.createElement && React.useState && api && api.bindValue && api.useValue && api.trigger);
 const h = ready ? React.createElement : function () { return null; };
 const GROUP = "skylineTogether";

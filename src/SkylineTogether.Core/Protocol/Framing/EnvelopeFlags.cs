@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// The flags byte of an envelope (ARCH §4.6.1); the values travel on the wire. Valid combinations:
+    /// The flags byte of an envelope (ARCHITECTURE.md#envelope-and-message-kinds); the values travel on the wire. Valid combinations:
     /// <see cref="None"/>, <see cref="Compressed"/> | <see cref="HasUncompressedSize"/>, and <see cref="Fragment"/>
     /// alone. Every other combination and every other bit is rejected by <see cref="EnvelopeCodec.Decode"/>.
     /// </summary>

@@ -30,7 +30,7 @@ namespace SkylineTogether.Core.Motion
     }
 
     /// <summary>
-    /// Quantisation of mover rotations (ARCH §4.9.3: yaw 12 bits, pitch 7 bits; plus a full-rotation escape for rolled
+    /// Quantisation of mover rotations (ARCHITECTURE.md#movers: yaw 12 bits, pitch 7 bits; plus a full-rotation escape for rolled
     /// objects). The yaw/pitch form reconstructs <c>qY(yaw)·qX(−pitch)</c>, the zero-roll rotation whose forward axis is
     /// <c>(sin yaw·cos pitch, sin pitch, cos yaw·cos pitch)</c>; its half-angle sines and cosines come from tables built
     /// once, so a decode is a few multiplications. Thread-safe (the tables are read-only after type initialisation).

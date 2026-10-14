@@ -15,7 +15,7 @@ namespace SkylineTogether.Core.Motion
         /// <summary>Seconds per simulation tick at nominal speed (60 ticks per second, R03 §1.2).</summary>
         public const double SecondsPerTick = 1.0 / 60.0;
 
-        /// <summary>Quantisation steps per metre (1/64 m, ARCH §4.9.3).</summary>
+        /// <summary>Quantisation steps per metre (1/64 m, ARCHITECTURE.md#movers).</summary>
         public const double PositionScale = 64.0;
 
         /// <summary>

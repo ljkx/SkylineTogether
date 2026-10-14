@@ -6,7 +6,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>The host's net id allocator with quarantine, generations, grants and restore (ARCH §3.1).</summary>
+    /// <summary>The host's net id allocator with quarantine, generations, grants and restore (ARCHITECTURE.md#net-ids).</summary>
     public sealed class NetIdAllocatorTests
     {
         private static NetIdAllocator Fresh(double minQuarantine = 0) => new NetIdAllocator { MinQuarantineSeconds = minQuarantine };

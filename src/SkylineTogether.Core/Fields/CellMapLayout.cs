@@ -5,7 +5,7 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Fields
 {
     /// <summary>
-    /// Geometry of one cell map as raw bytes (ARCH §4.10.8): <see cref="Width"/> × <see cref="Height"/> cells of
+    /// Geometry of one cell map as raw bytes (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water): <see cref="Width"/> × <see cref="Height"/> cells of
     /// <see cref="CellBytes"/> bytes each, row-major (the layout of <c>CellMapSystem&lt;T&gt;.m_Map</c>), cut into square
     /// tiles of <see cref="TileCells"/> cells for region diffing. Only tiles whose bytes changed travel; a tile is the
     /// unit of hashing, of the per-peer "already sent" state and of the wire. Immutable and thread-safe.

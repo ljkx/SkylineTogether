@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Intents
 {
     /// <summary>
-    /// Semantic intents (ARCH §5.3): effects that have a public vanilla executor on the host. The value travels in the
+    /// Semantic intents (docs/history/ARCHITECTURE-original.md §5.3): effects that have a public vanilla executor on the host. The value travels in the
     /// INTENT item (<see cref="ProposalFormat"/>); never reorder. Every member names the <see cref="SemanticIntent"/>
     /// fields it uses; the <see cref="SemanticIntent"/> factories build exactly that shape and
     /// <c>ProposalValidator</c> checks it (unused fields are ignored). Targets are checked for liveness and, when
@@ -48,7 +48,7 @@ namespace SkylineTogether.Core.Intents
         PurchaseDevNode,
 
         /// <summary>
-        /// Re-implemented tile purchase (ARCH §5.3). <see cref="SemanticIntent.IntArray"/> = tile slots (unique),
+        /// Re-implemented tile purchase (docs/history/ARCHITECTURE-original.md §5.3). <see cref="SemanticIntent.IntArray"/> = tile slots (unique),
         /// <see cref="SemanticIntent.IntValue"/> = cost observed by the client (part of the money check).
         /// </summary>
         PurchaseMapTiles,
@@ -112,10 +112,10 @@ namespace SkylineTogether.Core.Intents
         Unfollow,
 
         /// <summary>
-        /// Rebuild of a destroyed building or upgrade in place (ARCH §5.2 rules, §5.3, §5.4.3): the host reproduces the
+        /// Rebuild of a destroyed building or upgrade in place (docs/history/ARCHITECTURE-original.md §5.2 rules, §5.3, §5.4.3): the host reproduces the
         /// <c>TempFlags.Upgrade</c> path of <c>ApplyObjectsSystem</c> (<c>ApplyObjectsSystem.cs:378-397</c>).
         /// <see cref="SemanticIntent.Target"/> = object slot, <see cref="SemanticIntent.BaseRevision"/> = its revision,
-        /// <see cref="SemanticIntent.Prefab"/> = new prefab (same prefab class, ARCH §5.4.1 rule 5),
+        /// <see cref="SemanticIntent.Prefab"/> = new prefab (same prefab class, docs/history/ARCHITECTURE-original.md §5.4.1 rule 5),
         /// <see cref="SemanticIntent.IntValue"/> = cost.
         /// </summary>
         ReplaceObjectPrefab

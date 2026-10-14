@@ -7,7 +7,7 @@ using M = SkylineTogether.Core.Identity.FamilyMarker;
 namespace SkylineTogether.Core.Tests.Identity
 {
     /// <summary>
-    /// The family rule table of ARCH §3.2, one test per row (rule numbers as in the table), each with the markers of
+    /// The family rule table of ARCHITECTURE.md#families, one test per row (rule numbers as in the table), each with the markers of
     /// later rules added to prove first-match precedence.
     /// </summary>
     public sealed class FamilyRulesTests

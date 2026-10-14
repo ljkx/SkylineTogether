@@ -6,7 +6,7 @@ namespace SkylineTogether.Core.Transport
     /// Optional capability of an <see cref="IConnection"/>: its keepalive timeout ("no packet for this long ends the
     /// connection", Steam's <c>k_ESteamNetworkingConfig_TimeoutConnected</c>) can be changed while it is open. The
     /// session raises it while the joiner's game loads the city, when either main thread may stall for a long time,
-    /// and restores it once the joiner is live (ARCH §9.7).
+    /// and restores it once the joiner is live (ARCHITECTURE.md#live-session).
     /// </summary>
     [ThreadAffinity(ThreadKind.Main)]
     public interface IConnectionTimeouts
@@ -21,7 +21,7 @@ namespace SkylineTogether.Core.Transport
     /// <summary>The session's keepalive timeouts and a helper that applies them to connections that support it.</summary>
     public static class ConnectionTimeouts
     {
-        /// <summary>Normal keepalive timeout of a connection (ARCH §9.7: 30 s of silence disconnects).</summary>
+        /// <summary>Normal keepalive timeout of a connection (ARCHITECTURE.md#live-session: 30 s of silence disconnects).</summary>
         public const int NormalMilliseconds = 30000;
 
         /// <summary>Keepalive timeout while a joiner downloads and loads the city (long main-thread stalls are expected).</summary>

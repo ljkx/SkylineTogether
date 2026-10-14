@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// The per-slot view of a ledger that bucket details (repair level 1, ARCH §8.5) need: which slots of a bucket hold
+    /// The per-slot view of a ledger that bucket details (repair level 1, docs/history/ARCHITECTURE-original.md §8.5) need: which slots of a bucket hold
     /// members of a class, their slot digests (<see cref="MemberHasher.SlotDigest"/>), the class each pair was counted in,
     /// and the epochs of the last changes (so a detail or beacon older than a local change is not mistaken for a
     /// divergence). <see cref="HashLedger"/> implements it; <see cref="RepairCoordinator"/> uses it when its ledger offers

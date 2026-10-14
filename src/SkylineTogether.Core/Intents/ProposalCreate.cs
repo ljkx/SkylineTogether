@@ -3,8 +3,8 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Intents
 {
     /// <summary>
-    /// An entity the client created by prediction (ARCH §5.2 stage C, §5.4.2): identified by a provisional
-    /// <see cref="LocalId"/> until the host binds it (BIND record, ARCH §5.5.1). <see cref="Components"/> carry the
+    /// An entity the client created by prediction (docs/history/ARCHITECTURE-original.md §5.2 stage C, §5.4.2): identified by a provisional
+    /// <see cref="LocalId"/> until the host binds it (BIND record, docs/history/ARCHITECTURE-original.md §5.5.1). <see cref="Components"/> carry the
     /// replicated values of the prediction; references to other predicted entities of the same proposal are
     /// provisional <see cref="NetRef"/>s. <see cref="TypeSet"/> names the replicated signature when the client's
     /// registry knows it (<see cref="TypeSetId.None"/> = derive it from the components); <see cref="EnabledBits"/> holds
@@ -16,7 +16,7 @@ namespace SkylineTogether.Core.Intents
 
         public Family Family;
 
-        /// <summary>The created prefab (must be unlocked, ARCH §5.4.1 rule 5); <see cref="PrefabRank.None"/> only for
+        /// <summary>The created prefab (must be unlocked, docs/history/ARCHITECTURE-original.md §5.4.1 rule 5); <see cref="PrefabRank.None"/> only for
         /// families without prefabs (water sources, mod entities, generic).</summary>
         public PrefabRank Prefab = PrefabRank.None;
 

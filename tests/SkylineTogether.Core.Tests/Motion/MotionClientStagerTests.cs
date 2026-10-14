@@ -7,7 +7,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Motion
 {
-    /// <summary>The client stager against the real host encoder (ARCH §4.9.3, §4.9.6).</summary>
+    /// <summary>The client stager against the real host encoder (ARCHITECTURE.md#movers).</summary>
     public sealed class MotionClientStagerTests
     {
         private sealed class CaptureOutput : IPeerOutput

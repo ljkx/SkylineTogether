@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Byte budget of one low-priority stream to one peer (ARCH §4.8.2-4.8.4, playable subset): a <see cref="TokenBucket"/>
+    /// Byte budget of one low-priority stream to one peer (ARCHITECTURE.md#deferred-values-and-link-pacing): a <see cref="TokenBucket"/>
     /// plus a backlog guard. Nothing is offered while the peer's outbox and transport already hold more than
     /// <see cref="MaxBacklogBytes"/>, so attention values, cell maps and the rolling refresh never pile up behind a slow
     /// link (P0 traffic is not budgeted here and always goes first). <see cref="Boost"/> scales the rate temporarily

@@ -5,7 +5,7 @@ namespace SkylineTogether.Core.Motion
     /// <summary>
     /// Bit packer for the bodies of motion records: fields are appended least-significant bit first, bytes are emitted
     /// as they fill, and <see cref="Flush"/> pads the last byte with zero bits, so every record ends on a byte boundary
-    /// and can be decoded on its own (ARCH §4.9.3). A mutable struct: always pass it by <c>ref</c>.
+    /// and can be decoded on its own (ARCHITECTURE.md#movers). A mutable struct: always pass it by <c>ref</c>.
     /// </summary>
     internal struct MotionBitWriter
     {

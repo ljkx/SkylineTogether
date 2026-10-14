@@ -7,7 +7,7 @@ namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
     /// Splits an encoded message larger than <see cref="Limits.FragmentThreshold"/> into fragments that fit Steam's
-    /// 512 KiB message cap (ARCH §9.3; R06 §4.2). The input is a complete envelope from <see cref="EnvelopeCodec.Encode"/>
+    /// 512 KiB message cap (ARCHITECTURE.md#fragmentation-and-compression; R06 §4.2). The input is a complete envelope from <see cref="EnvelopeCodec.Encode"/>
     /// (compressed or not); fragmentation sits below compression. Each fragment is an envelope of the same kind with
     /// the <see cref="EnvelopeFlags.Fragment"/> flag:
     /// <code>

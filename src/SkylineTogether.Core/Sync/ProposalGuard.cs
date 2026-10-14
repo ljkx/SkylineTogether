@@ -4,7 +4,8 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// Host: per-peer token bucket for proposals (ARCH §5.6: ≤ 50 proposals per second per player, with a burst).
+    /// Host: per-peer token bucket for proposals (ARCHITECTURE.md#host-validation-and-commit; <c>SyncController</c> uses 120 per
+    /// second with a burst of 240).
     /// Main thread only.
     /// </summary>
     public sealed class ProposalRateLimiter
@@ -107,7 +108,7 @@ namespace SkylineTogether.Core.Sync
 
     /// <summary>
     /// Host: counts rejected proposals that indicate abuse or a broken client (rate, size, malformed). Repeated
-    /// violations within a window mean the player is kicked (ARCH §5.6, §14.3). Rejections for conflicts, money or
+    /// violations within a window mean the player is kicked (ARCHITECTURE.md#host-validation-and-commit, #security-model). Rejections for conflicts, money or
     /// permissions are ordinary game events and never counted.
     /// </summary>
     public sealed class ViolationTracker
@@ -140,7 +141,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// Host: the epoch of the last authored change of every net id (ARCH §3.8, §5.4.1 rule 2). The host numbers its
+    /// Host: the epoch of the last authored change of every net id (ARCHITECTURE.md#host-validation-and-commit). The host numbers its
     /// structural broadcasts (<see cref="SyncRecordKind.Epoch"/>); an entity authored while epoch N is being built is
     /// recorded at N with its author. A proposal from a client that had applied epochs up to B conflicts on an entity
     /// whose last authored change is newer than B and came from somebody else: the client edited a stale version.
@@ -232,10 +233,10 @@ namespace SkylineTogether.Core.Sync
         public int EntityCount => Spawns + Upserts + Despawns + ZoneBlocks;
     }
 
-    /// <summary>Pure host validation rules of ARCH §5.4.1 that need no world access.</summary>
+    /// <summary>Pure host validation rules of ARCHITECTURE.md#host-validation-and-commit that need no world access.</summary>
     public static class ProposalRules
     {
-        /// <summary>Entities (creates + updates + deletes + zone blocks) per proposal at most (ARCH §5.4.1 rule 1).</summary>
+        /// <summary>Entities (creates + updates + deletes + zone blocks) per proposal at most (ARCHITECTURE.md#host-validation-and-commit).</summary>
         public const int MaxEntities = 200000;
 
         /// <summary>The permission flags a proposal needs.</summary>
@@ -292,7 +293,7 @@ namespace SkylineTogether.Core.Sync
         /// <summary>Size rule 1.</summary>
         public static RejectReason CheckSize(in ProposalFacts f) => f.EntityCount > MaxEntities ? RejectReason.Invalid : RejectReason.None;
 
-        /// <summary>The toast a rejected player sees (ARCH §5.5.2).</summary>
+        /// <summary>The toast a rejected player sees (ARCHITECTURE.md#host-validation-and-commit).</summary>
         public static string Describe(RejectReason reason)
         {
             switch (reason)

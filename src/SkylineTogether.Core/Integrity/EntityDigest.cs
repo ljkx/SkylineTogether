@@ -19,7 +19,7 @@ namespace SkylineTogether.Core.Integrity
     }
 
     /// <summary>
-    /// The rolling live verification's digest arithmetic (playable subset of ARCH §8.2-8.4): net ids are grouped into
+    /// The rolling live verification's digest arithmetic (ARCHITECTURE.md#bucket-digests): net ids are grouped into
     /// buckets of <see cref="BucketSize"/>; a bucket's digest is the count of its bound entities and the wrapping sum of
     /// <c>Mix64(Combine(id, hash))</c>, so it does not depend on iteration order and a single differing, missing or
     /// extra entity changes it. Pure and thread-safe.

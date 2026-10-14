@@ -5,7 +5,7 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// The latest presence of every remote player (ARCH §11.4), fed by <see cref="SessionHost.PresenceReceived"/> or
+    /// The latest presence of every remote player (ARCHITECTURE.md#presence-and-tool-previews), fed by <see cref="SessionHost.PresenceReceived"/> or
     /// <see cref="SessionClient.PresenceReceived"/>. Entries expire when a player stops sending (crash, alt-tab, packet
     /// loss) and are removed when the player leaves. Main thread only.
     /// </summary>

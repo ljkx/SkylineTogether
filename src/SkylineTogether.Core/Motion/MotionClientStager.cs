@@ -4,7 +4,7 @@ using SkylineTogether.Core.Buffers;
 
 namespace SkylineTogether.Core.Motion
 {
-    /// <summary>A mover the host released from the client's interest: pin it at its last pose (ARCH §4.9.5).</summary>
+    /// <summary>A mover the host released from the client's interest: pin it at its last pose (ARCHITECTURE.md#movers).</summary>
     public struct MotionPin
     {
         public NetSlot Slot;
@@ -14,7 +14,7 @@ namespace SkylineTogether.Core.Motion
     }
 
     /// <summary>
-    /// The client side of the motion channel (ARCH §4.9.6): applies the host's <c>MotionControl</c> messages
+    /// The client side of the motion channel (ARCHITECTURE.md#movers): applies the host's <c>MotionControl</c> messages
     /// (assignments with their Q-A baselines, releases, release-all) in order, decodes the per-tick Q-B datagrams of
     /// <see cref="MotionHostEncoder"/> against the frames it holds (<see cref="IMotionReferences"/>), and keeps a small
     /// staging ring per interest slot. The game layer then asks for the pose of a mover at any tick
@@ -30,7 +30,7 @@ namespace SkylineTogether.Core.Motion
         /// <summary>Frames kept per mover (8 × 16 ticks: two ring lifetimes).</summary>
         public const int RingSize = 8;
 
-        /// <summary>Extrapolation past the newest frame stops (pins) after this many ticks (ARCH §4.9.5).</summary>
+        /// <summary>Extrapolation past the newest frame stops (pins) after this many ticks (ARCHITECTURE.md#movers).</summary>
         public const int ExtrapolationCapTicks = 32;
 
         /// <summary>Marker byte of this channel's <c>Ack</c> body (<c>u8 'M' | u32 lastAppliedMotionControlSeq</c>).</summary>

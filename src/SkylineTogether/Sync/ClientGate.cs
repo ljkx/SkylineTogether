@@ -6,7 +6,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Follower gating (ARCH §6.3, R11): systems that would overwrite, append to or randomise host-owned data on a
+    /// Follower gating (ARCHITECTURE.md#gated-systems, R11): systems that would overwrite, append to or randomise host-owned data on a
     /// client. Clients never simulate (their simulation stays paused and their clock follows the host), so what is
     /// left are initializers that run on replicated entities when they appear, progression writers outside the
     /// simulation, and the line systems whose results are host data. Systems are found by name, so a game patch that
@@ -37,13 +37,13 @@ namespace SkylineTogether.Sync
             "Game.Buildings.ZoneCheckSystem",
             "Game.City.DevTreeSystem",
             "Game.AutoSaveSystem",
-            // feat/integrity: writes nothing but warning icons, which come from the host (D11, IconSync)
+            // feat/integrity: writes nothing but warning icons, which come from the host (IconSync)
             "Game.Net.ConnectionWarningSystem",
             // event entities come from the host; its initializer would ignite, damage and pick random targets
             "Game.Events.InitializeSystem",
             // CreateChirpSystem is NOT gated: TriggerSystem and LifePathEventSystem write into its queue and the game asserts
             // that it runs (in-game crash report). ChirpDrainSystem empties the queue right before it, so no local chirps.
-            // cascades the host sends itself (every despawn, every changed reverse buffer, ARCH 4.2.6)
+            // cascades the host sends itself (every despawn, every changed reverse buffer, ARCHITECTURE.md#agents)
             "Game.Citizens.HouseholdAndCitizenRemoveSystem",
             "Game.Citizens.HouseholdPetRemoveSystem",
             "Game.Simulation.RemovedSystem",

@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// Default permissions per session role (ARCH §5.6). Host and co-hosts may do everything; builders everything that
+    /// Default permissions per session role (ARCHITECTURE.md#roles-and-moderation). Host and co-hosts may do everything; builders everything that
     /// changes the city; viewers only chat (their client also runs the no-predict gate, so their tools never apply).
     /// </summary>
     public static class RolePermissions

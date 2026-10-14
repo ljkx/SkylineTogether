@@ -21,7 +21,7 @@ using UnityEngine;
 namespace SkylineTogether.Presence
 {
     /// <summary>
-    /// Remote presence in the world (ARCH K15, §11.4). Each frame, while a session is active: raycasts the local
+    /// Remote presence in the world (ARCHITECTURE.md#presence-and-tool-previews). Each frame, while a session is active: raycasts the local
     /// cursor against terrain and water (its own <see cref="RaycastSystem"/> input, the pattern of the game's tooltip
     /// systems; the result is one frame old), sends the cursor, tool and prefab through
     /// <see cref="PresenceController"/> at up to 10 Hz, and draws every remote player's cursor as a projected ring in

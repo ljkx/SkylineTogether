@@ -8,7 +8,7 @@ using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Tests.Transport
 {
-    /// <summary>PeerOutbox (ARCH §9.3, K18): nothing lost under Busy, per-lane order, windows, limits, threading.</summary>
+    /// <summary>PeerOutbox (ARCHITECTURE.md#outbox-lanes-and-rate-control): nothing lost under Busy, per-lane order, windows, limits, threading.</summary>
     public sealed class PeerOutboxTests
     {
         private static PeerOutbox Outbox(FakeConnection connection, ManualClock clock, OutboxConfig config = null, ILog log = null)

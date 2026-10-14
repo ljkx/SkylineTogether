@@ -6,7 +6,7 @@ using SkylineTogether.Core.Testing;
 namespace SkylineTogether.Core.Transport
 {
     /// <summary>
-    /// Network simulator (ARCH §9.1, IMPLEMENTATION-PLAN §4): wraps another transport and impairs everything this side
+    /// Network simulator (ARCHITECTURE.md#transport; tests and tools only): wraps another transport and impairs everything this side
     /// sends according to <see cref="Options"/> (see <see cref="NetSimOptions"/> for the model; wrap both ends of a
     /// <see cref="LoopbackTransport"/> pair to impair both directions). Received traffic passes through unchanged.
     /// <para>
@@ -15,7 +15,7 @@ namespace SkylineTogether.Core.Transport
     /// the next <see cref="Poll"/>, send or statistics call of this side, so both ends must be polled. A queued message
     /// counts as pending in <see cref="IConnection.GetStats"/>; a full simulated send buffer and
     /// <see cref="BusyRate"/> make sends answer <see cref="SendResult.Busy"/> like Steam's
-    /// <c>k_EResultLimitExceeded</c>, which is what the outbox tests need (IMPLEMENTATION-PLAN §7.13).
+    /// <c>k_EResultLimitExceeded</c>, which is what the outbox tests need.
     /// </para>
     /// <para>
     /// Closing a connection with linger hands its queued messages over first; without linger, and when the other end

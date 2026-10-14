@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Contracts
 {
-    /// <summary>Value semantics and bounds of the identity primitives (ARCH §3).</summary>
+    /// <summary>Value semantics and bounds of the identity primitives (ARCHITECTURE.md#identity).</summary>
     public sealed class IdentityTests
     {
         [Test]

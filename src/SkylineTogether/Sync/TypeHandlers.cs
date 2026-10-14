@@ -55,7 +55,7 @@ namespace SkylineTogether.Sync
         internal static int FieldOffset(System.Reflection.FieldInfo f) => Unity.Collections.LowLevel.Unsafe.UnsafeUtility.GetFieldOffset(f);
 
         /// <summary>
-        /// An order-insensitive hash of a reference list (reverse buffers, ARCH §4.2.4); false for every other
+        /// An order-insensitive hash of a reference list (reverse buffers, ARCHITECTURE.md#agents); false for every other
         /// type and when an element cannot be named on the other peer.
         /// </summary>
         public virtual bool TryHashAsSet(EntityManager em, Entity e, NetIdSystem ids, out ulong hash)
@@ -180,7 +180,7 @@ namespace SkylineTogether.Sync
 
     /// <summary>
     /// Ordered reference buffers the save format marks as derived (<c>IEmptySerializable</c>) but which are source data
-    /// during play (ARCH K5): a line's waypoint and segment lists. They travel as lists of net ids.
+    /// during play (ARCHITECTURE.md#agents): a line's waypoint and segment lists. They travel as lists of net ids.
     /// </summary>
     internal sealed class RouteWaypointsHandler : TypeHandler
     {
@@ -238,7 +238,7 @@ namespace SkylineTogether.Sync
 
     /// <summary>
     /// Reverse buffers the save format marks as derived (<c>IEmptySerializable</c>) but which only simulation
-    /// systems (off on clients) maintain during play (ARCH §4.2.4, K5): building <c>Renter</c> and <c>Student</c>,
+    /// systems (off on clients) maintain during play (ARCHITECTURE.md#agents): building <c>Renter</c> and <c>Student</c>,
     /// household <c>HouseholdCitizen</c> and <c>HouseholdAnimal</c>. They travel as lists of net ids in the host's order;
     /// an element the reader cannot resolve yet (a member spawned in a later batch) is left out, and the integrity hash
     /// treats the list as a multiset (<see cref="TryHashAsSet"/>), because a loaded save rebuilds them in chunk order.
@@ -323,7 +323,7 @@ namespace SkylineTogether.Sync
     }
 
     /// <summary>
-    /// Which component types replicate and how (ARCH §3.6): every type the save format persists. <c>ISerializable</c>
+    /// Which component types replicate and how (ARCHITECTURE.md#batch-encoding): every type the save format persists. <c>ISerializable</c>
     /// data and buffers travel as data; zero-size types and <c>IEmptySerializable</c> types (derived data such as
     /// geometry) as presence. Shared, managed, chunk and cleanup components never travel, nor do the few tool-local
     /// types listed in <see cref="Excluded"/>.
@@ -352,7 +352,7 @@ namespace SkylineTogether.Sync
             // the flow-graph connections on net nodes, edges and buildings point at derived flow nodes and edges
             // that every peer builds itself (graph systems in Modification phases). As presence-only components a spawn
             // would add them with null references, which the edge graph system then takes for an existing flow node.
-            // Flow values travel by flow key instead (FlowStatusSync, ARCH 4.11.5).
+            // Flow values travel by flow key instead (FlowStatusSync, ARCHITECTURE.md#statistics-icons-and-flow-status).
             "Game.Simulation.ElectricityNodeConnection",
             "Game.Simulation.ElectricityValveConnection",
             "Game.Simulation.ElectricityBuildingConnection",
@@ -414,7 +414,7 @@ namespace SkylineTogether.Sync
             TypeHandler special = null;
             if (type == typeof(Game.Routes.RouteWaypoint)) special = new RouteWaypointsHandler();
             else if (type == typeof(Game.Routes.RouteSegment)) special = new RouteSegmentsHandler();
-            // reverse buffers replicated as data (K5)
+            // reverse buffers replicated as data (ARCHITECTURE.md#agents)
             else if (type == typeof(Game.Buildings.Renter)) special = new RenterListHandler();
             else if (type == typeof(Game.Citizens.HouseholdCitizen)) special = new HouseholdCitizenListHandler();
             else if (type == typeof(Game.Citizens.HouseholdAnimal)) special = new HouseholdAnimalListHandler();

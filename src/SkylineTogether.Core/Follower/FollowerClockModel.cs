@@ -16,7 +16,7 @@ namespace SkylineTogether.Core.Follower
     }
 
     /// <summary>
-    /// The follower clock's estimate of the host's simulation frame (ARCH §6.1, simplified): host frames arrive as
+    /// The follower clock's estimate of the host's simulation frame (ARCHITECTURE.md#follower-clock): host frames arrive as
     /// samples (the <c>Clock</c> record and the tick of every motion datagram), each one a lower bound of the host frame
     /// at its arrival because it was taken before it travelled. The estimate advances at the session speed between
     /// samples, follows a sample that is ahead of it at once (the least delayed sample wins) and drifts slowly towards

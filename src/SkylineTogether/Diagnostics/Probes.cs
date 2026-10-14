@@ -20,7 +20,7 @@ using ILog = SkylineTogether.Core.ILog;
 namespace SkylineTogether.Diagnostics
 {
     /// <summary>
-    /// The startup self-test (ARCH D6, §12.3, §13.4, Appendix B): every non-public member and every type the mod finds
+    /// The startup self-test (ARCHITECTURE.md#feature-health-and-guards, #probes-and-self-test): every non-public member and every type the mod finds
     /// by name, every Steam API it depends on and the UI module, resolved in one place. Runs at <c>OnLoad</c> (types and
     /// members), again when a city has loaded (world-dependent checks: system instances, field values, the system
     /// registration lists) and once the UI had time to observe the panel's bindings. The results go to the log, the

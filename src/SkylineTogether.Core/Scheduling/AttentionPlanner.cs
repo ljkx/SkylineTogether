@@ -4,14 +4,14 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Per-peer delivery plan of simulation values (ARCH D5, §4.8.3-4.8.4, playable subset). The host's value scan reports
+    /// Per-peer delivery plan of simulation values (ARCHITECTURE.md#simulation-values). The host's value scan reports
     /// every entity whose simulation values changed (<see cref="MarkChanged"/>); each live peer keeps the set of entities
     /// it still needs. <see cref="Drain"/> hands them to an emitter within a byte budget in priority order:
     /// <list type="number">
     /// <item>dirty entities in the peer's view (<see cref="SetView"/>), the attention class (P1);</item>
     /// <item>every other dirty entity, oldest change first, the rolling refresh (P3; FIFO order bounds staleness).</item>
     /// </list>
-    /// The peer's selected entity is skipped: it travels in time-aligned inspection samples (ARCH §4.7.9), and sending
+    /// The peer's selected entity is skipped: it travels in time-aligned inspection samples (ARCHITECTURE.md#simulation-values), and sending
     /// it in between would show values from another tick. It stays dirty and is sent normally once deselected.
     /// <para>
     /// Joining peers: the join snapshot already holds the host's values, so a new peer only needs what changed after

@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Steps of the degradation ladder under a small budget, in the order of ARCH §4.8.5. Each step includes the ones
+    /// Steps of the degradation ladder under a small budget, in the order of docs/history/ARCHITECTURE-original.md §4.8.5. Each step includes the ones
     /// before it. P0 is never degraded, and "P1 never drops below 30 % of what remains after P0" is an invariant of the
     /// scheduler at every step, not a step.
     /// </summary>

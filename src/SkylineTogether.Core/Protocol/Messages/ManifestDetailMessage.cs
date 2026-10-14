@@ -8,7 +8,7 @@ namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
     /// The payload of <see cref="ControlKind.ManifestDetail"/>: the full <see cref="HandshakeManifest"/> behind the
-    /// handshake digests, exchanged for mismatching categories (ARCH §7.9). Every list is <c>varint (count + 1)</c>
+    /// handshake digests, exchanged for mismatching categories (ARCHITECTURE.md#handshake-and-admission). Every list is <c>varint (count + 1)</c>
     /// with 0 = null, so "not provided" (for example <see cref="HandshakeManifest.PrefabIds"/>, filled only on a prefab
     /// mismatch) survives the round trip.
     /// <code>

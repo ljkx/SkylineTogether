@@ -5,7 +5,7 @@ namespace SkylineTogether.Core
 {
     /// <summary>
     /// Component type identity as a rank: the index of the type in the catalog sorted by <c>TypeInfo.StableTypeHash</c>
-    /// (ARCH §3.6). Equal catalog fingerprints mean equal ranks on every peer.
+    /// (docs/history/ARCHITECTURE-original.md §3.6). Equal catalog fingerprints mean equal ranks on every peer.
     /// </summary>
     public readonly struct TypeRank : IEquatable<TypeRank>, IComparable<TypeRank>
     {

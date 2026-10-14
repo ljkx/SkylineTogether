@@ -6,7 +6,7 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Fields
 {
     /// <summary>
-    /// Codec and hash of one tile of the R16 terrain heightmap (ARCH §4.10.9). <c>TerrainSystem.m_Heightmap</c> is a
+    /// Codec and hash of one tile of the R16 terrain heightmap (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water). <c>TerrainSystem.m_Heightmap</c> is a
     /// 4096² R16_UNorm texture, 3.5 m per texel and 1/16 m per unit (R07 §1.1); after a stroke settles the host reads
     /// back its dirty 64×64 tiles (8 KiB raw) and sends the changed ones; clients write them with
     /// <c>Graphics.CopyTexture</c>. Texels are row-major as read back.
@@ -22,7 +22,7 @@ namespace SkylineTogether.Core.Fields
     /// hashes of <c>m_Heightmap</c> only, never the cascade or CPU heights, which contain GPU-rasterised roads (R07 §5.2).
     /// </para>
     /// <para>
-    /// The material splatmap uses the same tile protocol (ARCH §4.10.9): <c>TerrainMaterialSystem.m_UserSplatmap</c> is a
+    /// The material splatmap uses the same tile protocol (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water): <c>TerrainMaterialSystem.m_UserSplatmap</c> is a
     /// 4096² <c>R8G8_UNorm</c> texture (<c>TerrainMaterialSystem.cs:758</c> [V]), so its texels read back as 16-bit
     /// values (R in the low byte) and go through this codec and hash unchanged.
     /// </para>

@@ -6,7 +6,7 @@ namespace SkylineTogether.Core.Transport
     /// <summary>
     /// A host transport made of a primary transport (Steam, or none for a session without remote players) and in-process
     /// transports attached while the session runs (solo testing: the recorder peer's <see cref="LoopbackTransport"/>,
-    /// ARCH §13.5). The host sees one transport: <see cref="Poll"/> polls every part, <see cref="Dispose"/> disposes every
+    /// ARCHITECTURE.md#solo-test-record-and-replay). The host sees one transport: <see cref="Poll"/> polls every part, <see cref="Dispose"/> disposes every
     /// part. Attached parts listen on their own (the caller calls their <see cref="ITransport.Listen"/>).
     /// </summary>
     public sealed class CompositeTransport : ITransport

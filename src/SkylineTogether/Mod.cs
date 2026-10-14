@@ -49,7 +49,7 @@ namespace SkylineTogether
         /// <summary>Steam friends: lobby, rich presence, the invite dialog, direct invites, the friends list, invite joins.</summary>
         public static SteamInvites Invites { get; private set; }
 
-        /// <summary>Solo testing: "Record test session" and "Replay &amp; verify" (ARCH §13.5).</summary>
+        /// <summary>Solo testing: "Record test session" and "Replay &amp; verify" (ARCHITECTURE.md#solo-test-record-and-replay).</summary>
         public static SkylineTogether.Replay.ReplayController Replay { get; private set; }
 
         /// <summary>Join, leave and progress toasts.</summary>
@@ -90,7 +90,7 @@ namespace SkylineTogether
                     log.Warn(LogCategory.Net, "Steam relay network unavailable (is this the Steam version of the game?)", ex);
                 }
             });
-            // the self-test (ARCH D6): types, private members, Steam; features whose probe fails stay off
+            // the self-test (ARCHITECTURE.md#feature-health-and-guards): types, private members, Steam; features whose probe fails stay off
             Step(log, "self-test", () => Probes.RunStartup(log));
 
             bool core = Step(log, "session and replication", () =>
@@ -113,7 +113,7 @@ namespace SkylineTogether
                 Features.Registry.Touch();
             }
 
-            // identity: saved into every save (join snapshots included) by the game's own system serializer
+            // identity: the bindings travel in the join snapshot (the game's own system serializer; other saves carry an empty block)
             Step(log, "net id system", () =>
             {
                 updateSystem.UpdateAt<NetIdSystem>(SystemUpdatePhase.MainLoop);
@@ -154,7 +154,7 @@ namespace SkylineTogether
             Step(log, "invite bindings", () => updateSystem.UpdateAt<InviteUISystem>(SystemUpdatePhase.UIUpdate)); // friends list, overlay state
             Step(log, "presence system", () =>
             {
-                // remote cursors drawn into the overlay buffer right before it renders (ARCH K15)
+                // remote cursors drawn into the overlay buffer right before it renders (ARCHITECTURE.md#presence-and-tool-previews)
                 updateSystem.UpdateBefore<PresenceSystem, Game.Rendering.OverlayRenderSystem>(SystemUpdatePhase.Rendering);
             });
             Step(log, "session driver", () =>

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    SkylineTogether.Core: pure .NET, no Unity, Game or Colossal reference (IMPLEMENTATION-PLAN §2.3, ARCH K16).
+    SkylineTogether.Core: pure .NET, no Unity, Game or Colossal reference (docs/ARCHITECTURE.md#module-map).
     Built against the game's own runtime assemblies exactly like the game project, because no NuGet download is
     allowed (docs/decisions/0001-build-without-nuget.md). Only the framework assemblies below are referenced, and the
     code uses only APIs that exist in netstandard2.0, so the same sources also compile on .NET 8 (the test project

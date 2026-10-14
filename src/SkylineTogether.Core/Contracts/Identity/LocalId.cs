@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Provisional id of an entity a client created by prediction, used only inside proposals (ARCH §3.1, §5.5.1).
+    /// Provisional id of an entity a client created by prediction, used only inside proposals (ARCHITECTURE.md#net-ids, #host-validation-and-commit).
     /// Every client counts from 1, so on the wire a LocalId is always qualified by its origin peer (BIND records).
     /// 0 means "none".
     /// </summary>

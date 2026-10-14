@@ -553,7 +553,7 @@ namespace SkylineTogether.UI
             sb.Append("],");
             Prop(sb, "canInvite", steam && inviteTarget != 0).Append(',');
             Prop(sb, "inviteSteamId", inviteTarget != 0 ? inviteTarget.ToString(CultureInfo.InvariantCulture) : "").Append(',');
-            // robust branch: the self-test (ARCH §13.4) in one line, and what blocks hosting/joining if anything
+            // robust branch: the self-test (ARCHITECTURE.md#probes-and-self-test) in one line, and what blocks hosting/joining if anything
             Prop(sb, "probes", Probes.Summary ?? "").Append(',');
             Prop(sb, "blocked", SessionManager.BlockingReason() ?? "").Append(',');
 

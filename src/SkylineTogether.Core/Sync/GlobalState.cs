@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// Stable ids of the global-state channels (ARCH §4.10.1): a 32-bit FNV-1a hash of the channel's string id, never a
+    /// Stable ids of the global-state channels (ARCHITECTURE.md#global-state-and-panels): a 32-bit FNV-1a hash of the channel's string id, never a
     /// position in a list, so a peer with a different channel set can never route one channel's payload into another.
     /// </summary>
     public static class GlobalChannel

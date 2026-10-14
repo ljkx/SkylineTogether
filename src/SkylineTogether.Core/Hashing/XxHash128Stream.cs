@@ -5,7 +5,7 @@ namespace SkylineTogether.Core.Hashing
     /// <summary>
     /// Incremental XXH3-128 (the <see cref="Digest128"/> algorithm): appending data in any split gives the same digest
     /// as <see cref="Digest128.Compute(byte[], int, int)"/> over the concatenation, with constant memory, so blobs of
-    /// hundreds of megabytes are hashed while they stream (ARCH §7.5). <see cref="Finish"/> does not change the state.
+    /// hundreds of megabytes are hashed while they stream (ARCHITECTURE.md#blob-transfer). <see cref="Finish"/> does not change the state.
     /// Not thread-safe.
     /// </summary>
     public sealed class XxHash128Stream

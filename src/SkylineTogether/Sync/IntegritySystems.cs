@@ -5,7 +5,7 @@ using SkylineTogether.Core;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// ModificationEnd, directly before <c>IconCommandSystem</c> (ARCH §4.10.4): on a live client, drops local status
+    /// ModificationEnd, directly before <c>IconCommandSystem</c> (ARCHITECTURE.md#statistics-icons-and-flow-status): on a live client, drops local status
     /// icon commands and issues the host's icons (<see cref="IconSync.BeforeIconCommandSystem"/>). Does nothing on the
     /// host or outside a session.
     /// </summary>

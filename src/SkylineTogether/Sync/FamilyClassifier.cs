@@ -9,7 +9,7 @@ namespace SkylineTogether.Sync
 {
     /// <summary>
     /// Builds the family marker mask of an entity's archetype and applies Core's rule table (<see cref="FamilyRules"/>,
-    /// ARCH §3.2). Masks are cached per archetype; only the sub-object rule needs a per-entity look at the owner.
+    /// ARCHITECTURE.md#families). Masks are cached per archetype; only the sub-object rule needs a per-entity look at the owner.
     /// </summary>
     public sealed class FamilyClassifier
     {
@@ -232,7 +232,7 @@ namespace SkylineTogether.Sync
         /// </summary>
         public static bool AgentsReplicated { get; set; }
 
-        /// <summary>The agent family (ARCH §3.2 rule 16, class A).</summary>
+        /// <summary>The agent family (ARCHITECTURE.md#families).</summary>
         public static bool IsAgent(Family family) => family == Family.Agent;
 
         /// <summary>

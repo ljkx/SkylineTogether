@@ -6,7 +6,7 @@ using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Tests.Transport
 {
-    /// <summary>NetSimTransport (ARCH §9.1): impairment statistics within tolerance, reliable lanes stay exact, bandwidth and buffers.</summary>
+    /// <summary>NetSimTransport (ARCHITECTURE.md#transport): impairment statistics within tolerance, reliable lanes stay exact, bandwidth and buffers.</summary>
     public sealed class NetSimTransportTests
     {
         private sealed class Rig

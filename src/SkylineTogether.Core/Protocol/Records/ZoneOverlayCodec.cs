@@ -5,9 +5,9 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// Run-length coding of the zone of every cell of a zone block (the payload of a ZONE record, ARCH §4.10.7). The
+    /// Run-length coding of the zone of every cell of a zone block (the payload of a ZONE record, docs/history/ARCHITECTURE-original.md §4.10.7). The
     /// values are opaque <c>ushort</c>s chosen by the caller (zone prefab ranks, never the machine-local
-    /// <c>ZoneType.m_Index</c>, ARCH §3.5); a vanilla block has at most 10 × 6 cells (<c>ZoneUtils.MAX_ZONE_WIDTH</c>,
+    /// <c>ZoneType.m_Index</c>, docs/history/ARCHITECTURE-original.md §3.5); a vanilla block has at most 10 × 6 cells (<c>ZoneUtils.MAX_ZONE_WIDTH</c>,
     /// <c>MAX_ZONE_DEPTH</c>; <c>Game.Zones/BlockSystem.cs</c> creates blocks of up to 10 cells by 6).
     /// <code>
     /// varint cellCount | repeat { varint runLength (≥ 1) | varint value (≤ 65535) } until the runs cover cellCount cells

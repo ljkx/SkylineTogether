@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace SkylineTogether.Core
 {
-    /// <summary>One data file of the handshake manifest (ARCH §4.2.7): its effective-content digest
+    /// <summary>One data file of the handshake manifest (ARCHITECTURE.md#host-capture): its effective-content digest
     /// (of the canonical JSON; not populated by the shipped build) and whether an override file replaced the embedded copy.</summary>
     public sealed class DataFileDigestEntry
     {

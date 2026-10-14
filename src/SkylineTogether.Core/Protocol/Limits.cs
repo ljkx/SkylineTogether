@@ -1,11 +1,11 @@
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// Size limits of the wire format (ARCH §4.6.2, §4.6.5, §9.3, §14.3, Appendix D). Encoders refuse to produce
+    /// Size limits of the wire format (ARCHITECTURE.md#batch-encoding, #fragmentation-and-compression, #security-model). Encoders refuse to produce
     /// anything above a limit (<see cref="System.ArgumentException"/>: the caller must split), decoders reject it with
     /// <see cref="DecodeException"/> before allocating or decompressing. A well-formed message that exceeds a semantic
     /// limit of the replica (an epoch above <see cref="MaxEpochTotalBytes"/>) is a resync condition, not a protocol
-    /// error (ARCH §12.2).
+    /// error (ARCHITECTURE.md#feature-health-and-guards).
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
     public static class Limits
@@ -14,29 +14,29 @@ namespace SkylineTogether.Core.Protocol
         /// <c>Constants.cs:253</c>, R06 §4.2).</summary>
         public const int MaxMessageBytes = 512 * 1024;
 
-        /// <summary>Encoded messages above this size are fragmented by <see cref="Fragmenter"/> (ARCH §9.3); every
+        /// <summary>Encoded messages above this size are fragmented by <see cref="Fragmenter"/> (ARCHITECTURE.md#fragmentation-and-compression); every
         /// fragment stays at or below it.</summary>
         public const int FragmentThreshold = 480 * 1024;
 
-        /// <summary>Largest uncompressed message body: one message, one epoch part (ARCH §4.6.5).</summary>
+        /// <summary>Largest uncompressed message body: one message, one epoch part (ARCHITECTURE.md#fragmentation-and-compression).</summary>
         public const int MaxUncompressedBytes = 8 * 1024 * 1024;
 
-        /// <summary>All parts of one epoch together (ARCH §4.6.2); above it the client resyncs.</summary>
+        /// <summary>All parts of one epoch together (ARCHITECTURE.md#batch-encoding); above it the client resyncs.</summary>
         public const long MaxEpochTotalBytes = 256L * 1024 * 1024;
 
-        /// <summary>Payload of one blob chunk on the bulk lane (ARCH §7.5).</summary>
+        /// <summary>Payload of one blob chunk on the bulk lane (ARCHITECTURE.md#blob-transfer).</summary>
         public const int MaxBulkChunkBytes = 256 * 1024;
 
-        /// <summary>Motion datagrams on the unreliable lane (ARCH §9.3).</summary>
+        /// <summary>Motion datagrams on the unreliable lane (ARCHITECTURE.md#fragmentation-and-compression).</summary>
         public const int MaxDatagramBytes = 1200;
 
-        /// <summary>Characters (UTF-16 code units) of one chat line (ARCH §14.3).</summary>
+        /// <summary>Characters (UTF-16 code units) of one chat line (ARCHITECTURE.md#security-model).</summary>
         public const int MaxChatChars = 500;
 
-        /// <summary>Characters (UTF-16 code units) of a display name or an entity name (ARCH §14.3).</summary>
+        /// <summary>Characters (UTF-16 code units) of a display name or an entity name (ARCHITECTURE.md#security-model).</summary>
         public const int MaxNameChars = 64;
 
-        /// <summary>One proposal part (ARCH §5.4.1 rule 1).</summary>
+        /// <summary>One proposal part (ARCHITECTURE.md#host-validation-and-commit).</summary>
         public const int MaxProposalBytes = 4 * 1024 * 1024;
 
         /// <summary>All parts of one proposal.</summary>
@@ -45,13 +45,13 @@ namespace SkylineTogether.Core.Protocol
         /// <summary>Entities of one proposal.</summary>
         public const int MaxProposalEntities = 200_000;
 
-        /// <summary>Slots of one repair request (ARCH Appendix D).</summary>
+        /// <summary>Slots of one repair request (ARCHITECTURE.md#security-model).</summary>
         public const int MaxRepairSlots = 512;
 
-        /// <summary>Message bodies of this size or more are compressed (ARCH §4.6.5).</summary>
+        /// <summary>Message bodies of this size or more are compressed (ARCHITECTURE.md#fragmentation-and-compression).</summary>
         public const int CompressThreshold = 256;
 
-        /// <summary>Partially received fragmented messages, and partially received multi-part epochs, per peer (ARCH §14.3).</summary>
+        /// <summary>Partially received fragmented messages, and partially received multi-part epochs, per peer (ARCHITECTURE.md#security-model).</summary>
         public const int MaxPartialMessagesPerPeer = 4;
 
         // ---- limits derived from the formats (not part of the plan's table) ----
@@ -68,10 +68,10 @@ namespace SkylineTogether.Core.Protocol
         /// <summary>Bytes an envelope adds to a body at most (kind, flags, size varint, codec byte), rounded up.</summary>
         public const int EnvelopeOverheadBytes = 16;
 
-        /// <summary>Components in one SPAWN or STRUCT record, and types in one type set: ordinals are below 64 (ARCH §3.6).</summary>
+        /// <summary>Components in one SPAWN or STRUCT record, and types in one type set: ordinals are below 64 (ARCHITECTURE.md#batch-encoding).</summary>
         public const int MaxComponentsPerRecord = 64;
 
-        /// <summary>Slots in one <see cref="HashDetailMessage"/>: one bucket holds 1024 slots (ARCH §8.2).</summary>
+        /// <summary>Slots in one <see cref="HashDetailMessage"/>: one bucket holds 1024 slots (ARCHITECTURE.md#bucket-digests).</summary>
         public const int MaxHashDetailSlots = 1 << NetSlot.BucketShift;
 
         /// <summary>Largest valid hash bucket index (<c>NetSlot.MaxValue &gt;&gt; 10</c>).</summary>
@@ -82,7 +82,7 @@ namespace SkylineTogether.Core.Protocol
 
         /// <summary>
         /// The largest uncompressed body a message of <paramref name="kind"/> may have. <see cref="EnvelopeCodec"/>
-        /// checks the declared size against it before decompressing (decompression-bomb guard, ARCH §14.3), and
+        /// checks the declared size against it before decompressing (decompression-bomb guard, ARCHITECTURE.md#security-model), and
         /// <see cref="Reassembler"/> before buffering fragments. Unknown kinds get a small limit; they are dropped by
         /// the router anyway.
         /// </summary>
@@ -123,7 +123,7 @@ namespace SkylineTogether.Core.Protocol
             }
         }
 
-        /// <summary>True for the kinds of <see cref="MessageKind"/> (1-21, 60, 65-67, 90-91, 100, 110); the router drops every other kind (ARCH §14.3).</summary>
+        /// <summary>True for the kinds of <see cref="MessageKind"/> (1-21, 60, 65-67, 90-91, 100, 110); the router drops every other kind (ARCHITECTURE.md#security-model).</summary>
         public static bool IsKnownKind(MessageKind kind) => (kind >= MessageKind.Hello && kind <= MessageKind.Water) || kind == MessageKind.ApplyAck || (kind >= MessageKind.SimValues && kind <= MessageKind.Statistics)
                                                             || kind == MessageKind.AgentValues || kind == MessageKind.AgentRefresh
                                                             || kind == MessageKind.FlowStatus || kind == MessageKind.ModChannel;

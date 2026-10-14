@@ -19,7 +19,7 @@ namespace SkylineTogether.Core.Diagnostics
     }
 
     /// <summary>
-    /// The health of one feature of the mod (ARCH §12.1-12.3, D6): whether its startup probes passed and whether it
+    /// The health of one feature of the mod (ARCHITECTURE.md#feature-health-and-guards): whether its startup probes passed and whether it
     /// keeps failing at run time. Every entry point the game calls reports its exceptions here; the feature logs with a
     /// rate limit and turns itself off after <see cref="TripCount"/> failures within <see cref="TripWindowSeconds"/>,
     /// instead of throwing (or logging) every frame. Callers check <see cref="IsAvailable"/> before doing work.
@@ -149,7 +149,7 @@ namespace SkylineTogether.Core.Diagnostics
         }
     }
 
-    /// <summary>One line of the startup self-test (ARCH §13.4).</summary>
+    /// <summary>One line of the startup self-test (ARCHITECTURE.md#probes-and-self-test).</summary>
     public struct ProbeResult
     {
         /// <summary>Probe id (P-CTX, P-CLOCK, ...).</summary>
@@ -170,7 +170,7 @@ namespace SkylineTogether.Core.Diagnostics
     }
 
     /// <summary>
-    /// Every feature's health and the latest self-test report (ARCH §12.3 <c>ProbeRegistry</c>, §13.4): one place for
+    /// Every feature's health and the latest self-test report (ARCHITECTURE.md#feature-health-and-guards, #probes-and-self-test): one place for
     /// the log, the diagnostics dump and the one-line summary in the panel.
     /// </summary>
     public sealed class FeatureRegistry

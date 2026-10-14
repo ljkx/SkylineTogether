@@ -2,7 +2,7 @@ using System;
 
 namespace SkylineTogether.Core
 {
-    /// <summary>Permission flags gating proposal categories (ARCH §5.6, §14.4).</summary>
+    /// <summary>Permission flags gating proposal categories (ARCHITECTURE.md#roles-and-moderation).</summary>
     [Flags]
     public enum Permission : uint
     {

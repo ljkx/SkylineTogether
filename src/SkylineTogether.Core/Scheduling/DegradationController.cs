@@ -5,7 +5,7 @@ using System.Threading;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// The degradation ladder of ARCH §4.8.5, driven per peer by motion pressure: when motion (P2) wants more than its
+    /// The degradation ladder of docs/history/ARCHITECTURE-original.md §4.8.5, driven per peer by motion pressure: when motion (P2) wants more than its
     /// budget for <see cref="SchedulerConfig.DegradeAfterSeconds"/>, the peer moves one <see cref="DegradationStep"/> down
     /// the ladder (far field at 1/2, then 1/4 rate; then the motion radius shrinks by
     /// <see cref="SchedulerConfig.RadiusShrinkFactor"/> every <see cref="SchedulerConfig.RadiusStepSeconds"/> towards the

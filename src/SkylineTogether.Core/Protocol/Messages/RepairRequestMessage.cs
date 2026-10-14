@@ -4,7 +4,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// A <c>RepairRequest</c> (client → host; ARCH §8.5): slots of one class that the client found different, with a
+    /// A <c>RepairRequest</c> (client → host; docs/history/ARCHITECTURE-original.md §8.5): slots of one class that the client found different, with a
     /// level hint; the host decides what to do and throttles instead of disconnecting.
     /// <code>
     /// u8 class | varint n (≤ 512) | n × varint slot (1 ... 0xFFFFFF) | u8 levelHint

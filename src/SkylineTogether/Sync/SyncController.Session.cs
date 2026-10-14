@@ -229,7 +229,7 @@ namespace SkylineTogether.Sync
             _catchUpBudget.Reset();
         }
 
-        /// <summary>Host: whether <paramref name="peer"/>'s role allows <paramref name="needed"/> (ARCH §5.6).</summary>
+        /// <summary>Host: whether <paramref name="peer"/>'s role allows <paramref name="needed"/> (ARCHITECTURE.md#roles-and-moderation).</summary>
         private bool Allows(PeerId peer, Permission needed)
         {
             SessionHost host = _sessions.Host;
@@ -254,7 +254,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Host session start (ARCH K17): compacts the ids (no peer holds any yet), then binds every persistent
+        /// Host session start (ARCHITECTURE.md#hosting): compacts the ids (no peer holds any yet), then binds every persistent
         /// entity and every prefab before anyone joins.
         /// </summary>
         private void BindCity()
@@ -289,7 +289,7 @@ namespace SkylineTogether.Sync
             PrimeBuildOrders(em);
         }
 
-        /// <summary>gameplay branch: the build-order allocator starts above every live edge (ARCH §5.4.3).</summary>
+        /// <summary>gameplay branch: the build-order allocator starts above every live edge (ARCHITECTURE.md#host-validation-and-commit).</summary>
         private void PrimeBuildOrders(EntityManager em)
         {
             try

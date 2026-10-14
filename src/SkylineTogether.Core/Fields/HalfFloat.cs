@@ -3,7 +3,7 @@ namespace SkylineTogether.Core.Fields
     /// <summary>
     /// IEEE 754 binary16 conversions (netstandard2.0 has no <c>System.Half</c>): round-to-nearest-even from single
     /// precision, exact back to single precision, with subnormals, infinities and NaN. Used for the optional water
-    /// velocity channels ("velocity as 2×f16", ARCH §4.10.10). Pure bit manipulation, identical on every platform.
+    /// velocity channels (half-float velocity, ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water). Pure bit manipulation, identical on every platform.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
     internal static class HalfFloat

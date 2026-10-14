@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// The host's total upload cap (session setting "upload budget", default 1.5 MB/s, ARCH §4.8.2) split across the
+    /// The host's total upload cap (session setting "upload budget", default 1.5 MB/s, docs/history/ARCHITECTURE-original.md §4.8.2) split across the
     /// peers. The split is max-min fair over the peers' demands (water filling): every peer gets an equal share, a peer
     /// that wants less gets its demand, and what it leaves is divided among the others; capacity that remains after every
     /// demand is met is spread evenly on top, so the shares always add up to the total (work-conserving: an unused share

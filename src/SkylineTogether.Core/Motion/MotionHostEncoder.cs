@@ -7,7 +7,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Motion
 {
     /// <summary>
-    /// The host side of the motion channel (ARCH §4.9.3): per peer it keeps the interest table, the reference frame of
+    /// The host side of the motion channel (ARCHITECTURE.md#movers): per peer it keeps the interest table, the reference frame of
     /// every mover, the frames sampled since the last flush and the motion budget, and it builds that peer's
     /// <c>MotionControl</c> messages (lane R) and per-tick Q-B datagrams (lane U, at most 1200 bytes).
     /// <para>
@@ -28,7 +28,7 @@ namespace SkylineTogether.Core.Motion
     /// records), so both sides compute identical deltas. Frames dropped for the budget never change the reference.
     /// </para>
     /// <para>
-    /// <b>Degradation</b> (ARCH §4.8.5): with <see cref="MotionQuality.FarHalf"/> far-field movers are sent every second
+    /// <b>Degradation</b> (ARCHITECTURE.md#live-session): with <see cref="MotionQuality.FarHalf"/> far-field movers are sent every second
     /// sample, with <see cref="MotionQuality.FarQuarter"/> and <see cref="MotionQuality.Reduced"/> every fourth (the
     /// phase is spread over the movers); the client extrapolates or interpolates the skipped frames. Bytes beyond the
     /// grant (releases and followed movers are never throttled) are carried as debt into the next frames.
@@ -90,7 +90,7 @@ namespace SkylineTogether.Core.Motion
         }
 
         /// <summary>
-        /// Short-drop resume (ARCH §7.8): the next flush sends <c>ReleaseAll</c> and then re-enters every mover of the
+        /// Short-drop resume (ARCHITECTURE.md#leaving-kicks-and-recovery): the next flush sends <c>ReleaseAll</c> and then re-enters every mover of the
         /// current interest with a fresh interest slot, generation and Q-A baseline built from its newest four samples.
         /// Movers re-entered by the caller through <see cref="EnterInterest"/> merge their fresh frames into that baseline.
         /// </summary>
@@ -154,7 +154,7 @@ namespace SkylineTogether.Core.Motion
             }
         }
 
-        /// <summary>A mover leaves the peer's interest: the next flush sends its release with a pin instruction (ARCH §4.9.5).</summary>
+        /// <summary>A mover leaves the peer's interest: the next flush sends its release with a pin instruction (ARCHITECTURE.md#movers).</summary>
         public void ExitInterest(PeerId peer, NetSlot slot)
         {
             PeerState state = GetPeer(peer);
@@ -250,7 +250,7 @@ namespace SkylineTogether.Core.Motion
             }
         }
 
-        /// <summary>The per-frame motion grant of the scheduler (ARCH §4.8.4); int.MaxValue means unlimited (the default).</summary>
+        /// <summary>The per-frame motion grant of the scheduler (ARCHITECTURE.md#deferred-values-and-link-pacing); int.MaxValue means unlimited (the default).</summary>
         public void SetMotionBudget(PeerId peer, int bytesThisFrame, MotionQuality quality)
         {
             PeerState state = GetPeer(peer);

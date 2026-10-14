@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Transport seam (ARCH §9.1): Steam P2P and direct IP in the game layer; loopback, network simulator and LAN UDP
+    /// Transport seam (ARCHITECTURE.md#transport): Steam P2P and direct IP in the game layer; loopback, network simulator and LAN UDP
     /// in core-transport.
     /// </summary>
     public interface ITransport : IDisposable

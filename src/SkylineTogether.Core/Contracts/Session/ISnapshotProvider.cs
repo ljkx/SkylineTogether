@@ -2,7 +2,7 @@ using System;
 
 namespace SkylineTogether.Core
 {
-    /// <summary>Host snapshot production (game-join <c>SnapshotService</c>, ARCH §7.2).</summary>
+    /// <summary>Host snapshot production (game-join <c>SnapshotService</c>, ARCHITECTURE.md#snapshot-join).</summary>
     public interface ISnapshotProvider
     {
         /// <summary>Starts a snapshot on the save/load queue; exactly one of the callbacks is invoked later (main thread).</summary>

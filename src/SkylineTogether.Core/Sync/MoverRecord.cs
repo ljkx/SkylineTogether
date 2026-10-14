@@ -3,7 +3,7 @@ using SkylineTogether.Core.Buffers;
 
 namespace SkylineTogether.Core.Sync
 {
-    /// <summary>How a mover exists on the host (ARCH §4.9.2, §4.9.8): which vanilla type set the client mirrors.</summary>
+    /// <summary>How a mover exists on the host (ARCHITECTURE.md#movers): which vanilla type set the client mirrors.</summary>
     public enum MoverKind : byte
     {
         /// <summary>The prefab's moving archetype (<c>ObjectData.m_Archetype</c>): driving or walking.</summary>

@@ -8,7 +8,7 @@ using static SkylineTogether.Core.Tests.Protocol.ProtocolTestUtil;
 
 namespace SkylineTogether.Core.Tests.Protocol
 {
-    /// <summary>Fragmenter and Reassembler (ARCH §9.3): fit the 512 KiB cap, restore exactly, reject gaps cleanly.</summary>
+    /// <summary>Fragmenter and Reassembler (ARCHITECTURE.md#fragmentation-and-compression): fit the 512 KiB cap, restore exactly, reject gaps cleanly.</summary>
     public sealed class FragmentationTests
     {
         private static readonly EnvelopeCodec Codec = new EnvelopeCodec(null);

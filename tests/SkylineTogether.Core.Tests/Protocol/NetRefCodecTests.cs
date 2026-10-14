@@ -6,7 +6,7 @@ using static SkylineTogether.Core.Tests.Protocol.ProtocolTestUtil;
 
 namespace SkylineTogether.Core.Tests.Protocol
 {
-    /// <summary>NetRefCodec: golden vectors for every kind and derived-key subkind (ARCH §4.3.3), strict decoding.</summary>
+    /// <summary>NetRefCodec: golden vectors for every kind and derived-key subkind (docs/history/ARCHITECTURE-original.md §4.3.3), strict decoding.</summary>
     public sealed class NetRefCodecTests
     {
         private static byte[] Encode(NetRef value)
@@ -100,7 +100,7 @@ namespace SkylineTogether.Core.Tests.Protocol
                 new DerivedKey(DerivedKeyKind.Block, new NetSlot(10), new PrefabRank(1), 1, 128, 0, -64, 10, 6, 0),
                 new DerivedKey(DerivedKeyKind.OwnedRoute, new NetSlot(12), new PrefabRank(99), -1, 0, 0, 0, 0, 0, 0),
                 new DerivedKey(DerivedKeyKind.FlowEdge, new NetSlot(1), PrefabRank.None, -1, 0, 0, 0, 2, 7, 0),
-                // owned-route element: a gate-bypass segment (A = 1) with index 2 (ARCH §3.7)
+                // owned-route element: a gate-bypass segment (A = 1) with index 2 (docs/history/ARCHITECTURE-original.md §3.7)
                 new DerivedKey(DerivedKeyKind.OwnedRouteElement, new NetSlot(12), new PrefabRank(99), 2, 0, 0, 0, 1, 0, 0),
                 new DerivedKey(DerivedKeyKind.Lane, new NetSlot(NetSlot.MaxValue), new PrefabRank(int.MaxValue), int.MinValue,
                                int.MaxValue, int.MinValue, -1, ulong.MaxValue, ulong.MaxValue - 1, 0x8000000000000000UL),

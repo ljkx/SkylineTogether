@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// The detailed lists behind the handshake digests (ARCH §7.9), exchanged for mismatching categories and compared by
+    /// The detailed lists behind the handshake digests (ARCHITECTURE.md#handshake-and-admission), exchanged for mismatching categories and compared by
     /// core-session's <c>CompatibilityChecker</c>. Serialised by core-protocol (<c>ManifestDetailMessage</c>).
     /// </summary>
     public sealed class HandshakeManifest
@@ -16,7 +16,7 @@ namespace SkylineTogether.Core
         /// <summary>Filled only on a prefab digest mismatch.</summary>
         public List<string> PrefabIds;
         public List<SettingEntry> Settings = new List<SettingEntry>();
-        /// <summary>Filled only on a data-file digest mismatch (ARCH §4.2.7).</summary>
+        /// <summary>Filled only on a data-file digest mismatch (ARCHITECTURE.md#host-capture).</summary>
         public List<DataFileDigestEntry> DataFiles;
     }
 }

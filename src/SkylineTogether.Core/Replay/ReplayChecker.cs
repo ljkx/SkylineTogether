@@ -41,7 +41,7 @@ namespace SkylineTogether.Core.Replay
     }
 
     /// <summary>
-    /// Compares the recorded host checkpoints with the replaying client's world (solo testing, ARCH §13.5). It receives
+    /// Compares the recorded host checkpoints with the replaying client's world (solo testing, ARCHITECTURE.md#solo-test-record-and-replay). It receives
     /// every replay record right after the batch that carried it was applied, so each bucket's hashes are compared with
     /// exactly the state the host had when it hashed them. Icons are compared once the client's icon reconciliation has
     /// settled (a few frames later), unless newer icon records arrived meanwhile. Pure: the world is an interface.

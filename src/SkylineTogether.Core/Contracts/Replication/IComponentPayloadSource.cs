@@ -11,7 +11,7 @@ namespace SkylineTogether.Core
 
         TypeRank TypeAt(int index);
 
-        /// <summary>Appends the canonical bytes of component <paramref name="index"/> (ARCH §4.3.4) and returns the
+        /// <summary>Appends the canonical bytes of component <paramref name="index"/> (docs/history/ARCHITECTURE-original.md §4.3.4) and returns the
         /// 32-bit raw hash of its chunk bytes (the change-detection prefilter).</summary>
         void Write(int index, Buffers.ByteWriter writer, out uint rawHash);
 

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Describes a join snapshot before its transfer (ARCH §7.1 step 6, §7.4): size and xxHash128 digest of the blob,
+    /// Describes a join snapshot before its transfer (ARCHITECTURE.md#handshake-and-admission, #snapshot-join): size and xxHash128 digest of the blob,
     /// chunk size, snapshot epoch and frame, the host's build-order counter, the game mode and the content the client
     /// pre-checks, and per-family slot counts for the post-load check.
     /// </summary>
@@ -20,7 +20,7 @@ namespace SkylineTogether.Core
         public EpochId Epoch;
         /// <summary>The host frame index F0 at the snapshot.</summary>
         public uint FrameIndex;
-        /// <summary>The host's build-order counter; the joiner restores <c>GenerateEdgesSystem</c>'s counter from it (ARCH §7.4).</summary>
+        /// <summary>The host's build-order counter; the joiner restores <c>GenerateEdgesSystem</c>'s counter from it (ARCHITECTURE.md#snapshot-join).</summary>
         public uint HostBuildOrderNext;
         public string GameModeName;
         /// <summary>Climate, water-render and terrain-render <c>PrefabID</c>s the client must resolve.</summary>

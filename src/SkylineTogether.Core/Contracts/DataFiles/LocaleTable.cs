@@ -6,7 +6,7 @@ using SkylineTogether.Core.Json;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// A string table, <c>locale.&lt;id&gt;.json</c> (ARCH §11.7): a flat JSON object of key → text, for example
+    /// A string table, <c>locale.&lt;id&gt;.json</c> (ARCHITECTURE.md#ui-module): a flat JSON object of key → text, for example
     /// <c>{ "st.menu.coop": "Co-op", "st.toast.rejected.conflict": "Conflicts with {0}'s edit" }</c>. Keys are unique,
     /// non-empty and free of control characters; values are strings (nested objects are rejected); members starting
     /// with <c>_</c> are comments. English is the fallback for missing keys (game-bootstrap <c>LocaleSource</c>).

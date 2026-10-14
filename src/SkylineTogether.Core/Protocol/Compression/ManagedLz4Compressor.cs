@@ -4,9 +4,9 @@ using System.Globalization;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// A pure C# implementation of the LZ4 <b>block</b> format (no frame, no native dependency): the unit tests' codec
-    /// and the last-resort fallback when neither native ZSTD nor native LZ4 works (ARCH §4.6.5; probes <c>P-ZSTD</c>,
-    /// <c>P-LZ4</c>, Appendix B). The output is a standard LZ4 block, so the reference decoder (and the game's native LZ4,
+    /// A pure C# implementation of the LZ4 <b>block</b> format (no frame, no native dependency). As built it is the
+    /// compressor of every connection (<c>PeerChannel</c>; ARCHITECTURE.md#fragmentation-and-compression); native ZSTD or
+    /// LZ4 paths were planned but are not used. The output is a standard LZ4 block, so the reference decoder (and the game's native LZ4,
     /// when present) decodes it; this decoder accepts every block a conforming LZ4 compressor produces and applies the
     /// end-of-block checks of the reference safe decoder (<c>LZ4_decompress_safe</c>) to everything else.
     /// <para>

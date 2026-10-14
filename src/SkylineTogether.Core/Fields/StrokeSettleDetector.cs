@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Fields
 {
     /// <summary>
-    /// Detects when a terraforming stroke has settled (ARCH §4.10.9: "after a stroke settles (200 ms without stamps)
+    /// Detects when a terraforming stroke has settled (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water; original design, docs/history/ARCHITECTURE-original.md §4.10.9: "after a stroke settles (200 ms without stamps)
     /// the host reads back the union dirty rectangle"). Every applied stamp reports its texel rectangle (inclusive
     /// bounds, see <see cref="TileGrid.WorldToTexelRect"/>); once no stamp arrived for <see cref="SettleSeconds"/>,
     /// <see cref="TryTakeSettled"/> hands out the union of all rectangles since the last take and starts over. The

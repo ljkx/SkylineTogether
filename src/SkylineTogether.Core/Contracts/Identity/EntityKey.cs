@@ -5,7 +5,7 @@ namespace SkylineTogether.Core
 {
     /// <summary>
     /// A machine-local ECS entity handle (<c>Unity.Entities.Entity</c>: index and version) in Core types. Indices are
-    /// reused at once and versions are per process (ARCH §3), so a key is meaningful only on the machine that made it;
+    /// reused at once and versions are per process (docs/history/ARCHITECTURE-original.md §3), so a key is meaningful only on the machine that made it;
     /// an entity whose version differs from the recorded one is a different entity. <c>default</c> is the null entity,
     /// exactly like <c>Entity.Null</c> (<c>Unity.Entities/Entity.cs</c>).
     /// </summary>

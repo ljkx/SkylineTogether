@@ -8,7 +8,7 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Replay
 {
     /// <summary>
-    /// Solo testing (record/replay verdict, ARCH §13.5): the file layout of one recording folder and the stream format.
+    /// Solo testing (record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay): the file layout of one recording folder and the stream format.
     /// <para>
     /// A recording is what one client of a session receives, exactly as its transport delivered it: every message's raw
     /// bytes (envelope, compression and fragments included) with the host time and frame it arrived at, plus a few

@@ -5,9 +5,9 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// A <c>HashDetail</c> (host → client, repair level 1; ARCH §8.5): the per-slot combined hashes of one bucket of one
+    /// A <c>HashDetail</c> (host → client, repair level 1; docs/history/ARCHITECTURE-original.md §8.5): the per-slot combined hashes of one bucket of one
     /// class as of an epoch. <see cref="Slots"/> and <see cref="Hashes"/> are parallel arrays; every slot belongs to the
-    /// bucket (<c>slot &gt;&gt; 10 == bucket</c>, ARCH §8.2), so a bucket detail holds at most 1024 entries.
+    /// bucket (<c>slot &gt;&gt; 10 == bucket</c>, docs/history/ARCHITECTURE-original.md §8.2), so a bucket detail holds at most 1024 entries.
     /// <code>
     /// u8 class | varint bucket (≤ 16383) | varint atEpoch | varint n (≤ 1024) | n × varint slot (1 ... 0xFFFFFF, in the bucket) | n × u32 hash
     /// </code>

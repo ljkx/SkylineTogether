@@ -7,7 +7,7 @@ using static SkylineTogether.Core.Tests.Protocol.ProtocolTestUtil;
 
 namespace SkylineTogether.Core.Tests.Protocol
 {
-    /// <summary>ZoneOverlayCodec (ARCH §4.10.7): golden layout, random cell patterns, exactly one encoding per pattern.</summary>
+    /// <summary>ZoneOverlayCodec (docs/history/ARCHITECTURE-original.md §4.10.7): golden layout, random cell patterns, exactly one encoding per pattern.</summary>
     public sealed class ZoneOverlayCodecTests
     {
         private static byte[] Encode(ushort[] cells, int count)

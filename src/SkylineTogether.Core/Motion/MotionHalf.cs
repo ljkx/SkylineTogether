@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Motion
 {
     /// <summary>
-    /// IEEE-754 binary16 conversion for exact velocities (ARCH §4.9.3: followed and inspected movers carry f16
+    /// IEEE-754 binary16 conversion for exact velocities (ARCHITECTURE.md#movers: followed and inspected movers carry f16
     /// velocity). <c>System.Half</c> is not part of netstandard2.0, so the conversion is done by bit manipulation:
     /// round to nearest even, subnormals supported, and values beyond the binary16 range clamp to ±65504 (a velocity
     /// never becomes infinite). Pure and deterministic.

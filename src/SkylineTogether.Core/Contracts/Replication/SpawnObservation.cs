@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>What the host capture saw about an entity it spawns or primes (ARCH §4.4.2 step 2, §4.4.8).</summary>
+    /// <summary>What the host capture saw about an entity it spawns or primes (docs/history/ARCHITECTURE-original.md §4.4.2 step 2, §4.4.8).</summary>
     public struct SpawnObservation
     {
         public EntityKey Entity;

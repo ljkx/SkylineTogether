@@ -10,7 +10,7 @@ namespace SkylineTogether.Sync
 {
     /// <summary>
     /// The integrity hash of one bound entity: what the rolling verification compares between host and client
-    /// (ARCH §8.1, playable subset). It must cover only what replication actually keeps equal, or every cycle would
+    /// (ARCHITECTURE.md#bucket-digests). It must cover only what replication actually keeps equal, or every cycle would
     /// "repair" values that were never meant to travel. The rules, decided per family:
     /// <list type="bullet">
     /// <item><b>Line families</b> (route, waypoint, segment): every replicated component, its value or its presence, as
@@ -19,8 +19,8 @@ namespace SkylineTogether.Sync
     /// <item><b>Every other replicated family</b> (nets, objects, areas, aggregates, water sources, mod entities): only
     /// the structural source values listed in <see cref="StructuralTypeNames"/> (prefab, owner, transform, attachment,
     /// net geometry and topology, area nodes). Their simulation values (building condition, resources, renters, road
-    /// traffic, tree growth, ...) change on the host without update tags and are not streamed in this version, so a
-    /// client legitimately holds older values; hashing them would turn the verification into a slow value sync.</item>
+    /// traffic, tree growth, ...) change on the host without update tags and reach clients only by attention and rolling
+    /// refresh (<see cref="AttentionValues"/>, budgeted), so a client legitimately holds older values; hashing them would turn the verification into a slow value sync.</item>
     /// <item><b>Presence-only values</b>: a value that references something no peer can name travels as presence only
     /// and the client keeps its own value. The host hashes such a component as presence (the codec cannot serialize it);
     /// the client records which types each received record carried as presence only (<see cref="OnRecord"/>) and hashes

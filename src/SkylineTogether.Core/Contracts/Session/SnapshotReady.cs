@@ -4,7 +4,7 @@ namespace SkylineTogether.Core
     public sealed class SnapshotReady
     {
         public SnapshotManifest Manifest;
-        /// <summary>Locally generated path in the mod's temp folder (never a path from the network, ARCH §14.5).</summary>
+        /// <summary>Locally generated path in the mod's temp folder (never a path from the network, ARCHITECTURE.md#security-model).</summary>
         public string FilePath;
 
         /// <summary>

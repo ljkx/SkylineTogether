@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Why the shared applier executes a program (ARCH §4.7, §5.4.2, §5.5.2).</summary>
+    /// <summary>Why the shared applier executes a program (docs/history/ARCHITECTURE-original.md §4.7, §5.4.2, §5.5.2).</summary>
     public enum ApplyMode : byte
     {
         /// <summary>A client applying host epochs.</summary>

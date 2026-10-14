@@ -4,7 +4,7 @@ using SkylineTogether.Core.Buffers;
 
 namespace SkylineTogether.Core.Sync
 {
-    /// <summary>The utility network a flow-status record belongs to (ARCH §4.11.5).</summary>
+    /// <summary>The utility network a flow-status record belongs to (ARCHITECTURE.md#statistics-icons-and-flow-status).</summary>
     public enum FlowNetwork : byte
     {
         Electricity = 1,
@@ -12,7 +12,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// What a flow node is to its owner (ARCH §3.7 "Flow edge" derived key). Flow nodes have no identity of their own: the
+    /// What a flow node is to its owner (ARCHITECTURE.md#derived-keys "Flow edge" derived key). Flow nodes have no identity of their own: the
     /// graph systems hang them off net nodes and edges (<c>ElectricityNodeConnection</c>/<c>WaterPipeNodeConnection</c>),
     /// valve nodes off building sub-net nodes (<c>*ValveConnection</c>), building nodes off buildings
     /// (<c>*BuildingConnection</c>), plus the two global super nodes of each flow system. An owner has at most one node per
@@ -197,7 +197,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// Host: the flow-status channel of one peer for one network (ARCH §4.11.5). While the peer has the network's topic
+    /// Host: the flow-status channel of one peer for one network (ARCHITECTURE.md#statistics-icons-and-flow-status). While the peer has the network's topic
     /// active, every finished pass is compared with what the peer was sent; activation clears that memory, so the first
     /// pass after it is a keyframe (the peer's derived edges may have been rebuilt while it was not watching).
     /// </summary>

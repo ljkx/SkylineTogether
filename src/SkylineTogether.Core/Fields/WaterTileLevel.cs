@@ -2,7 +2,7 @@ namespace SkylineTogether.Core.Fields
 {
     /// <summary>
     /// Which channels of <c>WaterSystem.WaterTexture</c> (RGBA32F: x = depth, y/z = velocity, w = pollution;
-    /// <c>Game.Simulation/SurfaceWater.cs</c> [V]) a water correction tile carries (ARCH §4.10.10). The values are
+    /// <c>Game.Simulation/SurfaceWater.cs</c> [V]) a water correction tile carries (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water). The values are
     /// part of the wire format.
     /// </summary>
     public enum WaterTileLevel : byte

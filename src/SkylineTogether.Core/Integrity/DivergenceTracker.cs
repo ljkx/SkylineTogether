@@ -5,7 +5,7 @@ using SkylineTogether.Core.Sync;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Client-side decisions of the rolling live verification (playable subset of ARCH §8.3-8.5): which differing,
+    /// Client-side decisions of the rolling live verification (ARCHITECTURE.md#divergence-tracking-and-repair): which differing,
     /// missing or extra entities of a bucket detail are real divergence, when to ask the host to re-send them, and when
     /// to stop trying.
     /// <para>

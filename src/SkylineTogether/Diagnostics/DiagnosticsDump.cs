@@ -12,7 +12,7 @@ using SkylineTogether.Session;
 namespace SkylineTogether.Diagnostics
 {
     /// <summary>
-    /// "Write diagnostics" (ARCH §13.6, plain-text subset): session state, players, link numbers, replication counters,
+    /// "Write diagnostics" (ARCHITECTURE.md#diagnostics-dump, plain-text subset): session state, players, link numbers, replication counters,
     /// versions, the mod list and the recent log lines, written as a text file next to the mod's log. Passwords and
     /// chat messages are never included. Main thread only.
     /// </summary>
@@ -74,7 +74,7 @@ namespace SkylineTogether.Diagnostics
             });
             Line(sb, "unity: " + UnityEngine.Application.unityVersion + ", os: " + Environment.OSVersion);
 
-            // ARCH §13.4: what the self-test found and which features are off (and why)
+            // ARCHITECTURE.md#probes-and-self-test: what the self-test found and which features are off (and why)
             Section(sb, "Self-test and features");
             Safe(sb, () =>
             {

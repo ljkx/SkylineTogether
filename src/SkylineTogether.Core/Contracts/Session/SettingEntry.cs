@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>One mod setting in the handshake manifest or the pushed session settings (ARCH §10.2).</summary>
+    /// <summary>One mod setting in the handshake manifest or the pushed session settings (ARCHITECTURE.md#mod-compatibility).</summary>
     public sealed class SettingEntry
     {
         public string Mod;

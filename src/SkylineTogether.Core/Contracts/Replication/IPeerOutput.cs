@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// A peer's send side as the engines see it, implemented by core-transport's <c>PeerOutbox</c> (ARCH §9.3).
+    /// A peer's send side as the engines see it, implemented by core-transport's <c>PeerOutbox</c> (ARCHITECTURE.md#outbox-lanes-and-rate-control).
     /// Reliable messages are queued and never dropped; unreliable ones go straight to the connection.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
@@ -18,7 +18,7 @@ namespace SkylineTogether.Core
         /// <summary>The reliable window has room for <paramref name="bytes"/> (the scheduler asks before building value sections).</summary>
         bool CanAcceptReliable(int bytes);
 
-        /// <summary>Bytes waiting in the outbox (they count as P0 backlog, ARCH §4.8.5).</summary>
+        /// <summary>Bytes waiting in the outbox (they count as P0 backlog, ARCHITECTURE.md#live-session).</summary>
         long QueuedBytes { get; }
 
         /// <summary>Age of the oldest queued message.</summary>

@@ -6,7 +6,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>Flow keys, significance, the per-peer channel and the wire form of the flow-status channel (ARCH §4.11.5).</summary>
+    /// <summary>Flow keys, significance, the per-peer channel and the wire form of the flow-status channel (ARCHITECTURE.md#statistics-icons-and-flow-status).</summary>
     public sealed class FlowStatusTests
     {
         private static FlowKey Key(uint a, FlowNodeRole ra, uint b, FlowNodeRole rb) => new FlowKey(new FlowNodeKey(a, ra), new FlowNodeKey(b, rb));

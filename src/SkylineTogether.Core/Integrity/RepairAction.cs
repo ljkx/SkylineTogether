@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// What <see cref="RepairCoordinator"/> did with an observation (ARCH §8.4-8.5). The client only asks; every
+    /// What <see cref="RepairCoordinator"/> did with an observation (docs/history/ARCHITECTURE-original.md §8.4-8.5). The client only asks; every
     /// request carries a level hint and the host decides (<see cref="HostRepairResponder"/>).
     /// </summary>
     public enum RepairAction : byte

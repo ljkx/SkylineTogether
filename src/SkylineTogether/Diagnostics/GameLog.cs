@@ -9,7 +9,7 @@ namespace SkylineTogether.Diagnostics
 {
     /// <summary>
     /// Core's logging seam written to the game's log folder (<c>Logs/SkylineTogether.log</c>). Keeps the most recent
-    /// lines in memory for the diagnostics dump (ARCH §13.1).
+    /// lines in memory for the diagnostics dump (ARCHITECTURE.md#logs).
     /// </summary>
     public sealed class GameLog : Core.ILog
     {

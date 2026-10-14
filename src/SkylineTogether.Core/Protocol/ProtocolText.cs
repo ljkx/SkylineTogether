@@ -3,7 +3,7 @@ using System.Text;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// Free-text rules of the wire format (ARCH §14.3: "strings are stripped of control characters before they reach
+    /// Free-text rules of the wire format (ARCHITECTURE.md#security-model; original design, docs/history/ARCHITECTURE-original.md §14.3: "strings are stripped of control characters before they reach
     /// the UI"; chat ≤ 500 and names ≤ 64 characters). Writers truncate free text to its limit, so user input can never
     /// make an encoder throw; readers reject text above the limit (only a broken or hostile peer sends it) and strip
     /// control characters. Identifiers (mod names, prefab ids, setting keys) are not free text: they are compared

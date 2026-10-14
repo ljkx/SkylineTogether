@@ -10,7 +10,7 @@ using static SkylineTogether.Core.Tests.Protocol.ProtocolTestUtil;
 namespace SkylineTogether.Core.Tests.Protocol
 {
     /// <summary>
-    /// Fuzzing of every decoder of the wire format (IMPLEMENTATION-PLAN §4, §7.2): valid encodings are mutated (bit
+    /// Fuzzing of every decoder of the wire format (ARCHITECTURE.md#code-rules): valid encodings are mutated (bit
     /// flips, byte replacement, boundary values, truncation, insertion, duplication, random garbage) and decoded; only
     /// <see cref="DecodeException"/> may escape. The input window always ends at the end of its array, so a read past
     /// the window shows up as an <see cref="IndexOutOfRangeException"/> instead of passing silently.

@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Attention topics (ARCH §4.8.3): decodes a client's view report into the topics it asks for and names the related
+    /// Attention topics (ARCHITECTURE.md#simulation-values): decodes a client's view report into the topics it asks for and names the related
     /// entities those topics need (<see cref="ScopeOf"/>). The design's per-type topic table (policy topics plus
     /// built-in defaults) belonged to the unbuilt worker-thread scheduler and was removed; the host collects topic data
     /// in <c>AttentionValues</c> (game layer).
@@ -21,7 +21,7 @@ namespace SkylineTogether.Core.Scheduling
         public const AttentionTopic AllTopics = (AttentionTopic)0x003FFFFFu;
 
         /// <summary>Topics whose data matters everywhere, not only in view: the line values of every line (transport
-        /// infoview, transportation overview) and the city statistics (ARCH §4.8.3 table). The topic data of every other
+        /// infoview, transportation overview) and the city statistics (ARCHITECTURE.md#simulation-values). The topic data of every other
         /// topic belongs to in-view entities and to the entities of <see cref="ScopeOf"/>.</summary>
         public const AttentionTopic GlobalTopics = AttentionTopic.Transport | AttentionTopic.Statistics;
 

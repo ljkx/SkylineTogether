@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Replication classes (ARCH §4.2.2). The numeric values travel on the wire (HASH beacons) and must not change.
+    /// Replication classes (ARCHITECTURE.md#host-capture). The numeric values travel on the wire (HASH beacons) and must not change.
     /// </summary>
     public enum ReplicationClass : byte
     {

@@ -5,9 +5,9 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// <c>Welcome</c> (host → client, ARCH §7.1 step 3): the admission. <see cref="SessionSettings"/> is the encoded
+    /// <c>Welcome</c> (host → client, ARCHITECTURE.md#handshake-and-admission): the admission. <see cref="SessionSettings"/> is the encoded
     /// <c>Session.SessionSettings</c> (core-session); <see cref="EnabledSysEntries"/> are the stable ids of the
-    /// system-state entries the host enabled (ARCH §4.10.1); <see cref="Compression"/> is the session codec the host
+    /// system-state entries the host enabled (ARCHITECTURE.md#global-state-and-panels); <see cref="Compression"/> is the session codec the host
     /// chose from the client's <see cref="HelloMessage.CompressionMask"/> (<see cref="CompressionNegotiation.Choose"/>).
     /// <code>
     /// u32 sessionId | u8 assignedPeer | u8 role | varint permissions | bytes sessionSettings (≤ 2 MiB) | bytes hostNonce (≤ 64)

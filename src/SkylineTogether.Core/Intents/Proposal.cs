@@ -7,10 +7,10 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Intents
 {
     /// <summary>
-    /// A client proposal (ARCH §5.1-5.3): the effects of one tool apply, local edit, terrain stroke or batch of UI actions,
+    /// A client proposal (docs/history/ARCHITECTURE-original.md §5.1-5.3): the effects of one tool apply, local edit, terrain stroke or batch of UI actions,
     /// sent to the host, which validates it atomically (<c>ProposalValidator</c>) and commits or rejects it as a
     /// whole. <see cref="Seq"/> numbers the proposals of one client from 1 (<c>ProposalTracker.NextSeq</c>); on the
-    /// wire it is always qualified by the origin peer (RESULT records, ARCH §4.6.3). <see cref="BaseEpoch"/> is the last
+    /// wire it is always qualified by the origin peer (RESULT records, docs/history/ARCHITECTURE-original.md §4.6.3). <see cref="BaseEpoch"/> is the last
     /// epoch the client had applied when it captured the effects (diagnostics; conflicts are decided by revisions).
     /// <para>
     /// Codec (<see cref="ProposalFormat"/>): <c>Write</c> and <c>Read</c> handle a proposal that fits into one
@@ -46,7 +46,7 @@ namespace SkylineTogether.Core.Intents
 
         /// <summary>
         /// Entities the proposal addresses: creates + updates + deletes + zone edits (the measure of
-        /// <see cref="Limits.MaxProposalEntities"/>, ARCH §5.4.1 rule 1).
+        /// <see cref="Limits.MaxProposalEntities"/>, docs/history/ARCHITECTURE-original.md §5.4.1 rule 1).
         /// </summary>
         public int EntityCount => Count(Creates) + Count(Updates) + Count(Deletes) + Count(Zones);
 
@@ -200,7 +200,7 @@ namespace SkylineTogether.Core.Intents
 
         /// <summary>
         /// Appends the <c>(slot, type)</c> pairs of every update component: the pairs whose incoming host values the
-        /// client holds while the proposal is pending (ARCH §5.5.4). The game layer adds pairs that semantic intents
+        /// client holds while the proposal is pending (docs/history/ARCHITECTURE-original.md §5.5.4). The game layer adds pairs that semantic intents
         /// predict (for example the target's policy buffer). Returns the number of pairs appended.
         /// </summary>
         public int CollectCoveredPairs(List<(NetSlot slot, TypeRank type)> output)

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Time-aligned inspection (ARCH K7, §4.7.9): the info panel refreshes every 256 simulation ticks relative to its
+    /// Time-aligned inspection (ARCHITECTURE.md#simulation-values): the info panel refreshes every 256 simulation ticks relative to its
     /// last refresh (<c>UIUpdateState.Advance</c>), so the host samples the selected entities when its frame index crosses
     /// a multiple of 256 and every client applies the sample when its own clock reaches the stamped tick, then forces a
     /// panel refresh. Pure arithmetic, wrap-safe over the 32-bit frame counter.

@@ -4,10 +4,10 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// The host replication engine (ARCH §4.4-4.5), implemented by core-replication's <c>HostReplicationEngine</c> and
+    /// The host replication engine (docs/history/ARCHITECTURE-original.md §4.4-4.5), implemented by core-replication's <c>HostReplicationEngine</c> and
     /// driven by game-host-capture.
     /// <para>
-    /// Threading contract (ARCH §4.5.5): <see cref="CaptureWindowAttribute"/> members may run only between
+    /// Threading contract (docs/history/ARCHITECTURE-original.md §4.5.5): <see cref="CaptureWindowAttribute"/> members may run only between
     /// <see cref="BeginCapture"/> and <see cref="EndCapture"/> (debug builds assert). Every other mutating member may be
     /// called at any time on the main thread; outside the window it is appended to the engine command queue and executed
     /// at the next <see cref="BeginCapture"/>, after the previous frame's workers were joined. Read-only queries
@@ -40,7 +40,7 @@ namespace SkylineTogether.Core
         [CaptureWindow]
         void BindExisting(NetSlot slot, byte generation, EntityKey entity, Family family, PrefabRank prefab);
 
-        /// <summary>Host session start begins (ARCH §4.4.8); <see cref="AcceptingPeers"/> becomes false.</summary>
+        /// <summary>Host session start begins (docs/history/ARCHITECTURE-original.md §4.4.8); <see cref="AcceptingPeers"/> becomes false.</summary>
         void BeginSessionStart();
 
         /// <summary>Session start: records baselines only (no dirty bits, no records); marks the spawn as emitted.</summary>
@@ -67,7 +67,7 @@ namespace SkylineTogether.Core
         [CaptureWindow]
         ObserveResult ObserveValue(NetSlot slot, TypeRank type, byte[] canonical, int offset, int count, uint rawHash, ObserveSource source);
 
-        /// <summary>EDC or commit of a type with an authorable mask: the revision follows the projection hash (ARCH §3.8).</summary>
+        /// <summary>EDC or commit of a type with an authorable mask: the revision follows the projection hash (docs/history/ARCHITECTURE-original.md §3.8).</summary>
         [CaptureWindow]
         void ObserveAuthored(NetSlot slot, TypeRank type, uint projectionHash);
 
@@ -95,12 +95,12 @@ namespace SkylineTogether.Core
         /// <summary>A proposal result and its binds (origin inside the records), in the shared TX section.</summary>
         void EmitResult(in ResultRecord result, IReadOnlyList<BindRecord> binds);
 
-        /// <summary>The inspection closure of a peer to sample at <paramref name="sampleTick"/> (ARCH §4.7.9).</summary>
+        /// <summary>The inspection closure of a peer to sample at <paramref name="sampleTick"/> (docs/history/ARCHITECTURE-original.md §4.7.9).</summary>
         void SetInspectionSample(PeerId peer, uint sampleTick, IReadOnlyList<NetSlot> closure);
 
         void AddPeer(PeerId peer, IPeerOutput output);
 
-        /// <summary><paramref name="keepGrace"/>: keep the peer's dirty set for a short-drop resume (ARCH §7.8).</summary>
+        /// <summary><paramref name="keepGrace"/>: keep the peer's dirty set for a short-drop resume (docs/history/ARCHITECTURE-original.md §7.8).</summary>
         void RemovePeer(PeerId peer, bool keepGrace);
 
         void OnAck(PeerId peer, EpochId epoch);
@@ -111,7 +111,7 @@ namespace SkylineTogether.Core
         /// <summary>Starts tracking a joiner at the snapshot epoch; its first message carries the TSET keyframe.</summary>
         JoinTicket BeginJoiner(PeerId peer);
 
-        /// <summary>Short-drop resume (ARCH §7.8); false when the epoch log no longer reaches back to <paramref name="lastApplied"/>.</summary>
+        /// <summary>Short-drop resume (docs/history/ARCHITECTURE-original.md §7.8); false when the epoch log no longer reaches back to <paramref name="lastApplied"/>.</summary>
         bool TryResume(PeerId peer, EpochId lastApplied);
 
         /// <summary>Raised after a successful resume; game-motion and the channels reset their per-peer state.</summary>

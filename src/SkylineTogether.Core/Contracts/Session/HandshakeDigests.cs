@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// The digests a client sends in <c>Hello</c> (ARCH §7.1 step 2, §7.9). Digests come first; full lists are
+    /// The digests a client sends in <c>Hello</c> (ARCHITECTURE.md#handshake-and-admission). Digests come first; full lists are
     /// exchanged only for the categories whose digests differ.
     /// </summary>
     public struct HandshakeDigests
@@ -25,7 +25,7 @@ namespace SkylineTogether.Core
         public ulong Content;
         /// <summary>Digest of the simulation-relevant mod settings.</summary>
         public ulong ModSettings;
-        /// <summary>Digest over the effective content of every data file (ARCH §4.2.7).</summary>
+        /// <summary>Digest over the effective content of every data file (ARCHITECTURE.md#host-capture).</summary>
         public ulong DataFiles;
         /// <summary>The active locale (a difference is only a warning).</summary>
         public string Locale;

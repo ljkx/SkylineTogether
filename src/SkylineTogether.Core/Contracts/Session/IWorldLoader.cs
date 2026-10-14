@@ -4,7 +4,7 @@ using System.IO;
 
 namespace SkylineTogether.Core
 {
-    /// <summary>The client's snapshot loader (game-join <c>SnapshotLoader</c>, ARCH §7.1 steps 7-11).</summary>
+    /// <summary>The client's snapshot loader (game-join <c>SnapshotLoader</c>, ARCHITECTURE.md#handshake-and-admission).</summary>
     public interface IWorldLoader
     {
         bool IsLoading { get; }

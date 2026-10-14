@@ -17,7 +17,7 @@ using UnityEngine.Experimental.Rendering;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Bounded water correction (ARCH §4.10.10, R07 §6). The water simulation is a per-machine GPU simulation stepped
+    /// Bounded water correction (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water, R07 §6). The water simulation is a per-machine GPU simulation stepped
     /// per rendered frame, so it can never be lockstepped; clients are paused followers, whose water would otherwise
     /// stay frozen at the join snapshot. The host therefore samples <c>WaterSystem.WaterTexture</c> (2048² RGBA32F:
     /// depth, velocity, pollution) one 256×256 tile per second with a non-blocking readback, round-robin, with "hot"

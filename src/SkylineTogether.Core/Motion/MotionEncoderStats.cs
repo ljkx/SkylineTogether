@@ -2,7 +2,7 @@ namespace SkylineTogether.Core.Motion
 {
     /// <summary>
     /// Counters of one peer's motion stream on the host (<see cref="MotionHostEncoder.GetStats"/>), for the network
-    /// panel, the diagnostics dump and the measurement report (ARCH §13.2, §13.7). Totals since the peer was added.
+    /// panel, the diagnostics dump and the measurement report (ARCHITECTURE.md#diagnostics-dump, #performance-budgets). Totals since the peer was added.
     /// </summary>
     public struct MotionEncoderStats
     {

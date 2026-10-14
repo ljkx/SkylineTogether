@@ -5,7 +5,7 @@ using System.Globalization;
 namespace SkylineTogether.Core.Identity
 {
     /// <summary>
-    /// The host's <c>BuildOrder</c> counter for committed client edges (ARCH §5.4.3).
+    /// The host's <c>BuildOrder</c> counter for committed client edges (ARCHITECTURE.md#host-validation-and-commit).
     /// <para>
     /// Background: <c>GenerateEdgesSystem</c> gives every new edge <c>[counter + 16·i, counter + 16·i + 15]</c>
     /// (<c>Game.Tools/GenerateEdgesSystem.cs:1630-1632</c>) and raises its counter past every created edge to
@@ -17,7 +17,7 @@ namespace SkylineTogether.Core.Identity
     /// <para>
     /// <see cref="Next"/> is the monotonic maximum + 1 of every value observed since session start (primed at host
     /// session start, then every captured <c>BuildOrder</c>), so a re-based range never overlaps a live edge's range;
-    /// it is also the snapshot manifest's <c>HostBuildOrderNext</c>, from which joiners set their counter (ARCH §7.4).
+    /// it is also the snapshot manifest's <c>HostBuildOrderNext</c>, from which joiners set their counter (ARCHITECTURE.md#snapshot-join).
     /// The counter saturates at <see cref="uint.MaxValue"/> (<see cref="IsSaturated"/>); a re-base then fails.
     /// </para>
     /// <para>Host main thread. Not thread-safe.</para>

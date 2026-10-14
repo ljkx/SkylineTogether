@@ -5,7 +5,7 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// The host side of the repair ladder (ARCH §8.5 "Who decides", §14.3). Clients send only hints; the host keeps the
+    /// The host side of the repair ladder (docs/history/ARCHITECTURE-original.md §8.5 "Who decides", §14.3). Clients send only hints; the host keeps the
     /// ladder state per peer and decides:
     /// <list type="bullet">
     /// <item><b>Levels 0-2</b> (<see cref="RepairLevel.Leak"/>, <see cref="RepairLevel.Entity"/>): a slot the host does
@@ -25,7 +25,7 @@ namespace SkylineTogether.Core.Integrity
     /// kicks for repair-request rate. At most 512 slots of a request are served.</item>
     /// </list>
     /// Threading: main thread (requests arrive through <c>SessionController.Update</c>); engine calls made outside the
-    /// capture window are queued by the engine (ARCH §4.5.5). Every member takes an internal lock.
+    /// capture window are queued by the engine (docs/history/ARCHITECTURE-original.md §4.5.5). Every member takes an internal lock.
     /// </summary>
     [ThreadAffinity(ThreadKind.Main)]
     public sealed class HostRepairResponder
@@ -60,7 +60,7 @@ namespace SkylineTogether.Core.Integrity
         public HostRepairPolicy Policy => _policy;
 
         /// <summary>
-        /// The per-slot digests of one bucket of one class from the hash shadow (ARCH §8.5 level 1), sorted by slot, for the
+        /// The per-slot digests of one bucket of one class from the hash shadow (docs/history/ARCHITECTURE-original.md §8.5 level 1), sorted by slot, for the
         /// state as of <paramref name="atEpoch"/> (the last epoch whose records the shadow reflects). Returns null when the
         /// detail cannot be built (undefined class or bucket, or a failing shadow; logged).
         /// </summary>
@@ -189,7 +189,7 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>
         /// Builds up to <paramref name="maxDetails"/> queued bucket details for the peer, as of <paramref name="atEpoch"/>.
         /// A detail of a per-peer class (V, A, A-low, M, K) waits while the peer has dirty bits in its bucket, because the
-        /// shadow then holds values the peer has not received (ARCH §8.4); after <see cref="HostRepairPolicy.DetailMaxWaitSeconds"/>
+        /// shadow then holds values the peer has not received (docs/history/ARCHITECTURE-original.md §8.4); after <see cref="HostRepairPolicy.DetailMaxWaitSeconds"/>
         /// it is dropped (the client asks again when the bucket still mismatches). Returns how many were appended.
         /// </summary>
         public int TakeDetails(PeerId peer, IPeerDirtyView dirtyOrNull, EpochId atEpoch, List<HashDetailMessage> output, int maxDetails = 4)

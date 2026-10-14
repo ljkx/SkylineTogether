@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// Handshake negotiation of the message-body codec (ARCH §4.6.5: "the codec is negotiated in the handshake"). The
+    /// Handshake negotiation of the message-body codec (original design, docs/history/ARCHITECTURE-original.md §4.6.5: "the codec is negotiated in the handshake"). The
     /// client announces the codecs it can decompress in <see cref="HelloMessage.CompressionMask"/>; the host picks one
     /// with <see cref="Choose"/> and names it in <see cref="WelcomeMessage.Compression"/>; both sides then compress with
     /// it (<see cref="EnvelopeCodec"/>).
@@ -48,7 +48,8 @@ namespace SkylineTogether.Core.Protocol
 
         /// <summary>
         /// The mask of a peer whose native probes found ZSTD (<paramref name="nativeZstd"/>) and LZ4
-        /// (<paramref name="nativeLz4"/>) working (probes <c>P-ZSTD</c>, <c>P-LZ4</c>, ARCH Appendix B).
+        /// (<paramref name="nativeLz4"/>) working (planned probes <c>P-ZSTD</c>, <c>P-LZ4</c>; unused: the game layer always sends
+        /// <see cref="AlwaysSupported"/> and compresses with managed LZ4).
         /// </summary>
         public static byte LocalMask(bool nativeZstd, bool nativeLz4)
         {
@@ -76,7 +77,7 @@ namespace SkylineTogether.Core.Protocol
 
         /// <summary>
         /// The session codec for a host with <paramref name="hostMask"/> and a client with <paramref name="clientMask"/>:
-        /// ZSTD (the baseline, ARCH §4.6.5) when both have it natively, otherwise LZ4 (native where available: a peer
+        /// ZSTD (the baseline, ARCHITECTURE.md#fragmentation-and-compression) when both have it natively, otherwise LZ4 (native where available: a peer
         /// without native LZ4 compresses with <see cref="ManagedLz4Compressor"/>, see <see cref="CompressorKindFor"/>).
         /// </summary>
         public static CompressionKind Choose(byte hostMask, byte clientMask)

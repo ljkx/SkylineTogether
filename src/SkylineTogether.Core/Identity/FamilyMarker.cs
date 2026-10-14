@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Identity
 {
     /// <summary>
-    /// Presence of the marker types the family rule table tests (ARCH §3.2). game-ecs-schema's <c>FamilyClassifier</c>
+    /// Presence of the marker types the family rule table tests (ARCHITECTURE.md#families). game-ecs-schema's <c>FamilyClassifier</c>
     /// builds the mask once per archetype (plus the per-entity <see cref="NullPrefab"/> test for Move It control
     /// points); <see cref="FamilyRules"/> decides the family. The values are stable (diagnostics dumps print them).
     /// </summary>

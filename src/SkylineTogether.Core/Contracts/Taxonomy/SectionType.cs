@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Section types of an epoch message (ARCH §4.6.2); the values travel on the wire.</summary>
+    /// <summary>Section types of an epoch message (docs/history/ARCHITECTURE-original.md §4.6.2); the values travel on the wire.</summary>
     public enum SectionType : byte
     {
         /// <summary>TX: shared P0 records (type sets, results and binds, despawns, spawns, structs, values, touches, keyed).</summary>

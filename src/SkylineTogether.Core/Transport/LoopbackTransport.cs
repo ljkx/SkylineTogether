@@ -6,7 +6,7 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Transport
 {
     /// <summary>
-    /// In-process transport for tests (ARCH §9.1): transports created by <see cref="CreatePair()"/> (and further clients
+    /// In-process transport for tests (ARCHITECTURE.md#transport): transports created by <see cref="CreatePair()"/> (and further clients
     /// from <see cref="CreateClient()"/>) form a private network; nothing touches a socket.
     /// <para>
     /// Semantics follow Steam Networking Sockets where tests depend on them: a transport accepts connections after
@@ -27,7 +27,7 @@ namespace SkylineTogether.Core.Transport
     /// </summary>
     public sealed class LoopbackTransport : ITransport
     {
-        /// <summary>Default <see cref="SendBufferBytes"/>, the size the game configures on Steam connections (ARCH §7.5).</summary>
+        /// <summary>Default <see cref="SendBufferBytes"/>, the size the game configures on Steam connections (ARCHITECTURE.md#blob-transfer).</summary>
         public const int DefaultSendBufferBytes = 16 << 20;
 
         private enum EventKind : byte { Connected, Disconnected, Message }

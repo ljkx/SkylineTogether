@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// Decides when the local player's presence is sent (ARCH §11.4): at most every <see cref="Interval"/> (10 Hz)
+    /// Decides when the local player's presence is sent (ARCHITECTURE.md#presence-and-tool-previews): at most every <see cref="Interval"/> (10 Hz)
     /// while something changed, and every <see cref="IdleInterval"/> as a keepalive while nothing did, so an idle
     /// player costs almost nothing and a remote marker never expires while its player is still there.
     /// <para>

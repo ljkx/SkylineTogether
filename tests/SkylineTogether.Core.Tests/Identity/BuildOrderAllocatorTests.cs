@@ -6,7 +6,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Identity
 {
-    /// <summary>The host's <c>BuildOrder</c> allocator and the re-basing of proposal ranges (ARCH §5.4.3, §7.4).</summary>
+    /// <summary>The host's <c>BuildOrder</c> allocator and the re-basing of proposal ranges (ARCHITECTURE.md#host-validation-and-commit, #snapshot-join).</summary>
     public sealed class BuildOrderAllocatorTests
     {
         private static BuildOrderRange B(uint start, uint end) => new BuildOrderRange(start, end);

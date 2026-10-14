@@ -14,7 +14,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// The follower clock of a client (ARCH K3, §6.1-6.2, simplified): the client's simulation time runs with the
+    /// The follower clock of a client (ARCHITECTURE.md#follower-clock): the client's simulation time runs with the
     /// host's speed so rendering interpolation, time of day, weather and the moving objects are alive, while no gameplay
     /// system of <see cref="SystemUpdatePhase.GameSimulation"/> runs. Every system registered in that phase is found
     /// through <c>UpdateSystem</c>'s private registration lists (<c>m_Systems</c> and the before/after map
@@ -48,7 +48,7 @@ namespace SkylineTogether.Sync
             "Game.Simulation.WetnessSystem",
             "Game.Simulation.DirtynessSystem",
             "Game.Effects.EffectFlagSystem",
-            // the budget UI reads its Enabled flag; it only derives the subsidy line from replicated values (ARCH §6.1)
+            // the budget UI reads its Enabled flag; it only derives the subsidy line from replicated values (ARCHITECTURE.md#follower-clock)
             "Game.Simulation.GameModeGovernmentSubsidiesSystem",
             // the economy panels' trade, wealth, worker and tourist figures; a pure read of the replicated city
             // statistics (BudgetSystem.UpdateData), without it they stay at the join snapshot
@@ -180,7 +180,7 @@ namespace SkylineTogether.Sync
                 _lastRate = rate;
             }
             if (!_model.HasEstimate) return;
-            // the motion lag (ARCH §4.9.6): a few ticks of cushion so frames are staged before they are rendered
+            // the motion lag (ARCHITECTURE.md#movers): a few ticks of cushion so frames are staged before they are rendered
             uint lag = paused ? 0u : (uint)(4 * Math.Max(1, multiplier));
             uint target = unchecked((uint)(long)Math.Floor(_model.Estimate(now)) - lag);
             ClockCorrection c = FollowerClockModel.Decide(simulation.frameIndex, target, paused);

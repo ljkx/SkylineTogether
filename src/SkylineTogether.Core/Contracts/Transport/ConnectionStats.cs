@@ -2,7 +2,7 @@ namespace SkylineTogether.Core
 {
     /// <summary>
     /// Real-time link statistics of a connection (Steam <c>GetConnectionRealTimeStatus</c>, R06 §4.1); the link
-    /// estimator feeds the per-peer token bucket with them (ARCH §4.8.2).
+    /// estimator feeds the per-peer token bucket with them (ARCHITECTURE.md#deferred-values-and-link-pacing).
     /// </summary>
     public struct ConnectionStats
     {

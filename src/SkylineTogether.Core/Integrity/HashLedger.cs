@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// The client's hash ledger (ARCH §8.3): the member hash of the last <b>received</b> value per (slot, type), whether it
+    /// The client's hash ledger (docs/history/ARCHITECTURE-original.md §8.3): the member hash of the last <b>received</b> value per (slot, type), whether it
     /// was applied, parked for a missing reference or held for a pending proposal, plus the same bucket sums the host
     /// keeps (<see cref="BucketSums"/>). It proves "received = sent"; the rolling verifier proves "live = received".
     /// Because parked and held values are recorded too, pending pairs never cause a beacon mismatch (§8.4).
@@ -18,7 +18,7 @@ namespace SkylineTogether.Core.Integrity
     /// slot, so <see cref="RemoveSlot"/> removes them and slot digests include them. Removing a member that is not stored
     /// changes nothing and is counted in <see cref="Inconsistencies"/>, so the sums always equal the stored entries.</item>
     /// <item>The class a pair is counted in comes from the pair-class resolver when one is given (the policy table's
-    /// class of the type on the slot's family: V types on S entities belong to V buckets, ARCH §4.11.6), else from the
+    /// class of the type on the slot's family: V types on S entities belong to V buckets, docs/history/ARCHITECTURE-original.md §4.11.6), else from the
     /// slot's class; <see cref="Record(NetSlot, TypeRank, ReplicationClass, uint)"/> takes it explicitly. The host's hash
     /// shadow must use the same assignment.</item>
     /// <item>When <see cref="Epoch"/> is set before a plan's values are recorded, every change stamps its slot and bucket
@@ -381,7 +381,7 @@ namespace SkylineTogether.Core.Integrity
 
         // ------------------------------------------------------------------ diagnostics
 
-        /// <summary>Appends the recorded pairs of the slot (replica-diff dumps, ARCH §13.5); returns how many.</summary>
+        /// <summary>Appends the recorded pairs of the slot (replica-diff dumps, docs/history/ARCHITECTURE-original.md §13.5); returns how many.</summary>
         public int CollectPairs(NetSlot slot, List<(TypeRank type, uint hash, ReplicationClass cls)> output)
         {
             if (output == null) throw new ArgumentNullException(nameof(output));

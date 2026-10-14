@@ -3,7 +3,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// A <c>View</c> report (client → host, unreliable, about 10 Hz; ARCH §4.8.3): camera pivot, zoom, yaw and position,
+    /// A <c>View</c> report (client → host, unreliable, about 10 Hz; ARCHITECTURE.md#simulation-values): camera pivot, zoom, yaw and position,
     /// the active infoview and infomode mask, the selected and followed slots, open-panel flags and the panel's target.
     /// About 40 bytes:
     /// <code>

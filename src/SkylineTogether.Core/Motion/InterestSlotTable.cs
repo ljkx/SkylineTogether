@@ -5,7 +5,7 @@ using System.Globalization;
 namespace SkylineTogether.Core.Motion
 {
     /// <summary>
-    /// The host's per-peer map between mover slots and the peer's dense 16-bit interest slots (ARCH §4.9.3).
+    /// The host's per-peer map between mover slots and the peer's dense 16-bit interest slots (ARCHITECTURE.md#movers).
     /// <para>
     /// Q-B records name interest slots on the unreliable lane while assignments travel on the reliable lane, so an
     /// interest slot is reused only after the client acknowledged the <c>MotionControl</c> message that released it
@@ -126,7 +126,7 @@ namespace SkylineTogether.Core.Motion
             BeginRelease(interestSlot, motionControlSeq);
         }
 
-        /// <summary>Releases every live assignment in the message <paramref name="motionControlSeq"/> (short-drop resume, ARCH §7.8).</summary>
+        /// <summary>Releases every live assignment in the message <paramref name="motionControlSeq"/> (short-drop resume, ARCHITECTURE.md#leaving-kicks-and-recovery).</summary>
         public void ReleaseAll(uint motionControlSeq)
         {
             if (_bySlot.Count == 0) return;

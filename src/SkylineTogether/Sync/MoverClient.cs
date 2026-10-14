@@ -25,7 +25,7 @@ using Transform = Game.Objects.Transform;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Client side of mover replication (ARCH K4, §4.9). Applies the host's mover records right after the structure
+    /// Client side of mover replication (ARCHITECTURE.md#movers). Applies the host's mover records right after the structure
     /// apply (before every Modification phase, so <c>Applied</c> keeps the host's <c>UpdateFrame</c>,
     /// <c>UpdateGroupSystem.cs:408-416</c>): spawns from the prefab's own archetype, despawns with <c>Deleted</c> and
     /// mirrors the vanilla type swaps (moving ↔ stopped from the prefab archetypes, riding/inside a vehicle as
@@ -43,7 +43,7 @@ namespace SkylineTogether.Sync
         private const int MaxBatchesPerFrame = 64;
         private const TransformFlags LightMask = TransformFlags.MainLights | TransformFlags.ExtraLights | TransformFlags.WarningLights | TransformFlags.WorkLights;
 
-        /// <summary>Modification systems that would create or move agents on a follower (R15 §4.6, ARCH §6.4).</summary>
+        /// <summary>Modification systems that would create or move agents on a follower (R15 §4.6, ARCHITECTURE.md#gated-systems).</summary>
         private static readonly string[] Gated =
         {
             "Game.Objects.ObjectEmergeSystem",
@@ -899,7 +899,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>All four slots hold the same pose with zero velocity (ARCH §4.9.5).</summary>
+        /// <summary>All four slots hold the same pose with zero velocity (ARCHITECTURE.md#movers).</summary>
         private static void Pin(EntityManager em, Entity e, TransformFrame frame, Transform transform)
         {
             frame.m_Velocity = default(float3);
@@ -1100,7 +1100,7 @@ namespace SkylineTogether.Sync
             };
         }
 
-        /// <summary>View report and motion ack, about 10 Hz (ARCH §4.8.3, §4.9.3).</summary>
+        /// <summary>View report and motion ack, about 10 Hz (ARCHITECTURE.md#simulation-values, #movers).</summary>
         private void Report(SessionClient client)
         {
             double now = UnityEngine.Time.realtimeSinceStartupAsDouble;

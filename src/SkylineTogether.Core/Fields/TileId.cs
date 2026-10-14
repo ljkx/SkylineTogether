@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core.Fields
 {
     /// <summary>
-    /// Column <see cref="X"/> and row <see cref="Y"/> of a tile in a <see cref="TileGrid"/> (ARCH §4.10.9-4.10.10: 64×64
+    /// Column <see cref="X"/> and row <see cref="Y"/> of a tile in a <see cref="TileGrid"/> (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water: 64×64
     /// heightmap tiles, 256×256 water tiles). Tile ids travel on the wire, so a decoded id must be checked with
     /// <see cref="TileGrid.Contains"/> before it is used.
     /// </summary>

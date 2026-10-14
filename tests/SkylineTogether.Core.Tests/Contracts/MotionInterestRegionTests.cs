@@ -2,7 +2,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Contracts
 {
-    /// <summary>Motion interest regions with enter/leave hysteresis (ARCH §4.8.3 item 1).</summary>
+    /// <summary>Motion interest regions with enter/leave hysteresis (ARCHITECTURE.md#simulation-values).</summary>
     public sealed class MotionInterestRegionTests
     {
         private static MotionInterestRegion Disc(float radius)

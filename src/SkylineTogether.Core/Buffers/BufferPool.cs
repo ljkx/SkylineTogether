@@ -4,7 +4,7 @@ using System.Threading;
 namespace SkylineTogether.Core.Buffers
 {
     /// <summary>
-    /// Thread-safe pool of byte arrays (IMPLEMENTATION-PLAN §3 rule 8: no allocation per message on hot paths; the game
+    /// Thread-safe pool of byte arrays (ARCHITECTURE.md#code-rules: no allocation per message on hot paths; the game
     /// runs an incremental GC, R06 §1). Arrays come in power-of-two sizes from 256 bytes to 16 MiB; larger requests are
     /// allocated and not pooled. A rented array may contain old data and is at least as long as requested. Returning
     /// the same array twice throws, because two renters sharing one array would corrupt each other's messages.

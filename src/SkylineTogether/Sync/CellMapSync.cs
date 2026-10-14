@@ -19,7 +19,7 @@ using Unity.Jobs;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Cell maps (ARCH §2.4, §4.10.8): pollution (air, ground, noise), groundwater, natural resources, land value,
+    /// Cell maps (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water): pollution (air, ground, noise), groundwater, natural resources, land value,
     /// telecom coverage, terrain attractiveness, population and availability grids, traffic ambience and soil water,
     /// i.e. every <c>CellMapSystem&lt;T&gt;</c> whose system is off on clients (all run in GameSimulation). Wind and zone
     /// ambience stay client-simulated (cosmetic allow-list of <see cref="FollowerClock"/>).

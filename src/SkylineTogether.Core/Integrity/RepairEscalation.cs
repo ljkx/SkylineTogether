@@ -5,7 +5,7 @@ using System.Globalization;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// The escalation above the client's object repairs (the playable subset of ARCH §8.5 levels 3 and 4,
+    /// The escalation above the client's object repairs (ARCHITECTURE.md#escalation-and-resync-offer,
     /// for the rolling verification of <see cref="DivergenceTracker"/> and <see cref="EntityDigest"/> buckets; the
     /// beacon-based <see cref="RepairCoordinator"/> is not used by the game layer).
     /// <list type="bullet">

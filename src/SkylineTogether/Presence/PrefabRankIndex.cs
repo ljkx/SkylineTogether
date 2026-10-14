@@ -11,7 +11,7 @@ using ILog = SkylineTogether.Core.ILog;
 namespace SkylineTogether.Presence
 {
     /// <summary>
-    /// Prefab ranks for presence (ARCH §3.5): every prefab entity (<see cref="PrefabData"/>, disabled ones included)
+    /// Prefab ranks for presence (ARCHITECTURE.md#prefabs): every prefab entity (<see cref="PrefabData"/>, disabled ones included)
     /// resolved through <see cref="PrefabSystem.TryGetPrefab{T}(Entity, out T)"/>, ordered ordinally by
     /// <see cref="PrefabBase.GetPrefabID"/>. Peers with the same prefab set get the same ranks, so a rank names the
     /// same prefab everywhere without a table on the wire. Built lazily (a few thousand prefabs, once per session) and

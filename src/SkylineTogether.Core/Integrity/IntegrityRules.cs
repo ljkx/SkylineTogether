@@ -5,7 +5,7 @@ namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
     /// Shared rules of the integrity module: which classes are audited with bucket sums, which of them are scheduled
-    /// per peer (their beacons skip dirty buckets, ARCH §8.4), bucket ranges, and the bucket designator convention of
+    /// per peer (their beacons skip dirty buckets, docs/history/ARCHITECTURE-original.md §8.4), bucket ranges, and the bucket designator convention of
     /// bucket-level repair requests.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
@@ -17,14 +17,14 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>Number of buckets a class can span: <c>NetSlot.MaxValue &gt;&gt; 10</c> + 1 = 16384.</summary>
         internal const int MaxBuckets = Limits.MaxBucket + 1;
 
-        /// <summary>Slots per bucket (1024, ARCH §8.2).</summary>
+        /// <summary>Slots per bucket (1024, docs/history/ARCHITECTURE-original.md §8.2).</summary>
         internal const int SlotsPerBucket = 1 << NetSlot.BucketShift;
 
         /// <summary>True for a defined class value (guards against casts of wire bytes).</summary>
         internal static bool IsValidClass(ReplicationClass cls) => (uint)cls < ClassCount;
 
         /// <summary>
-        /// Classes with exact bucket audits (ARCH §8.1, §8.4): S, G, V, A, A-low, M and K. Excluded, derived, channel
+        /// Classes with exact bucket audits (docs/history/ARCHITECTURE-original.md §8.1, §8.4): S, G, V, A, A-low, M and K. Excluded, derived, channel
         /// and on-demand data are never hashed into bucket sums (channels have their own hashes, §8.6).
         /// </summary>
         internal static bool IsAudited(ReplicationClass cls)
@@ -47,7 +47,7 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>
         /// Classes delivered per peer (V, A, A-low, M, K): their hash shadow is updated at capture, so a beacon or a
         /// bucket detail describes what the peer has received only while the peer has no dirty bits in the bucket
-        /// (ARCH §8.4). S and G are shared P0 classes whose shadow is updated when the record is emitted (§4.4.5).
+        /// (docs/history/ARCHITECTURE-original.md §8.4). S and G are shared P0 classes whose shadow is updated when the record is emitted (§4.4.5).
         /// </summary>
         internal static bool IsPerPeer(ReplicationClass cls)
         {

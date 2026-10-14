@@ -14,8 +14,8 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Divergence detection and repair (ARCH §8, playable subset), plus the owner of the icon channel
-    /// (<see cref="IconSync"/>, D11) and the UI-level line check (<see cref="LineCheck"/>, §4.11.6).
+    /// Divergence detection and repair (ARCHITECTURE.md#integrity), plus the owner of the icon channel
+    /// (<see cref="IconSync"/>) and the UI-level line check (<see cref="LineCheck"/>).
     /// <para>
     /// <b>Host.</b> A rolling pass over every bound id hashes one slice per frame (≤ 0.5 ms) with
     /// <see cref="IntegrityHasher"/> and appends a <see cref="SyncRecordKind.BucketDigest"/> per completed bucket of
@@ -158,7 +158,7 @@ namespace SkylineTogether.Sync
             Lines.Attach(codec, ids);
         }
 
-        // ---------------------------------------------------------------- solo testing (record/replay verdict, ARCH §13.5)
+        // ---------------------------------------------------------------- solo testing (record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay)
 
         /// <summary>
         /// Client, while replaying a recording: every checkpoint record (<see cref="SyncRecordKind.ReplayHashes"/>,

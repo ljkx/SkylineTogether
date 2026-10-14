@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Contracts
 {
-    /// <summary>Derived keys (ARCH §3.7) and NetRefs (ARCH §4.3.3).</summary>
+    /// <summary>Derived keys (docs/history/ARCHITECTURE-original.md §3.7) and NetRefs (docs/history/ARCHITECTURE-original.md §4.3.3).</summary>
     public sealed class DerivedKeyAndNetRefTests
     {
         private static DerivedKey SampleKey()

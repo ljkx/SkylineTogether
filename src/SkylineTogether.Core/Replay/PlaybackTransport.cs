@@ -27,7 +27,7 @@ namespace SkylineTogether.Core.Replay
     }
 
     /// <summary>
-    /// Plays a recording into a client as if it came from the host (ARCH §13.5): the client connects to this transport
+    /// Plays a recording into a client as if it came from the host (ARCHITECTURE.md#solo-test-record-and-replay): the client connects to this transport
     /// like to a real one, gets <see cref="ITransportEventSink.OnConnected"/>, and then receives the recorded messages,
     /// byte for byte, through its normal receive path. Nothing touches the network: what the client sends is decoded
     /// only to notice its progress (<see cref="RecordingBarrier"/>) and counted per kind, then dropped.

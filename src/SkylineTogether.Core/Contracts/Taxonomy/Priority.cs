@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Delivery priorities of the per-peer scheduler (ARCH §4.8.1).</summary>
+    /// <summary>Delivery priorities of the per-peer scheduler (ARCHITECTURE.md#deferred-values-and-link-pacing).</summary>
     public enum Priority : byte
     {
         /// <summary>Shared P0: transactions, existence, events, icons; never throttled.</summary>

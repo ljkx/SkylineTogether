@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// The attention topics of the game's infomodes (ARCH §4.8.3: topics are "mapped to what <c>ObjectColorSystem</c>
+    /// The attention topics of the game's infomodes (ARCHITECTURE.md#simulation-values: topics are "mapped to what <c>ObjectColorSystem</c>
     /// actually reads"). The client game layer that builds the view report ORs the topics of every active infomode
     /// (<c>InfomodeActive</c>) of the active infoview into <see cref="Protocol.ViewReport.InfomodeMask"/>; the host reads
     /// them back with <see cref="TopicMap.FromInfoview"/>. Core cannot reference the game's enums, so the methods take
@@ -69,7 +69,7 @@ namespace SkylineTogether.Core.Scheduling
             AttentionTopic.Traffic           // BicycleTrafficVolume
         };
 
-        // Game.Rendering.HeatmapData (cell maps, ARCH §4.10.8)
+        // Game.Rendering.HeatmapData (cell maps, ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water)
         private static readonly AttentionTopic[] Heatmap =
         {
             AttentionTopic.None,             // None

@@ -11,7 +11,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Client: traffic lights follow the host (ARCH §4.9.9). The host's <c>TrafficLightSystem</c> (a
+    /// Client: traffic lights follow the host (ARCHITECTURE.md#events-chirps-and-traffic-lights). The host's <c>TrafficLightSystem</c> (a
     /// <c>GameSimulation</c> system, off on clients) advances each junction's phase and writes the lanes' signals and the
     /// signal heads in the same job. Clients receive the node's <c>TrafficLights</c> with the attention values whenever its
     /// phase changes, and this class repeats the derived half with the game's own public functions

@@ -39,7 +39,7 @@ namespace SkylineTogether.Replay
     }
 
     /// <summary>
-    /// Solo testing (the record/replay verdict, ARCH §13.5) in the game.
+    /// Solo testing (the record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay) in the game.
     /// <para>
     /// <b>Record test session</b> (host): a <see cref="RecorderPeer"/> joins the running session (or a solo test host
     /// without any network part) like a real player and records everything it receives into

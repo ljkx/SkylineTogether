@@ -10,7 +10,7 @@ using SkylineTogether.Session;
 namespace SkylineTogether.UI
 {
     /// <summary>
-    /// Solo testing bindings (group <c>skylineTogether</c>, ARCH §13.5): <c>replay</c> with the recording and replay
+    /// Solo testing bindings (group <c>skylineTogether</c>, ARCHITECTURE.md#solo-test-record-and-replay): <c>replay</c> with the recording and replay
     /// state, the recordings and the last verdict, refreshed at most twice a second; triggers to record, stop, replay
     /// and refresh the list. tools/ui_smoke.mjs checks these names like the panel's own.
     /// </summary>

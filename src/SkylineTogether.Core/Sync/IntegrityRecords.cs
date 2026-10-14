@@ -123,7 +123,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// One default-layer notification icon of an owner as the host shows it (ARCH §4.10.4): the notification prefab's
+    /// One default-layer notification icon of an owner as the host shows it (ARCHITECTURE.md#statistics-icons-and-flow-status): the notification prefab's
     /// net id, the optional target, priority and <c>IconFlags</c> (byte values of the game enums), and the icon's
     /// location (used when the host placed it explicitly or when the target cannot be named on the receiver).
     /// </summary>

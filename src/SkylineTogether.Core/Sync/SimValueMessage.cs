@@ -6,7 +6,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// Wire format of <see cref="MessageKind.SimValues"/> (host → client; ARCH D5, §4.7.9, §4.8): simulation values of
+    /// Wire format of <see cref="MessageKind.SimValues"/> (host → client; ARCHITECTURE.md#simulation-values, #deferred-values-and-link-pacing): simulation values of
     /// structure entities, either streamed by attention (in view, rolling refresh) or as a time-aligned inspection
     /// sample of the selected entity.
     /// <code>

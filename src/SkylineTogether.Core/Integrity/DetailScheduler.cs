@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Which bucket details a client asks the host for, and when (rolling verification, playable subset of ARCH §8.3):
+    /// Which bucket details a client asks the host for, and when (rolling verification, ARCHITECTURE.md#divergence-tracking-and-repair):
     /// each bucket is wanted at most once (the earlier due time wins), a requested bucket is not asked for again until
     /// its detail arrived or <see cref="AwaitTimeoutSeconds"/> passed, and at most <see cref="MaxPending"/> buckets wait,
     /// so a mass divergence cannot grow the queue without bound (dropped buckets are found again in the next cycle).

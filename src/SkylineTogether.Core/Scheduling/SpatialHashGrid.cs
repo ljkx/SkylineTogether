@@ -5,7 +5,7 @@ namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
     /// A uniform hash grid of points on the ground plane (x, z) keyed by net id: the host's in-view query for the
-    /// attention model (ARCH §4.8.3 item 2, "in-view static set"). Positions are updated incrementally by the host's
+    /// attention model (ARCHITECTURE.md#simulation-values: the "in-view static set"). Positions are updated incrementally by the host's
     /// rolling scan; <see cref="Query"/> returns the ids within a radius of a camera pivot. Not thread-safe.
     /// </summary>
     public sealed class SpatialHashGrid

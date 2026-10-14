@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// The envelope of every message (ARCH §4.6.1, §4.6.5):
+    /// The envelope of every message (ARCHITECTURE.md#envelope-and-message-kinds, #fragmentation-and-compression):
     /// <code>
     /// u8 kind | u8 flags | body                                                        flags = None
     /// u8 kind | u8 flags | varint uncompressedSize | u8 compressionKind | compressed    flags = Compressed | HasUncompressedSize
@@ -19,7 +19,7 @@ namespace SkylineTogether.Core.Protocol
     /// with a readable message.
     /// <para>
     /// The decoder enforces the per-kind body limit of <see cref="Limits.MaxBodyBytes"/> on the declared size before
-    /// decompressing (decompression-bomb guard, ARCH §14.3), the fragment size limit, and the canonical flag
+    /// decompressing (decompression-bomb guard, ARCHITECTURE.md#security-model), the fragment size limit, and the canonical flag
     /// combinations. Kind 0 is malformed; other unknown kinds decode normally and are dropped by the router.
     /// </para>
     /// <para>Stateless and thread-safe; outputs go to caller-owned writers.</para>

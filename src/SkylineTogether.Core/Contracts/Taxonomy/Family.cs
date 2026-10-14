@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Entity families of the classification rule table (ARCH §3.2; implemented by core-identity's
+    /// Entity families of the classification rule table (ARCHITECTURE.md#families; implemented by core-identity's
     /// <c>FamilyRules</c>). The numeric values are stored in side tables and travel in records; never reorder.
     /// </summary>
     public enum Family : byte

@@ -15,7 +15,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// The flow-status channel of ARCH §4.11.5. The electricity and water flow graphs are derived per peer
+    /// The flow-status channel of ARCHITECTURE.md#statistics-icons-and-flow-status. The electricity and water flow graphs are derived per peer
     /// (<c>FamilyMarker.FlowGraph</c>, rebuilt by the graph systems in the Modification phases), but their flow values
     /// (<c>ElectricityFlowEdge</c> flow, capacity and Bottleneck/BeyondBottleneck/Disconnected flags, <c>WaterPipeEdge</c>
     /// fresh and sewage flow, capacities, pollution and flags) are written only by the GameSimulation flow systems

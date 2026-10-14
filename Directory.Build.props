@@ -1,6 +1,6 @@
 <Project>
   <!--
-    Shared properties for every project of the solution (IMPLEMENTATION-PLAN §2.2).
+    Shared properties for every project of the solution (docs/dev/building.md).
     GameDir, GameManagedPath, CS2UserDataPath and ModDeployDir can be overridden on the command line
     (dotnet build /p:GameDir=D:\Games\CS2) or by environment variables of the same name.
     No NuGet package is ever restored (docs/decisions/0001-build-without-nuget.md).

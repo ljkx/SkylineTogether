@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// One difference between the host's and a client's line-state rows (ARCH §4.11.6, <c>/st lines compare</c>):
+    /// One difference between the host's and a client's line-state rows (ARCHITECTURE.md#line-check-and-icon-digest, <c>/st lines compare</c>):
     /// the line, the field name (a <see cref="LineStateRow"/> field, or <see cref="LineStateReport.LineField"/> for a
     /// missing or extra line, <see cref="LineStateReport.DuplicateField"/> for a line listed twice) and both values as
     /// invariant text.

@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// Kinds of <see cref="ControlMessage"/> (ARCH Appendix C); the values travel on the wire and never change. Payload
+    /// Kinds of <see cref="ControlMessage"/> (ARCHITECTURE.md#envelope-and-message-kinds); the values travel on the wire and never change. Payload
     /// codecs: <see cref="PasswordChallenge"/> → <see cref="PasswordChallengeMessage"/>, <see cref="PasswordResponse"/>
     /// → <see cref="PasswordResponseMessage"/>, <see cref="ManifestDetail"/> → <see cref="ManifestDetailMessage"/>,
     /// <see cref="SnapshotManifest"/> →
@@ -37,11 +37,11 @@ namespace SkylineTogether.Core.Protocol
         Live,
         ResumeRequest,
         ResumeResult,
-        /// <summary>Host → originator on receipt of a proposal (ARCH §5.4.2) (reserved; not sent by the shipped build).</summary>
+        /// <summary>Host → originator on receipt of a proposal (ARCHITECTURE.md#host-validation-and-commit) (reserved; not sent by the shipped build).</summary>
         ProposalReceived,
         RepairThrottled,
         Disconnecting,
-        /// <summary><c>/st lines compare</c>: request of the host's line rows (ARCH §4.11.6).</summary>
+        /// <summary><c>/st lines compare</c>: request of the host's line rows (ARCHITECTURE.md#line-check-and-icon-digest).</summary>
         LineRowsRequest,
         /// <summary>The host's line rows at one sample tick.</summary>
         LineRows,

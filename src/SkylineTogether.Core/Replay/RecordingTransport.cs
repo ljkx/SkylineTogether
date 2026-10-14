@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Replay
 {
     /// <summary>
-    /// A client-side transport that records what it delivers (ARCH §13.5): every connection event and every received
+    /// A client-side transport that records what it delivers (ARCHITECTURE.md#solo-test-record-and-replay): every connection event and every received
     /// message goes into a <see cref="RecordingWriter"/> right before the client's sink gets it, with the time since
     /// <see cref="Origin"/> and the host frame of <see cref="Frame"/>. Sending is not recorded (the replay's client
     /// sends its own messages). A failing writer never disturbs the session: recording just stops.

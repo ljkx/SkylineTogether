@@ -8,7 +8,7 @@ using SkylineTogether.Core.Tests.Framework;
 namespace SkylineTogether.Core.Tests.Protocol
 {
     /// <summary>
-    /// The size limits (ARCH §4.6.5, §14.3, Appendix D) are consistent with each other and with the largest message of
+    /// The size limits (ARCHITECTURE.md#fragmentation-and-compression, #security-model) are consistent with each other and with the largest message of
     /// every kind, and the free-text rules strip exactly the characters that must never reach the UI.
     /// </summary>
     public sealed class LimitsAndTextTests

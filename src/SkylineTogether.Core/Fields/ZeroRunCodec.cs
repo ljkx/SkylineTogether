@@ -4,14 +4,14 @@ using System.Globalization;
 namespace SkylineTogether.Core.Fields
 {
     /// <summary>
-    /// The zero-run-length coding shared by the field codecs (ARCH §4.6.4, §4.10.8-4.10.10). It removes the long zero
+    /// The zero-run-length coding shared by the field codecs (ARCHITECTURE.md#batch-encoding, #zone-cells-cell-maps-terrain-and-water). It removes the long zero
     /// runs of XOR deltas and filtered tile planes before the general-purpose compressor sees them.
     /// <para>
     /// Format: pairs <c>varuint zeroRun, varuint literalRun, literalRun bytes</c> until exactly <c>count</c> bytes are
     /// described. The encoder is deterministic: each pair starts with the maximal zero run at its position, and its
     /// literal run extends up to the next run of at least <see cref="MinZeroRun"/> zero bytes (shorter zero runs are
     /// cheaper as literals than a new pair header). A pair that describes no byte is rejected, so a decoder always
-    /// terminates. Optionally the coded bytes are the XOR of two arrays (the cell-map delta, ARCH §4.10.8).
+    /// terminates. Optionally the coded bytes are the XOR of two arrays (the cell-map delta, ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water).
     /// </para>
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]

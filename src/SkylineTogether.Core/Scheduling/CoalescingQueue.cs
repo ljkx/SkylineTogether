@@ -13,7 +13,7 @@ namespace SkylineTogether.Core.Scheduling
     }
 
     /// <summary>
-    /// One peer's deferred updates (ARCH D4: congestion becomes staleness, not backlog): a set of net ids, each marked
+    /// One peer's deferred updates (ARCHITECTURE.md#deferred-values-and-link-pacing: congestion becomes staleness, not backlog): a set of net ids, each marked
     /// with the strongest <see cref="DeferredClass"/> asked for, in the order they first became dirty. Marking an id that
     /// is already queued only upgrades its class (latest value wins: the sender serialises the entity's current state
     /// when it takes the entry), so the queue is bounded by the number of distinct ids, never by time. Removing an id
@@ -160,7 +160,7 @@ namespace SkylineTogether.Core.Scheduling
     }
 
     /// <summary>
-    /// How much deferrable traffic a peer may receive this frame (ARCH §4.8.4, simplified): structure (P0) is always
+    /// How much deferrable traffic a peer may receive this frame (ARCHITECTURE.md#deferred-values-and-link-pacing): structure (P0) is always
     /// queued; deferred values only fill the link up to a short backlog, so a slow link makes values stale instead of
     /// growing the reliable outbox. Pure functions.
     /// </summary>

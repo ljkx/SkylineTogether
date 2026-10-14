@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>The host's record of a joiner at its snapshot frame (ARCH §7.1 step 5, §7.4).</summary>
+    /// <summary>The host's record of a joiner at its snapshot frame (docs/history/ARCHITECTURE-original.md §7.1 step 5, §7.4).</summary>
     public struct JoinTicket
     {
         public PeerId Peer;

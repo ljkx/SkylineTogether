@@ -59,7 +59,7 @@ namespace SkylineTogether.Core.Replay
     }
 
     /// <summary>
-    /// The verdict of a replay (solo testing, ARCH §13.5): every checkpoint's comparison (entity digests per family,
+    /// The verdict of a replay (solo testing, ARCHITECTURE.md#solo-test-record-and-replay): every checkpoint's comparison (entity digests per family,
     /// UI-level line rows, icons, global state), the entities that differed with the components that differ, apply
     /// errors, and timings. "Passed" needs a complete stream, at least one complete checkpoint, no apply error, and no
     /// difference at the last complete checkpoint (earlier ones that went away are listed as transient). Pure; the game

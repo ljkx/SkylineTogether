@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Motion
 {
     /// <summary>
-    /// Wire encodings of mover frames (ARCH §4.9.3, R15 §9.1): Q-B keyframes and keyframe-referenced deltas for the
+    /// Wire encodings of mover frames (ARCHITECTURE.md#movers, R15 §9.1): Q-B keyframes and keyframe-referenced deltas for the
     /// per-tick datagrams, and the Q-A interest-entry record with all four <c>TransformFrame</c> slots.
     /// <para>
     /// <b>Q-B record</b>: <c>u16 interestSlot | u8 hdr</c> (see <see cref="QbHeader"/>), then a bit-packed body that
@@ -143,7 +143,7 @@ namespace SkylineTogether.Core.Motion
         /// <summary>
         /// Reads one Q-B record of a datagram for tick <paramref name="tick"/>. Keyframes always decode. A delta is
         /// decoded against <paramref name="references"/>; when the reference is missing (or <paramref name="references"/>
-        /// is null) the record is still consumed and the method returns false: the caller drops it (ARCH §4.9.3).
+        /// is null) the record is still consumed and the method returns false: the caller drops it (ARCHITECTURE.md#movers).
         /// <paramref name="header"/> is filled in either case. Malformed input throws <see cref="DecodeException"/>.
         /// </summary>
         public static bool TryReadQB(ByteReader r, uint tick, IMotionReferences references, out QbHeader header, out MotionFrame frame)

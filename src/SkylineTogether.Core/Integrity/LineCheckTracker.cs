@@ -5,7 +5,7 @@ using System.Text;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Client-side decisions of the UI-level line check (ARCH §4.11.6, §8.6 "Line state at UI level"): a line whose
+    /// Client-side decisions of the UI-level line check (ARCHITECTURE.md#line-check-and-icon-digest): a line whose
     /// <see cref="LineStateRow"/> differs from the host's in the same way in two consecutive comparisons is re-sent (route,
     /// waypoints, segments); after <see cref="ResendsBeforeTolerance"/> re-sends that did not help, the line is tolerated
     /// for <see cref="ToleranceSeconds"/> and logged with the differing fields, so a value that cannot replicate never

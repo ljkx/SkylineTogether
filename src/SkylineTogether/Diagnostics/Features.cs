@@ -3,7 +3,7 @@ using SkylineTogether.Core.Diagnostics;
 namespace SkylineTogether.Diagnostics
 {
     /// <summary>
-    /// Every switchable feature of the mod with its health (ARCH §12.1-12.3, D6). <see cref="Probes"/> sets the startup
+    /// Every switchable feature of the mod with its health (ARCHITECTURE.md#feature-health-and-guards). <see cref="Probes"/> sets the startup
     /// results; <see cref="Guard"/> counts run-time failures and turns a feature off after repeated errors. Features
     /// check <see cref="FeatureHealth.IsAvailable"/> at their entry points. Critical features cannot be degraded: a
     /// failed probe blocks hosting and joining, a run-time trip ends the session (a client then rejoins).
@@ -56,7 +56,7 @@ namespace SkylineTogether.Diagnostics
         public static readonly FeatureHealth Agents = Registry.Add("agents", "citizens and companies", false);
 
         /// <summary>
-        /// Flow status of the electricity and water graphs by flow key for the infoviews (ARCH §4.11.5).
+        /// Flow status of the electricity and water graphs by flow key for the infoviews (ARCHITECTURE.md#statistics-icons-and-flow-status).
         /// Fallback: clients colour power lines and pipes from the join snapshot's flows (buildings stay exact).
         /// </summary>
         public static readonly FeatureHealth FlowStatus = Registry.Add("flow", "electricity and water flow status", false);

@@ -54,7 +54,7 @@ namespace SkylineTogether.Core.Sync
         /// <summary>Host → client: the UI-level line rows (<c>LineStateReport.WriteRows</c>).</summary>
         LineRows = 46,
 
-        // ---- movers branch (ARCH §4.9; kinds 20-29 are reserved for it): existence of vehicles and creatures ----
+        // ---- movers branch (ARCHITECTURE.md#movers; kinds 20-29 are reserved for it): existence of vehicles and creatures ----
 
         /// <summary>Host → client: a mover appeared (<see cref="MoverRecord"/>).</summary>
         MoverSpawn = 20,
@@ -95,12 +95,12 @@ namespace SkylineTogether.Core.Sync
         /// host epoch batch; a client states the newest number it applied as the base of its proposals (conflict check).
         /// </summary>
         Epoch = 80,
-        /// <summary>Client → host: sequence number, base epoch and flags of the proposal in this batch (ARCH §5.4.1).</summary>
+        /// <summary>Client → host: sequence number, base epoch and flags of the proposal in this batch (ARCHITECTURE.md#host-validation-and-commit).</summary>
         ProposalHeader = 81,
         /// <summary>Host → client (originator only): the result of a proposal; rejected ones are rolled back by the resend that follows.</summary>
         ProposalResult = 82,
 
-        // ---- solo testing (record/replay verdict, ARCH §13.5; kinds 160-169 are reserved for it) ----
+        // ---- solo testing (record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay; kinds 160-169 are reserved for it) ----
 
         /// <summary>
         /// Host → the recorder peer only: the integrity hash of every bound entity of one bucket at a verification
@@ -618,7 +618,7 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
-            /// <summary>A mover spawn or state record (movers branch, ARCH §4.9).</summary>
+            /// <summary>A mover spawn or state record (movers branch, ARCHITECTURE.md#movers).</summary>
             public void Mover(SyncRecordKind kind, uint netId, MoverRecord mover)
             {
                 if (kind != SyncRecordKind.MoverSpawn && kind != SyncRecordKind.MoverState) throw new ArgumentException("not a mover record kind", nameof(kind));

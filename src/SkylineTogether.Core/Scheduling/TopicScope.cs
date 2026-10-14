@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Which entities beyond the in-view static set an active topic needs (ARCH §4.8.3 table): the host's attention
+    /// Which entities beyond the in-view static set an active topic needs (ARCHITECTURE.md#simulation-values): the host's attention
     /// queries (game-host-capture) collect them into the peer's attention sets
     /// for a peer whose topics ask for them. See <see cref="TopicMap.ScopeOf"/>.
     /// </summary>
@@ -23,7 +23,7 @@ namespace SkylineTogether.Core.Scheduling
         /// <c>ObjectColorSystem.cs:993-1017</c>).</summary>
         CompaniesOfInView = 4,
 
-        /// <summary>Every transport line with its waypoints, segments and stops (line values of every line, §4.11.3).</summary>
+        /// <summary>Every transport line with its waypoints, segments and stops (line values of every line).</summary>
         AllLines = 8,
 
         /// <summary>The city statistic entities (<c>CityStatistic</c> buffers).</summary>

@@ -3,8 +3,8 @@ using System;
 namespace SkylineTogether.Core.Hashing
 {
     /// <summary>
-    /// xxHash64 (XXH64 of the reference xxHash library), Core's own implementation (no package, IMPLEMENTATION-PLAN
-    /// §2.1). Used for member hashes (seed = type rank, ARCH §4.3.4), data-file digests, prefab digests and chunk
+    /// xxHash64 (XXH64 of the reference xxHash library), Core's own implementation (no package).
+    /// Used for entity value hashes (<c>EntityCodec</c>), change detection of channel payloads, tile hashes and blob chunk
     /// hashes. Output is identical on every platform: input is read little-endian.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]

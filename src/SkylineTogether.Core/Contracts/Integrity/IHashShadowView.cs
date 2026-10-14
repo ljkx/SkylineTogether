@@ -7,7 +7,7 @@ namespace SkylineTogether.Core
     {
         bool TryGetCanonical(NetSlot slot, TypeRank type, out uint hash);
 
-        /// <summary>Per-slot combined member hashes of a bucket (bucket details, ARCH §8.5 level 1).</summary>
+        /// <summary>Per-slot combined member hashes of a bucket (bucket details, docs/history/ARCHITECTURE-original.md §8.5 level 1).</summary>
         void CollectBucket(ReplicationClass cls, int bucket, List<NetSlot> slots, List<uint> combinedHashes);
 
         ReplicationClass ClassOf(NetSlot slot);

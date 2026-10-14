@@ -1,9 +1,9 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// One connection of a transport (ARCH §9.1). Reliable traffic never calls <see cref="Send"/> directly: it goes
+    /// One connection of a transport (ARCHITECTURE.md#transport). Reliable traffic never calls <see cref="Send"/> directly: it goes
     /// through core-transport's <c>PeerOutbox</c>, which keeps <see cref="ConnectionStats.PendingReliableBytes"/> inside
-    /// a window and re-queues on <see cref="SendResult.Busy"/>, so a reliable message is never lost (ARCH §9.3).
+    /// a window and re-queues on <see cref="SendResult.Busy"/>, so a reliable message is never lost (ARCHITECTURE.md#outbox-lanes-and-rate-control).
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
     public interface IConnection

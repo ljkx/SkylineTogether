@@ -224,7 +224,7 @@ namespace SkylineTogether.Core.Tests.Fields
 
         /// <summary>
         /// Decodes every proper prefix of <paramref name="encoded"/> and asserts that each one fails with a
-        /// <see cref="DecodeException"/> and nothing else (the decoder fuzz rule of IMPLEMENTATION-PLAN §4).
+        /// <see cref="DecodeException"/> and nothing else (the decoder rule of ARCHITECTURE.md#code-rules).
         /// </summary>
         public static void AssertEveryTruncationFails(byte[] encoded, Action<ByteReader> decode, string what)
         {

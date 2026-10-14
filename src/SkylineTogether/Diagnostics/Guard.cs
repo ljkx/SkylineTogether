@@ -6,7 +6,7 @@ namespace SkylineTogether.Diagnostics
 {
     /// <summary>
     /// The try/catch around every entry point the game calls (systems' <c>OnUpdate</c>, event handlers, UI triggers and
-    /// getters, Steam callbacks, the driver's <c>Update</c>), ARCH §12.1 <c>SafeRun</c>: nothing throws into the game
+    /// getters, Steam callbacks, the driver's <c>Update</c>), ARCHITECTURE.md#feature-health-and-guards <c>SafeRun</c>: nothing throws into the game
     /// loop. Failures are counted per feature (<see cref="FeatureHealth"/>), logged with a rate limit, and repeated
     /// failures turn the feature off with a toast; a critical feature that trips ends the session instead (a client is
     /// then offered a rejoin with a fresh snapshot). Main thread only.

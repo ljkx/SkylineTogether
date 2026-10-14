@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Per-peer budget from link statistics (ARCH §4.8.2, §9.5). The ceiling is
+    /// Per-peer budget from link statistics (docs/history/ARCHITECTURE-original.md §4.8.2, §9.5). The ceiling is
     /// <c>min(userCap, SendRateFraction × sendRate)</c>, where the send rate is Steam's own estimate
     /// (<c>m_nSendRateBytesPerSecond</c> of <c>GetConnectionRealTimeStatus</c>, R06 §4.1); the budget then follows AIMD
     /// on the transport's queue time (<c>m_usecQueueTime</c>): above <see cref="SchedulerConfig.QueueHighMs"/> it is

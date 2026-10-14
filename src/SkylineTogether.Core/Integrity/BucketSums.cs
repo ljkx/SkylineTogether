@@ -4,13 +4,13 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Incremental bucket sums per class (ARCH §8.2): bucket = <c>slot &gt;&gt; 10</c>, sum = Σ <c>Mix64(member)</c> modulo 2⁶⁴
+    /// Incremental bucket sums per class (docs/history/ARCHITECTURE-original.md §8.2): bucket = <c>slot &gt;&gt; 10</c>, sum = Σ <c>Mix64(member)</c> modulo 2⁶⁴
     /// and count = number of present members. A member change subtracts the old contribution and adds the new one: O(1),
     /// never a scan, and commutative, so chunk iteration order cannot matter. The host feeds it from the hash shadow
     /// (core-replication <c>HashShadow</c>); the client's <see cref="HashLedger"/> keeps an instance for received values.
     /// <para>
     /// Memory: a class allocates its full bucket range (16384 × 12 bytes) on first use, about 1.4 MB for the seven audited
-    /// classes. Threading: mutated on the main thread (on the host only inside the capture window, ARCH §4.5.5); worker
+    /// classes. Threading: mutated on the main thread (on the host only inside the capture window, docs/history/ARCHITECTURE-original.md §4.5.5); worker
     /// threads may read sums outside the window (beacons). Arrays are never reallocated, so a read never sees a moved
     /// array.
     /// </para>

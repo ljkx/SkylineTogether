@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Read view of the slot side tables (ARCH §3.3), implemented by core-identity's <c>SlotTable</c>. Every lookup is
+    /// Read view of the slot side tables (docs/history/ARCHITECTURE-original.md §3.3), implemented by core-identity's <c>SlotTable</c>. Every lookup is
     /// O(1) and version-checked: an entity whose version differs from the recorded one is a different entity. Only the
     /// main thread mutates the tables (on the host only inside the capture window).
     /// </summary>
@@ -17,7 +17,7 @@ namespace SkylineTogether.Core
         /// <summary>Index-only lookup for <c>Write(Entity, ignoreVersion: true)</c> (<c>PathNode</c>).</summary>
         bool TryGetSlotByIndex(int entityIndex, out NetSlot slot);
 
-        /// <summary>The bound entity; the caller still checks liveness with <c>EntityManager.Exists</c> (ARCH §3.3).</summary>
+        /// <summary>The bound entity; the caller still checks liveness with <c>EntityManager.Exists</c> (docs/history/ARCHITECTURE-original.md §3.3).</summary>
         bool TryGetEntity(NetSlot slot, out EntityKey entity);
 
         byte GenerationOf(NetSlot slot);
@@ -28,10 +28,10 @@ namespace SkylineTogether.Core
 
         TypeSetId TypeSetOf(NetSlot slot);
 
-        /// <summary>Authored revision (ARCH §3.8).</summary>
+        /// <summary>Authored revision (docs/history/ARCHITECTURE-original.md §3.8).</summary>
         ushort RevisionOf(NetSlot slot);
 
-        /// <summary>Host: the slot's SPAWN was emitted (or it was bound at session start, ARCH §3.1).</summary>
+        /// <summary>Host: the slot's SPAWN was emitted (or it was bound at session start, docs/history/ARCHITECTURE-original.md §3.1).</summary>
         bool IsSpawnEmitted(NetSlot slot);
     }
 }

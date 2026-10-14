@@ -26,7 +26,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// Recovery of a client whose session ended while it was in the host's city (ARCH §7.8, §12.2, simplified): the
+    /// Recovery of a client whose session ended while it was in the host's city (ARCHITECTURE.md#leaving-kicks-and-recovery, #feature-health-and-guards): the
     /// world is the host's city without a session, which must not quietly turn into a single-player game. Retryable
     /// ends (lost connection, failed join) schedule automatic rejoins with backoff, each through the normal join path
     /// (connect, handshake, fresh snapshot, load); everything else (the host ended the session, a kick or ban, a

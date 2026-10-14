@@ -24,7 +24,7 @@ using Unity.Mathematics;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Citizens, households, household pets and companies (ARCH §2.2, §3.2 rule 16, class A; K5).
+    /// Citizens, households, household pets and companies (ARCHITECTURE.md#agents, #families).
     /// <para>
     /// <b>Existence</b> is global and travels in the structure stream (<see cref="SyncController"/>): every agent is bound
     /// at host session start and in the join snapshot like every other family; births, arrivals, spawns of companies,
@@ -35,7 +35,7 @@ namespace SkylineTogether.Sync
     /// <para>
     /// <b>Key links</b> (household membership, property) are promoted to the structure stream: a change found by the scan
     /// becomes an upsert in the next broadcast, together with the reverse buffers of the old and the new owner (co-capture,
-    /// ARCH §4.2.6): households as full records, buildings as their reverse buffers on this channel. The same happens for
+    /// ARCHITECTURE.md#agents): households as full records, buildings as their reverse buffers on this channel. The same happens for
     /// every owner of a spawned or despawned agent, so a client never keeps a renter, member, student or employee that is
     /// gone.
     /// </para>
@@ -108,7 +108,7 @@ namespace SkylineTogether.Sync
         /// <summary>The Deserialize-phase system that re-rolls citizen prefabs on every load (off during client sessions).</summary>
         public const string CitizenRerollSystemName = "Game.Serialization.CitizenSystem";
 
-        /// <summary>Reverse buffers of owners written by the co-capture (ARCH §4.2.6).</summary>
+        /// <summary>Reverse buffers of owners written by the co-capture (ARCHITECTURE.md#agents).</summary>
         private static readonly string[] OwnerBufferNames =
         {
             "Game.Buildings.Renter", "Game.Buildings.Student", "Game.Companies.Employee", "Game.Buildings.Occupant",
@@ -660,7 +660,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Co-capture (ARCH §4.2.6): the owners collected this frame. Agent owners (households, companies) as full records in
+        /// Co-capture (ARCHITECTURE.md#agents): the owners collected this frame. Agent owners (households, companies) as full records in
         /// the broadcast batch; building owners as their reverse buffers in one <see cref="MessageKind.AgentValues"/>
         /// broadcast right after the batch (sent by <see cref="HostStream"/>).
         /// </summary>
@@ -849,7 +849,7 @@ namespace SkylineTogether.Sync
             if (id != 0) output.Add(id);
         }
 
-        /// <summary>The inspection closure's edges (ARCH §4.8.3): what a panel of this entity shows.</summary>
+        /// <summary>The inspection closure's edges (ARCHITECTURE.md#simulation-values): what a panel of this entity shows.</summary>
         private void Expand(uint id, List<uint> output)
         {
             EntityManager em = _codec.EntityManager;

@@ -6,7 +6,7 @@ using SkylineTogether.Session;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Mover replication (ARCH K4, §4.9): owns the host side (<see cref="MoverHost"/>) and the client side
+    /// Mover replication (ARCHITECTURE.md#movers): owns the host side (<see cref="MoverHost"/>) and the client side
     /// (<see cref="MoverClient"/>) and wires them to the session's lifecycle. The three systems below are its only entry
     /// points from the frame loop; they are registered by <see cref="Mod"/>.
     /// </summary>

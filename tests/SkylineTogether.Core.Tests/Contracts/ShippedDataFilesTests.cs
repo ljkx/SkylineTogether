@@ -10,7 +10,7 @@ namespace SkylineTogether.Core.Tests.Contracts
 {
     /// <summary>
     /// Validates the data files the game layer ships (<c>src/SkylineTogether/Data</c>) with the Core parsers, and the
-    /// locale-key coverage (IMPLEMENTATION-PLAN §3 rule 11): every key referenced by the game layer exists in
+    /// locale-key coverage (ARCHITECTURE.md#code-rules): every key referenced by the game layer exists in
     /// <c>locale.en-US.json</c>. Referenced keys come from the generated list <c>Data/locale-keys.generated.json</c>
     /// (a JSON array of strings, or <c>{ "keys": [ ... ] }</c>) and from string literals passed directly to
     /// <c>LocaleSource.Resolve("...")</c> in the game sources. The tests skip while the files do not exist yet.

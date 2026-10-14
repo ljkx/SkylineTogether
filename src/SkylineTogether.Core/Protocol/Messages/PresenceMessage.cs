@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// A <c>Presence</c> message (client → host → others, unreliable; ARCH §11.4): the player's cursor, tool and live
+    /// A <c>Presence</c> message (client → host → others, unreliable; ARCHITECTURE.md#presence-and-tool-previews): the player's cursor, tool and live
     /// tool preview. The host relays it and sets <see cref="From"/> itself.
     /// <code>
     /// u8 from | f32 cursorX | f32 cursorY | f32 cursorZ | u8 toolKind | varint prefabRank+1 (0 = none) | u32 color
@@ -62,7 +62,7 @@ namespace SkylineTogether.Core.Protocol
         }
 
         /// <summary>
-        /// Reads into an existing instance (allocation-free for the 20 Hz relay path, ARCH §4.6): the preview array of
+        /// Reads into an existing instance (allocation-free for the 20 Hz relay path, ARCHITECTURE.md#envelope-and-message-kinds): the preview array of
         /// <paramref name="into"/> is reused when it is large enough. On a <see cref="DecodeException"/> the contents of
         /// <paramref name="into"/> are undefined.
         /// </summary>

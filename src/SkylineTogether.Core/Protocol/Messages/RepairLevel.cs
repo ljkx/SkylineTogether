@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// The repair ladder (ARCH §8.5); in a <see cref="RepairRequestMessage"/> a hint only, the host decides. The values
+    /// The repair ladder (docs/history/ARCHITECTURE-original.md §8.5); in a <see cref="RepairRequestMessage"/> a hint only, the host decides. The values
     /// travel on the wire.
     /// </summary>
     public enum RepairLevel : byte

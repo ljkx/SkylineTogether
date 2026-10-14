@@ -24,7 +24,7 @@ using Transform = Game.Objects.Transform;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Host side of mover replication (ARCH K4, §4.9). Existence is global: every vehicle, trailer, train car and
+    /// Host side of mover replication (ARCHITECTURE.md#movers). Existence is global: every vehicle, trailer, train car and
     /// creature gets a net id (<see cref="Family.Mover"/>) and every spawn, despawn and discrete state change
     /// (moving ↔ parked, entering or leaving a vehicle, <c>Unspawned</c>) is broadcast as a <see cref="MoverRecord"/>.
     /// Motion is interest-managed: each client reports its camera (<c>MessageKind.View</c>); for every simulated tick
@@ -415,7 +415,7 @@ namespace SkylineTogether.Sync
             return kind == known.Kind && vehicle == known.Vehicle && route == known.Route && em.HasComponent<Unspawned>(e) == known.Unspawned;
         }
 
-        /// <summary>Rolling pose refresh (ARCH §4.9.5): a few movers per frame that moved far since their last record.</summary>
+        /// <summary>Rolling pose refresh (ARCHITECTURE.md#movers): a few movers per frame that moved far since their last record.</summary>
         private void Refresh(EntityManager em)
         {
             if (_refreshCursor >= _refresh.Count)
@@ -749,7 +749,7 @@ namespace SkylineTogether.Sync
                 MotionQuality quality = demand <= perSecond ? MotionQuality.Full
                     : demand <= 2.0 * perSecond ? MotionQuality.FarHalf
                     : demand <= 4.0 * perSecond ? MotionQuality.FarQuarter : MotionQuality.Reduced;
-                // structure and values come first (ARCH §4.8.4); while the peer's reliable backlog is high, motion
+                // structure and values come first (ARCHITECTURE.md#deferred-values-and-link-pacing); while the peer's reliable backlog is high, motion
                 // keeps only a trickle (control messages, a few frames) and the client extrapolates, then pins
                 int peerBudget = budget;
                 v.Congested = host.TryGetLink(v.Peer, out PeerSendState link)

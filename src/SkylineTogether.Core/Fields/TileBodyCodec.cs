@@ -6,7 +6,7 @@ namespace SkylineTogether.Core.Fields
 {
     /// <summary>
     /// The body framing shared by <see cref="HeightTileCodec"/> and <see cref="WaterTileCodec"/>: filtered planes →
-    /// zero-run coding → optional block compression (ARCH §4.10.9: "zero-run-length, ZSTD").
+    /// zero-run coding → optional block compression (original design, docs/history/ARCHITECTURE-original.md §4.10.9: "zero-run-length, ZSTD"; ZSTD is not used).
     /// <code>
     /// u8 flags (bit 0: compressed; other bits must be 0)
     /// [u8 CompressionKind]                      when compressed

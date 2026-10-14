@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Number of a host frame with replication output (ARCH §4.5.4): monotonic, the unit of ordering, catch-up and
+    /// Number of a host frame with replication output (ARCHITECTURE.md#deferred-values-and-link-pacing): monotonic, the unit of ordering, catch-up and
     /// acknowledgement. 0 means "no epoch" (nothing applied yet); the host's first epoch is 1. At 60 epochs per second
     /// a 32-bit counter lasts more than two years, so comparisons are plain unsigned comparisons (no wrap-around).
     /// </summary>

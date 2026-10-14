@@ -8,7 +8,7 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// The UI-level line digest's comparison (ARCH §4.11.6): a hash of the whole line list for quick equality checks
+    /// The UI-level line digest's comparison (ARCHITECTURE.md#line-check-and-icon-digest): a hash of the whole line list for quick equality checks
     /// (record/replay verdicts, the post-join check with the S class, the 60 s diagnostics probe), and a field-by-field
     /// comparison of the host's and a client's rows that names every differing line and field, plus missing and extra
     /// lines (<c>/st lines compare</c>, acceptance test ST-LINES). Also the wire form of a row list (control message

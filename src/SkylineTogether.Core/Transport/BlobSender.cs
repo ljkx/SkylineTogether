@@ -10,7 +10,7 @@ namespace SkylineTogether.Core.Transport
 {
     /// <summary>
     /// Sends one blob (a snapshot, a domain rebaseline, a resume point, a tile batch) as indexed chunks on lane B
-    /// (ARCH §7.5, §9.4). Each chunk is a complete uncompressed <see cref="MessageKind.BlobChunk"/> envelope (see
+    /// (ARCHITECTURE.md#blob-transfer). Each chunk is a complete uncompressed <see cref="MessageKind.BlobChunk"/> envelope (see
     /// <see cref="BlobCodec"/>) of at most 256 KiB, read from the seekable source when it is sent, so the blob is never
     /// held in memory.
     /// <para>
@@ -81,7 +81,7 @@ namespace SkylineTogether.Core.Transport
             _window = minWindowBytes;
         }
 
-        /// <summary>Starts a transfer in chunks of <see cref="BlobCodec.DefaultChunkBytes"/> (256 KiB, ARCH §7.5).</summary>
+        /// <summary>Starts a transfer in chunks of <see cref="BlobCodec.DefaultChunkBytes"/> (256 KiB, ARCHITECTURE.md#blob-transfer).</summary>
         public BlobManifestInfo Start(uint blobId, Stream source, string purpose)
         {
             return Start(blobId, source, purpose, BlobCodec.DefaultChunkBytes);
@@ -265,7 +265,7 @@ namespace SkylineTogether.Core.Transport
 
         /// <summary>
         /// Moves the transfer to the outbox of a new connection to the same receiver (after a reconnect within the
-        /// resume window, ARCH §7.5). Sending waits until the receiver's have-bitmap arrives (<see cref="OnHave"/>).
+        /// resume window, ARCHITECTURE.md#blob-transfer). Sending waits until the receiver's have-bitmap arrives (<see cref="OnHave"/>).
         /// </summary>
         public void Rebind(PeerOutbox output)
         {

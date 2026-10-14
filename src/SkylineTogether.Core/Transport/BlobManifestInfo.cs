@@ -4,7 +4,7 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Transport
 {
     /// <summary>
-    /// What a blob transfer moves (ARCH §7.5, §9.4): an id, the size, the chunk size, the XXH3-128 digest of the whole
+    /// What a blob transfer moves (ARCHITECTURE.md#blob-transfer): an id, the size, the chunk size, the XXH3-128 digest of the whole
     /// blob and a purpose label (for example <c>"snapshot"</c>, <c>"rebaseline"</c>, <c>"resume"</c>, <c>"tiles"</c>;
     /// an identifier, compared exactly). Written by <see cref="BlobCodec.WriteManifest"/> into a
     /// <see cref="MessageKind.BlobManifest"/> message on lane R; the receiver builds its <see cref="BlobReceiver"/> from

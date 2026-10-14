@@ -10,7 +10,7 @@ namespace SkylineTogether.Core.Motion
     /// blends two consecutive frames with a Hermite curve whose tangents are the velocities
     /// (<c>ObjectInterpolateSystem.cs:4352-4360</c>), so velocity is part of the visual result.
     /// <para>
-    /// <see cref="Synthetic"/> marks frames the client made up (extrapolated, interpolated or pinned, ARCH §4.9.6);
+    /// <see cref="Synthetic"/> marks frames the client made up (extrapolated, interpolated or pinned, ARCHITECTURE.md#movers);
     /// such frames are never used as delta references and are replaced as soon as the real frame arrives.
     /// Positions and velocities are world metres and metres per second; the rotation is a unit quaternion (x, y, z, w).
     /// </para>

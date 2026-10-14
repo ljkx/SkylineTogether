@@ -17,7 +17,7 @@ using Unity.Jobs;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Economy and city state that lives in systems or singletons (ARCH §2.2, §4.10.1, §4.10.5), both directions.
+    /// Economy and city state that lives in systems or singletons (ARCHITECTURE.md#global-state-and-panels), both directions.
     /// <para>
     /// Host → clients, about once a second and only when a channel's bytes changed (plus a 30 s keyframe): the tax
     /// table (<c>TaxSystem.GetTaxRates</c>), service budgets (<c>ServiceBudgetData</c>), custom names
@@ -166,7 +166,7 @@ namespace SkylineTogether.Sync
         /// <summary>Semantic intents and the unlock set (their channels are routed there).</summary>
         public ActionSync Actions;
 
-        /// <summary>Host: whether a peer's role allows a permission (ARCH §5.6).</summary>
+        /// <summary>Host: whether a peer's role allows a permission (ARCHITECTURE.md#roles-and-moderation).</summary>
         public Func<PeerId, Permission, bool> Allows;
 
         /// <summary>Client: whether the local role allows a permission (null: allowed). Used to undo a viewer's local
@@ -563,7 +563,7 @@ namespace SkylineTogether.Sync
             return false;
         }
 
-        /// <summary>gameplay branch: the permission a channel proposal needs (ARCH §5.6).</summary>
+        /// <summary>gameplay branch: the permission a channel proposal needs (ARCHITECTURE.md#roles-and-moderation).</summary>
         private static Permission RequiredPermission(uint channel)
         {
             if (channel == GlobalChannel.Tax || channel == GlobalChannel.Budget || channel == GlobalChannel.Fee || channel == GlobalChannel.Loan) return Permission.Economy;
@@ -1135,7 +1135,7 @@ namespace SkylineTogether.Sync
             if (_loggedOnce.Add(key)) _log.Warn(LogCategory.Replication, message, ex);
         }
 
-        // ================================================================== solo testing (record/replay verdict, ARCH §13.5)
+        // ================================================================== solo testing (record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay)
 
         /// <summary>
         /// Host: the hash of every channel's last sent state (the recorder's checkpoints). Taxes, budgets, names and the

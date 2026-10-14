@@ -7,7 +7,7 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Transport
 {
     /// <summary>
-    /// Receives one blob (ARCH §7.5): verifies each chunk's xxHash64, writes it at <c>index × chunkSize</c> into the
+    /// Receives one blob (ARCHITECTURE.md#blob-transfer): verifies each chunk's xxHash64, writes it at <c>index × chunkSize</c> into the
     /// target stream (a preallocated file or the transient asset's write stream) and never holds the blob in memory.
     /// The XXH3-128 digest is computed while chunks arrive in order (the normal case on the ordered bulk lane), so
     /// <see cref="VerifyDigest"/> usually reads nothing back.

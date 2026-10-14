@@ -7,7 +7,7 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// One row of the UI-level line digest (ARCH §4.11.6): exactly what the vanilla line UI shows for one transport line,
+    /// One row of the UI-level line digest (ARCHITECTURE.md#line-check-and-icon-digest): exactly what the vanilla line UI shows for one transport line,
     /// computed in game by game-integrity's <c>LineStateProbe</c> through the UI's own functions
     /// (<c>TransportUIUtils.BuildTransportLine</c>: stops, vehicles, cargo, capacity, length, schedule, active; the broken
     /// flag per segment from <c>PathInformation</c>; the non-Marker icon prefabs of the line and of every waypoint;

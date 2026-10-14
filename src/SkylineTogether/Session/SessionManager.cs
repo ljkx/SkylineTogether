@@ -52,7 +52,7 @@ namespace SkylineTogether.Session
     /// frame from <see cref="SessionDriver"/>, ends it when the player leaves the city, and keeps what the UI shows
     /// (status, players, chat). Replication plugs in through <see cref="HostStarted"/> / <see cref="ClientStarted"/>.
     /// <para>
-    /// Recovery (ARCH §7.8, §12.2): when a client's session ends unexpectedly while it is in the host's city, the city
+    /// Recovery (ARCHITECTURE.md#leaving-kicks-and-recovery, #feature-health-and-guards): when a client's session ends unexpectedly while it is in the host's city, the city
     /// is held (paused, no autosave) instead of quietly turning into a single-player game; a lost connection is retried
     /// automatically with backoff through the normal join path (fresh snapshot), everything else asks the player:
     /// reconnect, return to the main menu, or keep the city as an offline copy (<see cref="RejoinController"/>).
@@ -111,7 +111,7 @@ namespace SkylineTogether.Session
 
         public SessionClient Client { get; private set; }
 
-        // ---- solo testing (record/replay verdict, ARCH §13.5) ----
+        // ---- solo testing (record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay) ----
 
         /// <summary>The host's transport: Steam (or nothing, for a solo test host) plus in-process parts (the test recorder).</summary>
         public CompositeTransport HostTransport { get; private set; }
@@ -253,7 +253,7 @@ namespace SkylineTogether.Session
 
         /// <summary>
         /// The first critical feature (other than Steam, which <see cref="SteamAvailable"/> covers) whose self-test failed
-        /// or that turned itself off: hosting and joining are refused with this reason (ARCH §12.2 "critical probes refuse
+        /// or that turned itself off: hosting and joining are refused with this reason (ARCHITECTURE.md#feature-health-and-guards "critical probes refuse
         /// hosting and joining"). Null when everything needed is available.
         /// </summary>
         public static string BlockingReason()
@@ -805,7 +805,7 @@ namespace SkylineTogether.Session
         }
 
         /// <summary>
-        /// gameplay branch: the host toggles a player between builder and viewer (ARCH §5.6); a co-host
+        /// gameplay branch: the host toggles a player between builder and viewer (ARCHITECTURE.md#roles-and-moderation); a co-host
         /// asks the host for the same (builders and viewers only; the host checks).
         /// </summary>
         public void ToggleRole(byte peer)
@@ -1190,7 +1190,7 @@ namespace SkylineTogether.Session
             try
             {
                 _playersVersion++;
-                // the second probe stage: world-dependent checks once a city exists (ARCH §13.4)
+                // the second probe stage: world-dependent checks once a city exists (ARCHITECTURE.md#probes-and-self-test)
                 if (mode == GameMode.Game) Probes.RunCityLoaded(_log);
             }
             catch (Exception ex)

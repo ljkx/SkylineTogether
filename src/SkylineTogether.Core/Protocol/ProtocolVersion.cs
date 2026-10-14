@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// Version of the wire format (IMPLEMENTATION-PLAN §3 rule 12): every change of an envelope, epoch, record or
+    /// Version of the wire format (ARCHITECTURE.md#code-rules): every change of an envelope, epoch, record or
     /// message layout increments it, and peers with different versions refuse each other in the handshake
     /// (<see cref="RefuseReason.ProtocolVersion"/>). Version 1 is pinned by the golden byte vectors of the Core tests
     /// (<c>Protocol/*GoldenTests.cs</c>).

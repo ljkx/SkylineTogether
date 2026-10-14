@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Who is at the other end of a connection (ARCH §14.2): the authenticated SteamID (0 when unknown, e.g. LAN UDP),
+    /// Who is at the other end of a connection (ARCHITECTURE.md#security-model): the authenticated SteamID (0 when unknown, e.g. LAN UDP),
     /// the remote address (direct connections) and the persona name. Identity is <see cref="SteamId"/> plus
     /// <see cref="Address"/>; the display name is cosmetic and not part of equality.
     /// <para>

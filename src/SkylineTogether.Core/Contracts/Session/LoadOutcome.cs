@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace SkylineTogether.Core
 {
-    /// <summary>Result of a client snapshot load and its post-load checks (ARCH §7.6).</summary>
+    /// <summary>Result of a client snapshot load and its post-load checks (ARCHITECTURE.md#snapshot-join).</summary>
     public sealed class LoadOutcome
     {
         public bool Success;

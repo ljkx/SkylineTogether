@@ -11,7 +11,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Network identity of replicated entities (ARCH §3.3-3.4): dense side tables, never a component, so binding costs
+    /// Network identity of replicated entities (ARCHITECTURE.md#net-ids): dense side tables, never a component, so binding costs
     /// no structural change. <see cref="WriterTable"/> (index = <c>Entity.Index</c>, value = <c>Entity(netId,
     /// version)</c>) and <see cref="ReaderTable"/> (index = net id, value = the local entity) plug straight into the
     /// game's <c>BinaryWriter</c>/<c>BinaryReader</c>. The bindings of tracked entities are saved into every save
@@ -348,7 +348,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Host session start, before any peer is admitted (ARCH K17): packs the bound ids into 1..n when long sessions
+        /// Host session start, before any peer is admitted (ARCHITECTURE.md#hosting): packs the bound ids into 1..n when long sessions
         /// spread them (<see cref="NetIdCompaction.ShouldCompact"/>), keeping their order, and rebuilds the allocator.
         /// Returns the number of ids that changed. Nothing may hold an id across this call (every session cache is reset
         /// at session end, and the movers bind lazily).

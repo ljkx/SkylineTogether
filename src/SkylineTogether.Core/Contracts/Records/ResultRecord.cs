@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// A RESULT record (ARCH §4.6.3, §5.5): the host's verdict on proposal <see cref="ProposalSeq"/> of peer
+    /// A RESULT record (docs/history/ARCHITECTURE-original.md §4.6.3, §5.5): the host's verdict on proposal <see cref="ProposalSeq"/> of peer
     /// <see cref="Origin"/>; <see cref="RejectReason.None"/> means accepted. Only the origin peer acts on it.
     /// </summary>
     public struct ResultRecord

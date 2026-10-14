@@ -6,7 +6,7 @@ using SkylineTogether.Core.Fields;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// Wire format of <see cref="MessageKind.Water"/> (ARCH §4.10.10): host → client correction tiles of
+    /// Wire format of <see cref="MessageKind.Water"/> (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water): host → client correction tiles of
     /// <c>WaterSystem.WaterTexture</c> plus the host's sea level.
     /// <code>
     /// u8 version | u8 type (1 = tiles) | f32 seaLevel | grid (see TerrainMessage) | u32 n |

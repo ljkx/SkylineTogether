@@ -42,7 +42,7 @@ namespace SkylineTogether.Core.Replay
     }
 
     /// <summary>
-    /// What the host knew at the end of a verification checkpoint (solo testing, ARCH §13.5), carried by the
+    /// What the host knew at the end of a verification checkpoint (solo testing, ARCHITECTURE.md#solo-test-record-and-replay), carried by the
     /// <see cref="SyncRecordKind.ReplayCheckpoint"/> end record: the UI-level line rows (<c>LineCheck</c>), the icon
     /// digests per owner (<c>IconSync</c>), the hashes of the global-state channels as last sent, and counts. Pure codec.
     /// </summary>

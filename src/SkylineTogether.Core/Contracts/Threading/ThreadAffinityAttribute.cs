@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Declares on which thread a type or member may be used (IMPLEMENTATION-PLAN §3 rule 3). Every public member
+    /// Declares on which thread a type or member may be used (ARCHITECTURE.md#processes-and-threads). Every public member
     /// that is not main-thread-only carries this attribute; members without it are main-thread-only. Documentation
     /// only: implementations that mutate engine state additionally assert their phase in debug builds.
     /// </summary>

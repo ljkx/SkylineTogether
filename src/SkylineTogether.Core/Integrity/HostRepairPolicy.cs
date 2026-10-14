@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Per-peer caps of <see cref="HostRepairResponder"/> (ARCH §8.5, §14.3, Appendix D). The first five fields are the
+    /// Per-peer caps of <see cref="HostRepairResponder"/> (docs/history/ARCHITECTURE-original.md §8.5, §14.3, Appendix D). The first five fields are the
     /// plan's contract; the rest tune timeouts that the architecture leaves open. Values below their minimum are
     /// treated as the minimum by the responder.
     /// </summary>

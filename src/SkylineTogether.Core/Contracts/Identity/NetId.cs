@@ -4,7 +4,7 @@ using System.Globalization;
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Slot plus generation as one 32-bit value, <c>(generation &lt;&lt; 24) | slot</c> (ARCH §3.1). Used for persistence
+    /// Slot plus generation as one 32-bit value, <c>(generation &lt;&lt; 24) | slot</c> (ARCHITECTURE.md#net-ids). Used for persistence
     /// (the <c>NetIdSystem</c> save block) and diagnostics; the generation rejects stale operations after slot reuse.
     /// </summary>
     public readonly struct NetId : IEquatable<NetId>

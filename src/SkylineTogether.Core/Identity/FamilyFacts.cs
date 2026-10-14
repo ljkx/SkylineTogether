@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Identity
 {
     /// <summary>
-    /// The per-entity facts two rules of the family table need (ARCH §3.2); game-ecs-schema computes them only where
+    /// The per-entity facts two rules of the family table need (ARCHITECTURE.md#families); game-ecs-schema computes them only where
     /// <see cref="FamilyRules.NeedsPerEntityFacts"/> says so.
     /// </summary>
     public struct FamilyFacts

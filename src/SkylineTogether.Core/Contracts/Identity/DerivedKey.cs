@@ -5,7 +5,7 @@ namespace SkylineTogether.Core
 {
     /// <summary>
     /// Portable identity of a derived entity (lane, sub-object, secondary object, zone block, owned route and its
-    /// elements, flow edge) that every peer regenerates locally and that therefore never gets a slot (ARCH §3.7).
+    /// elements, flow edge) that every peer regenerates locally and that therefore never gets a slot (docs/history/ARCHITECTURE-original.md §3.7).
     /// Floats are quantised to 1/64 m with <see cref="Quantize"/>, because float results may differ between CPUs.
     /// <para>Field use per kind (the constructors in core-identity's <c>DerivedKeys</c> are the authority):</para>
     /// <list type="bullet">

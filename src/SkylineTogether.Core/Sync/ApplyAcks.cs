@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// Host: which <b>release frame</b> each peer has applied (ARCH §3.1 condition (a)). A release frame is one host
+    /// Host: which <b>release frame</b> each peer has applied (ARCHITECTURE.md#net-ids condition (a)). A release frame is one host
     /// frame's worth of replication messages; <see cref="SealFrame"/> closes it and records, per admitted peer, how many
     /// reliable <c>Epoch</c> messages had been queued for that peer by then (its watermark). A peer acknowledges with the
     /// number of <c>Epoch</c> messages it has <i>applied</i> (<see cref="ApplyAckTracker"/>), so it has applied frame F once

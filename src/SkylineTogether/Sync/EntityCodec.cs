@@ -58,7 +58,7 @@ namespace SkylineTogether.Sync
     }
 
     /// <summary>
-    /// Turns entities into <see cref="SyncBatch"/> records and records back into entities (ARCH §4.3, §4.7). The wire
+    /// Turns entities into <see cref="SyncBatch"/> records and records back into entities (ARCHITECTURE.md#batch-encoding, #client-apply). The wire
     /// form of each component is its own save encoding; entity references become net ids, references to derived
     /// entities (lanes, station stops) become derived keys, and values that reference anything else are sent as
     /// presence only, so no peer ever receives a dangling reference. The applier creates entities from the prefab's
@@ -473,7 +473,7 @@ namespace SkylineTogether.Sync
         {
             hash = 0;
             if (h == null || h.Kind == SyncComponentKind.Presence) return false;
-            // reverse buffers are compared as multisets (ARCH 4.2.4)
+            // reverse buffers are compared as multisets (ARCHITECTURE.md#agents)
             if (h.TryHashAsSet(EntityManager, e, _ids, out hash)) return true;
             if (!TrySerialize(h, e, out int length)) return false;
             int head = _payload.Length;
@@ -1223,7 +1223,7 @@ namespace SkylineTogether.Sync
         {
             EntityManager em = EntityManager;
             {
-                // gameplay branch: a client's edit of an existing entity never touches host-owned state (ARCH §5.2)
+                // gameplay branch: a client's edit of an existing entity never touches host-owned state (ARCHITECTURE.md#client-proposals)
                 bool keepHostOwned = proposal && !_spawned.Contains(e);
                 _recordTypes.Clear();
                 for (int c = 0; c < r.Components.Count; c++)
@@ -1534,8 +1534,8 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// gameplay branch: types a client's proposal never writes on an existing entity (ARCH §5.2: host-only types).
-        /// Line state and initializer outputs are the host's (§4.11.3, §5.4.3: RouteNumber, VehicleModel); values the
+        /// gameplay branch: types a client's proposal never writes on an existing entity (ARCHITECTURE.md#host-validation-and-commit).
+        /// Line state and initializer outputs are the host's (RouteNumber, VehicleModel); values the
         /// player edits through the UI travel as intents (<see cref="ActionSync"/>: line colour, vehicle models, service
         /// districts, mesh colour), so a tool edit of the same entity in the same round trip cannot revert them; the
         /// simulation buffers of buildings belong to the host's simulation. New entities keep everything (the host's
@@ -1872,7 +1872,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// The event the host's pathfinder produced for a segment (ARCH §4.11.3): its consumers rebuild the line's
+        /// The event the host's pathfinder produced for a segment (ARCHITECTURE.md#structure-and-transport-lines): its consumers rebuild the line's
         /// curves, search tree and render buffers from the host's path.
         /// </summary>
         private void SynthesizePathUpdated(Entity segment)

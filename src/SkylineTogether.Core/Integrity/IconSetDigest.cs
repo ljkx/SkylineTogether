@@ -5,7 +5,7 @@ using SkylineTogether.Core.Sync;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Hashes of the icon channel (ARCH §4.10.4, §8.6). <see cref="ExactSetHash"/> detects that an owner's icon set changed
+    /// Hashes of the icon channel (ARCHITECTURE.md#statistics-icons-and-flow-status, #integrity). <see cref="ExactSetHash"/> detects that an owner's icon set changed
     /// on the host (every field, so a moved or re-prioritised icon is re-sent). <see cref="Member"/> is the comparable form
     /// both peers compute from their live icons for the periodic digest: owner and target reduced to
     /// <see cref="SyncRef.NormalizedHash"/>, the notification prefab, the priority and the flags that describe the icon

@@ -14,7 +14,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// City statistics history (the statistics panel's charts, ARCH §2.2, §4.10.6; R14 §6.2, R11 §5.2). The host's
+    /// City statistics history (the statistics panel's charts, ARCHITECTURE.md#statistics-icons-and-flow-status; R14 §6.2, R11 §5.2). The host's
     /// <c>CityStatisticsSystem</c> samples every 8192 ticks into <c>CityStatistic</c> buffers on per-statistic entities;
     /// clients do not simulate, so their charts would stop at the join.
     /// <para>

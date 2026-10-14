@@ -6,7 +6,7 @@ using SkylineTogether.Core.Identity;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// The host's net id authority (ARCH §3.1): dense ids from 1 with safe reuse. A freed id goes through a quarantine
+    /// The host's net id authority (ARCHITECTURE.md#net-ids): dense ids from 1 with safe reuse. A freed id goes through a quarantine
     /// before anything may reuse it:
     /// <list type="number">
     /// <item><see cref="Release"/> (the despawn was written into this frame's batches) parks it in the open release frame;</item>
@@ -287,7 +287,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// Rebuilds the allocator from saved bindings (ARCH §3.4): <paramref name="bound"/> ids are allocated with their
+        /// Rebuilds the allocator from saved bindings (ARCHITECTURE.md#net-ids): <paramref name="bound"/> ids are allocated with their
         /// generations, every other id below the high-water mark is free, nothing is quarantined. Invalid (0, above
         /// <see cref="MaxId"/>) and duplicate ids are skipped; returns the number skipped.
         /// </summary>

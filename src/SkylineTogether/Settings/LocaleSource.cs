@@ -11,7 +11,7 @@ using SkylineTogether.Core.Json;
 namespace SkylineTogether.Settings
 {
     /// <summary>
-    /// The mod's texts for the game's localization (ARCH §11.7): one embedded table per language,
+    /// The mod's texts for the game's localization (ARCHITECTURE.md#ui-module): one embedded table per language,
     /// <c>Data/locale.&lt;id&gt;.json</c>, English as the fallback for missing keys. The same keys serve the Options page
     /// (mapped onto the ids the settings page generates), the notifications and the UI module (cs2/l10n translate).
     /// </summary>

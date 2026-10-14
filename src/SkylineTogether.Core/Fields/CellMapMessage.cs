@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Fields
 {
     /// <summary>
-    /// Wire format of <see cref="MessageKind.CellMaps"/> (ARCH §4.10.8):
+    /// Wire format of <see cref="MessageKind.CellMaps"/> (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water):
     /// <code>
     /// header = u8 version | u8 type | u32 mapId | u16 width | u16 height | u8 cellBytes | u8 tileCells
     /// type 1 (tiles, host → client):  varuint n | n × (varuint tile | body)

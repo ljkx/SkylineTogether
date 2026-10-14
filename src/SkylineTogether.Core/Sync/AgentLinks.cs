@@ -5,8 +5,7 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// The forward references of one agent whose owners keep a data-replicated reverse buffer (ARCH §4.2.4,
-    /// §4.2.6, K5), as net ids (0 = none):
+    /// The forward references of one agent whose owners keep a data-replicated reverse buffer (ARCHITECTURE.md#agents), as net ids (0 = none):
     /// <list type="bullet">
     /// <item><c>HouseholdMember.m_Household</c> / <c>HouseholdPet.m_Household</c> → <c>HouseholdCitizen</c> / <c>HouseholdAnimal</c>;</item>
     /// <item><c>PropertyRenter.m_Property</c> → <c>Renter</c>;</item>
@@ -54,7 +53,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// The key links that promote a change to the P0 stream (ARCH §2.2: household membership and property changes are
+        /// The key links that promote a change to the P0 stream (ARCHITECTURE.md#agents: household membership and property changes are
         /// promoted): household and property. School, workplace and current building travel with the values.
         /// </summary>
         public ulong KeyHash() => HashMix.Combine(HashMix.Combine(0x6A09E667F3BCC909UL, Household), Property);

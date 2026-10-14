@@ -7,7 +7,7 @@ using static SkylineTogether.Core.Tests.Protocol.ProtocolTestUtil;
 
 namespace SkylineTogether.Core.Tests.Protocol
 {
-    /// <summary>EnvelopeCodec (ARCH §4.6.1, §4.6.5): layout, compression, limits checked before decompression.</summary>
+    /// <summary>EnvelopeCodec (ARCHITECTURE.md#envelope-and-message-kinds, #fragmentation-and-compression): layout, compression, limits checked before decompression.</summary>
     public sealed class EnvelopeCodecTests
     {
         private static readonly ManagedLz4Compressor Lz4 = new ManagedLz4Compressor();

@@ -20,7 +20,7 @@ using UnityEngine.Experimental.Rendering;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Terrain sync (ARCH §4.10.9, R07 §2-§5). The authoritative terrain is the host's base heightmap
+    /// Terrain sync (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water, R07 §2-§5). The authoritative terrain is the host's base heightmap
     /// (<c>TerrainSystem.heightmap</c>, R16, 4096²); roads, lots and terrain areas are not baked into it but rasterised
     /// every time from ECS state into the cascade (<c>TerrainSystem.RenderCascades</c>, re-triggered by the
     /// Created/Updated/Deleted tags of lots, edges, nodes and areas), so building and road flattening follows from the

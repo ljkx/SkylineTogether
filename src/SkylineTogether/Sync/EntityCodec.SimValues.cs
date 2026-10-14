@@ -9,7 +9,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// The simulation-value path of the codec (<see cref="AttentionValues"/>, ARCH D5, §4.7.9). A simulation
+    /// The simulation-value path of the codec (<see cref="AttentionValues"/>, ARCHITECTURE.md#simulation-values). A simulation
     /// value is a data component or buffer of a structure entity that the host's simulation changes without update tags
     /// (building condition, efficiency, consumers and producers, stored resources, service facility state, road traffic
     /// flow and condition, land value, coverage, area amounts, tree growth, ...). Structure and identity types (prefab,
@@ -50,12 +50,12 @@ namespace SkylineTogether.Sync
             "Game.Areas.Node",
             "Game.Areas.Area",
             "Game.Areas.District",
-            // deferred road-connection fields (ARCH §4.2.5); written only by structure records
+            // deferred road-connection fields (ARCHITECTURE.md#host-capture); written only by structure records
             "Game.Buildings.Building",
             // policies travel on the global-state channel, which detects client edits by comparison
             "Game.Policies.Policy",
             "Game.Objects.CustomMeshColor",
-            // cosmetic or derived locally on every peer (ARCH §2.4, §4.2.5, §4.9.9, §6.4)
+            // cosmetic or derived locally on every peer (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water, #host-capture, #events-chirps-and-traffic-lights, #gated-systems)
             "Game.Objects.Surface",
             "Game.Objects.StreetLight",
             "Game.Objects.TrafficLight",
@@ -238,7 +238,7 @@ namespace SkylineTogether.Sync
             EntityManager em = EntityManager;
             if (!em.Exists(e)) return true;
             if (em.HasComponent<Game.Simulation.ServiceRequest>(e) || em.HasComponent<Game.Notifications.Icon>(e)) return true;
-            // transient agents (seekers, meetings) never replicate (ARCH 2.2, A-low: references tolerate staleness)
+            // transient agents (seekers, meetings) never replicate (references to them tolerate staleness)
             return em.HasComponent<Game.Agents.JobSeeker>(e) || em.HasComponent<Game.Citizens.SchoolSeeker>(e)
                    || em.HasComponent<Game.Citizens.LookingForPartner>(e) || em.HasComponent<Game.Citizens.CoordinatedMeeting>(e);
         }

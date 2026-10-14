@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// A peer's motion interest region (ARCH §4.8.3 item 1): a disc around the camera pivot plus the optional frustum
+    /// A peer's motion interest region (ARCHITECTURE.md#simulation-values): a disc around the camera pivot plus the optional frustum
     /// footprint, entered at <see cref="Radius"/> and left at <see cref="LeaveRadius"/> (1.25 × Radius by convention).
     /// The hysteresis also applies to the footprint: while a mover is inside, the footprint counts as scaled around
     /// the centre by LeaveRadius / Radius. Coordinates are world metres on the XZ plane.

@@ -5,8 +5,8 @@ namespace SkylineTogether.Core
 {
     /// <summary>
     /// Prefab identity as a rank: the position of the prefab in the ordinally sorted list of every peer's
-    /// <c>PrefabID</c>s (ARCH §3.5). Equal prefab digests mean equal ranks, so no table is ever transferred.
-    /// Ranks start at 0; <see cref="None"/> is -1 (the wire encodes <c>rank + 1</c>, 0 = none, ARCH §4.6.3).
+    /// <c>PrefabID</c>s (ARCHITECTURE.md#prefabs). Equal prefab digests mean equal ranks, so no table is ever transferred.
+    /// Ranks start at 0; <see cref="None"/> is -1 (the wire encodes <c>rank + 1</c>, 0 = none, ARCHITECTURE.md#batch-encoding).
     /// Note that <c>default(PrefabRank)</c> is rank 0, not <see cref="None"/>.
     /// </summary>
     public readonly struct PrefabRank : IEquatable<PrefabRank>

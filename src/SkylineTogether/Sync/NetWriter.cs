@@ -11,7 +11,7 @@ namespace SkylineTogether.Sync
     /// <summary>
     /// A portable reference to a derived entity (a lane or a prefab sub-object such as a station stop): its tracked
     /// owner, its prefab, its index among the owner's children and its position quantised to 1/64 m. Derived entities
-    /// are regenerated on every peer, so they are found again by key instead of by id (ARCH §3.7).
+    /// are regenerated on every peer, so they are found again by key instead of by id (ARCHITECTURE.md#derived-keys).
     /// </summary>
     public struct DerivedKey
     {

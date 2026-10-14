@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// Log category names (ARCH §13.1 lists the first nine). Using the constants keeps the categories of the log file,
+    /// Log category names (ARCHITECTURE.md#logs). Using the constants keeps the categories of the log file,
     /// the rate limiter and the diagnostics dump consistent across modules.
     /// </summary>
     public static class LogCategory

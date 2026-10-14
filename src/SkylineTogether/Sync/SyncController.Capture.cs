@@ -541,7 +541,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Host: sends each live peer as many deferred records as its link takes this frame (ARCH §4.8.4, simplified),
+        /// Host: sends each live peer as many deferred records as its link takes this frame (ARCHITECTURE.md#deferred-values-and-link-pacing),
         /// oldest first, serialised from the current state; then the integrity digests to the peers that are up to date
         /// (a digest is only comparable once everything it covers was sent).
         /// </summary>

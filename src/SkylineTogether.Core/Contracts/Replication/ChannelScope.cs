@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Where a channel record goes (ARCH §4.10).</summary>
+    /// <summary>Where a channel record goes (docs/history/ARCHITECTURE-original.md §4.10).</summary>
     public enum ChannelScope : byte
     {
         /// <summary>The shared P0 section of the epoch (every peer, epoch log).</summary>

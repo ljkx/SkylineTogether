@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
     SkylineTogether: the game layer (the only IMod), compiled against the game's own Managed assemblies
-    (IMPLEMENTATION-PLAN §2.4). Nothing from the game is copied or shipped (R05 §1.2).
+    (docs/ARCHITECTURE.md#module-map). Nothing from the game is copied or shipped (R05 §1.2).
   -->
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>SkylineTogether</AssemblyName>
     <RootNamespace>SkylineTogether</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- pinned: NetIdSystem is saved by assembly-qualified name (ARCH §3.4) -->
+    <!-- pinned: NetIdSystem is saved by assembly-qualified name (ARCHITECTURE.md#net-ids) -->
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>$(Version)</FileVersion>
     <!-- compile against the game's own corlib, not a reference pack -->

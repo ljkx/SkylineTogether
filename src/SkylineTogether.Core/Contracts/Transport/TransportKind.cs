@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>Transport implementations (ARCH §9.1).</summary>
+    /// <summary>Transport implementations (ARCHITECTURE.md#transport).</summary>
     public enum TransportKind : byte
     {
         /// <summary>Steam Networking Sockets P2P by SteamID (relay and ICE).</summary>
@@ -15,7 +15,7 @@ namespace SkylineTogether.Core
         NetSim,
         /// <summary>LAN UDP without Steam (milestone M9).</summary>
         Udp,
-        /// <summary>Solo testing: a recorded session played back into a client (no network, ARCH §13.5).</summary>
+        /// <summary>Solo testing: a recorded session played back into a client (no network, ARCHITECTURE.md#solo-test-record-and-replay).</summary>
         Playback
     }
 }

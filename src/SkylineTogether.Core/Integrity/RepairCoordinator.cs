@@ -6,7 +6,7 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// The client side of the repair ladder (ARCH §8.3-8.5). It compares host beacons with the ledger, confirms bucket
+    /// The client side of the repair ladder (docs/history/ARCHITECTURE-original.md §8.3-8.5). It compares host beacons with the ledger, confirms bucket
     /// mismatches, asks for bucket details, turns confirmed per-slot differences into entity re-sends, confirms leaks,
     /// keeps the tolerance list, and produces coalesced, rate-limited <see cref="RepairRequestMessage"/>s. Every request
     /// carries only a level <b>hint</b>; the host keeps the ladder state per peer and decides
@@ -130,7 +130,7 @@ namespace SkylineTogether.Core.Integrity
             }
         }
 
-        // ================================================================== beacons (ARCH §8.4)
+        // ================================================================== beacons (docs/history/ARCHITECTURE-original.md §8.4)
 
         /// <summary>Compares a beacon with the ledger after everything before it was applied; level 1 only after two mismatches ≥ the confirmation interval apart.</summary>
         public RepairAction OnBeacon(in HashBeacon beacon) => OnBeacon(beacon, EpochId.None);
@@ -282,7 +282,7 @@ namespace SkylineTogether.Core.Integrity
 
         /// <summary>
         /// As <see cref="OnLeak(NetSlot, TypeRank, double)"/>; <paramref name="immediate"/> skips the two-frame wait (a
-        /// difference found right after the end-of-frame re-application, ARCH §4.7.8). Pending and tolerated pairs are ignored.
+        /// difference found right after the end-of-frame re-application, docs/history/ARCHITECTURE-original.md §4.7.8). Pending and tolerated pairs are ignored.
         /// </summary>
         public void OnLeak(NetSlot slot, TypeRank type, double now, bool immediate)
         {
@@ -493,7 +493,7 @@ namespace SkylineTogether.Core.Integrity
         }
 
         /// <summary>
-        /// A value-codec exception quarantined <paramref name="type"/> (ARCH §12.2): its class is rebaselined (level 3); a
+        /// A value-codec exception quarantined <paramref name="type"/> (docs/history/ARCHITECTURE-original.md §12.2): its class is rebaselined (level 3); a
         /// second fault of the same type within 10 minutes is a snapshot hint.
         /// </summary>
         public RepairAction ReportCodecFault(ReplicationClass cls, TypeRank type, double now)

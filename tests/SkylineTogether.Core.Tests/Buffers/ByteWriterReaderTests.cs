@@ -5,7 +5,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Buffers
 {
-    /// <summary>Round trips and golden bytes of every ByteWriter/ByteReader member (ARCH §4.6).</summary>
+    /// <summary>Round trips and golden bytes of every ByteWriter/ByteReader member (ARCHITECTURE.md#envelope-and-message-kinds).</summary>
     public sealed class ByteWriterReaderTests
     {
         private static ByteReader ReaderOf(ByteWriter w) => new ByteReader(w.Buffer, 0, w.Length);

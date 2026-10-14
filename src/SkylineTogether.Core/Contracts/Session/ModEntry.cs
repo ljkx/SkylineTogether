@@ -1,6 +1,6 @@
 namespace SkylineTogether.Core
 {
-    /// <summary>One loaded code mod or UI module in the handshake manifest (ARCH §7.9, §10.2).</summary>
+    /// <summary>One loaded code mod or UI module in the handshake manifest (ARCHITECTURE.md#handshake-and-admission, #mod-compatibility).</summary>
     public sealed class ModEntry
     {
         public string Name;

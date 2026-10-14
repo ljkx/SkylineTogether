@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Intents
 {
     /// <summary>
-    /// The tool that produced a change set (ARCH §5.2 stage B, §5.3): which tool, its prefab and mode, and the cost the
+    /// The tool that produced a change set (docs/history/ARCHITECTURE-original.md §5.2 stage B, §5.3): which tool, its prefab and mode, and the cost the
     /// local apply charged, computed as <c>ToolApplySystem</c> does: Σ <c>Temp.m_Cost</c> of every temp without
     /// <c>TempFlags.Cancel</c> (<c>ToolApplySystem.cs:42-74</c>). The sum is negative when refunds of recently built
     /// entities exceed the cost (the vanilla apply then adds money).

@@ -3,15 +3,15 @@ using System;
 namespace SkylineTogether.Core.Intents
 {
     /// <summary>
-    /// One replicated component of a proposed create or update: its canonical bytes (ARCH §4.3.4; entity references are
+    /// One replicated component of a proposed create or update: its canonical bytes (docs/history/ARCHITECTURE-original.md §4.3.4; entity references are
     /// <see cref="NetRef"/>s, predicted entities of the same proposal as provisional <see cref="LocalId"/>s) and, for
     /// enableable types, the enabled bit.
     /// <list type="bullet">
     /// <item>Value: <see cref="Bytes"/> holds the canonical bytes.</item>
     /// <item>Presence: <see cref="Bytes"/> is null or empty; the component is present (tags, and presence-authorable
-    /// types, whose value the host sets to the vanilla default, ARCH Appendix F).</item>
+    /// types, whose value the host sets to the vanilla default, docs/history/ARCHITECTURE-original.md Appendix F).</item>
     /// <item><see cref="Removed"/> (updates only): the update removes the component (presence-authorable types such as
-    /// <c>TrafficLights</c>, <c>Owner</c> of kept sub-nets, ARCH Appendix F); no bytes and no enabled bit.</item>
+    /// <c>TrafficLights</c>, <c>Owner</c> of kept sub-nets, docs/history/ARCHITECTURE-original.md Appendix F); no bytes and no enabled bit.</item>
     /// </list>
     /// A present component with null bytes is encoded like one with empty bytes; decoders return an empty array.
     /// <see cref="Enabled"/> is meaningful only with <see cref="HasEnabledBit"/> (the encoder drops it otherwise).

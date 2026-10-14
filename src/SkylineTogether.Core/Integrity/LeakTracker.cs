@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
-    /// Counts client leaks per component type and family (ARCH §13.3, P-C §7.3): a leak is a live value that differs
+    /// Counts client leaks per component type and family (docs/history/ARCHITECTURE-original.md §13.3, P-C §7.3): a leak is a live value that differs
     /// from the ledger outside every capture set (§5.2). The diagnostics dump and the network panel list the top types;
     /// after a game patch they point at the gameplay system missing from the gate table. Counts saturate at
     /// <see cref="int.MaxValue"/>. Thread-safe.

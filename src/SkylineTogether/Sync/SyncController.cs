@@ -21,7 +21,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// Host-authoritative structure sync (ARCH §4-§6, playable subset). The host captures every created, edited or
+    /// Host-authoritative structure sync (ARCHITECTURE.md#sync-pipeline). The host captures every created, edited or
     /// deleted persistent entity at the end of each frame and streams it; clients apply at the start of the frame,
     /// before any tool or Modification system runs, and the game re-derives everything else. A client's own edits are
     /// predicted by the vanilla tools, captured the same way and proposed to the host, which applies them with the
@@ -33,7 +33,7 @@ namespace SkylineTogether.Sync
     /// <item><b>Ledger epochs</b> (gameplay branch, <see cref="AuthoredLedger"/>): the number of each host broadcast
     /// batch, sent as <see cref="SyncRecordKind.Epoch"/>; a client names the newest one it applied as the
     /// <c>BaseEpoch</c> of its proposals, and the host refuses edits of entities authored by somebody else after it
-    /// (conflicts, ARCH §5.4.1).</item>
+    /// (conflicts, ARCHITECTURE.md#host-validation-and-commit).</item>
     /// <item><b>Release frames</b> (<see cref="ApplyAckBook"/>): one per host frame, sealed at frame start, with
     /// a per-peer watermark of the <c>MessageKind.Epoch</c> messages queued so far. Clients acknowledge how many
     /// <c>Epoch</c> messages they <i>applied</i> (<see cref="MessageKind.ApplyAck"/>, in order with their proposals); a
@@ -43,7 +43,7 @@ namespace SkylineTogether.Sync
     /// </para>
     /// <para>
     /// Structure is always sent; scanned values and re-sends wait per peer in a coalescing queue and are sent
-    /// only while the peer's link has room (ARCH D4: congestion becomes staleness, not backlog); motion yields to both.
+    /// only while the peer's link has room (ARCHITECTURE.md#deferred-values-and-link-pacing: congestion becomes staleness, not backlog); motion yields to both.
     /// </para>
     /// </summary>
     public sealed partial class SyncController
@@ -134,10 +134,10 @@ namespace SkylineTogether.Sync
         private readonly StatisticsSync _statistics;
         // citizens, households, pets and companies (existence here, values and attention there)
         private readonly AgentSync _agents;
-        // gameplay branch: UI intents, host validation (ARCH §5.4-5.6), conflicts, build order
+        // gameplay branch: UI intents, host validation (ARCHITECTURE.md#host-validation-and-commit), conflicts, build order
         private readonly ActionSync _actions;
         private readonly AuthoredLedger _ledger = new AuthoredLedger();
-        // direct-write tools may propose every frame; the limit only stops floods (violations kick, ARCH §5.6)
+        // direct-write tools may propose every frame; the limit only stops floods (violations kick, ARCHITECTURE.md#host-validation-and-commit)
         private readonly ProposalRateLimiter _rate = new ProposalRateLimiter(120, 240);
 
         /// <summary>Limits of request records (more ids, full re-sends), which request-only batches carry past
@@ -326,7 +326,7 @@ namespace SkylineTogether.Sync
         /// <summary>feat/integrity: divergence detection and repair, host icons, line check (see <see cref="IntegritySync"/>).</summary>
         public IntegritySync Integrity { get; }
 
-        // ---- solo testing (record/replay verdict, ARCH §13.5): read-only views for the recorder and the replay ----
+        // ---- solo testing (record/replay verdict, ARCHITECTURE.md#solo-test-record-and-replay): read-only views for the recorder and the replay ----
 
         /// <summary>Host: deferred values waiting for <paramref name="peer"/> (-1: unknown peer); checkpoints wait for 0.</summary>
         public int DeferredCount(PeerId peer) => _out.TryGetValue(peer.Value, out PeerOut o) ? o.Queue.Count : -1;

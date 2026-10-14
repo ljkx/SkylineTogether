@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// The client's hash ledger (ARCH §8.3): the member hash of the last value *received* per (slot, type), whether it
+    /// The client's hash ledger (docs/history/ARCHITECTURE-original.md §8.3): the member hash of the last value *received* per (slot, type), whether it
     /// was applied, parked or held, with the same bucket sums as the host. It proves "received = sent"; the rolling
     /// verifier proves "live = received". Implemented by core-integrity's <c>HashLedger</c>.
     /// </summary>
