@@ -90,7 +90,7 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.False(layout.IsSane(Transform(float.NaN, 0, 0, 0, 0, 0, 1)), "NaN position");
             Assert.False(layout.IsSane(Transform(0, float.PositiveInfinity, 0, 0, 0, 0, 1)), "infinite position");
             Assert.False(layout.IsSane(Transform(5000, 0, 0, 0, 0, 0, 1)), "beyond the bound");
-            Assert.False(layout.IsSane(Transform(0, 0, 0, 0, 0, 0, 0)), "a zero quaternion (a default rotation) is not a rotation");
+            Assert.True(layout.IsSane(Transform(0, 0, 0, 0, 0, 0, 0)), "an all-zero quaternion is a default the game itself may hold");
             Assert.False(layout.IsSane(Transform(0, 0, 0, 0, 0, 0, 3)), "a quaternion far from unit length");
             Assert.False(layout.IsSane(Transform(0, 0, 0, float.NaN, 0, 0, 1)), "NaN rotation");
         }

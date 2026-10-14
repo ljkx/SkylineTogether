@@ -725,11 +725,12 @@ namespace SkylineTogether.Sync
                     }
                     b.ExpectedLength = local != null ? local.Length : -1;
                 }
-                if (b.ExpectedLength != payload.Length)
+                // (a state this game cannot measure, because it references unsynced entities, keeps the bounded reader only)
+                if (b.ExpectedLength > 0 && b.ExpectedLength != payload.Length)
                 {
                     b.Disabled = true;
-                    _log.Warn(LogCategory.Replication, "global state: " + b.Name + " from the host has " + payload.Length + " bytes, this game's state "
-                                                       + (b.ExpectedLength < 0 ? "cannot be measured" : "has " + b.ExpectedLength) + "; channel disabled for this session (game versions differ?)");
+                    _log.Warn(LogCategory.Replication, "global state: " + b.Name + " from the host has " + payload.Length + " bytes, this game's state has "
+                                                       + b.ExpectedLength + "; channel disabled for this session (game versions differ?)");
                     return;
                 }
             }

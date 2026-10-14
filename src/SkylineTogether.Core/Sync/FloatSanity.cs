@@ -79,7 +79,7 @@ namespace SkylineTogether.Core.Sync
 
         /// <summary>
         /// True when every float is finite and within <see cref="Bound"/> (or exactly float.MinValue/MaxValue, the game's
-        /// sentinels) and every quaternion has unit length.
+        /// sentinels) and every quaternion has unit length (or is all zero, a default).
         /// </summary>
         public unsafe bool IsSane(byte* value)
         {
@@ -95,7 +95,10 @@ namespace SkylineTogether.Core.Sync
             {
                 float* q = (float*)(value + Quaternions[i]);
                 float len2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
-                if (!(len2 >= 0.81f && len2 <= 1.21f)) return false; // |q| within 10% of 1 (the host sends normalised values)
+                // |q| within 10% of 1 (the host sends normalised values); an all-zero quaternion is a default the game
+                // itself may hold (it runs with it on the host too), so only a non-unit, non-zero one is corrupt
+                if (len2 == 0f) continue;
+                if (!(len2 >= 0.81f && len2 <= 1.21f)) return false;
             }
             return true;
         }

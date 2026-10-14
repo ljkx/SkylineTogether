@@ -362,6 +362,8 @@ namespace SkylineTogether.Core.Session
                 if (tooSlow)
                 {
                     _log.Warn(LogCategory.Net, p.Name + ": the connection is too slow to keep up; disconnecting");
+                    // w8/robust: the players learn why (the dropped player rejoins with a fresh snapshot: its catch-up)
+                    if (p.Admitted) SystemMessage(p.Name + " could not keep up with the session and was disconnected; joining again catches up.");
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "connection too slow"));
                     continue;
                 }
