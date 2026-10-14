@@ -69,6 +69,9 @@ namespace SkylineTogether.Sync
                 client.AppMessage += e =>
                 {
                     if (e.Kind != MessageKind.Statistics) return;
+                    // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                    // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
+                    if (!Diagnostics.Features.SimValues.IsAvailable) return;
                     var copy = new byte[e.BodyCount];
                     Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                     _inbox.Enqueue(copy);

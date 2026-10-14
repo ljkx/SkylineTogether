@@ -193,6 +193,9 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Terrain) return;
+                // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
+                if (!Diagnostics.Features.Terrain.IsAvailable) return;
                 // polish: a joiner still waiting for the city skips stroke replays (the snapshot or the host's settled
                 // tiles carry their result; a replay on top of the snapshot would apply a stroke twice)
                 if (client.State != ClientState.Live && !TerrainMessage.KeepBeforeLive(e.Body, e.BodyOffset, e.BodyCount))
