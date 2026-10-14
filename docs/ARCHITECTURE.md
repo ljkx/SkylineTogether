@@ -1217,6 +1217,7 @@ Open design gaps and inconsistencies found while writing this document.
   cannot receive a result.
 - **Permissions are per role.** There are no per-player overrides (`RolePermissions.Of` depends on the role only).
 - **Blob resume across reconnects** (`BlobSender.Rebind`) exists but is unused: a rejoin downloads a fresh snapshot.
+
 ### Core code the game layer does not reach
 
 [`tools/reachability.py`](../tools/reachability.py) lists it ([dev/testing.md](dev/testing.md#what-the-mod-never-reaches)).
