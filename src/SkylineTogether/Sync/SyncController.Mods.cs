@@ -66,10 +66,11 @@ namespace SkylineTogether.Sync
                 try
                 {
                     if (IsHost && em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
-                    _codec.WriteEntity(_batch, SyncRecordKind.Spawn, id, family, e);
+                    // client: the shadow of what it proposed comes from the record's own serialization
+                    if (IsHost) _codec.WriteEntity(_batch, SyncRecordKind.Spawn, id, family, e);
+                    else _shadow[id] = _codec.WriteEntityHashed(_batch, SyncRecordKind.Spawn, id, family, e, Family.Generic);
                     written.Add(e);
                     proposed?.Add(id);
-                    if (!IsHost) _shadow[id] = _codec.HashEntity(e, false);
                     _watcher?.Refresh(e);
                 }
                 catch (Exception ex)
@@ -114,9 +115,9 @@ namespace SkylineTogether.Sync
                 if (!FamilyClassifier.IsReplicated(family)) continue;
                 SyncRecordKind kind = c.PresenceChanged ? SyncRecordKind.Upsert : SyncRecordKind.Values;
                 if (host && kind == SyncRecordKind.Upsert && em.HasComponent<PrefabRef>(e)) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
-                _codec.WriteEntity(_batch, kind, id, family, e);
+                if (host) _codec.WriteEntity(_batch, kind, id, family, e);
+                else _shadow[id] = _codec.WriteEntityHashed(_batch, kind, id, family, e, Family.Generic);
                 written.Add(e);
-                if (!host) _shadow[id] = _codec.HashEntity(e, false);
                 proposed?.Add(id);
             }
         }

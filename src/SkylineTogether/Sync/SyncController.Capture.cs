@@ -478,10 +478,11 @@ namespace SkylineTogether.Sync
                 kind = SyncRecordKind.Spawn;
             }
             if (hasPrefab) _codec.EnsurePrefab(em.GetComponentData<PrefabRef>(e).m_Prefab, _batch);
-            _codec.WriteEntity(_batch, kind, id, family, e);
+            // value-scanned families: the scan's shadow comes from the record's own serialization (was a second one)
+            if (FamilyClassifier.IsScanned(family)) _shadow[id] = _codec.WriteEntityHashed(_batch, kind, id, family, e, family);
+            else _codec.WriteEntity(_batch, kind, id, family, e);
             _writtenThisFrame.Add(e);
             DropDeferred(id, DeferredClass.Upsert); // the full record supersedes waiting values and re-sends
-            if (FamilyClassifier.IsScanned(family)) _shadow[id] = _codec.HashEntity(e, true, family);
             _events.NoteWritten(em, id, e, family); // the component set clients now hold
             // gameplay branch: authored changes (committed proposals and intents, the host player's tool) for conflicts
             if (_authoredThisFrame.TryGetValue(e, out byte author)) _ledger.MarkAuthored(id, author);

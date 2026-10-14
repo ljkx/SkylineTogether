@@ -275,9 +275,31 @@ namespace SkylineTogether.Sync
         public TypeHandler[] HandlersOf(Entity e) => HandlersOf(EntityManager.GetChunk(e).Archetype);
 
         /// <summary>Appends an entity record. Values records carry data only; others carry the full replicated type set.</summary>
-        public void WriteEntity(SyncBatch.Writer w, SyncRecordKind kind, uint netId, Family family, Entity e)
+        public void WriteEntity(SyncBatch.Writer w, SyncRecordKind kind, uint netId, Family family, Entity e) => WriteEntityCore(w, kind, netId, family, e, false);
+
+        /// <summary>
+        /// Appends an entity record (<see cref="WriteEntity"/>) and returns the hash <see cref="HashEntity(Entity, bool, Family)"/>
+        /// with <paramref name="hashFamily"/> would compute right after it, from the same serialization: the host's shadow of
+        /// a value-scanned entity and a client's shadow of what it proposed were a second full serialization of the entity.
+        /// Agents (simulation-lenient values) and a <paramref name="hashFamily"/> whose reference rule differs from the record's
+        /// fall back to writing and hashing separately, so the result is always exactly the separate hash.
+        /// </summary>
+        public ulong WriteEntityHashed(SyncBatch.Writer w, SyncRecordKind kind, uint netId, Family family, Entity e, Family hashFamily)
+        {
+            if (family == Family.Agent || !ReferenceEquals(LenientRefs(family), LenientRefs(hashFamily)))
+            {
+                WriteEntityCore(w, kind, netId, family, e, false);
+                return HashEntity(e, true, hashFamily);
+            }
+            return WriteEntityCore(w, kind, netId, family, e, true);
+        }
+
+        /// <summary>Writes the record; with <paramref name="hash"/> also mixes the value hash exactly as <see cref="HashEntity(Entity, bool, Family)"/> does.</summary>
+        private ulong WriteEntityCore(SyncBatch.Writer w, SyncRecordKind kind, uint netId, Family family, Entity e, bool hash)
         {
             TypeHandler[] handlers = HandlersOf(e);
+            EntityManager em = EntityManager;
+            ulong valueHash = HashSeed;
             w.BeginEntity(kind, netId, family, kind != SyncRecordKind.Values);
             // events and chirps keep their values when they name an entity that does not replicate (a citizen
             // sender, a household target): that reference travels as null instead of dropping the whole component
@@ -287,9 +309,24 @@ namespace SkylineTogether.Sync
             bool lenient = family == Family.Agent;
             try
             {
+                _bits.Clear();
                 for (int i = 0; i < handlers.Length; i++)
                 {
                     TypeHandler h = handlers[i];
+                    if (h.SyncEnabledBit)
+                    {
+                        bool enabled = em.IsComponentEnabled(e, h.Type);
+                        _bits.Add(new SyncEnabledBit(h.Hash, enabled));
+                        if (hash)
+                        {
+                            valueHash = Mix(valueHash, h.Hash);
+                            if (!enabled) valueHash = Mix(valueHash, h.Hash ^ DisabledMarker);
+                        }
+                    }
+                    else if (hash)
+                    {
+                        valueHash = Mix(valueHash, h.Hash);
+                    }
                     if (h.Kind == SyncComponentKind.Presence)
                     {
                         if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
@@ -297,8 +334,15 @@ namespace SkylineTogether.Sync
                     }
                     int length;
                     bool ok = lenient && h.Kind == SyncComponentKind.Data ? TrySerializeSim(h, e, out length) : TrySerialize(h, e, out length);
-                    if (ok) w.AddComponent(h.Hash, h.Kind, _managedScratch, 0, length);
-                    else if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
+                    if (ok)
+                    {
+                        w.AddComponent(h.Hash, h.Kind, _managedScratch, 0, length);
+                        if (hash) valueHash = Mix(valueHash, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
+                    }
+                    else if (kind != SyncRecordKind.Values)
+                    {
+                        w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
+                    }
                 }
             }
             finally
@@ -308,15 +352,12 @@ namespace SkylineTogether.Sync
             w.EndEntity();
             // mod compatibility: enabled bits travel right after the record (the vanilla Decoration of trees placed outside
             // decoration mode, Tree Controller's LumberResource)
-            _bits.Clear();
-            EntityManager em = EntityManager;
-            for (int i = 0; i < handlers.Length; i++)
-            {
-                TypeHandler h = handlers[i];
-                if (h.SyncEnabledBit) _bits.Add(new SyncEnabledBit(h.Hash, em.IsComponentEnabled(e, h.Type)));
-            }
             if (_bits.Count > 0) w.EnabledBits(netId, _bits);
+            return valueHash;
         }
+
+        private const ulong HashSeed = 1469598103934665603UL;
+        private const ulong DisabledMarker = 0xE0E0E0E0UL;
 
         /// <summary>
         /// Mod compatibility (<see cref="Compat.ModStateWatcher"/>): hashes of an entity's replicated state restricted to
@@ -325,20 +366,21 @@ namespace SkylineTogether.Sync
         /// </summary>
         public void HashSubset(Entity e, Func<TypeIndex, bool> include, bool bits, out ulong presence, out ulong value)
         {
-            presence = 1469598103934665603UL;
-            value = 1469598103934665603UL;
+            presence = HashSeed;
+            value = HashSeed;
             EntityManager em = EntityManager;
-            NativeArray<ComponentType> types = em.GetComponentTypes(e, Allocator.Temp);
+            // the archetype's cached handlers: the same types in the same order as GetComponentTypes, without its allocation
+            TypeHandler[] handlers = HandlersOf(e);
             Func<Entity, bool> binder = DependencyBinder;
             DependencyBinder = null;
             try
             {
-                foreach (ComponentType t in types)
+                for (int i = 0; i < handlers.Length; i++)
                 {
-                    TypeHandler h = TypeHandlers.Get(t);
-                    if (h == null || (include != null && !include(t.TypeIndex))) continue;
+                    TypeHandler h = handlers[i];
+                    if (include != null && !include(h.Type.TypeIndex)) continue;
                     presence = Mix(presence, h.Hash);
-                    if (bits && h.SyncEnabledBit && !em.IsComponentEnabled(e, t)) value = Mix(value, h.Hash ^ 0xE0E0E0E0UL);
+                    if (bits && h.SyncEnabledBit && !em.IsComponentEnabled(e, h.Type)) value = Mix(value, h.Hash ^ DisabledMarker);
                     if (h.Kind == SyncComponentKind.Presence) continue;
                     if (!TrySerialize(h, e, out int length)) continue;
                     value = Mix(value, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
@@ -347,7 +389,6 @@ namespace SkylineTogether.Sync
             finally
             {
                 DependencyBinder = binder;
-                types.Dispose();
             }
         }
 
@@ -422,7 +463,7 @@ namespace SkylineTogether.Sync
         /// </summary>
         public ulong HashEntity(Entity e, bool valuesOnly, Family family)
         {
-            ulong hash = 1469598103934665603UL;
+            ulong hash = HashSeed;
             EntityManager em = EntityManager;
             Func<Entity, bool> binder = DependencyBinder;
             DependencyBinder = null; // mod compatibility: hashing never binds
@@ -435,7 +476,7 @@ namespace SkylineTogether.Sync
                     TypeHandler h = handlers[i];
                     hash = Mix(hash, h.Hash);
                     // mod compatibility: a disabled enableable component differs from an enabled one
-                    if (h.SyncEnabledBit && !em.IsComponentEnabled(e, h.Type)) hash = Mix(hash, h.Hash ^ 0xE0E0E0E0UL);
+                    if (h.SyncEnabledBit && !em.IsComponentEnabled(e, h.Type)) hash = Mix(hash, h.Hash ^ DisabledMarker);
                     if (h.Kind == SyncComponentKind.Presence) continue;
                     if (!TrySerialize(h, e, out int length)) continue;
                     hash = Mix(hash, Core.Hashing.XxHash64.Hash(_managedScratch, 0, length));
