@@ -23,7 +23,7 @@ can slip through unaudited.
 
 ## How to read a status
 
-Clients never run the gameplay simulation (`GameSimulation` systems are off, ARCH §6.1; only a cosmetic allow-list runs
+Clients never run the gameplay simulation (`GameSimulation` systems are off, [follower clock](../ARCHITECTURE.md#follower-clock); only a cosmetic allow-list runs
 with the follower clock). So every value a `GameSimulation` system writes must either come from the host or be computed
 again on the client from host data. The statuses:
 
@@ -64,7 +64,7 @@ again on the client from host data. The statuses:
 | 11 | Node wear and other node values froze | nodes were not attention candidates | part of fix 10 |
 | 12 | Trees never grew on clients | tree growth changes `Tree` values with `BatchesUpdated` only; trees are not attention candidates | the presence watch re-sends a tree's values when it has `BatchesUpdated` with an unchanged component set; clients tag it `BatchesUpdated` so the mesh is chosen again |
 | 13 | Following a citizen only worked for the player who clicked it | the followed list (50 citizens, life paths) is city state written by `LifePathEventSystem.FollowCitizen` | channel `Follow`: client deltas, the host follows through the vanilla API, agent replication brings `Followed` and the life path to everyone |
-| 14 | The Electricity and Water infoviews coloured power lines, transformers, water and sewage pipes from the join snapshot's flows on clients (bottlenecks, disconnected lines and pipe pollution never changed) | flow values live on the derived flow graph (`ElectricityFlowEdge`, `WaterPipeEdge`), written only by the GameSimulation flow systems, and flow edges have no portable identity | w4/flow: the **flow-status channel** of ARCH §4.11.5 (`FlowStatusSync`, `MessageKind.FlowStatus`). A flow edge is keyed by its start and end flow node, a flow node by its owner's net id and role (net node or edge, valve, building transformer/producer/consumer/charge/discharge node, source, sink; `FlowKey`). While a peer's view report has the Electricity or Water topic, the host runs a time-sliced pass over the graph (0.75 ms per frame, at most one start per second) and sends the edges the peer lacks or whose value changed significantly (flags and capacities exactly, flows by 1/64), in-view first, within a 16 KB/s per-peer budget; activation is a keyframe. Clients write the values into their own derived edges after completing the jobs that read or write the edge type, and while their own infoview has the topic, local passes re-apply cached values to edges the graph systems rebuilt. The kept graph systems only create edges and rewrite direction and capacity on building and road-connection updates (`ElectricityBuildingGraphSystem.CreateOrUpdateFlowEdge`, `ElectricityGraphUtils.TrySetFlowEdge`, water likewise), never flow or flags; the flow systems themselves are GameSimulation (off on clients; a warning is logged if one runs). Building consumer state (`ElectricityConsumer`, `WaterConsumer`) keeps coming from the attention values under the same topics |
+| 14 | The Electricity and Water infoviews coloured power lines, transformers, water and sewage pipes from the join snapshot's flows on clients (bottlenecks, disconnected lines and pipe pollution never changed) | flow values live on the derived flow graph (`ElectricityFlowEdge`, `WaterPipeEdge`), written only by the GameSimulation flow systems, and flow edges have no portable identity | w4/flow: the **[flow-status channel](../ARCHITECTURE.md#statistics-icons-and-flow-status)** (`FlowStatusSync`, `MessageKind.FlowStatus`). A flow edge is keyed by its start and end flow node, a flow node by its owner's net id and role (net node or edge, valve, building transformer/producer/consumer/charge/discharge node, source, sink; `FlowKey`). While a peer's view report has the Electricity or Water topic, the host runs a time-sliced pass over the graph (0.75 ms per frame, at most one start per second) and sends the edges the peer lacks or whose value changed significantly (flags and capacities exactly, flows by 1/64), in-view first, within a 16 KB/s per-peer budget; activation is a keyframe. Clients write the values into their own derived edges after completing the jobs that read or write the edge type, and while their own infoview has the topic, local passes re-apply cached values to edges the graph systems rebuilt. The kept graph systems only create edges and rewrite direction and capacity on building and road-connection updates (`ElectricityBuildingGraphSystem.CreateOrUpdateFlowEdge`, `ElectricityGraphUtils.TrySetFlowEdge`, water likewise), never flow or flags; the flow systems themselves are GameSimulation (off on clients; a warning is logged if one runs). Building consumer state (`ElectricityConsumer`, `WaterConsumer`) keeps coming from the attention values under the same topics |
 | 15 | Roads, power lines and pipes with a utility connection would not have replicated at all | `ElectricityNodeConnection`/`WaterPipeNodeConnection` were flow-graph family markers, but the graph systems add them to the net nodes and edges themselves, so those nets classified as derived `FlowGraph` (rule 8 precedes the net rules) | they are no markers any more; all six flow-graph connection components (`*NodeConnection`, `*ValveConnection`, `*BuildingConnection`) are excluded from structure records (`TypeHandlers.Excluded`): they point at derived flow nodes, and as presence-only components a spawn would have added them with null references that the edge graph system takes for an existing flow node |
 
 ## Runtime state the UI and the renderer read (not saved components)
@@ -82,7 +82,7 @@ again on the client from host data. The statuses:
 | Date, time of day, day and night, sun, moon, lighting | `TimeSystem`, `PlanetarySystem`, `LightingSystem` | follower clock; `TimeData` from the snapshot | clock |
 | Season, temperature, precipitation, clouds, fog, aurora, weather selection | `ClimateSystem` | allow-list; pure function of the replicated date (no randomness in `UpdateWeather`/`SelectRandomWeather`) | clock |
 | Hail, rainbow | `WeatherPhenomenonSystem` | fix 8 | global |
-| Snow cover, wind, wetness and dirt of objects | `SnowSystem`, wind systems, `WetnessSystem`, `DirtynessSystem` | simulated locally for visuals (documented fidelity exception, ARCH 2.4) | local |
+| Snow cover, wind, wetness and dirt of objects | `SnowSystem`, wind systems, `WetnessSystem`, `DirtynessSystem` | simulated locally for visuals (documented fidelity exception) | local |
 | Fires, collapses, disasters, floods, tsunamis, tornadoes, lightning, accidents, emergencies, evacuation | event systems | fix 1; water levels also via `WaterSync`; vehicles of the emergency services via movers | scan + presence |
 | Traffic accidents | `AddAccidentSiteSystem`, `AccidentSiteSystem`, accident AIs | event entities, `AccidentSite` (presence), `InvolvedInAccident` (movers) | scan + presence + movers |
 | Traffic lights | `TrafficLightSystem` | fix 10 | values + derived |
@@ -106,7 +106,7 @@ again on the client from host data. The statuses:
 | State | Why it is not synced | Player impact |
 |---|---|---|
 | Transient agents (service requests, job and school seekers, partner search, meetings) | dispatch bookkeeping of the host simulation; references to them arrive as null (`EntityCodec` lenient references, as w3/agents does) | none visible: dispatched vehicles, their targets, icons and building values are synced |
-| Object wetness, dirt and snow, wind, snow cover | cosmetic, simulated locally (ARCH 2.4) | slight visual differences of weather effects |
+| Object wetness, dirt and snow, wind, snow cover | cosmetic, simulated locally | slight visual differences of weather effects |
 | Per-player state (camera, selection, info views, tools, radio, chirp likes, palette, tutorials, victory pop-up seen) | by design | none |
 | Achievements | inert in modded cities | none |
 
@@ -180,7 +180,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Game.Rendering.MarkerIconSystem` | Rendering | `local` | - | marker icons are presentation |
 | `Game.Rendering.TerrainMaterialSystem` | PreCulling | `terrain` | TerrainSync (splatmap tiles) | terrain paint |
 | `Game.Rendering.WaterRenderSystem` | PreCulling | `local` | - | render state |
-| `Game.Routes.RoutePathSystem` | ModificationEnd | `derived` | gated except in the route-tool preview window | lazy update set; line paths are host data (line state, ARCH 4.11) |
+| `Game.Routes.RoutePathSystem` | ModificationEnd | `derived` | gated except in the route-tool preview window | lazy update set; line paths are host data (line state, [transport lines](../ARCHITECTURE.md#structure-and-transport-lines)) |
 | `Game.Simulation.AirPollutionSystem` | GameSimulation | `cellmap` | CellMapSync | air pollution map |
 | `Game.Simulation.AvailabilityInfoToGridSystem` | GameSimulation | `cellmap` | CellMapSync | availability map |
 | `Game.Simulation.CitizenHappinessSystem` | GameSimulation | `global` | blob "Happiness" (5 s) | w3/audit fix: happiness factors of the city info panel |
@@ -219,8 +219,8 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Game.Simulation.ResidentialDemandSystem` | GameSimulation | `global` | blob "Demand.Residential" | demand bars |
 | `Game.Simulation.ResourceAvailabilitySystem` | GameSimulation | `hostonly` | host-only cursor | round-robin cursor of the host's availability update; results travel as net values |
 | `Game.Simulation.ServiceFeeSystem` | GameSimulation | `global` | custom channel "Fees.Collected" (1 s) | w3/audit fix: the fee cache the budget panel's fee income is computed from (CollectedCityServiceFeeData on service prefabs, which do not replicate); the fee queue is host-internal |
-| `Game.Simulation.SimulationSystem` | LateUpdate | `clock` | follower clock (frame index, speed) | ARCH 6.1 |
-| `Game.Simulation.SnowSystem` | GameSimulation, EditorSimulation | `local` | cosmetic allow-list | snow cover is simulated locally for visuals (ARCH 2.4) |
+| `Game.Simulation.SimulationSystem` | LateUpdate | `clock` | follower clock (frame index, speed) | [follower clock](../ARCHITECTURE.md#follower-clock) |
+| `Game.Simulation.SnowSystem` | GameSimulation, EditorSimulation | `local` | cosmetic allow-list | snow cover is simulated locally for visuals |
 | `Game.Simulation.SoilWaterSystem` | - | `cellmap` | CellMapSync | soil water map |
 | `Game.Simulation.TaxSystem` | GameSimulation | `global` | GlobalChannel.Tax (both ways) | tax rates |
 | `Game.Simulation.TelecomCoverageSystem` | GameSimulation | `cellmap` | CellMapSync | telecom map |
@@ -267,11 +267,11 @@ Generated from **748** serializable components and buffers and **73** serializab
 |---|---|---|---|---|
 | `Area` | component | `structure` | structure codec | lots, districts, surfaces, spaces, map tiles |
 | `Batch` | component (empty) | `derived` | rendering | derived |
-| `BorderDistrict` | component | `derived` | district systems on every peer | ARCH 2.1 |
+| `BorderDistrict` | component | `derived` | district systems on every peer | persistent structure |
 | `ChangedDistrict` | component (empty) | `transient` | one-frame marker | - |
 | `Clear` | component (empty) | `structure` | structure codec | lots, districts, surfaces, spaces, map tiles |
 | `Clip` | component (empty) | `structure` | structure codec | lots, districts, surfaces, spaces, map tiles |
-| `CurrentDistrict` | component | `derived` | district systems on every peer | ARCH 2.1 |
+| `CurrentDistrict` | component | `derived` | district systems on every peer | persistent structure |
 | `District` | component | `structure` | structure codec | lots, districts, surfaces, spaces, map tiles |
 | `DistrictModifier` | buffer | `derived` | from replicated district policies | - |
 | `Expand` | buffer (empty) | `derived` | Areas.GeometrySystem | derived |
@@ -303,7 +303,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `AttractivenessProvider` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `Battery` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `BicycleParkingFacility` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
-| `Building` | component | `structure` | structure codec (deferred road fields) | ARCH 4.2.5 |
+| `Building` | component | `structure` | structure codec (deferred road fields) | [host capture](../ARCHITECTURE.md#host-capture) |
 | `BuildingCondition` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `BuildingEfficiency` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `BuildingModifier` | buffer | `structure` | structure codec | policies of buildings (GlobalChannel.Policy) |
@@ -342,12 +342,12 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `MailProducer` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `MaintenanceDepot` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `ModifiedServiceCoverage` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
-| `Occupant` | buffer | `agents` | data on buildings; occupants are citizens | ARCH 4.2.4 |
+| `Occupant` | buffer | `agents` | data on buildings; occupants are citizens | [agents](../ARCHITECTURE.md#agents) |
 | `OfficeProperty` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `Park` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `ParkMaintenance` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `ParkingFacility` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
-| `Patient` | buffer | `agents` | data on buildings; patients are citizens | ARCH 4.2.4 |
+| `Patient` | buffer | `agents` | data on buildings; patients are citizens | [agents](../ARCHITECTURE.md#agents) |
 | `PoliceStation` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `PollutionEmitModifier` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `PostFacility` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
@@ -357,7 +357,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `PropertyToBeOnMarket` | component (empty) | `presence` | structure codec + presence watch | property market |
 | `PublicTransportStation` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `RenewableElectricityProduction` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
-| `Renter` | buffer (empty) | `agents` | data on buildings; renters are agents | ARCH 4.2.4 |
+| `Renter` | buffer (empty) | `agents` | data on buildings; renters are agents | [agents](../ARCHITECTURE.md#agents) |
 | `RescueTarget` | component | `presence` | structure codec + presence watch | targets of disaster rescue |
 | `ResearchFacility` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `ResidentialProperty` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
@@ -372,7 +372,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Signature` | component (empty) | `structure` | structure codec | signature marker |
 | `SpawnLocationElement` | buffer (empty) | `derived` | on every peer | from sub-objects |
 | `StorageProperty` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
-| `Student` | buffer (empty) | `agents` | data on buildings; students are citizens | ARCH 4.2.4 |
+| `Student` | buffer (empty) | `agents` | data on buildings; students are citizens | [agents](../ARCHITECTURE.md#agents) |
 | `StudentsRemoved` | component (empty) | `agents` | marker of student removal (citizens) | host simulation |
 | `TelecomConsumer` | component (empty) | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
 | `TelecomFacility` | component | `values` | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records |
@@ -480,7 +480,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `CompanyNotifications` | component | `agents` | agent replication | companies |
 | `CompanyStatisticData` | component | `agents` | agent replication | companies |
 | `CurrentTrading` | buffer | `agents` | agent replication | companies |
-| `Employee` | buffer | `agents` | data on buildings; employees are citizens | ARCH 4.2.4 |
+| `Employee` | buffer | `agents` | data on buildings; employees are citizens | [agents](../ARCHITECTURE.md#agents) |
 | `ExtractorCompany` | component (empty) | `agents` | agent replication | companies |
 | `FreeWorkplaces` | component | `agents` | agent replication | companies |
 | `IndustrialCompany` | component (empty) | `agents` | agent replication | companies |
@@ -582,34 +582,34 @@ Generated from **748** serializable components and buffers and **73** serializab
 
 | Type | Kind | Status | Mechanism | Note |
 |---|---|---|---|---|
-| `Aggregate` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `AggregateElement` | buffer | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `Aggregated` | component (empty) | `derived` | AggregateSystem, reconciled to the host's AggregateElement list | ARCH 4.7.8 |
+| `Aggregate` | component (empty) | `structure` | structure codec | net nodes and edges |
+| `AggregateElement` | buffer | `structure` | structure codec | net nodes and edges |
+| `Aggregated` | component (empty) | `derived` | AggregateSystem, reconciled to the host's AggregateElement list | [client apply](../ARCHITECTURE.md#client-apply) |
 | `AreaLane` | component | `derived` | lanes | derived |
 | `ArrowMaterial` | shared (empty) | `derived` | arrows | derived |
 | `ArrowPosition` | buffer (empty) | `derived` | arrows | derived |
 | `Bottleneck` | component | `icons` | traffic bottleneck marker; the notification travels on IconSync | host simulation (TrafficBottleneckSystem) |
-| `BuildOrder` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `BuildOrder` | component | `structure` | structure codec | net nodes and edges |
 | `CarLane` | component | `derived` | lanes | derived |
 | `Composition` | component (empty) | `derived` | CompositionSelect on every peer | derived |
 | `ConnectedEdge` | buffer (empty) | `derived` | reference systems | derived |
-| `ConnectedNode` | buffer | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `ConnectedNode` | buffer | `structure` | structure codec | net nodes and edges |
 | `ConnectionLane` | component | `derived` | lanes | derived |
 | `CoverageServiceType` | shared | `derived` | coverage | shared component of coverage data |
-| `Curve` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `CutRange` | buffer | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Curve` | component | `structure` | structure codec | net nodes and edges |
+| `CutRange` | buffer | `structure` | structure codec | net nodes and edges |
 | `Density` | component | `values` | attention values | density |
-| `Edge` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Edge` | component | `structure` | structure codec | net nodes and edges |
 | `EdgeColor` | component (empty) | `derived` | rendering (infoview colours from replicated values) | derived |
 | `EdgeGeometry` | component (empty) | `derived` | Net.GeometrySystem | derived |
 | `EdgeLane` | component | `derived` | lanes | derived |
 | `EdgeMapping` | component (empty) | `derived` | rendering | derived |
 | `ElectricityConnection` | component (empty) | `derived` | flow graph | derived |
-| `Elevation` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Elevation` | component | `structure` | structure codec | net nodes and edges |
 | `EndNodeGeometry` | component (empty) | `derived` | Net.GeometrySystem | derived |
-| `Fixed` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Fixed` | component | `structure` | structure codec | net nodes and edges |
 | `GarageLane` | component | `derived` | lanes | derived |
-| `Gate` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Gate` | component (empty) | `structure` | structure codec | net nodes and edges |
 | `HangingLane` | component | `derived` | lanes | derived |
 | `LabelExtents` | component (empty) | `derived` | labels | derived |
 | `LabelMaterial` | shared (empty) | `derived` | labels | derived |
@@ -625,45 +625,45 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `LaneObject` | buffer (empty) | `derived` | reference systems rebuild it from movers | derived |
 | `LaneOverlap` | buffer (empty) | `derived` | lanes | derived |
 | `LaneReservation` | component | `movers` | reservations follow the movers | client-side reference systems |
-| `LaneSignal` | component | `derived` | from node TrafficLights | ARCH 4.9.9 |
-| `LocalConnect` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `Marker` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `LaneSignal` | component | `derived` | from node TrafficLights | [traffic lights](../ARCHITECTURE.md#events-chirps-and-traffic-lights) |
+| `LocalConnect` | component (empty) | `structure` | structure codec | net nodes and edges |
+| `Marker` | component (empty) | `structure` | structure codec | net nodes and edges |
 | `MasterLane` | component | `derived` | lanes | derived |
 | `NetCondition` | component | `values` | attention values | wear |
-| `NetCustomColorVariation` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `Node` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `NetCustomColorVariation` | component | `structure` | structure codec | net nodes and edges |
+| `Node` | component | `structure` | structure codec | net nodes and edges |
 | `NodeColor` | component (empty) | `derived` | rendering | derived |
 | `NodeGeometry` | component (empty) | `derived` | Net.GeometrySystem | derived |
 | `NodeLane` | component | `derived` | lanes | derived |
-| `Orphan` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `OutsideConnection` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Orphan` | component (empty) | `structure` | structure codec | net nodes and edges |
+| `OutsideConnection` | component | `structure` | structure codec | net nodes and edges |
 | `ParkingLane` | component | `derived` | lanes | derived |
 | `PedestrianLane` | component | `derived` | lanes | derived |
 | `Pollution` | component | `values` | attention values | net pollution |
 | `ResourceAvailability` | buffer | `values` | attention values | availability buffers |
 | `ResourceConnection` | component | `derived` | flow graph | derived |
-| `Road` | component | `structure` | structure codec; traffic flow and LightsOff by attention values | ARCH 3.8 |
-| `Roundabout` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Road` | component | `structure` | structure codec; traffic flow and LightsOff by attention values | [simulation values](../ARCHITECTURE.md#simulation-values) |
+| `Roundabout` | component (empty) | `structure` | structure codec | net nodes and edges |
 | `SecondaryFlow` | component | `values` | attention values | secondary flow of edges |
 | `SecondaryLane` | component (empty) | `derived` | lanes | derived |
 | `ServiceCoverage` | buffer | `values` | attention values | coverage buffers |
 | `SlaveLane` | component | `derived` | lanes | derived |
-| `Standalone` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Standalone` | component (empty) | `structure` | structure codec | net nodes and edges |
 | `StartNodeGeometry` | component (empty) | `derived` | Net.GeometrySystem | derived |
 | `SubFlow` | buffer (empty) | `derived` | flow | derived |
 | `SubLane` | buffer (empty) | `derived` | lanes | derived |
 | `SubNet` | buffer (empty) | `derived` | reference systems | derived |
-| `SubReplacement` | buffer | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `SubwayTrack` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `Taxiway` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `SubReplacement` | buffer | `structure` | structure codec | net nodes and edges |
+| `SubwayTrack` | component (empty) | `structure` | structure codec | net nodes and edges |
+| `Taxiway` | component (empty) | `structure` | structure codec | net nodes and edges |
 | `TrackLane` | component | `derived` | lanes | derived |
 | `TrafficLights` | component | `values` | attention values (fast path for junctions in view) | node signal state |
-| `TrainTrack` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `TramTrack` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
-| `Upgraded` | component | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `TrainTrack` | component (empty) | `structure` | structure codec | net nodes and edges |
+| `TramTrack` | component (empty) | `structure` | structure codec | net nodes and edges |
+| `Upgraded` | component | `structure` | structure codec | net nodes and edges |
 | `UtilityLane` | component | `derived` | lanes | derived |
 | `WaterPipeConnection` | component | `derived` | flow graph | derived |
-| `Waterway` | component (empty) | `structure` | structure codec | net nodes and edges (ARCH 2.1) |
+| `Waterway` | component (empty) | `structure` | structure codec | net nodes and edges |
 
 #### Game.Notifications (4)
 
@@ -706,10 +706,10 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Stack` | component | `structure` | structure codec | objects: buildings, props, trees, decals, stops |
 | `Static` | component (empty) | `structure` | structure codec | objects: buildings, props, trees, decals, stops |
 | `Stopped` | component (empty) | `movers` | mover discrete state | movers |
-| `StreetLight` | component | `derived` | StreetLightDerive from replicated owner flags | ARCH 6.4 |
+| `StreetLight` | component | `derived` | StreetLightDerive from replicated owner flags | derived on every peer |
 | `SubObject` | buffer (empty) | `derived` | SubObjectSystem on every peer | derived children |
-| `Surface` | component | `local` | excluded (cosmetic: WetnessSystem, DirtynessSystem) | documented fidelity exception (ARCH 2.4) |
-| `TrafficLight` | component | `derived` | from replicated node TrafficLights | ARCH 4.9.9 |
+| `Surface` | component | `local` | excluded (cosmetic: WetnessSystem, DirtynessSystem) | documented fidelity exception ([known limitations](../ARCHITECTURE.md#known-limitations)) |
+| `TrafficLight` | component | `derived` | from replicated node TrafficLights | [traffic lights](../ARCHITECTURE.md#events-chirps-and-traffic-lights) |
 | `Transform` | component | `structure` | structure codec | objects: buildings, props, trees, decals, stops |
 | `TransformFrame` | buffer | `movers` | motion channel | interpolation frames |
 | `Tree` | component | `values` | attention values + structure codec | tree growth state |
@@ -725,8 +725,8 @@ Generated from **748** serializable components and buffers and **73** serializab
 | Type | Kind | Status | Mechanism | Note |
 |---|---|---|---|---|
 | `CoverageElement` | buffer (empty) | `derived` | coverage pathfinding | derived |
-| `PathElement` | buffer | `scan` | route segments: host path state (lanes as keys); movers: on demand | ARCH 4.11.3 |
-| `PathInformation` | component | `scan` | route segments: host path state | ARCH 4.11.3 |
+| `PathElement` | buffer | `scan` | route segments: host path state (lanes as keys); movers: on demand | [transport lines](../ARCHITECTURE.md#structure-and-transport-lines) |
+| `PathInformation` | component | `scan` | route segments: host path state | [transport lines](../ARCHITECTURE.md#structure-and-transport-lines) |
 | `PathInformations` | buffer | `hostonly` | pathfinding of agents | host simulation |
 | `PathOwner` | component | `movers` | mover state | vehicles and creatures |
 
@@ -941,7 +941,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `CarParking` | component (empty) | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
 | `Color` | component | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
 | `Connected` | component | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
-| `ConnectedRoute` | buffer (empty) | `keyed` | data on stops (ARCH 4.2.4) | stop links |
+| `ConnectedRoute` | buffer (empty) | `keyed` | data on stops | stop links |
 | `CurrentRoute` | component | `movers` | mover forward reference | vehicles |
 | `CurveElement` | buffer (empty) | `derived` | SegmentCurveSystem from host path state | derived |
 | `DispatchedRequest` | buffer | `hostonly` | service requests | host simulation |
@@ -957,7 +957,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `RouteModifier` | buffer | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
 | `RouteNumber` | component | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
 | `RouteSegment` | buffer (empty) | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
-| `RouteVehicle` | buffer (empty) | `scan` | data on routes (ARCH 4.2.4) | vehicles of a line |
+| `RouteVehicle` | buffer (empty) | `scan` | data on routes | vehicles of a line |
 | `RouteWaypoint` | buffer (empty) | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
 | `Segment` | component | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
 | `ShipStop` | component (empty) | `structure` | structure codec + route value scan | lines, waypoints, segments, stops |
@@ -991,7 +991,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Creditworthiness` | component | `scan` | City entity value scan (1 s) | loan panel |
 | `Dispatched` | component | `hostonly` | service requests (TransientAgent family) | requests and dispatch are host simulation |
 | `ElectricityBuildingConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (transformer, producer, consumer, charge, discharge) |
-| `ElectricityFlowEdge` | component | `keyed` | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | w4/flow fix: infoview colours of power lines and transformers (ARCH 4.11.5) |
+| `ElectricityFlowEdge` | component | `keyed` | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | w4/flow fix: infoview colours of power lines and transformers ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status)) |
 | `ElectricityFlowNode` | component (empty) | `derived` | flow graph | derived topology |
 | `ElectricityNodeConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys |
 | `ElectricityValveConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys |
@@ -1019,7 +1019,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `TransportVehicleRequest` | component | `hostonly` | TransientAgent family | host simulation |
 | `UpdateFrame` | shared | `movers` | spawn bundle (host UpdateFrame) / prefab archetype | shared component; set on spawn |
 | `WaterPipeBuildingConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (producer, consumer) |
-| `WaterPipeEdge` | component | `keyed` | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | w4/flow fix: infoview colours of water and sewage pipes (ARCH 4.11.5) |
+| `WaterPipeEdge` | component | `keyed` | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | w4/flow fix: infoview colours of water and sewage pipes ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status)) |
 | `WaterPipeNode` | component | `derived` | flow graph | derived topology |
 | `WaterPipeNodeConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys |
 | `WaterPipeValveConnection` | component | `derived` | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys |
@@ -1031,7 +1031,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 |---|---|---|---|---|
 | `EditorContainer` | component | `excluded` | editor only | - |
 | `LocalTransformCache` | component | `transient` | tool-time cache | - |
-| `Recent` | component | `structure` | structure codec (refund bookkeeping) | ARCH 2.1 |
+| `Recent` | component | `structure` | structure codec (refund bookkeeping) | persistent structure |
 
 #### Game.Triggers (6)
 
@@ -1054,62 +1054,62 @@ Generated from **748** serializable components and buffers and **73** serializab
 
 | Type | Kind | Status | Mechanism | Note |
 |---|---|---|---|---|
-| `Aircraft` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `AircraftCurrentLane` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `AircraftNavigation` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `AircraftNavigationLane` | buffer | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Airplane` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Ambulance` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Bicycle` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Blocker` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Car` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `CarCurrentLane` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `CarNavigation` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `CarNavigationLane` | buffer | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `CarTrailer` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `CarTrailerLane` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `CargoTransport` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Controller` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `DeliveryTruck` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `EvacuatingTransport` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `FireEngine` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `GarbageTruck` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `GoodsDeliveryVehicle` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `GuestVehicle` | buffer (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Hearse` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Helicopter` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `LayoutElement` | buffer | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `LoadingResources` | buffer | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `MaintenanceVehicle` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Odometer` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `OutOfControl` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
+| `Aircraft` | component | `movers` | mover channel | vehicles |
+| `AircraftCurrentLane` | component | `movers` | mover channel | vehicles |
+| `AircraftNavigation` | component | `movers` | mover channel | vehicles |
+| `AircraftNavigationLane` | buffer | `movers` | mover channel | vehicles |
+| `Airplane` | component (empty) | `movers` | mover channel | vehicles |
+| `Ambulance` | component | `movers` | mover channel | vehicles |
+| `Bicycle` | component (empty) | `movers` | mover channel | vehicles |
+| `Blocker` | component | `movers` | mover channel | vehicles |
+| `Car` | component | `movers` | mover channel | vehicles |
+| `CarCurrentLane` | component | `movers` | mover channel | vehicles |
+| `CarNavigation` | component | `movers` | mover channel | vehicles |
+| `CarNavigationLane` | buffer | `movers` | mover channel | vehicles |
+| `CarTrailer` | component (empty) | `movers` | mover channel | vehicles |
+| `CarTrailerLane` | component | `movers` | mover channel | vehicles |
+| `CargoTransport` | component | `movers` | mover channel | vehicles |
+| `Controller` | component (empty) | `movers` | mover channel | vehicles |
+| `DeliveryTruck` | component | `movers` | mover channel | vehicles |
+| `EvacuatingTransport` | component (empty) | `movers` | mover channel | vehicles |
+| `FireEngine` | component | `movers` | mover channel | vehicles |
+| `GarbageTruck` | component | `movers` | mover channel | vehicles |
+| `GoodsDeliveryVehicle` | component | `movers` | mover channel | vehicles |
+| `GuestVehicle` | buffer (empty) | `movers` | mover channel | vehicles |
+| `Hearse` | component | `movers` | mover channel | vehicles |
+| `Helicopter` | component (empty) | `movers` | mover channel | vehicles |
+| `LayoutElement` | buffer | `movers` | mover channel | vehicles |
+| `LoadingResources` | buffer | `movers` | mover channel | vehicles |
+| `MaintenanceVehicle` | component | `movers` | mover channel | vehicles |
+| `Odometer` | component | `movers` | mover channel | vehicles |
+| `OutOfControl` | component (empty) | `movers` | mover channel | vehicles |
 | `OwnedVehicle` | buffer (empty) | `derived` | reference systems rebuild it from replicated vehicles | - |
-| `ParkMaintenanceVehicle` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `ParkedCar` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `ParkedTrain` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Passenger` | buffer (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `PassengerTransport` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `PersonalCar` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `PoliceCar` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `PostVan` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `PrisonerTransport` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Produced` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `PublicTransport` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `ReturnLoad` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `RoadMaintenanceVehicle` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Rocket` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Taxi` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Train` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `TrainBogieFrame` | buffer (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `TrainCurrentLane` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `TrainNavigation` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `TrainNavigationLane` | buffer | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Vehicle` | component (empty) | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `Watercraft` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `WatercraftCurrentLane` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `WatercraftNavigation` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `WatercraftNavigationLane` | buffer | `movers` | mover channel | vehicles (ARCH 2.3) |
-| `WorkVehicle` | component | `movers` | mover channel | vehicles (ARCH 2.3) |
+| `ParkMaintenanceVehicle` | component (empty) | `movers` | mover channel | vehicles |
+| `ParkedCar` | component | `movers` | mover channel | vehicles |
+| `ParkedTrain` | component | `movers` | mover channel | vehicles |
+| `Passenger` | buffer (empty) | `movers` | mover channel | vehicles |
+| `PassengerTransport` | component (empty) | `movers` | mover channel | vehicles |
+| `PersonalCar` | component | `movers` | mover channel | vehicles |
+| `PoliceCar` | component | `movers` | mover channel | vehicles |
+| `PostVan` | component | `movers` | mover channel | vehicles |
+| `PrisonerTransport` | component (empty) | `movers` | mover channel | vehicles |
+| `Produced` | component | `movers` | mover channel | vehicles |
+| `PublicTransport` | component | `movers` | mover channel | vehicles |
+| `ReturnLoad` | component | `movers` | mover channel | vehicles |
+| `RoadMaintenanceVehicle` | component (empty) | `movers` | mover channel | vehicles |
+| `Rocket` | component (empty) | `movers` | mover channel | vehicles |
+| `Taxi` | component | `movers` | mover channel | vehicles |
+| `Train` | component | `movers` | mover channel | vehicles |
+| `TrainBogieFrame` | buffer (empty) | `movers` | mover channel | vehicles |
+| `TrainCurrentLane` | component | `movers` | mover channel | vehicles |
+| `TrainNavigation` | component | `movers` | mover channel | vehicles |
+| `TrainNavigationLane` | buffer | `movers` | mover channel | vehicles |
+| `Vehicle` | component (empty) | `movers` | mover channel | vehicles |
+| `Watercraft` | component | `movers` | mover channel | vehicles |
+| `WatercraftCurrentLane` | component | `movers` | mover channel | vehicles |
+| `WatercraftNavigation` | component | `movers` | mover channel | vehicles |
+| `WatercraftNavigationLane` | buffer | `movers` | mover channel | vehicles |
+| `WorkVehicle` | component | `movers` | mover channel | vehicles |
 
 #### Game.Zones (7)
 

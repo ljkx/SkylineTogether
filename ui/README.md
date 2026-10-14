@@ -1,7 +1,7 @@
 # ui/
 
-Home of the hand-written UI module (no bundler, no Node dependency at runtime; ARCH §11.2,
-IMPLEMENTATION-PLAN §2.6), owned by the game-ui module:
+Home of the hand-written UI module (no bundler, no Node dependency at runtime; see
+[ARCHITECTURE.md](../docs/ARCHITECTURE.md#ui-module)):
 
 - `SkylineTogether.mjs`: the ES module the game loads from `coui://ui-mods/SkylineTogether.mjs`. Its first block
   comment must contain the exact line `Cities: Skylines II UI Module`, followed by `Id:`, `Author:`, `Version:` and

@@ -23,7 +23,7 @@ system:Game.Prefabs.PrefabSystem | snapshot | handshake: same mods, same version
 system:Game.Rendering.MarkerIconSystem | local | - | marker icons are presentation
 system:Game.Rendering.TerrainMaterialSystem | terrain | TerrainSync (splatmap tiles) | terrain paint
 system:Game.Rendering.WaterRenderSystem | local | - | render state
-system:Game.Routes.RoutePathSystem | derived | gated except in the route-tool preview window | lazy update set; line paths are host data (line state, ARCH 4.11)
+system:Game.Routes.RoutePathSystem | derived | gated except in the route-tool preview window | lazy update set; line paths are host data (line state, [transport lines](../ARCHITECTURE.md#structure-and-transport-lines))
 system:Game.Simulation.AirPollutionSystem | cellmap | CellMapSync | air pollution map
 system:Game.Simulation.AvailabilityInfoToGridSystem | cellmap | CellMapSync | availability map
 system:Game.Simulation.CitizenHappinessSystem | global | blob "Happiness" (5 s) | w3/audit fix: happiness factors of the city info panel
@@ -62,8 +62,8 @@ system:Game.Simulation.ProductionSpecializationSystem | values | City Specializa
 system:Game.Simulation.ResidentialDemandSystem | global | blob "Demand.Residential" | demand bars
 system:Game.Simulation.ResourceAvailabilitySystem | hostonly | host-only cursor | round-robin cursor of the host's availability update; results travel as net values
 system:Game.Simulation.ServiceFeeSystem | global | custom channel "Fees.Collected" (1 s) | w3/audit fix: the fee cache the budget panel's fee income is computed from (CollectedCityServiceFeeData on service prefabs, which do not replicate); the fee queue is host-internal
-system:Game.Simulation.SimulationSystem | clock | follower clock (frame index, speed) | ARCH 6.1
-system:Game.Simulation.SnowSystem | local | cosmetic allow-list | snow cover is simulated locally for visuals (ARCH 2.4)
+system:Game.Simulation.SimulationSystem | clock | follower clock (frame index, speed) | [follower clock](../ARCHITECTURE.md#follower-clock)
+system:Game.Simulation.SnowSystem | local | cosmetic allow-list | snow cover is simulated locally for visuals
 system:Game.Simulation.SoilWaterSystem | cellmap | CellMapSync | soil water map
 system:Game.Simulation.TaxSystem | global | GlobalChannel.Tax (both ways) | tax rates
 system:Game.Simulation.TelecomCoverageSystem | cellmap | CellMapSync | telecom map
@@ -112,12 +112,12 @@ Game.Simulation.WaterSourceData | water | WaterSource family (structure) | water
 Game.Simulation.UpdateFrame | movers | spawn bundle (host UpdateFrame) / prefab archetype | shared component; set on spawn
 Game.Simulation.MaintenanceConsumer | values | attention values | on buildings and nets
 Game.Simulation.ElectricityBuildingConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (transformer, producer, consumer, charge, discharge)
-Game.Simulation.ElectricityFlowEdge | keyed | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | w4/flow fix: infoview colours of power lines and transformers (ARCH 4.11.5)
+Game.Simulation.ElectricityFlowEdge | keyed | topology derived; flow, capacity and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Electricity topic | w4/flow fix: infoview colours of power lines and transformers ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status))
 Game.Simulation.ElectricityFlowNode | derived | flow graph | derived topology
 Game.Simulation.ElectricityNodeConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys
 Game.Simulation.ElectricityValveConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys
 Game.Simulation.WaterPipeBuildingConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the building flow nodes of flow keys (producer, consumer)
-Game.Simulation.WaterPipeEdge | keyed | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | w4/flow fix: infoview colours of water and sewage pipes (ARCH 4.11.5)
+Game.Simulation.WaterPipeEdge | keyed | topology derived; fresh and sewage flow, capacities, pollution and flags by flow key (FlowStatusSync, MessageKind.FlowStatus) to peers with the Water topic | w4/flow fix: infoview colours of water and sewage pipes ([flow status](../ARCHITECTURE.md#statistics-icons-and-flow-status))
 Game.Simulation.WaterPipeNode | derived | flow graph | derived topology
 Game.Simulation.WaterPipeNodeConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology on net nodes and edges; names the Net flow node of flow keys
 Game.Simulation.WaterPipeValveConnection | derived | flow graph; excluded from structure records (TypeHandlers) | derived topology; names the Valve flow node of flow keys
@@ -166,7 +166,7 @@ Game.Common.TimeData | snapshot | join snapshot | start date of the city; time r
 
 # ---- buildings --------------------------------------------------------------------------------------------------------
 Game.Buildings.* | values | attention values (structure entities: buildings, extensions, upgrades) | simulation state of buildings; presence changes in structure records
-Game.Buildings.Building | structure | structure codec (deferred road fields) | ARCH 4.2.5
+Game.Buildings.Building | structure | structure codec (deferred road fields) | [host capture](../ARCHITECTURE.md#host-capture)
 Game.Buildings.Extension | structure | structure codec | building extensions
 Game.Buildings.ServiceUpgrade | structure | structure codec | service upgrades
 Game.Buildings.InstalledUpgrade | derived | reference systems on every peer | from replicated upgrades
@@ -180,10 +180,10 @@ Game.Buildings.RescueTarget | presence | structure codec + presence watch | targ
 Game.Buildings.PropertyOnMarket | presence | structure codec + presence watch, values by attention | property market
 Game.Buildings.PropertyToBeOnMarket | presence | structure codec + presence watch | property market
 Game.Buildings.PropertyRenter | agents | agent replication (households, companies) | renters are agents
-Game.Buildings.Renter | agents | data on buildings; renters are agents | ARCH 4.2.4
-Game.Buildings.Occupant | agents | data on buildings; occupants are citizens | ARCH 4.2.4
-Game.Buildings.Patient | agents | data on buildings; patients are citizens | ARCH 4.2.4
-Game.Buildings.Student | agents | data on buildings; students are citizens | ARCH 4.2.4
+Game.Buildings.Renter | agents | data on buildings; renters are agents | [agents](../ARCHITECTURE.md#agents)
+Game.Buildings.Occupant | agents | data on buildings; occupants are citizens | [agents](../ARCHITECTURE.md#agents)
+Game.Buildings.Patient | agents | data on buildings; patients are citizens | [agents](../ARCHITECTURE.md#agents)
+Game.Buildings.Student | agents | data on buildings; students are citizens | [agents](../ARCHITECTURE.md#agents)
 Game.Buildings.StudentsRemoved | agents | marker of student removal (citizens) | host simulation
 Game.Buildings.Signature | structure | structure codec | signature marker
 Game.Buildings.CityEffectProvider | structure | structure codec | marker
@@ -196,9 +196,9 @@ Game.Objects.UnderConstruction | presence | structure codec + presence watch, va
 Game.Objects.Plant | values | attention values | plant growth
 Game.Objects.Tree | values | attention values + structure codec | tree growth state
 Game.Objects.Quantity | values | attention values | stored quantities
-Game.Objects.Surface | local | excluded (cosmetic: WetnessSystem, DirtynessSystem) | documented fidelity exception (ARCH 2.4)
-Game.Objects.StreetLight | derived | StreetLightDerive from replicated owner flags | ARCH 6.4
-Game.Objects.TrafficLight | derived | from replicated node TrafficLights | ARCH 4.9.9
+Game.Objects.Surface | local | excluded (cosmetic: WetnessSystem, DirtynessSystem) | documented fidelity exception ([known limitations](../ARCHITECTURE.md#known-limitations))
+Game.Objects.StreetLight | derived | StreetLightDerive from replicated owner flags | derived on every peer
+Game.Objects.TrafficLight | derived | from replicated node TrafficLights | [traffic lights](../ARCHITECTURE.md#events-chirps-and-traffic-lights)
 Game.Objects.Secondary | derived | SecondaryObjectSystem on every peer | derived objects
 Game.Objects.SubObject | derived | SubObjectSystem on every peer | derived children
 Game.Objects.Moving | movers | MoverClient | motion
@@ -211,7 +211,7 @@ Game.Objects.Marker | structure | structure codec | marker objects
 Game.Objects.Color | structure | structure codec | colour marker
 
 # ---- nets -------------------------------------------------------------------------------------------------------------
-Game.Net.* | structure | structure codec | net nodes and edges (ARCH 2.1)
+Game.Net.* | structure | structure codec | net nodes and edges
 Game.Net.NetCondition | values | attention values | wear
 Game.Net.Pollution | values | attention values | net pollution
 Game.Net.LandValue | values | attention values | land value of edges
@@ -219,7 +219,7 @@ Game.Net.Density | values | attention values | density
 Game.Net.ServiceCoverage | values | attention values | coverage buffers
 Game.Net.ResourceAvailability | values | attention values | availability buffers
 Game.Net.TrafficLights | values | attention values (fast path for junctions in view) | node signal state
-Game.Net.Road | structure | structure codec; traffic flow and LightsOff by attention values | ARCH 3.8
+Game.Net.Road | structure | structure codec; traffic flow and LightsOff by attention values | [simulation values](../ARCHITECTURE.md#simulation-values)
 Game.Net.SecondaryFlow | values | attention values | secondary flow of edges
 Game.Net.Bottleneck | icons | traffic bottleneck marker; the notification travels on IconSync | host simulation (TrafficBottleneckSystem)
 Game.Net.Lane | derived | lanes regenerated on every peer (LaneSystem) | portable lane keys when referenced
@@ -240,7 +240,7 @@ Game.Net.SecondaryLane | derived | lanes | derived
 Game.Net.LaneCondition | derived | lanes (wear shown from edges) | derived
 Game.Net.LaneFlow | derived | lanes | traffic flow shown from the replicated Road flow vectors
 Game.Net.LaneReservation | movers | reservations follow the movers | client-side reference systems
-Game.Net.LaneSignal | derived | from node TrafficLights | ARCH 4.9.9
+Game.Net.LaneSignal | derived | from node TrafficLights | [traffic lights](../ARCHITECTURE.md#events-chirps-and-traffic-lights)
 Game.Net.LaneConnection | derived | lanes | derived
 Game.Net.LaneObject | derived | reference systems rebuild it from movers | derived
 Game.Net.LaneOverlap | derived | lanes | derived
@@ -264,7 +264,7 @@ Game.Net.LabelPosition | derived | labels | derived
 Game.Net.LabelVertex | derived | labels | derived
 Game.Net.ArrowMaterial | derived | arrows | derived
 Game.Net.ArrowPosition | derived | arrows | derived
-Game.Net.Aggregated | derived | AggregateSystem, reconciled to the host's AggregateElement list | ARCH 4.7.8
+Game.Net.Aggregated | derived | AggregateSystem, reconciled to the host's AggregateElement list | [client apply](../ARCHITECTURE.md#client-apply)
 Game.Net.CoverageServiceType | derived | coverage | shared component of coverage data
 Game.Net.ElectricityConnection | derived | flow graph | derived
 Game.Net.WaterPipeConnection | derived | flow graph | derived
@@ -283,8 +283,8 @@ Game.Areas.SubArea | derived | reference systems | derived
 Game.Areas.LabelExtents | derived | labels | derived
 Game.Areas.LabelVertex | derived | labels | derived
 Game.Areas.Batch | derived | rendering | derived
-Game.Areas.CurrentDistrict | derived | district systems on every peer | ARCH 2.1
-Game.Areas.BorderDistrict | derived | district systems on every peer | ARCH 2.1
+Game.Areas.CurrentDistrict | derived | district systems on every peer | persistent structure
+Game.Areas.BorderDistrict | derived | district systems on every peer | persistent structure
 Game.Areas.ChangedDistrict | transient | one-frame marker | -
 Game.Areas.DistrictModifier | derived | from replicated district policies | -
 
@@ -293,7 +293,7 @@ Game.Zones.* | derived | BlockSystem on every peer | zone blocks are derived
 Game.Zones.Cell | keyed | zone cells by block key (ZoneCells records) | cell zone types; state and height derived
 Game.Zones.VacantLot | derived | CellCheckSystem | derived
 
-# ---- routes and transport lines (ARCH 4.11) ---------------------------------------------------------------------------
+# ---- routes and transport lines ---------------------------------------------------------------------------
 Game.Routes.* | structure | structure codec + route value scan | lines, waypoints, segments, stops
 Game.Routes.TransportLine | scan | route value scan | line state
 Game.Routes.RouteInfo | scan | route value scan | line state
@@ -302,8 +302,8 @@ Game.Routes.WaitingPassengers | keyed | stop state by key + route value scan | s
 Game.Routes.BoardingVehicle | keyed | stop state by key | station stops are sub-objects
 Game.Routes.TransportStop | keyed | stop state by key / structure codec | stops
 Game.Routes.TaxiStand | keyed | stop state by key | stops
-Game.Routes.ConnectedRoute | keyed | data on stops (ARCH 4.2.4) | stop links
-Game.Routes.RouteVehicle | scan | data on routes (ARCH 4.2.4) | vehicles of a line
+Game.Routes.ConnectedRoute | keyed | data on stops | stop links
+Game.Routes.RouteVehicle | scan | data on routes | vehicles of a line
 Game.Routes.CurrentRoute | movers | mover forward reference | vehicles
 Game.Routes.DispatchedRequest | hostonly | service requests | host simulation
 Game.Routes.CurveElement | derived | SegmentCurveSystem from host path state | derived
@@ -314,8 +314,8 @@ Game.Routes.MailBox | values | attention values | mail boxes
 Game.Routes.TakeoffLocation | structure | structure codec | airports
 
 # ---- pathfinding ------------------------------------------------------------------------------------------------------
-Game.Pathfind.PathElement | scan | route segments: host path state (lanes as keys); movers: on demand | ARCH 4.11.3
-Game.Pathfind.PathInformation | scan | route segments: host path state | ARCH 4.11.3
+Game.Pathfind.PathElement | scan | route segments: host path state (lanes as keys); movers: on demand | [transport lines](../ARCHITECTURE.md#structure-and-transport-lines)
+Game.Pathfind.PathInformation | scan | route segments: host path state | [transport lines](../ARCHITECTURE.md#structure-and-transport-lines)
 Game.Pathfind.PathInformations | hostonly | pathfinding of agents | host simulation
 Game.Pathfind.PathOwner | movers | mover state | vehicles and creatures
 Game.Pathfind.CoverageElement | derived | coverage pathfinding | derived
@@ -351,12 +351,12 @@ Game.Citizens.CoordinatedMeetingAttendee | hostonly | TransientAgent family | me
 Game.Citizens.Followed | actions | channel "Follow" (client deltas, host LifePathEventSystem.FollowCitizen) + agent replication | w3/audit fix: the followed list is part of the city and shared
 Game.Companies.* | agents | agent replication | companies
 Game.Companies.WorkProvider | values | attention values (service buildings) | worker capacity of service buildings
-Game.Companies.Employee | agents | data on buildings; employees are citizens | ARCH 4.2.4
+Game.Companies.Employee | agents | data on buildings; employees are citizens | [agents](../ARCHITECTURE.md#agents)
 Game.Agents.* | agents | agent replication (components of households and citizens) | tax payers, moving away, property seekers
 Game.Agents.JobSeeker | hostonly | TransientAgent family; references to it arrive as null | job search bookkeeping; the resulting jobs replicate with the agents
 
 # ---- movers -----------------------------------------------------------------------------------------------------------
-Game.Vehicles.* | movers | mover channel | vehicles (ARCH 2.3)
+Game.Vehicles.* | movers | mover channel | vehicles
 Game.Vehicles.OwnedVehicle | derived | reference systems rebuild it from replicated vehicles | -
 Game.Creatures.* | movers | mover channel | residents, pets, wildlife
 Game.Creatures.OwnedCreature | derived | reference systems | -
@@ -381,5 +381,5 @@ Game.Effects.EnabledEffect | derived | EffectControlSystem on every peer | from 
 Game.Achievements.EventAchievementTrackingData | excluded | - | achievements
 Game.Tools.EditorContainer | excluded | editor only | -
 Game.Tools.LocalTransformCache | transient | tool-time cache | -
-Game.Tools.Recent | structure | structure codec (refund bookkeeping) | ARCH 2.1
+Game.Tools.Recent | structure | structure codec (refund bookkeeping) | persistent structure
 Game.UI.CustomName | global | GlobalChannel.Name | custom name marker

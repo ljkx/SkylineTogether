@@ -21,8 +21,8 @@ tools/build.sh --deploy    # ... and copy the mod into your Mods folder
 ```
 
 If the game is not in the default Steam folder, add `--game-dir "<path>"`. Without the game you can still build and
-test Core. Details: [docs/dev/building.md](docs/dev/building.md). The [code map](docs/dev/code-map.md) explains where
-things are.
+test Core. Details: [docs/dev/building.md](docs/dev/building.md). The [architecture](docs/ARCHITECTURE.md) explains how
+the mod works and the [code map](docs/dev/code-map.md) where things are.
 
 ## Pull requests
 
@@ -41,7 +41,8 @@ Match the code around you. `.editorconfig` holds the mechanical rules:
 - Private fields `_camelCase`; constants, static readonly fields, types and members `PascalCase`. `var` is fine.
 - Nullable reference types and implicit usings are off.
 - Public types get a `/// <summary>` that says what the type is for and any rules a caller must know (thread affinity,
-  ownership, units). Comments explain *why*; cite the design section (`ARCH §4.7`) where one applies.
+  ownership, units). Comments explain *why*; cite the architecture section (`ARCHITECTURE.md#client-apply`) where one
+  applies.
 - Per-frame code avoids allocations: reuse collections, cache delegates, no LINQ on hot paths.
 
 Rules that keep the architecture intact:
@@ -81,7 +82,8 @@ and say so in the pull request.
   *Unreleased*.
 - Sync behaviour: update [SYNC-COVERAGE.md](docs/design/SYNC-COVERAGE.md), [ACTION-COVERAGE.md](docs/design/ACTION-COVERAGE.md)
   or [MOD-COMPATIBILITY.md](docs/design/MOD-COMPATIBILITY.md) as appropriate.
-- Design changes: a decision record in [docs/decisions/](docs/decisions/) and an "As built" note in ARCHITECTURE.md.
+- Design changes: update [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (it describes the code as built) and, for
+  decisions, add a record in [docs/decisions/](docs/decisions/).
 - Run `python tools/check_links.py` after moving or renaming documents.
 
 ## Clean-room policy

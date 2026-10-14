@@ -1,5 +1,8 @@
 # Proposal A — Maximum Fidelity ("Mirror City")
 
+> **Historical design record.** Written before the implementation and not maintained; the code differs in many
+> places. The current architecture is [docs/ARCHITECTURE.md](../ARCHITECTURE.md); see [README.md](README.md).
+
 Architecture proposal for **Skyline Together**, a from-scratch, host-authoritative co-op mod for Cities: Skylines II.
 Angle: **maximum fidelity** — the host is the single source of truth for all persistent city state *and* for the
 visible agents; every client is a *mirror* that runs only a follower simulation.

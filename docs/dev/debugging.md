@@ -87,7 +87,7 @@ described in [Troubleshooting → desync](../guide/troubleshooting.md#something-
 The solo test (record a session on the host, replay it through the client path on the same PC) exercises the joining
 player's code without a second PC and writes `verdict.txt` / `verdict.json` naming the components that differ. It is the
 fastest way to check a change to capture, codec or apply code. See the [testing guide](../guide/testing.md#solo-test-one-pc)
-and ARCHITECTURE [§13.5](../design/ARCHITECTURE.md#135-single-machine-test-harnesses).
+and [ARCHITECTURE.md](../ARCHITECTURE.md#solo-test-record-and-replay).
 
 ## Build identity
 

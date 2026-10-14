@@ -11,7 +11,7 @@
 
 - [ ] `tools/build.sh` passes locally (or, without the game: the Core build and tests, see docs/dev/building.md)
 - [ ] New Core behaviour has tests in `tests/SkylineTogether.Core.Tests`
-- [ ] Wire format, save format or data files changed? Then the relevant docs (ARCHITECTURE.md, SYNC-COVERAGE.md, ...)
+- [ ] Wire format, save format or data files changed? Then the relevant docs (docs/ARCHITECTURE.md, SYNC-COVERAGE.md, ...)
       are updated
 - [ ] User-visible texts are in both `locale.en-US.json` and `locale.de-DE.json`
 - [ ] The change is my own work and contains no code copied from other multiplayer mods, proprietary sources or

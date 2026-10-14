@@ -1,5 +1,8 @@
 # Proposal C: "Buildable & Robust" architecture for Skyline Together
 
+> **Historical design record.** Written before the implementation and not maintained; the code differs in many
+> places. The current architecture is [docs/ARCHITECTURE.md](../ARCHITECTURE.md); see [README.md](README.md).
+
 | | |
 |---|---|
 | Project | Skyline Together: a clean-room, from-scratch co-op mod for Cities: Skylines II (Unity Entities 1.0, Mono, C#) |

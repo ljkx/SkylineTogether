@@ -1,5 +1,8 @@
 # Skyline Together: Architecture
 
+> **Historical design record.** Written before the implementation and not maintained; the code differs in many
+> places. The current architecture is [docs/ARCHITECTURE.md](../ARCHITECTURE.md); see [README.md](README.md).
+
 | | |
 |---|---|
 | Status | **Authoritative design, version 1.1**, 2026-10-11. Version 1.1 resolves the design review of version 1.0 and implements the user requirement that transport lines and every other player-visible status indicator are host-authoritative (§4.11). Every finding, its verdict and the sections it changed are listed in the Review log at the end. This document supersedes proposals A, B and C. Changes to it require an explicit decision record (Appendix H). |
@@ -518,7 +521,7 @@ The new owner comes from the live value. The old owner comes from the tag sweep 
 - *Movers*: `SyncRecordKind.MoverAgents` (120) in the movers batches carries `Resident.m_Citizen` / `Pet.m_HouseholdPet`, `PersonalCar.m_Keeper` and a vehicle's `Owner` (written right after the spawn, so the kept reference systems derive `CurrentTransport` and `OwnedVehicle` as on the host; later owner changes keep `OwnedVehicle` in step).
 - *Client gates*: `HouseholdAndCitizenRemoveSystem`, `HouseholdPetRemoveSystem`, `RemovedSystem`, `SchoolUpdatedSystem`, `AddHealthProblemSystem` are off (the host sends every cascade); `Game.Serialization.CitizenSystem` (the load-time citizen prefab re-roll) is off for the whole client session, so snapshot citizens keep the host's prefab. Snapshot agents the host never bound are removed when the client goes live (guarded).
 - *Integrity*: agents are verified for existence and `HouseholdMember`, `HouseholdPet`, `HouseholdCitizen`, `HouseholdAnimal` (all promoted to the broadcast stream, so no repair storm); their values and the citizen prefab are not verified.
-- Chirps, life-path events and journal entries (`Family.Event`) and following a citizen were added later; see [SYNC-COVERAGE.md](SYNC-COVERAGE.md) fixes 1-3 and 13.
+- Chirps, life-path events and journal entries (`Family.Event`) and following a citizen were added later; see [SYNC-COVERAGE.md](../design/SYNC-COVERAGE.md) fixes 1-3 and 13.
 
 #### 4.2.7 Policy table
 

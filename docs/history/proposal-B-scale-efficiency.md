@@ -1,5 +1,8 @@
 # Proposal B: Skyline Together, architecture for scale and efficiency
 
+> **Historical design record.** Written before the implementation and not maintained; the code differs in many
+> places. The current architecture is [docs/ARCHITECTURE.md](../ARCHITECTURE.md); see [README.md](README.md).
+
 Status: architecture proposal (angle: SCALE AND EFFICIENCY), 2026-10-10.
 Scope: complete design of a host-authoritative co-op mod for Cities: Skylines II (2-8 players, Steam relay and direct
 connections, cities of 100k+ population, saves of 20-300 MB), optimised for modest relay bandwidth and modest CPU,

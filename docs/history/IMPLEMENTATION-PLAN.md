@@ -1,5 +1,8 @@
 # Skyline Together: Implementation Plan
 
+> **Historical design record.** Written before the implementation and not maintained; the code differs in many
+> places. The current architecture is [docs/ARCHITECTURE.md](../ARCHITECTURE.md); see [README.md](README.md).
+
 | | |
 |---|---|
 | Status | Version 1.1, 2026-10-11. Derived from `docs/design/ARCHITECTURE.md` version 1.1 (cited **ARCH §x**), which is authoritative. If the two disagree, the architecture wins and this plan is fixed. Version 1.1 applies the design review (ARCH "Review log"): two new Core modules (core-codec, core-follower), M5 split into M5a/M5b/M5c, host flow and host session start, transactional apply, outbox, epoch parts, revised contracts; and the user requirement U1 (host-authoritative transport lines and status indicators, ARCH §4.11): line state, icon authority filter, road-choice reconcile, received-value cache with re-resolution, guarded route-tool preview window, flow-status channel, UI-level line digest and acceptance test ST-LINES. |

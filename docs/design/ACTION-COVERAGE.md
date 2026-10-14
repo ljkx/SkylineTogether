@@ -1,7 +1,7 @@
 # Action coverage
 
 This document covers every player action from research 10 (`docs/research/10-player-actions.md`) and the vanilla tool
-actions. For each one it lists how the action syncs in both directions and where it is implemented. The design references are ARCH §5 and R10 §2-§7.
+actions. For each one it lists how the action syncs in both directions and where it is implemented. The design references are [client proposals](../ARCHITECTURE.md#client-proposals) and R10 §2-§7.
 
 ## How each action travels
 
@@ -14,7 +14,7 @@ actions. For each one it lists how the action syncs in both directions and where
 | **Unlocks** | (The host's own result.) | `GlobalChannel.Unlocks` sends the full set of unlocked prefabs. Clients replay it as vanilla `Unlock` events, re-lock where needed, and show milestone pop-ups. | `ActionSync.HostCapture`, `ApplyUnlocks`, `Milestones` |
 | **Speed** | A speed request (control message). Viewers are refused. | `SpeedChanged`. | `SpeedAuthoritySystem`, `SessionHost` |
 
-Every proposal is validated on the host (ARCH §5.4.1, `SyncController.Validate`, `ProposalRules`):
+Every proposal is validated on the host ([host validation](../ARCHITECTURE.md#host-validation-and-commit), `SyncController.Validate`, `ProposalRules`):
 
 - **Role permission.** `RolePermissions`: builder or co-host may do everything; a viewer may only chat. The host toggles the role in the player list.
 - **Rate limit.** 120 proposals per second per player, with a burst of 240.

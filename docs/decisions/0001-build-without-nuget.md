@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted, 2026-10-11 (milestone M0, solution scaffold) |
-| Changes | IMPLEMENTATION-PLAN §2.3 (Core project), §2.5 (tests), §2.7 (build script); ARCH is unchanged |
+| Changes | The original implementation plan ([history](../history/IMPLEMENTATION-PLAN.md)) §2.3 (Core project), §2.5 (tests), §2.7 (build script); the architecture is unchanged |
 
 ## Context
 
@@ -19,7 +19,7 @@ The only inputs are the .NET SDK (8.0) and the game's own `Cities2_Data\Managed`
    `AutomaticallyUseReferenceAssemblyPackages=false`, `FrameworkPathOverride=$(GameManagedPath)`. It references
    **only** `mscorlib`, `System`, `System.Core`, `netstandard`, `System.Memory`,
    `System.Runtime.CompilerServices.Unsafe` and `System.IO.Compression` from the Managed folder (all with
-   `Private=false`), and no Unity, Game or Colossal assembly: Core stays pure .NET (ARCH K16).
+   `Private=false`), and no Unity, Game or Colossal assembly: Core stays pure .NET ([module map](../ARCHITECTURE.md#module-map)).
 2. **Core code uses only APIs that exist in netstandard2.0**, so the same sources also compile on .NET 8. (The game's
    `netstandard.dll` is a 2.1 facade, so the compiler would accept 2.1 APIs; the rule is enforced by review. Typical
    traps: `Math.Clamp`, `HashCode`, `BitConverter.SingleToInt32Bits`, `Dictionary.TryAdd`, span overloads of

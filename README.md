@@ -112,8 +112,8 @@ python tools/installer/make_installer.py   # then build dist/SkylineTogether-Set
 ```
 
 Add `--game-dir "<path>"` if the game is not in the default Steam folder. Core and its tests also build without the
-game. See [docs/dev/building.md](docs/dev/building.md); the [code map](docs/dev/code-map.md) is the place to start
-reading the code.
+game. See [docs/dev/building.md](docs/dev/building.md); the [architecture](docs/ARCHITECTURE.md) explains how the mod works
+and the [code map](docs/dev/code-map.md) is the place to start reading the code.
 
 | Folder | Contents |
 |---|---|

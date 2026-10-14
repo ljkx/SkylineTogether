@@ -89,5 +89,5 @@ recording, a complete final checkpoint, no apply error and no difference at the 
 checkpoints that went away are listed as transient. `Collect-Logs.cmd` includes the verdicts of the 3 newest
 recordings.
 
-A recording can only be replayed by a build with the same protocol version. Technical details: ARCHITECTURE.md
-[§13.5](../design/ARCHITECTURE.md#135-single-machine-test-harnesses).
+A recording can only be replayed by a build with the same protocol version. Technical details:
+[ARCHITECTURE.md](../ARCHITECTURE.md#solo-test-record-and-replay).

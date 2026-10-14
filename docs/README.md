@@ -9,7 +9,8 @@
 
 ## For contributors
 
-Start with the [code map](dev/code-map.md); it also gives a reading order for the architecture document.
+Start with the [architecture](ARCHITECTURE.md) (how the mod works, written from the code) and the
+[code map](dev/code-map.md) (where things are).
 
 - [Building](dev/building.md): `tools/build.sh`, game path, building without the game, packaging
 - [Tests](dev/testing.md): unit tests, UI smoke test, repository checks, CI
@@ -20,13 +21,11 @@ Start with the [code map](dev/code-map.md); it also gives a reading order for th
 
 ## Design and research
 
-- [ARCHITECTURE.md](design/ARCHITECTURE.md): the design (target; the code implements a subset, see its "As built" notes)
-- [IMPLEMENTATION-PLAN.md](design/IMPLEMENTATION-PLAN.md): the original module plan
+- [ARCHITECTURE.md](ARCHITECTURE.md): the architecture as built
 - [SYNC-COVERAGE.md](design/SYNC-COVERAGE.md): what is synced, for every piece of game state
 - [ACTION-COVERAGE.md](design/ACTION-COVERAGE.md): how every player action is synced
 - [MOD-COMPATIBILITY.md](design/MOD-COMPATIBILITY.md): how third-party mods are kept in sync
-- [Research digest](research/00-DIGEST.md) and the [research reports](research/) on the game's internals
 - [Decision records](decisions/)
-- Proposals [A](design/proposal-A-max-fidelity.md), [B](design/proposal-B-scale-efficiency.md) and
-  [C](design/proposal-C-buildable-robust.md): the three competing designs ARCHITECTURE.md was derived from
-  (historical)
+- [Research digest](research/00-DIGEST.md) and the [research reports](research/) on the game's internals
+- [history/](history/README.md): the design documents written before the implementation (original architecture,
+  implementation plan, the three proposals); historical, not authoritative
