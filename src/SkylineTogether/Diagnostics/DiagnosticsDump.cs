@@ -213,7 +213,7 @@ namespace SkylineTogether.Diagnostics
                 if (missing != null && missing.Count > 0)
                 {
                     Line(sb, missing.Count + " missing assets (objects using them were left out):");
-                    foreach (KeyValuePair<string, int> m in missing) Line(sb, "  " + m.Key + " (" + m.Value + " records)");
+                    foreach (KeyValuePair<string, int> m in missing) Line(sb, "  " + (Mod.Sync?.ExplainMissing(m.Key) ?? m.Key) + " (" + m.Value + " records)"); // w8/mods: source and advice
                 }
             });
 

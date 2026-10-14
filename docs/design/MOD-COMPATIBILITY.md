@@ -3,10 +3,15 @@
 How Skyline Together keeps the user's installed Paradox mods in sync between host and clients. Research basis:
 `docs/research/09-third-party-mods.md` (R09). Every statement about a mod below was checked against the **installed
 version**, decompiled from `.cache/mods/pdx_mods/<id>_<version>` (decompiles under `mod_audit/decomp_mods/<name>`).
-Code lives in `src/SkylineTogether/Compat/` (adapters, watcher, settings channel, assembly scanner) with small marked
-hooks (`// mod compatibility`) in `EntityCodec`, `FamilyClassifier`, `SyncController`, `FollowerClock`,
-`GameInfoProvider` and `DiagnosticsDump`; the pure parts (classification, comparison, setting values, records) are in
-Core with tests (`tests/.../Session/ModCompatibilityTests.cs`, `tests/.../Sync/ModRecordTests.cs`).
+Code lives in `src/SkylineTogether/Compat/` (adapters, watcher, settings channel, assembly scanner, generic analysis,
+integration API, asset sources) with small marked hooks (`// mod compatibility`, `// w8/mods`) in `EntityCodec`,
+`FamilyClassifier`, `TypeHandlers`, `SyncController`, `FollowerClock`, `GameInfoProvider`, `SnapshotService`,
+`SnapshotLoader` and `DiagnosticsDump`; the pure parts (classification, declarations, adapter checks, channel framing
+and routing, asset texts, IL walk, comparison, setting values, records) are in Core (`Core/Modding`, `Core/Session`)
+with tests (`tests/.../Modding/*`, `tests/.../Session/ModCompatibilityTests.cs`, `tests/.../Sync/ModRecordTests.cs`).
+
+Mods that are not in the table of §2 are handled generically (§6), and mod authors can declare what their mod does
+without any reference to Skyline Together (§8, [`../MOD-INTEGRATION.md`](../MOD-INTEGRATION.md)).
 
 ## 1. Mechanisms
 
@@ -22,8 +27,11 @@ Core with tests (`tests/.../Session/ModCompatibilityTests.cs`, `tests/.../Sync/M
 | **Pipeline tools** | Mod tools that apply through the Temp pipeline (Traffic, Line Tool, Find It's picker) are not direct-write tools: idle frames propose nothing, applies come through `ApplyTool` like vanilla ones. Every other mod tool is direct-write (fail safe). | `ModAdapter.PipelineTools` |
 | **Client gates** | Mod systems that derive host-owned state are off on live clients (`ClientOffSystems`); load-time mutators driven by the player's own settings are off from the start of the join (`JoinOffSystems`, incl. the game's `PostDeserialize<T>` wrapper). Restored exactly at session end (`SystemSwitch`). Mod simulation systems are already off on clients (follower clock); adapters may keep ones that write no replicated state (`ClientSimulationSystems`). | `Compat/ModCompat` |
 | **Mod settings channel** | Simulation-relevant `ModSetting` properties are the host's for everyone (`SyncRecordKind.ModSettings = 111`, host → clients, changes polled 1/s, everything on join). Clients write through the property setter (mods that react to a change do), call `Setting.Apply()`, and restore + re-save their own values at session end. Only bool/int/long/float/double/enum/string properties listed by an adapter are touched; buttons never. | `Compat/ModSettingsSync`, Core `SettingValueText`, `HostSettingsTracker`, `ClientSettingsTracker` |
-| **Missing assets** | A record whose `PrefabRef` cannot be resolved (asset pack or runtime prefab missing) is never applied (an entity without its prefab breaks game systems); binding is retried lazily (runtime prefabs created after the join's prefab table). The status line, one toast and the diagnostics dump list the missing assets. A client proposal of an object whose prefab the host lacks is refused (rollback). | `EntityCodec.MissingPrefab/NamesUnknownPrefab`, `SyncController.Validate` |
-| **Join classification** | Mods that only affect their own player never block a join (missing on either side or another version). Built-in lists of known client-local and known world-affecting mods (by assembly name and Paradox id), then each peer's scan of its own copy: a mod that declares no serializable component, saved system, prefab type or tool and references no Harmony gets `ClientLocalHint` (new manifest flag bit 2); otherwise `RegistersTypesOrSystemsOrPrefabs`. Unknown without a hint: world-affecting (fail closed). The structured `MismatchReport` and its one-line text simply leave the local mods out. | Core `Session/ModCompatibility`, `MismatchReport.CompareMods`, `Compat/ModAssemblyScanner` |
+| **Missing assets** | A record whose `PrefabRef` cannot be resolved (asset pack or runtime prefab missing) is never applied (an entity without its prefab breaks game systems); binding is retried lazily (runtime prefabs created after the join's prefab table), with a name fallback for runtime prefabs (§7). The host says where each non-base-game prefab comes from (`PrefabSource` record), so the joiner's message names the package and Paradox Mods id or the mod and what to do; the snapshot manifest lists the city's asset sources, checked before the load. The status line, one toast and the diagnostics dump list the missing assets. A client proposal of an object whose prefab the host lacks is refused (rollback). | `EntityCodec.MissingPrefab/NamesUnknownPrefab/NameFallback`, `Compat/AssetSources`, `SyncController.Validate`, Core `Modding/AssetSource` |
+| **Join classification** | Mods that only affect their own player never block a join (missing on either side or another version). Built-in lists of known client-local and known world-affecting mods (by assembly name and Paradox id), then each peer's analysis of its own copy (§6): a mod that is client-local by its declaration or by the scan gets `ClientLocalHint` (manifest flag bit 2); otherwise `RegistersTypesOrSystemsOrPrefabs`. Unknown without a hint: world-affecting (fail closed). The structured `MismatchReport` and its one-line text simply leave the local mods out. | Core `Session/ModCompatibility`, `MismatchReport.CompareMods`, `Compat/ModAssemblyScanner`, Core `Modding/ModClassifier` |
+| **Adapter version check** | Every name a built-in adapter relies on is resolved when the mod is detected; any missing name turns the whole adapter off with one log line and a diagnostics entry, and the mod gets the generic treatment (§5). | `ModCompat.Check`, Core `Modding/AdapterCheck` |
+| **Generic analysis** | Every loaded code mod is scanned (types, IL bytes, the game's system registrations, Harmony's patch list) and classified with explained, conservative rules; its declarations are applied (§6). | `Compat/ModAssemblyScanner`, `HarmonyPatches`, `GenericModAdapter`, Core `Modding/ModClassifier` |
+| **Integration API** | Attributes and a static class matched by name; session events and a host-relayed channel of opaque bytes per mod (§8). | `Compat/ModIntegration`, Core `Modding/ModDeclarations`, `ModChannelRouter`, `Protocol/ModChannelMessage` |
 
 ## 2. Per mod
 
@@ -65,20 +73,130 @@ registry (mods register a second "defaults" instance there).
 
 ## 4. Integration notes
 
-- Record kinds 110 (`EnabledBits`, accepted from clients) and 111 (`ModSettings`, host only); manifest mod flag bit 2
-  (`ClientLocalHint`). No new message kinds.
+- Record kinds 110 (`EnabledBits`, accepted from clients), 111 (`ModSettings`, host only) and 112 (`PrefabSource`, host
+  only, written right before the `Prefab` record of a non-base-game prefab); manifest mod flag bit 2
+  (`ClientLocalHint`). Message kind 110 (`ModChannel`, both directions, the host relays; branch range 110-114). The
+  snapshot manifest has an optional trailing list of asset sources (written only when non-empty, so manifests of cities
+  with base game prefabs only keep their bytes).
 - `EntityCodec.Apply` gained an optional `skip` filter (edit hold); `WriteEntity` appends an `EnabledBits` record when
   the entity has enableable replicated types; `HashEntity` includes disabled bits; `HashSubset` serves the watcher.
 - Proposal validation: mover despawns are accepted in `DirectTool` proposals; spawns/upserts naming a prefab the host
   cannot resolve are refused with `HostError` (rollback on the originator).
-- Everything an adapter names is resolved by reflection; a missing type or system logs once and is skipped.
-- The diagnostics dump has a "Mod compatibility" section (active adapters, gated systems, missing assets) and shows the
-  class of every loaded mod.
+- Everything an adapter names is resolved by reflection; a built-in adapter with any unresolved name is off (§5).
+- `TypeHandlers` returns no handler for a mod type declared `never-replicate`, so the codec, the classifier and the
+  watcher leave it out together.
+- The diagnostics dump has a "Mod compatibility" section: built-in adapters (active, not installed, or disabled with
+  the names that were not found), gated systems, the integration API users with their channel counters, the full
+  analysis of every loaded mod (one line per component, system, tool, host setting, problem and hint), and every
+  missing asset with its source and what to do. It also shows the join class of every loaded mod.
+- New feature switch `mods` (mod integration API): when the guard trips it, mods see no session and send nothing; the
+  rest of the session is unaffected.
 
-## 5. Residual risks
+## 5. Adapter version check
 
-- Nothing here could be run in the game; names and behaviour were verified against the decompiled installed versions.
-  A mod update that renames a type disables only that rule (logged).
+Every built-in adapter (§2) is knowledge about one version of its mod, verified against its decompile. When the mod is
+detected, every name the adapter relies on is resolved: tool-local and never-replicated types, watched vanilla types,
+client-off, join-off and kept systems (`PostDeserialize:T` wrappers included), pipeline tools, the settings type and
+every synchronised setting property (readable, writable, of a supported type). If any of them is missing, the mod was
+updated and the adapter as a whole is turned off (half of its rules could contradict the other half): one warning
+line (`Traffic 1.2.3: adapter disabled, 2 of 14 names not found in this version (type ..., system ...); the generic
+analysis applies instead`) and the same text in the diagnostics. The mod then gets exactly the generic treatment of
+§6, and the rest of Skyline Together keeps working. Host and joiner run the same mod version (join check), so they
+decide the same. Pure logic and texts: Core `AdapterCheck` (tests in `Modding/IlScannerAndAdapterCheckTests.cs`).
+
+## 6. Any other mod: automatic analysis
+
+Every loaded code mod (also those with an adapter) is scanned once per game, when the first session starts or the
+handshake needs it, and the result is logged once per mod (`mod analysis: X 1.0 is world-affecting: ... (reasons)`)
+and shown in full in the diagnostics. Nothing of the mod runs for it.
+
+**Scan** (`Compat/ModAssemblyScanner`): ECS component types (data, buffer, tag, shared, managed; saved with
+`ISerializable`/`IEmptySerializable` or not; enableable; `ISerializeAsEnabled`; entity fields), systems with the update
+phases the game registered them in (read from `UpdateSystem`'s registration lists, the same probe as the follower
+clock), whether they save state or run after load (`IPostDeserialize`), tools, prefab and prefab component types,
+`ModSetting` properties, and Harmony patches (Harmony's own `GetAllPatchedMethods`/`GetPatchInfo`, called by reflection
+on every loaded `0Harmony`; the patching mod is the declaring assembly of each patch method). Method bodies are read as
+IL bytes (Core `IlScanner`, exact opcode lengths) and their tokens resolved to find calls of
+`PrefabSystem.AddPrefab`/`AddOrUpdatePrefab` (runtime prefabs) and, inside tools, uses of `CreationDefinition`.
+Checked offline against all installed mods: runtime prefab creation is found in Find It, Water Features, Anarchy
+(network upgrades) and Traffic (its fake prefab), matching §2.
+
+**Decisions** (Core `ModClassifier`, pure and deterministic, tested in `Modding/ModClassifierTests.cs`):
+
+| Question | Rule (conservative) |
+|---|---|
+| Must it match on every peer? | Client-local only when the mod declares `client-local`, or when nothing in it can touch shared state: no saved component, no saved system, no prefab type, no runtime prefab, no tool, no system in a world phase (anything but UI, tooltips, rendering, culling, raycast, gizmos, editor), no Harmony patch outside presentation namespaces (`Game.UI`, `Colossal.UI`, localization, audio, rendering, input), and a readable patch list if it references Harmony. Unknown phases and failed scans count as world-affecting. The built-in lists of Core `ModCompatibility` still decide first for the join check. |
+| How does each component travel? | Saved by the game: replicated (references as net ids, referenced mod entities bound with it, enabled bits, untagged changes watched). Not saved: never sent (local or derived data; the entity is unaffected). Declarations can exclude a saved type or mark tool entities, never force an unsaved type onto the wire. |
+| Which systems run on clients? | `GameSimulation`: off (follower clock, like every vanilla simulation system). `PreSimulation`/`PostSimulation`/`LoadSimulation`: host only (they run with the simulation step; none of the installed mods uses these phases). Modification, tool, prefab, serialization and other phases: on every peer, like vanilla derivation. Declarations override. |
+| How are its tools captured? | Direct-write unless declared `pipeline`: a missed direct write would lose a client's edit, an extra one only costs a redundant proposal. A tool that uses `CreationDefinition` gets a hint, not a different treatment (Move It does, and is direct-write). |
+| Which settings are the host's? | Only declared `host-setting` properties (validated); a heuristic cannot tell a UI setting from a rule. |
+
+Systems that save state or run after load, and saved components named like tool data, get hints for the mod's author
+in the dump; they change nothing. The result becomes a `GenericModAdapter` that runs next to a built-in adapter of the
+same mod (it only adds generic and declared rules).
+
+## 7. Missing assets and runtime prefabs
+
+- **Source of every prefab.** The host writes a `PrefabSource` record before the `Prefab` record of each prefab that is
+  not base game: `Package` (display name and Paradox Mods id of an asset pack or a code mod's assets), `LocalAsset`
+  (the host's own, unpublished), or `RuntimePrefab` (no asset: created in code; the mod is named when the prefab's type
+  or one of its prefab components comes from it; never guessed, since the game creates a few prefabs in code too).
+  Never a file path.
+- **Join message.** The join snapshot's manifest lists the city's asset sources with prefab counts. Before loading, the
+  joiner compares them with its own (packages by Paradox Mods id among its loaded prefabs, runtime prefabs by the
+  creating mod being loaded, the host's local assets by prefab name, which also finds DLC content without a package id;
+  runtime prefabs of an unnamed mod are left to the per-record report) and shows one toast naming what is missing
+  and what to do, e.g. `The package "China Pack" (Paradox Mods 100454) (12 prefabs): subscribe to Paradox Mods 100454,
+  restart the game and join again.` The join goes on; objects using the missing prefabs are left out. Each missing
+  prefab is also logged and listed in the diagnostics with its explanation (Core `MissingAssets.Describe/Summary`), and
+  the first missing record in a session raises the same kind of toast from the source records.
+- **Runtime prefabs bind across peers** when their `PrefabID` matches (type, name, and the hash of their asset, which
+  is empty for prefabs without one). When the exact id does not resolve, a local prefab with the same type and name is
+  taken if the match is unambiguous and it is the same kind of prefab: the host's id has no hash, or the local prefab
+  has no asset or no hash (a mod that reused a local file as the asset of a generated prefab). Two assets of different
+  packages that share a name never match; two candidates are reported as missing rather than guessed (Core
+  `MissingAssets.ChooseNameFallback`). The fallback is tried again only after the prefab count changed (a mod added
+  prefabs), so records of a truly missing asset cost a dictionary lookup.
+- Records whose prefab is missing are still never applied, and binding is still retried lazily (prefabs created after
+  the join's prefab table).
+
+## 8. Integration API for mod authors
+
+Documented for mod authors in [`../MOD-INTEGRATION.md`](../MOD-INTEGRATION.md). Summary of the implementation
+(`Compat/ModIntegration`):
+
+- No compile-time dependency: an attribute class named `SkylineTogetherAttribute` (any namespace) is read with
+  `CustomAttributeData` (never constructed) on types, settings properties and the assembly; a static class named
+  `SkylineTogetherIntegration` provides `ApiVersion` (a const, read without running the mod's code), `Declarations`
+  lines (`"role: target"`), delegate fields Skyline Together sets (`IsInSession`, `IsHost`, `IsClient`, `LocalPlayer`,
+  `Send`) and callbacks it calls (`OnSessionStarted(bool)`, `OnSessionEnded()`, `OnMessage(int, byte[])`).
+- Roles: `replicate`, `never-replicate`, `tool-local` (components); `host-only`, `everywhere`, `join-off` (systems);
+  `direct-write`, `pipeline` (tools); `host-setting` (settings); `client-local`, `world` (the mod). Parsing (Core
+  `ModDeclarations`) never throws; validation against the scan (Core `ModClassifier`) reports unknown roles, missing or
+  wrong-kind targets, unsaved types declared `replicate`, unsupported settings, contradicting roles (both dropped) and
+  newer API versions; every problem is ignored and listed.
+- Declarations are read and the class bound once the game reports its mods initialized (session driver), or at the
+  first session start, whichever comes first.
+- Channel (Core `ModChannelMessage`, `ModChannelRouter`, `ModChannelBudget`): message kind 110, channel = the mod's
+  assembly name, payload ≤ 16 KiB, 30 messages and 64 KiB per second per sender (one second of burst) checked by the
+  sender and again by the host, which sets the sender id, relays client messages (everyone, host, one player; never back
+  to the sender; only to live players) and drops undecodable or over-budget messages with one log line. Messages for a
+  mod that is not installed or not listening are dropped and counted.
+- A throwing callback is logged; after 3 failures the mod's callbacks are off for the game. All handlers run under the
+  `mods` feature guard, so nothing reaches the session.
+- Verified offline: a sample mod with the attribute and the class from the guide compiles against the game's
+  assemblies, and its declarations, problems and bound delegates come out as documented.
+
+## 9. Residual risks
+
+- Nothing here could be run in the game; names and behaviour were verified against the decompiled installed versions,
+  and the scan was run offline (outside the game, without system phases and Harmony) against every installed mod. The
+  phase lists and Harmony's patch list are only available in the game.
+- Unknown mods: the analysis cannot tell what a Modification-phase system writes. Such systems run on every peer like
+  vanilla derivation; one that writes host-owned values with randomness or from local settings diverges on clients until
+  the integrity repair, and on a client its untagged writes to saved mod components may be proposed to the host. The
+  author can declare it `host-only`.
+- Unknown mods' settings stay per player unless declared; a setting that changes the rules can make placements differ.
 - Options-menu "apply to all" buttons of mods (Plop the Growables, Tree Controller, Better Bulldozer "safely remove")
   mutate the world outside any tool; pressed on a client they are not proposed (the integrity repair restores the host's
   state). Press them on the host.
@@ -86,3 +204,5 @@ registry (mods register a second "defaults" instance there).
   baseline hash yet); the host applies identical values.
 - Client watcher proposals assume local mod systems do not rewrite replicated mod components outside the apply frame;
   the systems known to do so are gated or host-only.
+- Missing local assets of the host cannot be fixed by the joiner; packages are detected by Paradox Mods id only (a
+  package without an id counts as present).

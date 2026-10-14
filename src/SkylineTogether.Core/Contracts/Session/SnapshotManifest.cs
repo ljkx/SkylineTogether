@@ -29,5 +29,11 @@ namespace SkylineTogether.Core
         public string[] ReferencedContent;
         /// <summary>Bound slots per family (post-load coverage within ±1 %).</summary>
         public Dictionary<Family, int> FamilyCounts = new Dictionary<Family, int>();
+        /// <summary>
+        /// Mod compatibility: where the city's prefabs that are not base game come from (packages, local assets, runtime
+        /// prefabs of mods) and how many of each the city uses; the joiner names what it lacks before it loads. Null or
+        /// empty when the city uses base game prefabs only.
+        /// </summary>
+        public List<Modding.AssetSourceUse> AssetSources;
     }
 }

@@ -509,5 +509,35 @@ namespace SkylineTogether.Diagnostics
             }
             return result.Count >= 20 ? result : null;
         }
+
+        /// <summary>
+        /// Mod compatibility: the update phases of every registered system by its type (the same registration lists as
+        /// <see cref="GameSimulationSystems"/>), for the classification of other mods' systems. Null when P-SYSTEMS failed.
+        /// </summary>
+        public static Dictionary<Type, List<SystemUpdatePhase>> SystemPhases(World world)
+        {
+            if (UpdateSystems == null || world == null) return null;
+            UpdateSystem update = world.GetExistingSystemManaged<UpdateSystem>();
+            if (update == null) return null;
+            if (!(UpdateSystems.GetValue(update) is IList list) || !(UpdateRefMap.GetValue(update) is IDictionary map)) return null;
+            var result = new Dictionary<Type, List<SystemUpdatePhase>>();
+            void Collect(IList items)
+            {
+                foreach (object item in items)
+                {
+                    if (item == null || !(SystemDataPhase.GetValue(item) is SystemUpdatePhase phase)) continue;
+                    if (!(SystemDataSystem.GetValue(item) is ComponentSystemBase system)) continue;
+                    Type type = system.GetType();
+                    if (!result.TryGetValue(type, out List<SystemUpdatePhase> phases)) result[type] = phases = new List<SystemUpdatePhase>();
+                    if (!phases.Contains(phase)) phases.Add(phase);
+                }
+            }
+            Collect(list);
+            foreach (DictionaryEntry entry in map)
+            {
+                if (entry.Value is IList children) Collect(children);
+            }
+            return result.Count >= 20 ? result : null;
+        }
     }
 }

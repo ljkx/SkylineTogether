@@ -59,6 +59,11 @@ namespace SkylineTogether.Core
         // w4/flow (merge coordination: this branch owns 100-104)
         /// <summary>Flow status of the electricity and water graphs by flow key, to peers with the Electricity or Water
         /// infoview topic active (ARCH §4.11.5; <see cref="Sync.FlowStatusMessage"/>), host → client.</summary>
-        FlowStatus = 100
+        FlowStatus = 100,
+
+        // w8/mods (merge coordination: this branch owns 110-114)
+        /// <summary>Opaque bytes of another mod on its own channel (<see cref="Protocol.ModChannelMessage"/>; docs/MOD-INTEGRATION.md),
+        /// client → host and host → client; the host relays between clients.</summary>
+        ModChannel = 110
     }
 }

@@ -12,6 +12,7 @@ namespace SkylineTogether.Core.Protocol
     /// | u32 frameIndex | u32 hostBuildOrderNext | string gameModeName (≤ 256 B)
     /// | list renderPrefabIds (≤ 64, each ≤ 1024 B) | list referencedContent (≤ 4096, each ≤ 512 B)
     /// | familyCounts: varint (n + 1; 0 = null) | n × (u8 family | varint count)   (families strictly ascending)
+    /// [ | assetSources: varint n | n × (u8 kind | string name | string platformId | varint prefabs | string example) ]
     /// </code>
     /// Lists are <c>varint (count + 1)</c> with 0 = null. The blob size is capped at 2 GiB (ARCH §14.5). The family
     /// counts are written in ascending family order, so equal manifests give equal bytes.
@@ -25,6 +26,8 @@ namespace SkylineTogether.Core.Protocol
         public const int MaxReferencedContent = 4096;
         public const int MaxPrefabIdBytes = 1024;
         public const int MaxContentBytes = 512;
+        /// <summary>Mod compatibility: asset sources listed at most (the host keeps the ones with the most prefabs).</summary>
+        public const int MaxAssetSources = 512;
         private const int FamilyCountLimit = (int)Family.Generic + 1;
 
         public static void Write(ByteWriter w, SnapshotManifest m)
@@ -49,22 +52,70 @@ namespace SkylineTogether.Core.Protocol
             if (counts == null)
             {
                 w.WriteVarUInt32(0);
-                return;
             }
-            int present = 0;
-            foreach (KeyValuePair<Family, int> pair in counts)
+            else
             {
-                if (pair.Key > Family.Generic) throw new ArgumentException("undefined family in FamilyCounts", nameof(m));
-                if (pair.Value < 0) throw new ArgumentException("negative family count", nameof(m));
-                present++;
+                int present = 0;
+                foreach (KeyValuePair<Family, int> pair in counts)
+                {
+                    if (pair.Key > Family.Generic) throw new ArgumentException("undefined family in FamilyCounts", nameof(m));
+                    if (pair.Value < 0) throw new ArgumentException("negative family count", nameof(m));
+                    present++;
+                }
+                w.WriteVarUInt32((uint)present + 1);
+                for (int f = 0; f < FamilyCountLimit; f++)
+                {
+                    if (!counts.TryGetValue((Family)f, out int count)) continue;
+                    w.WriteByte((byte)f);
+                    w.WriteVarUInt32((uint)count);
+                }
             }
-            w.WriteVarUInt32((uint)present + 1);
-            for (int f = 0; f < FamilyCountLimit; f++)
+            WriteAssetSources(w, m.AssetSources);
+        }
+
+        /// <summary>
+        /// Mod compatibility: the optional trailing list of asset sources, written only when there is one (so a manifest
+        /// without it keeps its bytes): <c>varint n | n × (u8 kind | string name | string platformId | varint prefabs |
+        /// string example)</c>.
+        /// </summary>
+        private static void WriteAssetSources(ByteWriter w, List<Modding.AssetSourceUse> sources)
+        {
+            if (sources == null || sources.Count == 0) return;
+            MessageFields.WriteCount(w, sources.Count, MaxAssetSources, "AssetSources");
+            foreach (Modding.AssetSourceUse u in sources)
             {
-                if (!counts.TryGetValue((Family)f, out int count)) continue;
-                w.WriteByte((byte)f);
-                w.WriteVarUInt32((uint)count);
+                if (u?.Source == null) throw new ArgumentException("null asset source", nameof(sources));
+                if (u.Prefabs < 0) throw new ArgumentException("negative prefab count", nameof(sources));
+                w.WriteByte((byte)u.Source.Kind);
+                MessageFields.WriteString(w, u.Source.Name, Modding.AssetSource.MaxNameBytes, "AssetSources.Name");
+                MessageFields.WriteString(w, u.Source.PlatformId, Modding.AssetSource.MaxPlatformIdBytes, "AssetSources.PlatformId");
+                w.WriteVarUInt32((uint)u.Prefabs);
+                MessageFields.WriteString(w, u.Example, Modding.AssetSourceUse.MaxExampleBytes, "AssetSources.Example");
             }
+        }
+
+        private static List<Modding.AssetSourceUse> ReadAssetSources(ByteReader r)
+        {
+            if (r.IsAtEnd) return null;
+            int n = MessageFields.ReadCount(r, MaxAssetSources, 5, "SnapshotManifest.AssetSources");
+            if (n == 0) throw new DecodeException("SnapshotManifest: an empty asset source list is never written");
+            var list = new List<Modding.AssetSourceUse>(n);
+            for (int i = 0; i < n; i++)
+            {
+                byte kind = r.ReadByte();
+                if (kind > (byte)Modding.AssetSourceKind.RuntimePrefab) throw new DecodeException("SnapshotManifest: unknown asset source kind " + kind.ToString(CultureInfo.InvariantCulture));
+                var source = new Modding.AssetSource
+                {
+                    Kind = (Modding.AssetSourceKind)kind,
+                    Name = ProtocolText.Sanitize(MessageFields.ReadString(r, Modding.AssetSource.MaxNameBytes, "SnapshotManifest.AssetSources.Name")),
+                    PlatformId = ProtocolText.Sanitize(MessageFields.ReadString(r, Modding.AssetSource.MaxPlatformIdBytes, "SnapshotManifest.AssetSources.PlatformId")),
+                };
+                uint prefabs = r.ReadVarUInt32();
+                if (prefabs > int.MaxValue) throw new DecodeException("SnapshotManifest: asset source count exceeds int.MaxValue");
+                string example = ProtocolText.Sanitize(MessageFields.ReadString(r, Modding.AssetSourceUse.MaxExampleBytes, "SnapshotManifest.AssetSources.Example"));
+                list.Add(new Modding.AssetSourceUse { Source = source, Prefabs = (int)prefabs, Example = example });
+            }
+            return list;
         }
 
         public static SnapshotManifest Read(ByteReader r)
@@ -90,6 +141,7 @@ namespace SkylineTogether.Core.Protocol
             if (families < 0)
             {
                 m.FamilyCounts = null;
+                m.AssetSources = ReadAssetSources(r);
                 return m;
             }
             m.FamilyCounts = new Dictionary<Family, int>(families);
@@ -104,6 +156,7 @@ namespace SkylineTogether.Core.Protocol
                 m.FamilyCounts.Add((Family)family, (int)count);
                 previous = family;
             }
+            m.AssetSources = ReadAssetSources(r);
             return m;
         }
 

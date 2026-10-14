@@ -118,13 +118,14 @@ namespace SkylineTogether.Core.Protocol
                 case MessageKind.AgentValues: return MaxUncompressedBytes;
                 case MessageKind.AgentRefresh: return 16 * 1024;
                 case MessageKind.FlowStatus: return 256 * 1024;
+                case MessageKind.ModChannel: return ModChannelMessage.MaxEncodedBytes;
                 default: return 64 * 1024;
             }
         }
 
-        /// <summary>True for the kinds of <see cref="MessageKind"/> (1-21, 60, 65-67, 90-91, 100); the router drops every other kind (ARCH §14.3).</summary>
+        /// <summary>True for the kinds of <see cref="MessageKind"/> (1-21, 60, 65-67, 90-91, 100, 110); the router drops every other kind (ARCH §14.3).</summary>
         public static bool IsKnownKind(MessageKind kind) => (kind >= MessageKind.Hello && kind <= MessageKind.Water) || kind == MessageKind.ApplyAck || (kind >= MessageKind.SimValues && kind <= MessageKind.Statistics)
                                                             || kind == MessageKind.AgentValues || kind == MessageKind.AgentRefresh
-                                                            || kind == MessageKind.FlowStatus;
+                                                            || kind == MessageKind.FlowStatus || kind == MessageKind.ModChannel;
     }
 }

@@ -58,13 +58,14 @@ namespace SkylineTogether.Compat
             bool all = _resendAll;
             _resendAll = false;
             var current = new List<SettingEntry>();
-            foreach (ModAdapter a in ModCompat.Adapters)
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (ModAdapter a in ModCompat.ActiveAdapters)
             {
-                if (!a.Loaded) continue;
-                object settings = FindSettings(a);
-                if (settings == null) continue;
                 foreach (string key in a.SyncedSettings)
                 {
+                    if (!seen.Add(a.AssemblyName + "\n" + key)) continue; // a built-in and a declared rule may name the same setting
+                    object settings = FindSettings(a, a.SettingsTypeFor(key));
+                    if (settings == null) continue;
                     PropertyInfo p = Property(settings, key);
                     if (p == null || !p.CanRead) continue;
                     try
@@ -93,9 +94,9 @@ namespace SkylineTogether.Compat
             var touched = new List<object>();
             foreach (SettingEntry s in record.Settings)
             {
-                ModAdapter a = ModCompat.Find(s.Mod);
-                if (a == null || !Contains(a.SyncedSettings, s.Key)) continue; // only declared settings of loaded mods
-                object settings = FindSettings(a);
+                ModAdapter a = ModCompat.FindWithSetting(s.Mod, s.Key);
+                if (a == null) continue; // only declared settings of loaded mods
+                object settings = FindSettings(a, a.SettingsTypeFor(s.Key));
                 PropertyInfo p = settings == null ? null : Property(settings, s.Key);
                 if (p == null || !p.CanRead || !p.CanWrite) continue;
                 try
@@ -129,8 +130,8 @@ namespace SkylineTogether.Compat
             {
                 try
                 {
-                    ModAdapter a = ModCompat.Find(s.Mod);
-                    object settings = a == null ? null : FindSettings(a);
+                    ModAdapter a = ModCompat.FindWithSetting(s.Mod, s.Key);
+                    object settings = a == null ? null : FindSettings(a, a.SettingsTypeFor(s.Key));
                     PropertyInfo p = settings == null ? null : Property(settings, s.Key);
                     if (p == null || !p.CanWrite || !SettingValueText.TryParse(s.Value, p.PropertyType, out object value)) continue;
                     p.SetValue(settings, value);
@@ -150,14 +151,14 @@ namespace SkylineTogether.Compat
 
         /// <summary>
         /// The mod's live settings object: a field or property of the mod's <c>IMod</c> instance (any visibility) whose
-        /// type is the adapter's settings type (or any <c>ModSetting</c>). The static registry of <c>ModSetting</c> is not
+        /// type is <paramref name="typeName"/> (or any <c>ModSetting</c>). The static registry of <c>ModSetting</c> is not
         /// used: mods create a second "defaults" instance that replaces the live one there.
         /// </summary>
-        private object FindSettings(ModAdapter a)
+        private object FindSettings(ModAdapter a, string typeName)
         {
             try
             {
-                Type wanted = a.SettingsTypeName != null ? a.FindType(a.SettingsTypeName) : null;
+                Type wanted = typeName != null ? a.FindType(typeName) : null;
                 foreach (object mod in ModInstances(a))
                 {
                     const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
@@ -226,15 +227,6 @@ namespace SkylineTogether.Compat
             {
                 WarnOnce(settings.GetType().FullName + ".apply", "applying " + settings.GetType().Name + " failed", ex);
             }
-        }
-
-        private static bool Contains(IEnumerable<string> list, string key)
-        {
-            foreach (string s in list)
-            {
-                if (string.Equals(s, key, StringComparison.Ordinal)) return true;
-            }
-            return false;
         }
 
         private void WarnOnce(string key, string text, Exception ex = null)

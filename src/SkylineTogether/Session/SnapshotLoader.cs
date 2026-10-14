@@ -141,6 +141,7 @@ namespace SkylineTogether.Session
                         return;
                     }
                     if (RenderPrefabsMissing(manifest, onDone)) return;
+                    ReportMissingAssetSources(manifest); // w8/mods
                     StartLoad(manifest, onDone);
                 });
             }, 1);
@@ -165,6 +166,30 @@ namespace SkylineTogether.Session
             if (missing.Count == 0) return false;
             onDone(new LoadOutcome { Success = false, FailureKey = "content", FailureDetail = Settings.LocaleSource.Resolve("st.toast.join.renderPrefabs", "NAMES", string.Join(", ", missing)) });
             return true;
+        }
+
+        /// <summary>
+        /// w8/mods: names the packages and mods of the host's city that this game lacks (from the manifest's asset
+        /// sources), with what to do, before the load: objects using them will be left out. The join goes on (the host's
+        /// city stays playable without them); the same list is in the log and, per asset, in the diagnostics.
+        /// </summary>
+        private void ReportMissingAssetSources(SnapshotManifest manifest)
+        {
+            try
+            {
+                Game.Prefabs.PrefabSystem prefabs = World.DefaultGameObjectInjectionWorld?.GetExistingSystemManaged<Game.Prefabs.PrefabSystem>();
+                List<KeyValuePair<Core.Modding.AssetSource, int>> missing = Compat.AssetSources.MissingHere(manifest.AssetSources, prefabs);
+                if (missing.Count == 0) return;
+                foreach (KeyValuePair<Core.Modding.AssetSource, int> m in missing)
+                {
+                    _log.Warn(LogCategory.Join, "the host's city uses " + m.Value + " prefab(s) from " + m.Key.Describe() + ", which this game lacks: " + m.Key.Advice());
+                }
+                SessionManager.Notify(Core.Modding.MissingAssets.Summary(missing), seconds: 20f);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Join, "checking the host's asset sources failed; loading anyway", ex);
+            }
         }
 
         private void StartLoad(SnapshotManifest manifest, Action<LoadOutcome> onDone)

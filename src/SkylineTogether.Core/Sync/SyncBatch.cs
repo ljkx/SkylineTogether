@@ -68,6 +68,12 @@ namespace SkylineTogether.Core.Sync
         EnabledBits = 110,
         /// <summary>Host → client: the host's values of simulation-relevant mod settings (the host's rules for everyone).</summary>
         ModSettings = 111,
+        /// <summary>
+        /// Host → client, right before a <see cref="Prefab"/> record of a prefab that is not part of the base game: where it
+        /// comes from (package and Paradox Mods id, local asset, or the mod that creates it at runtime), so a client that
+        /// lacks it can say what to subscribe to.
+        /// </summary>
+        PrefabSource = 112,
 
         // ---- w3/agents (merge coordination: kinds 120-129 are reserved for it) ----
 
@@ -234,6 +240,8 @@ namespace SkylineTogether.Core.Sync
         public List<SyncEnabledBit> EnabledBits;
         /// <summary>For <see cref="SyncRecordKind.ModSettings"/>: mod, key and invariant value of each setting.</summary>
         public List<SettingEntry> Settings;
+        /// <summary>For <see cref="SyncRecordKind.PrefabSource"/> (with <see cref="NetId"/> = the prefab's id): its origin.</summary>
+        public Modding.AssetSource Source;
 
         // ---- gameplay branch ----
         /// <summary><see cref="SyncRecordKind.Epoch"/>: the broadcast number.</summary>
@@ -638,6 +646,18 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            /// <summary>Where the prefab bound to <paramref name="netId"/> comes from (<see cref="SyncRecordKind.PrefabSource"/>).</summary>
+            public void PrefabSource(uint netId, Modding.AssetSource source)
+            {
+                if (source == null) throw new ArgumentNullException(nameof(source));
+                _w.WriteByte((byte)SyncRecordKind.PrefabSource);
+                _w.WriteVarUInt32(netId);
+                _w.WriteByte((byte)source.Kind);
+                _w.WriteString(Protocol.ProtocolText.Truncate(source.Name, Modding.AssetSource.MaxNameBytes / Protocol.ProtocolText.MaxUtf8BytesPerChar), Modding.AssetSource.MaxNameBytes);
+                _w.WriteString(Protocol.ProtocolText.Truncate(source.PlatformId, Modding.AssetSource.MaxPlatformIdBytes / Protocol.ProtocolText.MaxUtf8BytesPerChar), Modding.AssetSource.MaxPlatformIdBytes);
+                _count++;
+            }
+
             // ---- gameplay branch ----
 
             /// <summary>Host: stamps this structural broadcast with its epoch number.</summary>
@@ -938,6 +958,18 @@ namespace SkylineTogether.Core.Sync
                             Value = r.ReadString(MaxSettingTextBytes),
                         });
                     }
+                    return rec;
+                }
+                case SyncRecordKind.PrefabSource:
+                {
+                    rec.NetId = r.ReadVarUInt32();
+                    byte kind = r.ReadByte();
+                    rec.Source = new Modding.AssetSource
+                    {
+                        Kind = kind <= (byte)Modding.AssetSourceKind.RuntimePrefab ? (Modding.AssetSourceKind)kind : Modding.AssetSourceKind.Unknown,
+                        Name = Protocol.ProtocolText.Sanitize(r.ReadString(Modding.AssetSource.MaxNameBytes)),
+                        PlatformId = Protocol.ProtocolText.Sanitize(r.ReadString(Modding.AssetSource.MaxPlatformIdBytes)),
+                    };
                     return rec;
                 }
                 case SyncRecordKind.Epoch:

@@ -56,6 +56,16 @@ namespace SkylineTogether.Session
             PrefabSystem prefabs = world.GetExistingSystemManaged<PrefabSystem>();
             GameModeSystem modes = world.GetExistingSystemManaged<GameModeSystem>();
             SimulationSystem simulation = world.GetExistingSystemManaged<SimulationSystem>();
+            // w8/mods: where the city's prefabs that are not base game come from; the joiner names what it lacks before loading
+            List<Core.Modding.AssetSourceUse> assetSources = null;
+            try
+            {
+                assetSources = Compat.AssetSources.CityUse(world, prefabs);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Join, "snapshot: listing the city's asset sources failed", ex);
+            }
             Directory.CreateDirectory(_folder);
             string path = Path.Combine(_folder, "snapshot-" + id + "-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".bin");
             _files[id] = path;
@@ -121,6 +131,7 @@ namespace SkylineTogether.Session
                         GameModeName = modes.currentModeName ?? "",
                         RenderPrefabIds = renderIds, // polish: the joiner refuses clearly when it cannot resolve one
                         ReferencedContent = content.ToArray(),
+                        AssetSources = assetSources,
                     };
                     _main.Post(() =>
                     {

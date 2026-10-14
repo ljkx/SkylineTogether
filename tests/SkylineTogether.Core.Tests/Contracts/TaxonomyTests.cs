@@ -62,7 +62,9 @@ namespace SkylineTogether.Core.Tests.Contracts
             Pin((MessageKind.AgentValues, 90), (MessageKind.AgentRefresh, 91));
             // w4/flow owns 100-104
             Pin((MessageKind.FlowStatus, 100));
-            Assert.Equal(sequential.Length + 7, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
+            // w8/mods owns 110-114
+            Pin((MessageKind.ModChannel, 110));
+            Assert.Equal(sequential.Length + 8, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
         }
 
         [Test]

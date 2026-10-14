@@ -80,6 +80,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 SyncRecordKind.EntityExplain, SyncRecordKind.IconSet, SyncRecordKind.IconControl, SyncRecordKind.LineRows,
                 SyncRecordKind.MoverSpawn, SyncRecordKind.MoverState, SyncRecordKind.MoverDespawn, SyncRecordKind.Epoch, SyncRecordKind.ProposalResult,
                 SyncRecordKind.ModSettings, // mod compatibility: the host's mod settings
+                SyncRecordKind.PrefabSource, // mod compatibility: where a prefab comes from
                 SyncRecordKind.MoverAgents, // w3/agents: the agents a mover refers to
                 SyncRecordKind.ReplayHashes, SyncRecordKind.ReplayMembers, SyncRecordKind.ReplayCheckpoint, // solo testing: checkpoints for the recorder
             };

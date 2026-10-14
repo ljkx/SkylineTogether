@@ -88,8 +88,18 @@ present) into
 
 `tools/build.sh --deploy` does exactly that; the packaged zip contains a `SkylineTogether` folder that you extract
 into the `Mods` folder. Local mods take precedence over Paradox Mods subscriptions of the same name. Every player
-of a session needs the same build of the mod, the same game version and the same set of mods. To uninstall,
-delete the folder.
+of a session needs the same build of the mod, the same game version and the same versions of every mod that changes
+the shared world (mods that only change what one player sees, such as tooltips or icon packs, may differ). To
+uninstall, delete the folder.
+
+## Other mods
+
+Other code mods and asset packs work in a session: saved mod data replicates with its entities, mod simulation runs
+on the host, mod tools are captured like player edits, and a player who lacks an asset pack or a mod's generated
+prefabs is told which one and what to subscribe to. Twelve popular mods have hand-verified adapters, every other mod is
+analysed automatically when the game starts a session (explained in the diagnostics dump), and mod authors can declare
+what their mod does and talk to their mod on other machines without referencing Skyline Together:
+[`docs/MOD-INTEGRATION.md`](docs/MOD-INTEGRATION.md). Details: [`docs/design/MOD-COMPATIBILITY.md`](docs/design/MOD-COMPATIBILITY.md).
 
 ## Clean room
 

@@ -361,6 +361,8 @@ namespace SkylineTogether.Sync
             if (index == TypeIndex.Null || index.IsSharedComponentType || index.IsManagedComponent || index.IsChunkComponent || index.IsCleanupComponent) return null;
             Type type = TypeManager.GetType(index);
             if (type == null || Excluded.Contains(type.FullName ?? "")) return null;
+            // mod compatibility: a saved mod type the mod declares never-replicate (its entity still replicates)
+            if (Compat.ModCompat.IsExcludedType(type)) return null;
             TypeHandler special = null;
             if (type == typeof(Game.Routes.RouteWaypoint)) special = new RouteWaypointsHandler();
             else if (type == typeof(Game.Routes.RouteSegment)) special = new RouteSegmentsHandler();
