@@ -4,7 +4,7 @@ using System.IO;
 namespace SkylineTogether.Core.Hashing
 {
     /// <summary>
-    /// loadspeed: a write-only, forward-only stream in front of another stream that computes the XXH3-128 digest
+    /// A write-only, forward-only stream in front of another stream that computes the XXH3-128 digest
     /// (<see cref="Digest128"/>) and the length of everything written through it, so the host knows a snapshot's digest
     /// the moment the game's save finishes instead of reading the whole file again (once per joiner, before).
     /// <para>

@@ -39,7 +39,7 @@ namespace SkylineTogether.Core.Tests.Session
         /// <summary>When set, snapshots are not delivered (the host keeps "saving the city").</summary>
         public bool Hold;
 
-        /// <summary>loadspeed: deliver the file's digest with the snapshot (as the game's provider does).</summary>
+        /// <summary>Deliver the file's digest with the snapshot (as the game's provider does).</summary>
         public bool ProvideDigest;
 
         private readonly List<Action<SnapshotReady>> _pending = new List<Action<SnapshotReady>>();
@@ -318,7 +318,7 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void AThrowingListenerNeverStopsGoingLiveOrTheMessageFlow()
         {
-            // final review: one failing "became live" listener left the buffered messages queued for good
+            // one failing "became live" listener left the buffered messages queued for good
             var rig = new SessionRig();
             var (client, loader, _) = rig.AddClient("Anna", tweakLoader: l => l.Defer = true);
             bool laterListener = false;
@@ -344,13 +344,13 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void APlayerAdmittedWhileTheSnapshotIsTakenGetsANewerOne()
         {
-            // final review: the pending snapshot may predate the second admission (whose stream starts later)
+            // the pending snapshot may predate the second admission (whose stream starts later)
             var rig = new SessionRig();
             rig.Snapshots.Hold = true;
             var (anna, _, _) = rig.AddClient("Anna");
             rig.Run(60);
             Assert.Equal(ClientState.WaitingForSnapshot, anna.State, anna.EndReason);
-            // loadspeed: the city changes after the request (an unchanged city would let Ben reuse the pending snapshot)
+            // the city changes after the request (an unchanged city would let Ben reuse the pending snapshot)
             rig.Host.Broadcast(MessageKind.Epoch, new byte[] { 7 }, 0, 1);
             var (ben, _, _) = rig.AddClient("Ben");
             rig.Run(60);
@@ -460,7 +460,7 @@ namespace SkylineTogether.Core.Tests.Session
             var rig = new SessionRig(snapshotBytes: 5_000_000);
             var (a, la, _) = rig.AddClient("Anna");
             rig.Run(3);
-            // loadspeed: the city changes while Anna downloads (an unchanged city would let Ben reuse her snapshot)
+            // the city changes while Anna downloads (an unchanged city would let Ben reuse her snapshot)
             rig.Host.Broadcast(MessageKind.Epoch, new byte[] { 7 }, 0, 1);
             var (b, lb, _) = rig.AddClient("Ben");
             rig.Run(800);

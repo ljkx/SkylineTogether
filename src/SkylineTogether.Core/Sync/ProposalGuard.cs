@@ -37,7 +37,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// polish: host limits for the requests a client batch may carry without any entity, cost or global record
+    /// Host limits for the requests a client batch may carry without any entity, cost or global record
     /// (request-only batches skip the proposal rate limit): more ids (<c>SyncRequest.MoreIds</c>) and full re-sends of
     /// the lines or of everything (<c>ResendRoutes</c>, <c>ResendAll</c>, each a scan of the whole id table).
     /// <list type="bullet">

@@ -64,7 +64,7 @@ namespace SkylineTogether.Sync
         private readonly SessionManager _sessions;
         private readonly ILog _log;
         private readonly Queue<(PeerId Peer, byte[] Data)> _inbox = new Queue<(PeerId, byte[])>();
-        // w8/robust (host): what one peer may have waiting, and how many of its brush stamps are replayed per frame
+        // host: what one peer may have waiting, and how many of its brush stamps are replayed per frame
         private readonly InboundQuota _hostQuota = new InboundQuota(128, 16L << 20);
         private const int MaxStampsPerPeerFrame = 512;
         private readonly Dictionary<byte, (int Frame, int Count)> _stampBudget = new Dictionary<byte, (int, int)>();
@@ -172,7 +172,7 @@ namespace SkylineTogether.Sync
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Terrain) return;
-                // w8/robust: a peer's waiting strokes and requests are bounded
+                // a peer's waiting strokes and requests are bounded
                 if (!_hostQuota.TryAdmit(peer, e.BodyCount))
                 {
                     if (_hostQuota.TakeOverflow(peer)) _log.Warn(LogCategory.Fields, peer + " sends terrain messages faster than they are applied; further ones are dropped (the tile audit repairs its view)");
@@ -186,7 +186,7 @@ namespace SkylineTogether.Sync
             {
                 _requests.Remove(peer.Value);
                 _requestBudget.Remove(peer.Value);
-                _hostQuota.Forget(peer); // w8/robust
+                _hostQuota.Forget(peer);
             };
         }
 
@@ -196,10 +196,10 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Terrain) return;
-                // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                // with the feature off nothing drains the inbox (it grew for the rest of the session); the
                 // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
                 if (!Diagnostics.Features.Terrain.IsAvailable) return;
-                // polish: a joiner still waiting for the city skips stroke replays (the snapshot or the host's settled
+                // a joiner still waiting for the city skips stroke replays (the snapshot or the host's settled
                 // tiles carry their result; a replay on top of the snapshot would apply a stroke twice)
                 if (client.State != ClientState.Live && !TerrainMessage.KeepBeforeLive(e.Body, e.BodyOffset, e.BodyCount))
                 {
@@ -476,7 +476,7 @@ namespace SkylineTogether.Sync
 
         private void HostApplyStamps(PeerId peer, ByteReader r, double now)
         {
-            // final review: proposals, global channels and actions check the role; terrain strokes did not, so a viewer
+            // proposals, global channels and actions check the role; terrain strokes did not, so a viewer
             // could terraform the host's city (the client-side viewer gate is comfort only). Its replica is corrected by
             // the tile audit.
             SessionHost host = _sessions.Host;
@@ -493,7 +493,7 @@ namespace SkylineTogether.Sync
             if (budget.Frame != frame) budget = (frame, 0);
             foreach (TerrainStamp s in _stampScratch)
             {
-                // w8/robust: positions inside the map, opacity a fraction, bounded strength; a budget per peer and frame
+                // positions inside the map, opacity a fraction, bounded strength; a budget per peer and frame
                 // (each stamp is a GPU brush pass, re-broadcast to everyone)
                 if (!s.IsPlausible(MaxStampSize, TerrainStamp.MaxCoordinate, TerrainStamp.MaxStrength) || budget.Count >= MaxStampsPerPeerFrame)
                 {
@@ -520,7 +520,7 @@ namespace SkylineTogether.Sync
             _remoteStampAt = Now;
             foreach (TerrainStamp s in _stampScratch)
             {
-                if (s.IsPlausible(MaxStampSize, TerrainStamp.MaxCoordinate, TerrainStamp.MaxStrength)) Replay(s, out _, out _); // w8/robust: the same checks as the host
+                if (s.IsPlausible(MaxStampSize, TerrainStamp.MaxCoordinate, TerrainStamp.MaxStrength)) Replay(s, out _, out _); // the same checks as the host
             }
         }
 
@@ -581,7 +581,7 @@ namespace SkylineTogether.Sync
                 case TerraformingTarget.None:
                     return false;
                 default:
-                    // w2/simvals: resource brushes (ore, oil, fertility, groundwater) write CPU cell maps; CellMapSync
+                    // resource brushes (ore, oil, fertility, groundwater) write CPU cell maps; CellMapSync
                     // sends the painted cells as patches and the host streams the merged map tiles
                     return false;
             }
@@ -622,7 +622,7 @@ namespace SkylineTogether.Sync
             }
             finally
             {
-                // w8/robust: tiles uploaded before a malformed one still get their water and min/max refresh
+                // tiles uploaded before a malformed one still get their water and min/max refresh
                 if (any) AfterHeightWrite(union);
             }
         }

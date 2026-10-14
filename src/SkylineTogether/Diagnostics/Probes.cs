@@ -70,19 +70,19 @@ namespace SkylineTogether.Diagnostics
         /// <summary>P-NAMES: <c>NameSystem.m_Names</c> (custom names); optional.</summary>
         public static FieldInfo NameSystemNames { get; private set; }
 
-        /// <summary>w3/audit P-MAIL: <c>MailAccumulationSystem.m_LastAccumulatedMail/m_LastProcessedMail</c> (post panel); optional.</summary>
+        /// <summary>P-MAIL: <c>MailAccumulationSystem.m_LastAccumulatedMail/m_LastProcessedMail</c> (post panel); optional.</summary>
         public static FieldInfo MailAccumulated { get; private set; }
 
         public static FieldInfo MailProcessed { get; private set; }
 
-        /// <summary>w3/audit P-CHIRPLINKS: <c>ChirpLinkSystem.m_CachedChirpData</c> (chirp sender and link names); optional.</summary>
+        /// <summary>P-CHIRPLINKS: <c>ChirpLinkSystem.m_CachedChirpData</c> (chirp sender and link names); optional.</summary>
         public static FieldInfo ChirpLinkCache { get; private set; }
 
-        /// <summary>polish P-JOINASSETS: the internal <c>PrefabSystem.SavePrefabAssets</c> (what <c>GameManager.Save</c>
+        /// <summary>P-JOINASSETS: the internal <c>PrefabSystem.SavePrefabAssets</c> (what <c>GameManager.Save</c>
         /// stores into a save package: package-bundled climate, water-render and terrain-render prefabs); optional.</summary>
         public static SavePrefabAssetsFn SavePrefabAssets { get; private set; }
 
-        /// <summary>polish P-JOINASSETS: <c>PrefabID.m_Hash</c>, for the render prefab ids the joiner checks; optional.</summary>
+        /// <summary>P-JOINASSETS: <c>PrefabID.m_Hash</c>, for the render prefab ids the joiner checks; optional.</summary>
         public static FieldInfo PrefabIdHash { get; private set; }
 
         /// <summary>The signature of <c>PrefabSystem.SavePrefabAssets</c> (<c>PrefabSystem.cs:378</c>).</summary>
@@ -150,7 +150,7 @@ namespace SkylineTogether.Diagnostics
             // gameplay branch: ViewerGateSystem clears a viewer's tool apply through this protected setter
             Safe("P-APPLYMODE", Features.Gate, "ToolBaseSystem.applyMode setter", () => typeof(Game.Tools.ToolBaseSystem).GetProperty("applyMode", AnyInstance)?.GetSetMethod(true) != null
                 ? null : "not found: viewers' tool applies are refused by the host instead", warningOnly: true);
-            // w2/simvals: the chart sample counter is written on clients (StatisticsSync)
+            // the chart sample counter is written on clients (StatisticsSync)
             Safe("P-STATS", Features.SimValues, "CityStatisticsSystem.m_SampleCount/m_LastSampleFrameIndex", () =>
                 typeof(Game.Simulation.CityStatisticsSystem).GetField("m_SampleCount", AnyInstance)?.FieldType == typeof(int)
                 && typeof(Game.Simulation.CityStatisticsSystem).GetField("m_LastSampleFrameIndex", AnyInstance)?.FieldType == typeof(uint)
@@ -159,21 +159,21 @@ namespace SkylineTogether.Diagnostics
             Safe("P-PAUSEMENU", Features.Speed, "TimeUISystem.m_UnpausedBeforeForcedPause/m_SpeedBeforePause", () =>
                 typeof(TimeUISystem).GetField("m_UnpausedBeforeForcedPause", Private) != null && typeof(TimeUISystem).GetField("m_SpeedBeforePause", Private) != null
                     ? null : "not found: the host's pause menu pauses the session", warningOnly: true);
-            // w3/audit: runtime panel values and chirp names written on clients (GlobalStateSync.Panels)
+            // runtime panel values and chirp names written on clients (GlobalStateSync.Panels)
             Safe("P-MAIL", Features.GlobalState, "MailAccumulationSystem.m_LastAccumulatedMail/m_LastProcessedMail", ProbeMail, warningOnly: true);
             Safe("P-CHIRPLINKS", Features.Events, "ChirpLinkSystem.m_CachedChirpData", ProbeChirpLinks, warningOnly: true);
-            Safe("P-JOINASSETS", Features.Session, "PrefabSystem.SavePrefabAssets, PrefabID.m_Hash", ProbeJoinAssets, warningOnly: true); // polish
+            Safe("P-JOINASSETS", Features.Session, "PrefabSystem.SavePrefabAssets, PrefabID.m_Hash", ProbeJoinAssets, warningOnly: true);
             ProbeDemandHandles();
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.GatedSystemNames, systems: true);
             ProbeTypeNames("P-GATE", Features.Gate, ClientGate.RouteSystemNames, systems: true);
-            ProbeTypeNames("P-GATE", Features.Gate, ClientGate.PreviewPipelineNames, systems: true); // polish
+            ProbeTypeNames("P-GATE", Features.Gate, ClientGate.PreviewPipelineNames, systems: true);
             ProbeTypeNames("P-MOVERGATE", Features.Movers, MoverClient.GatedSystemNames, systems: true);
             ProbeTypeNames("P-COSMETIC", Features.Clock, FollowerClock.CosmeticSystemNames, systems: true);
             ProbeTypeNames("P-FAMILY", Features.Replication, FamilyClassifier.MarkerTypeNames, systems: false);
             ProbeTypeNames("P-TYPES", Features.Replication, TypeHandlers.ExcludedTypeNames, systems: false);
             ProbeTypeNames("P-HASH", Features.Integrity, IntegrityHasher.StructuralTypeNames, systems: false);
             ProbeTypeNames("P-HASH", Features.Integrity, IntegrityHasher.AgentTypeNames, systems: false);
-            ProbeTypeNames("P-AGENTS", Features.Agents, AgentSync.TypeNames, systems: false); // w3/agents
+            ProbeTypeNames("P-AGENTS", Features.Agents, AgentSync.TypeNames, systems: false);
             ProbeTypeNames("P-AGENTS", Features.Agents, new[] { AgentSync.CitizenRerollSystemName }, systems: true);
             Safe("P-AGENTS-CORE", Features.Agents, "agent archetypes and household links", () =>
             {
@@ -184,7 +184,7 @@ namespace SkylineTogether.Diagnostics
                 }
                 return null;
             });
-            // w4/flow: the flow-status channel reads and writes the flow graph's components by type
+            // the flow-status channel reads and writes the flow graph's components by type
             ProbeTypeNames("P-FLOW", Features.FlowStatus, FlowStatusSync.TypeNames, systems: false);
             ProbeTypeNames("P-FLOW", Features.FlowStatus, FlowStatusSync.FlowSystemNames, systems: true);
             ProbeTypeNames("P-PREVIEW", Features.Previews, Presence.ToolPreviewCapture.TypeNames, systems: false); // blueprint branch
@@ -405,7 +405,7 @@ namespace SkylineTogether.Diagnostics
                 ESteamNetworkingAvailability a = SteamNetworkingUtils.GetRelayNetworkStatus(out SteamRelayNetworkStatus_t _);
                 return a < 0 ? "relay network unavailable (" + a + "); joining by Steam ID may fail, direct IP still works" : null;
             }, warningOnly: true);
-            // w6/invites: the friends list and lobby callbacks (the overlay is checked when the dialog is opened: it may
+            // the friends list and lobby callbacks (the overlay is checked when the dialog is opened: it may
             // hook into the game only after this probe ran)
             Safe("P-FRIENDS", Features.Invites, "Steam friends and lobby callbacks", () =>
             {

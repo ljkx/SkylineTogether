@@ -5,7 +5,7 @@ using SkylineTogether.Core.Hashing;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// w3/agents: the forward references of one agent whose owners keep a data-replicated reverse buffer (ARCH §4.2.4,
+    /// The forward references of one agent whose owners keep a data-replicated reverse buffer (ARCH §4.2.4,
     /// §4.2.6, K5), as net ids (0 = none):
     /// <list type="bullet">
     /// <item><c>HouseholdMember.m_Household</c> / <c>HouseholdPet.m_Household</c> → <c>HouseholdCitizen</c> / <c>HouseholdAnimal</c>;</item>
@@ -63,7 +63,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// w3/agents, client: per-agent limits on refresh requests (<see cref="AgentRefreshMessage"/>), so an agent whose
+    /// Client: per-agent limits on refresh requests (<see cref="AgentRefreshMessage"/>), so an agent whose
     /// reference never resolves cannot make the client ask forever: each id may be asked for <see cref="MaxPerWindow"/>
     /// times per <see cref="WindowSeconds"/>; requests are batched and sent at most every <see cref="IntervalSeconds"/>.
     /// Not thread-safe.

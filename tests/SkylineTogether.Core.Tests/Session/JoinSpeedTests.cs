@@ -11,7 +11,7 @@ using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Tests.Session
 {
-    /// <summary>loadspeed: join stage timings, the digest computed once per snapshot, and snapshot reuse.</summary>
+    /// <summary>Join stage timings, the digest computed once per snapshot, and snapshot reuse.</summary>
     public sealed class JoinSpeedTests
     {
         // ------------------------------------------------------------------ JoinTimeline

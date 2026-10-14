@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// w8/security: the one build id of Skyline Together: the first 12 hex digits (48 bits) of the SHA-256 of the
+    /// The one build id of Skyline Together: the first 12 hex digits (48 bits) of the SHA-256 of the
     /// shipped <c>SkylineTogether.dll</c>, exactly what the installer prints (tools/installer). The game computes it from
     /// the loaded assembly's file at start, compares it in the handshake (<see cref="HandshakeDigests.ModBuild"/> carries
     /// the 48 bits) and shows it in the panel, the refusal, the log and the diagnostics.

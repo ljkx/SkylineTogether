@@ -24,7 +24,7 @@ using Unity.Mathematics;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// w3/agents: citizens, households, household pets and companies (ARCH §2.2, §3.2 rule 16, class A; K5).
+    /// Citizens, households, household pets and companies (ARCH §2.2, §3.2 rule 16, class A; K5).
     /// <para>
     /// <b>Existence</b> is global and travels in the structure stream (<see cref="SyncController"/>): every agent is bound
     /// at host session start and in the join snapshot like every other family; births, arrivals, spawns of companies,
@@ -78,7 +78,7 @@ namespace SkylineTogether.Sync
         private const int MaxInboxPerFrame = 32;
         private const int MaxHeldMessages = 512;
         private const int MaxOwnerBytes = 48 * 1024;
-        private const int MaxOwnerRecordsPerFrame = 256; // crashfix: agent owners written in full per frame at most
+        private const int MaxOwnerRecordsPerFrame = 256; // agent owners written in full per frame at most
         private const double PanelRefreshInterval = 0.5;
 
         /// <summary>Types the agent sync needs (probed at startup, <see cref="Probes"/>).</summary>
@@ -278,7 +278,7 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.AgentValues) return;
-                // w8/robust: with the agents feature off nothing drains the inbox; agent values are refreshed by the host's
+                // with the agents feature off nothing drains the inbox; agent values are refreshed by the host's
                 // rolling scan, so dropping them while off loses nothing a rejoin or the integrity check does not restore
                 if (!Features.Agents.IsAvailable)
                 {
@@ -680,7 +680,7 @@ namespace SkylineTogether.Sync
                 Family family = _ids.GetFamily(owner);
                 if (family == Family.Agent)
                 {
-                    // crashfix: a big deletion (a block of buildings) co-captures thousands of households and companies;
+                    // a big deletion (a block of buildings) co-captures thousands of households and companies;
                     // full records beyond the per-frame cap carry over to the next frames instead of one huge frame
                     if (agentRecords >= MaxOwnerRecordsPerFrame)
                     {
@@ -696,7 +696,7 @@ namespace SkylineTogether.Sync
                 if (!FamilyClassifier.IsReplicated(family)) continue;
                 if (_ownerOut.Length > MaxOwnerBytes)
                 {
-                    _owners.Add(owner); // crashfix: carried over (was dropped)
+                    _owners.Add(owner); // carried over (was dropped)
                     continue;
                 }
                 if (countPosition < 0) countPosition = SimValueMessage.BeginValues(_ownerOut);

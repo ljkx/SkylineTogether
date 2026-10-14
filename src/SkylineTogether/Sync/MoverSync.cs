@@ -59,7 +59,7 @@ namespace SkylineTogether.Sync
             if (!SyncController.SessionActive) return;
             if (!Diagnostics.Features.Movers.IsAvailable)
             {
-                MoverSync.Instance?.Client.DropHeld(); // final review: never keep apply acks waiting on a feature that is off
+                MoverSync.Instance?.Client.DropHeld(); // never keep apply acks waiting on a feature that is off
                 return;
             }
             try

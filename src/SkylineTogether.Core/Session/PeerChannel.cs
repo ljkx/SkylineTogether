@@ -41,7 +41,7 @@ namespace SkylineTogether.Core.Session
         public PeerOutbox Outbox { get; }
 
         /// <summary>
-        /// w8/robust: the largest message body this channel accepts, below each kind's own limit (int.MaxValue: the kind's
+        /// The largest message body this channel accepts, below each kind's own limit (int.MaxValue: the kind's
         /// limit). The host lowers it for connections that have not been admitted: before admission only handshake
         /// messages are expected, and a tiny compressed message must not make it decompress megabytes.
         /// </summary>

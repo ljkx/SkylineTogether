@@ -86,7 +86,7 @@ namespace SkylineTogether.Core.Protocol
         /// are written into <paramref name="scratch"/>, which is reset first and must not hold the input. Throws
         /// <see cref="DecodeException"/> for every malformed envelope and for bodies above the limits.
         /// </summary>
-        /// <remarks>w8/robust: <c>maxBody</c> is a lower body limit than the kind's own (a connection that has not been
+        /// <remarks><c>maxBody</c> is a lower body limit than the kind's own (a connection that has not been
         /// admitted yet may only send small handshake messages); checked against the declared size before anything is
         /// allocated or decompressed.</remarks>
         public Envelope Decode(byte[] buffer, int offset, int count, ByteWriter scratch, int maxBody = int.MaxValue)
@@ -146,7 +146,7 @@ namespace SkylineTogether.Core.Protocol
             ICompressor decompressor = SelectDecompressor(kind, codec);
             if ((codec == CompressionKind.Lz4 || codec == CompressionKind.ManagedLz4) && declared > (ulong)sourceCount * Lz4MaxExpansion + 1024)
             {
-                // w8/tests: an LZ4 block expands at most ~255:1 (a match grows by 255 bytes per extra length byte), so a
+                // an LZ4 block expands at most ~255:1 (a match grows by 255 bytes per extra length byte), so a
                 // larger declared size is corrupt; rejecting it here keeps a 20-byte message from making the receiver
                 // allocate (and keep, in its reused scratch buffer) up to 8 MiB before decompression fails
                 throw new DecodeException(kind + ": declared size " + WireFormat.Format(declared) + " is more than LZ4 can produce from "

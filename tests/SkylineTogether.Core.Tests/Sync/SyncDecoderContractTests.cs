@@ -77,7 +77,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 w.LineRows(new byte[] { 1, 0 }, 0, 2);
                 w.EnabledBits(8, new[] { new SyncEnabledBit(0x55UL, true) });
                 w.ModSettings(new[] { new SettingEntry { Mod = "m", Key = "k", Value = "v" } });
-                w.PrefabSource(3, new AssetSource { Kind = AssetSourceKind.Package, Name = "Pack", PlatformId = "100454" }); // w8/mods
+                w.PrefabSource(3, new AssetSource { Kind = AssetSourceKind.Package, Name = "Pack", PlatformId = "100454" });
             });
             byte[] movers = Batch(w =>
             {
@@ -392,7 +392,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 case 18: w.EnabledBits(g.UIntEdgy(), g.List(20, x => new SyncEnabledBit(x.ULong(), x.Bool()))); break;
                 case 19: w.ModSettings(g.List(5, x => new SettingEntry { Mod = x.String(30), Key = x.String(30), Value = x.String(200) })); break;
                 case 20: w.Epoch(g.UIntEdgy()); break;
-                case 21: w.PrefabSource(g.UIntEdgy(), new AssetSource { Kind = g.Enum<AssetSourceKind>(), Name = g.String(120), PlatformId = g.String(12) }); break; // w8/mods
+                case 21: w.PrefabSource(g.UIntEdgy(), new AssetSource { Kind = g.Enum<AssetSourceKind>(), Name = g.String(120), PlatformId = g.String(12) }); break;
                 default:
                     if (g.Bool()) w.ProposalHeader(g.UIntEdgy(), g.UIntEdgy(), g.Enum<ProposalFlags>());
                     else w.ProposalResult(g.UIntEdgy(), g.Enum<RejectReason>());

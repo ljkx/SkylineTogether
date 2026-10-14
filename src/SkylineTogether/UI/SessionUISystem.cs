@@ -20,7 +20,7 @@ namespace SkylineTogether.UI
     /// bytes, speed, ETA; at most 4 times a second while joining); <c>net</c> and <c>presence</c>; and triggers for the
     /// panel's actions. Every name here is also checked by tools/ui_smoke.mjs.
     /// <para>
-    /// loadspeed: the <c>join</c> value also carries the join's stage timings, <c>timings</c> =
+    /// The <c>join</c> value also carries the join's stage timings, <c>timings</c> =
     /// <c>{connectMs, waitMs, saveMs, digestMs, transferMs, bytes, bps, verifyMs, loadMs, confirmMs, catchUpMs, totalMs,
     /// backlog, reused}</c> (milliseconds, -1 while a stage was not reached; <c>bytes</c> the snapshot size, <c>bps</c>
     /// its average download rate, <c>backlog</c> the replication messages buffered during the join, <c>reused</c> true
@@ -123,7 +123,7 @@ namespace SkylineTogether.UI
             AddBinding(new TriggerBinding<int>(Group, "kick", peer => Trigger("kick", () => Mod.Sessions?.Kick((byte)Math.Max(0, Math.Min(255, peer))))));
             // gameplay branch: builder ↔ viewer
             AddBinding(new TriggerBinding<int>(Group, "toggleRole", peer => Trigger("toggleRole", () => Mod.Sessions?.ToggleRole((byte)Math.Max(0, Math.Min(255, peer))))));
-            // w8/security: bans, co-hosts, the join policy, the integrity resync offer
+            // bans, co-hosts, the join policy, the integrity resync offer
             AddBinding(new TriggerBinding<int>(Group, "ban", peer => Trigger("ban", () => Mod.Sessions?.Ban((byte)Math.Max(0, Math.Min(255, peer))))));
             AddBinding(new TriggerBinding<int>(Group, "toggleCoHost", peer => Trigger("toggleCoHost", () => Mod.Sessions?.ToggleCoHost((byte)Math.Max(0, Math.Min(255, peer))))));
             AddBinding(new TriggerBinding<string>(Group, "unban", key => Trigger("unban", () => Mod.Sessions?.Unban(key))));
@@ -139,14 +139,14 @@ namespace SkylineTogether.UI
                 if (Mod.Settings == null) return;
                 Mod.Settings.PlayerName = (name ?? "").Trim();
                 Mod.Settings.SessionName = (session ?? "").Trim();
-                // review fix: the panel's password field starts empty ("unchanged"), and saving it (also on Join)
+                // the panel's password field starts empty ("unchanged"), and saving it (also on Join)
                 // used to wipe the stored host password; the panel now sends KeepPassword for an untouched field
                 if (password != KeepPassword)
                 {
                     Mod.Settings.HostPassword = password ?? "";
                     // the host reads its options live: a new password applies to the next joiner
                     if (Mod.Sessions?.Host != null) Mod.Sessions.Host.Options.Password = Mod.Settings.HostPassword;
-                    // w8/security: direct connections need a password; removing it turns them off (a running host
+                    // direct connections need a password; removing it turns them off (a running host
                     // refuses direct joiners from now on, HostOptions.PasswordForUnauthenticated)
                     if (string.IsNullOrEmpty(Mod.Settings.HostPassword)) Mod.Settings.AllowDirectConnections = false;
                 }
@@ -156,7 +156,7 @@ namespace SkylineTogether.UI
             {
                 if (Mod.Settings == null) return;
                 Mod.Settings.MaxPlayers = Math.Max(2, Math.Min(16, maxPlayers));
-                // listen sockets: applies the next time the player hosts; w8/security: only with a host password
+                // listen sockets: applies the next time the player hosts; only with a host password
                 Mod.Settings.AllowDirectConnections = allowDirect && !string.IsNullOrEmpty(Mod.Settings.HostPassword);
                 Mod.Settings.RequireSameMods = requireSameMods;
                 if (port >= 1024 && port <= 65535) Mod.Settings.DirectPort = port;
@@ -184,7 +184,7 @@ namespace SkylineTogether.UI
             AddBinding(new TriggerBinding(Group, "stayOffline", () => Trigger("stayOffline", () => Mod.Sessions?.StayOffline())));
             AddBinding(new TriggerBinding(Group, "mainMenu", () => Trigger("mainMenu", () => Mod.Sessions?.ReturnToMainMenu())));
 
-            // presence branch: network line, remote players' name tags and activities, diagnostics
+            // network line, remote players' name tags and activities, diagnostics
             AddUpdateBinding(new GetterValueBinding<string>(Group, "net", () => Guard.GetRetrying(Features.Ui, "network line", _buildNet, _net, ref _netRetry)));
             AddUpdateBinding(new GetterValueBinding<string>(Group, "presence", () => Guard.GetRetrying(Features.Ui, "name tags", _buildPresence, _presence, ref _presenceRetry)));
             AddBinding(new TriggerBinding(Group, "writeDiagnostics", () => Trigger("writeDiagnostics", SkylineTogetherSettings.WriteDiagnostics)));
@@ -251,7 +251,7 @@ namespace SkylineTogether.UI
 
         /// <summary>
         /// Remote players for the name tags and the panel, at most 20 times a second and only when a tag changed noticeably
-        /// (polish: <see cref="Core.Session.PresenceTagDiff"/>, applied in <c>PresenceController.SetTags</c>):
+        /// (<see cref="Core.Session.PresenceTagDiff"/>, applied in <c>PresenceController.SetTags</c>):
         /// <c>{tags: [{id, name, color, x, y, on, activity}]}</c> with x, y as fractions of the screen.
         /// </summary>
         private string BuildPresence()
@@ -351,7 +351,7 @@ namespace SkylineTogether.UI
         private int _doneKey = int.MinValue;
 
         /// <summary>
-        /// loadspeed: the inactive join value: the catch-up state of a client that just went live and the timings of its
+        /// The inactive join value: the catch-up state of a client that just went live and the timings of its
         /// join, or the host's last completed join; <see cref="NoJoin"/> when there is nothing to show. Rebuilt only
         /// when its inputs change.
         /// </summary>
@@ -395,7 +395,7 @@ namespace SkylineTogether.UI
             return _join;
         }
 
-        /// <summary>loadspeed: <c>"timings":{...}</c> of a join (see the class summary).</summary>
+        /// <summary><c>"timings":{...}</c> of a join (see the class summary).</summary>
         private static void Timings(StringBuilder sb, JoinTimeline t)
         {
             Str(sb, "timings");
@@ -437,10 +437,10 @@ namespace SkylineTogether.UI
         private string BuildState()
         {
             SessionManager s = Mod.Sessions;
-            // final review: an empty state disabled both buttons without a word; say why (the session layer did not start)
+            // an empty state disabled both buttons without a word; say why (the session layer did not start)
             if (s == null) return "{\"blocked\":\"the session layer did not start (see the log)\"}";
             SessionClient client = s.Client;
-            // review fix: since movers are bound, the bound count in the sync line changes nearly every frame, which
+            // since movers are bound, the bound count in the sync line changes nearly every frame, which
             // re-serialized the whole state (players, 100 chat lines) and re-rendered the panel every frame; the line
             // is refreshed twice a second instead
             double now = s.Clock.Seconds;
@@ -524,7 +524,7 @@ namespace SkylineTogether.UI
             Prop(sb, "allowDirect", settings != null && settings.AllowDirectConnections).Append(',');
             Prop(sb, "requireSameMods", settings == null || settings.RequireSameMods).Append(',');
             Prop(sb, "portSetting", settings?.DirectPort ?? SessionManager.DefaultDirectPort).Append(',');
-            // w8/security: the build id (as the installer prints it), the join policy, this player's role, the ban list
+            // the build id (as the installer prints it), the join policy, this player's role, the ban list
             Prop(sb, "build", GameInfoProvider.BuildText).Append(',');
             Prop(sb, "friendsOnly", settings != null && settings.FriendsOnly).Append(',');
             Prop(sb, "localRole", s.Host != null ? "host" : s.Client != null ? RoleOf(s.Client.LocalRole) : "").Append(',');
@@ -560,7 +560,7 @@ namespace SkylineTogether.UI
                 sessionName = s.Host.Options.SessionName;
                 hold = s.Host.HoldSimulation;
                 status = hold ? LocaleSource.Resolve("st.ui.session.holding") : "Hosting";
-                // presence branch: name who is joining and how far they are (the player list shows it per player too)
+                // name who is joining and how far they are (the player list shows it per player too)
                 if (hold)
                 {
                     foreach (PlayerInfo p in s.Host.GetPlayers())
@@ -614,7 +614,7 @@ namespace SkylineTogether.UI
             Prop(sb, "reason", r.Reason ?? "").Append(',');
             Prop(sb, "canReconnect", r.CanReconnect).Append(',');
             Prop(sb, "hostEnded", r.StartKind == ClientEndKind.SessionEnded || r.StartKind == ClientEndKind.Kicked || r.StartKind == ClientEndKind.Banned).Append(',');
-            // w8/security: removed (or banned) after loading the city: the panel says so instead of "the session has ended"
+            // removed (or banned) after loading the city: the panel says so instead of "the session has ended"
             Prop(sb, "kicked", r.StartKind == ClientEndKind.Kicked).Append(',');
             Prop(sb, "banned", r.StartKind == ClientEndKind.Banned).Append(',');
             Prop(sb, "attemptStage", r.Phase == RejoinPhase.Attempting && s.Client != null ? StageOf(s.Client.State) : "");
@@ -679,7 +679,7 @@ namespace SkylineTogether.UI
             sb.Append('{');
             Prop(sb, "seq", end.Seq).Append(',');
             Prop(sb, "kind", KindOf(end.Kind)).Append(',');
-            // final review: a host that is still preparing refuses temporarily; the panel's "notReady" text needs the reason too
+            // a host that is still preparing refuses temporarily; the panel's "notReady" text needs the reason too
             Prop(sb, "refuse", end.Kind == ClientEndKind.Refused || end.Kind == ClientEndKind.RefusedTemporarily ? end.Refuse.ToString() : "").Append(',');
             Prop(sb, "text", end.Text ?? "").Append(',');
             Prop(sb, "target", end.Target ?? "").Append(',');
@@ -749,7 +749,7 @@ namespace SkylineTogether.UI
                 case ClientEndKind.ConnectionLost: return "connectionLost";
                 case ClientEndKind.Failed: return "failed";
                 // robust branch: the finer kinds map onto the error screen's categories
-                case ClientEndKind.Unreachable: return "timeout"; // final review: never connected ("check the Steam ID or address")
+                case ClientEndKind.Unreachable: return "timeout"; // never connected ("check the Steam ID or address")
                 case ClientEndKind.RefusedTemporarily: return "refused";
                 case ClientEndKind.JoinFailed:
                 case ClientEndKind.LoadFailed:

@@ -54,7 +54,7 @@ namespace SkylineTogether.Sync
             public uint Vehicle;
             public uint Route;
             public float3 Sent;
-            /// <summary>w3/agents: the agent links last sent (citizen or pet, keeper, owner).</summary>
+            /// <summary>The agent links last sent (citizen or pet, keeper, owner).</summary>
             public MoverAgentLinks Links;
         }
 
@@ -66,7 +66,7 @@ namespace SkylineTogether.Sync
             public MotionInterestRegion Region;
             public float Scale = 1f;
             public readonly Dictionary<uint, uint> Interest = new Dictionary<uint, uint>();
-            /// <summary>w2/ids perf pass: the keys of <see cref="Interest"/> as an array-backed set (the sampling loop tests it per mover).</summary>
+            /// <summary>The keys of <see cref="Interest"/> as an array-backed set (the sampling loop tests it per mover).</summary>
             public readonly IdIndexSet Members = new IdIndexSet();
             public bool Congested;
             public long MotionBytes;
@@ -88,7 +88,7 @@ namespace SkylineTogether.Sync
         private readonly ILog _log;
         private readonly Dictionary<uint, HostMover> _movers = new Dictionary<uint, HostMover>();
         private readonly Dictionary<byte, PeerView> _peers = new Dictionary<byte, PeerView>();
-        // w8/robust: the views sampled this frame, and the sampling time budget per frame (ms)
+        // the views sampled this frame, and the sampling time budget per frame (ms)
         private readonly List<PeerView> _views = new List<PeerView>(8);
         private const double SampleBudgetMs = 2.0;
         private long _sampleCarryOvers;
@@ -294,7 +294,7 @@ namespace SkylineTogether.Sync
                     uint id = _ids.GetNetId(e);
                     if (id == 0 || _ids.GetFamily(id) != Family.Mover) continue;
                     _batch.MoverDespawn(id);
-                    _ids.Unbind(id, despawnSent: true); // w2/ids: quarantined until every peer applied this batch
+                    _ids.Unbind(id, despawnSent: true); // quarantined until every peer applied this batch
                     _movers.Remove(id);
                     if (id > NetSlot.MaxValue) continue;
                     foreach (PeerView v in _peers.Values)
@@ -327,11 +327,11 @@ namespace SkylineTogether.Sync
                         uint id = _ids.GetNetId(e);
                         MoverRecord rec = Describe(em, e);
                         if (id == 0 || rec == null) continue;
-                        ForgetInterest(id); // w2/ids: a reused id never inherits an old mover's interest
+                        ForgetInterest(id); // a reused id never inherits an old mover's interest
                         _batch.Mover(SyncRecordKind.MoverSpawn, id, rec);
                         HostMover created = Remember(rec);
                         _movers[id] = created;
-                        WriteLinks(em, e, id, created, true); // w3/agents: right behind the spawn, same batch
+                        WriteLinks(em, e, id, created, true); // right behind the spawn, same batch
                     }
                     catch (Exception ex)
                     {
@@ -365,7 +365,7 @@ namespace SkylineTogether.Sync
                         bool knownMover = _movers.TryGetValue(id, out HostMover known);
                         if (knownMover && SameState(em, e, known))
                         {
-                            WriteLinks(em, e, id, known, false); // w3/agents
+                            WriteLinks(em, e, id, known, false);
                             continue;
                         }
                         MoverRecord rec = Describe(em, e);
@@ -432,7 +432,7 @@ namespace SkylineTogether.Sync
                 if (!_movers.TryGetValue(id, out HostMover known)) continue;
                 Entity e = _ids.GetEntity(id);
                 if (e == Entity.Null || !em.Exists(e) || !em.HasComponent<Transform>(e)) continue;
-                WriteLinks(em, e, id, known, false); // w3/agents: a keeper or owner changed without a tag
+                WriteLinks(em, e, id, known, false); // a keeper or owner changed without a tag
                 float3 p = em.GetComponentData<Transform>(e).m_Position;
                 if (math.distancesq(p, known.Sent) < RefreshDistance * RefreshDistance) continue;
                 try
@@ -453,7 +453,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w3/agents: the agents a mover refers to (the citizen of a pedestrian, the household pet of an animal, the keeper
+        /// The agents a mover refers to (the citizen of a pedestrian, the household pet of an animal, the keeper
         /// and the owner of a vehicle) as net ids; unbound targets are 0 and are sent once they are bound.
         /// </summary>
         private MoverAgentLinks Links(EntityManager em, Entity e) => Links(em, e, new MoverAgentLinks());
@@ -469,7 +469,7 @@ namespace SkylineTogether.Sync
             return links;
         }
 
-        /// <summary>w3/agents: writes the mover's agent links when they differ from the last ones sent (always after a spawn).</summary>
+        /// <summary>Writes the mover's agent links when they differ from the last ones sent (always after a spawn).</summary>
         private void WriteLinks(EntityManager em, Entity e, uint id, HostMover known, bool spawn)
         {
             if (known == null) return;
@@ -584,7 +584,7 @@ namespace SkylineTogether.Sync
                 EntityTypeHandle entityType = em.GetEntityTypeHandle();
                 ComponentTypeHandle<Transform> transformType = em.GetComponentTypeHandle<Transform>(true);
                 BufferTypeHandle<TransformFrame> frameType = em.GetBufferTypeHandle<TransformFrame>(true);
-                // w8/robust: views with a report, once per frame (not a dictionary walk per mover), and a time budget with
+                // views with a report, once per frame (not a dictionary walk per mover), and a time budget with
                 // carry-over: a tick not sampled this frame is sampled next frame (the frame ring keeps 4 x 16 ticks)
                 _views.Clear();
                 foreach (PeerView v in _peers.Values)
@@ -747,7 +747,7 @@ namespace SkylineTogether.Sync
                 MotionQuality quality = demand <= perSecond ? MotionQuality.Full
                     : demand <= 2.0 * perSecond ? MotionQuality.FarHalf
                     : demand <= 4.0 * perSecond ? MotionQuality.FarQuarter : MotionQuality.Reduced;
-                // w2/ids: structure and values come first (ARCH §4.8.4); while the peer's reliable backlog is high, motion
+                // structure and values come first (ARCH §4.8.4); while the peer's reliable backlog is high, motion
                 // keeps only a trickle (control messages, a few frames) and the client extrapolates, then pins
                 int peerBudget = budget;
                 v.Congested = host.TryGetLink(v.Peer, out PeerSendState link)

@@ -5,7 +5,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w3/audit: the pure helpers behind the sync-coverage fixes (presence watch, channel pacing, set diffs).</summary>
+    /// <summary>The pure helpers behind the sync-coverage fixes (presence watch, channel pacing, set diffs).</summary>
     public sealed class SyncCoverageTests
     {
         [Test]

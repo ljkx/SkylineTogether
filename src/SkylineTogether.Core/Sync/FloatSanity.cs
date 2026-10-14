@@ -5,7 +5,7 @@ using System.Reflection;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// w8/robust: where the float fields of an unmanaged value type sit, so a value decoded from the wire can be checked
+    /// Where the float fields of an unmanaged value type sit, so a value decoded from the wire can be checked
     /// before it is written into the game. A NaN or infinite position, rotation or curve point is never valid game data,
     /// and the game's Burst jobs (culling, search trees, geometry) do not survive one: they index cells computed from the
     /// coordinate, so a NaN becomes an out-of-range index and a native crash. Built once per type by reflection; the
@@ -118,7 +118,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// w8/robust: the component types whose decoded values are checked with a <see cref="FloatLayout"/> before they are
+    /// The component types whose decoded values are checked with a <see cref="FloatLayout"/> before they are
     /// written (geometry the game's native jobs index by coordinate). Positions are bounded (a city is at most tens of
     /// kilometres wide); other floats of these types must only be finite.
     /// </summary>

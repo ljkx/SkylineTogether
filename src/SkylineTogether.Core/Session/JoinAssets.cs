@@ -26,7 +26,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// polish: the container of package-bundled prefabs in front of the join snapshot (R12 §4.3 "bundled render/climate
+    /// The container of package-bundled prefabs in front of the join snapshot (R12 §4.3 "bundled render/climate
     /// prefabs"). A normal save stores the city's climate, water-render and terrain-render prefabs into its package when
     /// they came from the map's or the save's package (<c>PrefabSystem.SavePrefabAssets</c>); the bare snapshot did not,
     /// so a joiner without that package got <c>[Missing]</c> prefabs. The host now writes these assets (and their
@@ -125,7 +125,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// polish: the joiner's download target. Takes the snapshot blob as it arrives (any chunking) and forwards everything
+    /// The joiner's download target. Takes the snapshot blob as it arrives (any chunking) and forwards everything
     /// after a leading <see cref="JoinAssetBundle"/> to the save file; the bundle is kept in memory
     /// (<see cref="Bundle"/>). A blob without the container's magic (a host of an older build) passes through unchanged.
     /// Write-only.
@@ -218,7 +218,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// polish: a render prefab the joiner must resolve (manifest <c>RenderPrefabIds</c>): the <c>PrefabID</c> the snapshot
+    /// A render prefab the joiner must resolve (manifest <c>RenderPrefabIds</c>): the <c>PrefabID</c> the snapshot
     /// writes for the city's climate, water-render and terrain-render prefab as <c>type|name|hash</c> (hash empty when
     /// the id has none). Type names and hashes contain no '|', so the name is everything between the first and the last.
     /// </summary>

@@ -3,7 +3,7 @@ using System.Globalization;
 
 namespace SkylineTogether.Core.Transport
 {
-    /// <summary>Limits and steps of a <see cref="SendRateController"/> (loadspeed).</summary>
+    /// <summary>Limits and steps of a <see cref="SendRateController"/>.</summary>
     public sealed class SendRateOptions
     {
         /// <summary>The rate a connection starts with. Steam's own default is a fixed 128-256 KiB/s (no estimation).</summary>
@@ -52,7 +52,7 @@ namespace SkylineTogether.Core.Transport
     }
 
     /// <summary>
-    /// loadspeed: chooses a connection's send rate (Steam <c>k_ESteamNetworkingConfig_SendRateMin/Max</c>, which the
+    /// Chooses a connection's send rate (Steam <c>k_ESteamNetworkingConfig_SendRateMin/Max</c>, which the
     /// game layer sets to the same value: Steam does not estimate the bandwidth itself and otherwise sends at its fixed
     /// default of 128-256 KiB/s, so a 100 MB city took minutes over a relay). AIMD on the link's own signals, decided
     /// every <see cref="SendRateOptions.IntervalSeconds"/>:

@@ -10,7 +10,7 @@ using SkylineTogether.Core.Tests.Framework;
 namespace SkylineTogether.Core.Tests.Session
 {
     /// <summary>
-    /// w2/ids: the session counts reliable <c>Epoch</c> messages on both ends (host per peer when queued, client when
+    /// The session counts reliable <c>Epoch</c> messages on both ends (host per peer when queued, client when
     /// dispatched, joiners included), carries <c>EpochAck</c> to the host and reports joins and per-peer link state.
     /// </summary>
     public sealed class ApplyAckSessionTests

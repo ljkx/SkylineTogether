@@ -31,7 +31,7 @@ namespace SkylineTogether.Sync
     /// components that differ (from the host's explanation).
     /// </para>
     /// <para>
-    /// <b>Escalation</b> (w8/security, <see cref="RepairEscalation"/>): a bucket that keeps differing after its object
+    /// <b>Escalation</b> (<see cref="RepairEscalation"/>): a bucket that keeps differing after its object
     /// repairs, or differs in more objects than repairs are meant for, is rebaselined (every object of it re-sent through
     /// the same re-send request; once per bucket per 10 minutes, a few a minute at most). Massive divergence (many buckets
     /// mismatching cycle after cycle, many rebaselines, many objects given up) offers the player a resync: a rejoin with
@@ -52,7 +52,7 @@ namespace SkylineTogether.Sync
         private const double SweepInterval = 30;
         private const double ToleranceLogInterval = 60;
         /// <summary>
-        /// crashfix: agents mismatch for a while after every key-link change on the host (household moves, births, deaths
+        /// Agents mismatch for a while after every key-link change on the host (household moves, births, deaths
         /// reach clients only when the host's rolling agent scan gets to them, up to a minute in a large city); within this
         /// window an agent mismatch is not divergence. The host also moves the agents of a requested bucket to the front of
         /// its scan (<see cref="TouchAgent"/>), so most of them converge long before.
@@ -79,14 +79,14 @@ namespace SkylineTogether.Sync
         private long _droppedRequests;
         private readonly Dictionary<byte, PeerGates> _gates = new Dictionary<byte, PeerGates>();
         private readonly List<EntityHash> _hostList = new List<EntityHash>(EntityDigest.BucketSize);
-        // crashfix: the host's re-send log is a rate-limited summary (it logged one line per request, every 0.5 s)
+        // the host's re-send log is a rate-limited summary (it logged one line per request, every 0.5 s)
         private readonly Dictionary<string, int> _resentByFamily = new Dictionary<string, int>();
         private readonly List<string> _resentSamples = new List<string>();
         private int _resentSinceLog;
         private double _lastResendLog = double.NegativeInfinity;
 
         /// <summary>
-        /// crashfix (host): moves an agent to the front of the host's agent scan (its key-link changes are streamed within
+        /// Host: moves an agent to the front of the host's agent scan (its key-link changes are streamed within
         /// a frame or two). Set by the controller; called for the agents of every bucket a client asks the detail of.
         /// </summary>
         public Action<uint> TouchAgent;
@@ -97,13 +97,13 @@ namespace SkylineTogether.Sync
             public readonly RateGate Resends = new RateGate(256, 512);
             public readonly RateGate Explains = new RateGate(8, 16);
             public readonly RateGate IconSyncs = new RateGate(0.1, 2);
-            /// <summary>w8/robust: bucket details of this peer waiting to be hashed.</summary>
+            /// <summary>Bucket details of this peer waiting to be hashed.</summary>
             public int PendingDetails;
         }
 
         // ---------------------------------------------------------------- client state
         private readonly DivergenceTracker _tracker = new DivergenceTracker();
-        // w8/security: rebaselines and the resync offer above the object repairs
+        // rebaselines and the resync offer above the object repairs
         private readonly RepairEscalation _escalation = new RepairEscalation();
         private int _cycleCompared;
         private string _announcedOffer;
@@ -111,7 +111,7 @@ namespace SkylineTogether.Sync
         private readonly DivergenceTracker.Outcome _outcome = new DivergenceTracker.Outcome();
         private readonly RateGate _detailGate = new RateGate(8, 16);
         private readonly RateGate _repairGate = new RateGate(128, 256);
-        // crashfix: explanations of entities repaired more than once (what differs), at most one per 5 s
+        // explanations of entities repaired more than once (what differs), at most one per 5 s
         private readonly RateGate _repeatExplainGate = new RateGate(0.2, 4);
         private readonly HashSet<uint> _repeatExplains = new HashSet<uint>();
         private readonly List<uint> _pendingRepairs = new List<uint>();
@@ -218,7 +218,7 @@ namespace SkylineTogether.Sync
             _cycleStart = -1;
             _cycleEntities = 0;
             _gates.Clear();
-            _pendingDetails.Clear(); // w8/robust
+            _pendingDetails.Clear();
             _detailWriters.Clear();
             _tracker.Clear();
             _scheduler.Clear();
@@ -285,14 +285,14 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// Host, at the end of the frame's capture: icon sets and line rows into the broadcast batch, the rolling digests into
-        /// <paramref name="digests"/> (w2/ids: sent per peer after its deferred values, only to peers that are up to date).
+        /// <paramref name="digests"/> (sent per peer after its deferred values, only to peers that are up to date).
         /// </summary>
         public void HostCapture(double now, SyncBatch.Writer batch, SyncBatch.Writer digests, int livePeers)
         {
             if (_codec == null) return;
             try
             {
-                ServePendingDetails(); // w8/robust
+                ServePendingDetails();
             }
             catch (Exception ex)
             {
@@ -440,7 +440,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w8/robust: bucket details are queued and hashed under a frame budget (<see cref="ServePendingDetails"/>): each
+        /// Bucket details are queued and hashed under a frame budget (<see cref="ServePendingDetails"/>): each
         /// bucket serializes up to 128 entities, and a burst of requests hashed in one frame cost the host tens of ms.
         /// </summary>
         private void ServeDetails(PeerId peer, uint[] buckets, PeerGates gates, double now)
@@ -462,7 +462,7 @@ namespace SkylineTogether.Sync
         private readonly Queue<(PeerId Peer, uint Bucket)> _pendingDetails = new Queue<(PeerId, uint)>();
         private readonly Dictionary<byte, SyncBatch.Writer> _detailWriters = new Dictionary<byte, SyncBatch.Writer>();
 
-        /// <summary>w8/robust (host, every frame): hashes queued bucket details within the budget (at least one per frame).</summary>
+        /// <summary>Host, every frame: hashes queued bucket details within the budget (at least one per frame).</summary>
         private void ServePendingDetails()
         {
             if (_pendingDetails.Count == 0) return;
@@ -490,7 +490,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// crashfix (host): the agents of a bucket a client found mismatching (and the members of its households) go to the
+        /// Host: the agents of a bucket a client found mismatching (and the members of its households) go to the
         /// front of the agent scan, so a key-link change the scan had not reached yet is streamed before the client's
         /// confirmation window ends instead of being "repaired".
         /// </summary>
@@ -513,7 +513,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>crashfix: "Family 'prefab name'" of a bound entity, for the logs ("?" when it is not bound here).</summary>
+        /// <summary>"Family 'prefab name'" of a bound entity, for the logs ("?" when it is not bound here).</summary>
         public string Describe(uint id)
         {
             if (_ids == null || _codec == null) return "?";
@@ -600,7 +600,7 @@ namespace SkylineTogether.Sync
                             for (int i = 0; i < waypoints.Length; i++) list.Add(waypoints[i].m_Waypoint);
                             int children = WriteChildren(w, list);
                             sent += children;
-                            gates.Resends.TryTake(now, Math.Min(children, 64)); // crashfix: children cost tokens too (bounded per line)
+                            gates.Resends.TryTake(now, Math.Min(children, 64)); // children cost tokens too (bounded per line)
                         }
                         if (em.HasBuffer<Game.Routes.RouteSegment>(e))
                         {
@@ -691,7 +691,7 @@ namespace SkylineTogether.Sync
             OnHostBatch(SyncBatch.Read(data, 0, data.Length), backlog);
         }
 
-        /// <summary>As <see cref="OnHostBatch(byte[], int)"/> with the records the caller already decoded (w2/ids: decoded once).</summary>
+        /// <summary>As <see cref="OnHostBatch(byte[], int)"/> with the records the caller already decoded (decoded once).</summary>
         public void OnHostBatch(List<SyncRecord> records, int backlog)
         {
             if (_codec == null || _liveSince < 0) return;
@@ -710,8 +710,8 @@ namespace SkylineTogether.Sync
                             break;
                         case SyncRecordKind.Despawn:
                             _hasher.Forget(r.NetId);
-                            ForgetRepair(r.NetId); // crashfix: a pending repair of a despawned id would ask for a ghost
-                            Icons.ForgetNetId(r.NetId); // w2/ids: the id may be reused; the old owner's icons must not stick to it
+                            ForgetRepair(r.NetId); // a pending repair of a despawned id would ask for a ghost
+                            Icons.ForgetNetId(r.NetId); // the id may be reused; the old owner's icons must not stick to it
                             break;
                         case SyncRecordKind.BucketDigest:
                             if (compare) OnDigest(r.Bucket, r.Count, r.Hash, now);
@@ -744,7 +744,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>crashfix (client): this player deleted the entity (or its owner's cascade did): nothing to verify or repair.</summary>
+        /// <summary>Client: this player deleted the entity (or its owner's cascade did): nothing to verify or repair.</summary>
         public void OnLocalDelete(uint id)
         {
             _hasher?.Forget(id);
@@ -764,7 +764,7 @@ namespace SkylineTogether.Sync
                 _verifiedLastCycle = _verifiedThisCycle;
                 _verifiedThisCycle = 0;
                 if (_bucketMismatches > 0) _log.Debug(LogCategory.Integrity, "verification cycle: " + _bucketMismatches + " of " + _cycleCompared + " buckets mismatched");
-                // w8/security: massive divergence across a whole cycle may offer a resync
+                // massive divergence across a whole cycle may offer a resync
                 _escalation.OnCycle(_cycleCompared, (int)_bucketMismatches, _tracker.GivenUpCount, _verifiedLastCycle, now);
                 AnnounceOffer();
                 _bucketMismatches = 0;
@@ -785,10 +785,10 @@ namespace SkylineTogether.Sync
             _scheduler.Request(bucket, now, now);
         }
 
-        /// <summary>w8/security: a resync the integrity check offers the player (the reason), or null.</summary>
+        /// <summary>A resync the integrity check offers the player (the reason), or null.</summary>
         public string ResyncOffer => _sessions.Client != null ? _escalation.PendingOffer : null;
 
-        /// <summary>w8/security: the player declined the resync offer (not repeated for 30 minutes).</summary>
+        /// <summary>The player declined the resync offer (not repeated for 30 minutes).</summary>
         public void DeclineResync()
         {
             if (_escalation.PendingOffer == null) return;
@@ -796,7 +796,7 @@ namespace SkylineTogether.Sync
             _escalation.Decline(_sessions.Clock.Seconds);
         }
 
-        /// <summary>w8/security: the player accepted the resync; the caller rejoins (<see cref="SessionManager.Resync"/>).</summary>
+        /// <summary>The player accepted the resync; the caller rejoins (<see cref="SessionManager.Resync"/>).</summary>
         public void AcceptResync()
         {
             _log.Info(LogCategory.Integrity, "the player accepted the resync");
@@ -857,7 +857,7 @@ namespace SkylineTogether.Sync
                 _log.Info(LogCategory.Integrity, "differs from the host; requesting " + _outcome.Repair.Count + " object(s): " + text);
             }
             foreach (uint id in _outcome.Explain) _pendingExplains.Add(id);
-            // crashfix: an entity repaired again after a repair that matched: ask what differs (rate-limited), so the log
+            // an entity repaired again after a repair that matched: ask what differs (rate-limited), so the log
             // tells which component keeps coming back
             foreach (uint id in _outcome.Repeated)
             {
@@ -877,13 +877,13 @@ namespace SkylineTogether.Sync
             }
             if (_outcome.NewlyTolerated.Count > 0) LogTolerated(_outcome.NewlyTolerated, now);
             if (_outcome.Recheck) _scheduler.Request(bucket, now + _outcome.RecheckAfter, now);
-            // w8/security: a bucket whose repairs do not converge (or too different for them) is re-sent as a whole
+            // a bucket whose repairs do not converge (or too different for them) is re-sent as a whole
             if (_escalation.OnDetail(bucket, _outcome.Mismatching, _outcome.Repair.Count, now) == RepairEscalation.Step.RebaselineBucket) RebaselineBucket(bucket, host);
             AnnounceOffer();
         }
 
         /// <summary>
-        /// w8/security: asks the host to re-send every object of a bucket it has (as spawns, which create or reconcile)
+        /// Asks the host to re-send every object of a bucket it has (as spawns, which create or reconcile)
         /// and to answer every id only this game has (the host sends a despawn): the same request as object repairs,
         /// for the whole bucket at once (at most 128 ids, through the same rate gate).
         /// </summary>
@@ -966,7 +966,7 @@ namespace SkylineTogether.Sync
             if (host.Count == 0 && e != Entity.Null) parts.Add("the host does not have it");
             if (e == Entity.Null) parts.Add("missing here");
             string what = "#" + id + " (" + Describe(id) + ") differs in: " + (parts.Count == 0 ? "nothing now (it changed meanwhile)" : string.Join(", ", parts));
-            // crashfix: explanations of repeated repairs are diagnostics (Info); those of tolerated entities stay warnings
+            // explanations of repeated repairs are diagnostics (Info); those of tolerated entities stay warnings
             if (_repeatExplains.Remove(id)) _log.Info(LogCategory.Integrity, "repaired again: " + what + " (repairs so far: " + _tracker.RepairsOf(id) + ")");
             else _log.Warn(LogCategory.Integrity, what);
         }

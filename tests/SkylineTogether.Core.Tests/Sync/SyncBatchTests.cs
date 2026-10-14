@@ -104,7 +104,7 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.True(ClientIdPool.InRanges(new[] { g1, g2 }, 13));
             Assert.False(ClientIdPool.InRanges(new[] { g1, g2 }, 17));
             Assert.True(host.Claim(500));
-            Assert.Equal(18u, host.Allocate(), "ids skipped by a claim are free (w2/ids: reused lowest first)");
+            Assert.Equal(18u, host.Allocate(), "ids skipped by a claim are free (reused lowest first)");
         }
 
         [Test]

@@ -22,7 +22,7 @@ using ILog = SkylineTogether.Core.ILog;
 namespace SkylineTogether.Session
 {
     /// <summary>
-    /// polish: package-bundled render prefabs in the join snapshot (R12 §4.3 "bundled render/climate prefabs (gap)").
+    /// Package-bundled render prefabs in the join snapshot (R12 §4.3 "bundled render/climate prefabs (gap)").
     /// <para>
     /// <b>Host</b> (<see cref="Export"/>, on the "SaveLoadGame" queue right before the snapshot's <c>SaveGameSystem</c>
     /// run): calls the internal <c>PrefabSystem.SavePrefabAssets</c> exactly as <c>GameManager.Save</c> does

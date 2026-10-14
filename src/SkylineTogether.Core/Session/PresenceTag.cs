@@ -19,7 +19,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// polish: decides whether a frame's tags differ enough from the ones the UI last got to be pushed again. The tags are
+    /// Decides whether a frame's tags differ enough from the ones the UI last got to be pushed again. The tags are
     /// projected every frame (the camera and the smoothed cursors move), but the UI's name tag layer and the player
     /// list re-render on every push, so a push happens only when a tag appears, disappears or changes its text, colour
     /// or visibility, or when a visible tag moved more than <see cref="MoveThreshold"/> (a fraction of the screen,

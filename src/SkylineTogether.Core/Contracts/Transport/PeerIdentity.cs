@@ -8,7 +8,7 @@ namespace SkylineTogether.Core
     /// the remote address (direct connections) and the persona name. Identity is <see cref="SteamId"/> plus
     /// <see cref="Address"/>; the display name is cosmetic and not part of equality.
     /// <para>
-    /// w8/security: a transport sets <see cref="SteamId"/> only when Steam authenticated the peer (a SteamID claimed in a
+    /// A transport sets <see cref="SteamId"/> only when Steam authenticated the peer (a SteamID claimed in a
     /// message is never an identity), and <see cref="Direct"/> for connections that arrived on a direct-IP listen socket;
     /// the host requires the session password for both a direct and an unauthenticated connection.
     /// </para>

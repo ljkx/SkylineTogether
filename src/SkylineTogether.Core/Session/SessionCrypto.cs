@@ -16,7 +16,7 @@ namespace SkylineTogether.Core.Session
     /// </summary>
     public static class SessionCrypto
     {
-        /// <summary>PBKDF2 rounds of the password key (w8/security: before, a single SHA-256 was used).</summary>
+        /// <summary>PBKDF2 rounds of the password key (before, a single SHA-256 was used).</summary>
         public const int Pbkdf2Iterations = 10000;
 
         /// <summary>Shortest client nonce the host accepts in an answer.</summary>

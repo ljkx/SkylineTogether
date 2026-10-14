@@ -8,19 +8,19 @@ namespace SkylineTogether.Core
         public string FilePath;
 
         /// <summary>
-        /// loadspeed: true when <see cref="DigestLo"/>/<see cref="DigestHi"/> hold the file's XXH3-128 digest and
+        /// True when <see cref="DigestLo"/>/<see cref="DigestHi"/> hold the file's XXH3-128 digest and
         /// <see cref="Size"/> its length (the provider hashed the bytes while writing them, or the host hashed the file
         /// once for its first receiver). Every transfer of this snapshot then starts without reading the file again.
         /// </summary>
         public bool DigestKnown;
 
-        /// <summary>loadspeed: the digest's low and high halves (<c>Hashing.Digest128</c>), valid when <see cref="DigestKnown"/>.</summary>
+        /// <summary>The digest's low and high halves (<c>Hashing.Digest128</c>), valid when <see cref="DigestKnown"/>.</summary>
         public ulong DigestLo, DigestHi;
 
-        /// <summary>loadspeed: the file's length in bytes, valid when <see cref="DigestKnown"/>.</summary>
+        /// <summary>The file's length in bytes, valid when <see cref="DigestKnown"/>.</summary>
         public long Size;
 
-        /// <summary>loadspeed: seconds the provider took to write the file (the game's save), 0 when unknown.</summary>
+        /// <summary>Seconds the provider took to write the file (the game's save), 0 when unknown.</summary>
         public double SaveSeconds;
     }
 }

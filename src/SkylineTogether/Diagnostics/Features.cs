@@ -46,17 +46,17 @@ namespace SkylineTogether.Diagnostics
         /// <summary>Divergence detection and repair, host icons, line check.</summary>
         public static readonly FeatureHealth Integrity = Registry.Add("integrity", "divergence checks", false);
 
-        /// <summary>w2/simvals: attention values, inspection samples, resource/pollution cell maps, city statistics.</summary>
+        /// <summary>Attention values, inspection samples, resource/pollution cell maps, city statistics.</summary>
         public static readonly FeatureHealth SimValues = Registry.Add("simvals", "city statistics and maps", false);
 
         /// <summary>
-        /// w3/agents: citizens, households, pets and companies (existence, values, reverse buffers, the agents of movers).
+        /// Citizens, households, pets and companies (existence, values, reverse buffers, the agents of movers).
         /// Fallback: they stay as in the join snapshot (panels show stale residents, workers and households).
         /// </summary>
         public static readonly FeatureHealth Agents = Registry.Add("agents", "citizens and companies", false);
 
         /// <summary>
-        /// w4/flow: flow status of the electricity and water graphs by flow key for the infoviews (ARCH §4.11.5).
+        /// Flow status of the electricity and water graphs by flow key for the infoviews (ARCH §4.11.5).
         /// Fallback: clients colour power lines and pipes from the join snapshot's flows (buildings stay exact).
         /// </summary>
         public static readonly FeatureHealth FlowStatus = Registry.Add("flow", "electricity and water flow status", false);
@@ -65,7 +65,7 @@ namespace SkylineTogether.Diagnostics
         public static readonly FeatureHealth Actions = Registry.Add("actions", "player actions sync", false);
 
         /// <summary>
-        /// w3/audit: events and disasters (fires, accidents, weather phenomena, floods), their marks on buildings and
+        /// Events and disasters (fires, accidents, weather phenomena, floods), their marks on buildings and
         /// roads (presence watch), the chirper feed and the event journal.
         /// </summary>
         public static readonly FeatureHealth Events = Registry.Add("events", "events, disasters and chirper", false);
@@ -80,13 +80,13 @@ namespace SkylineTogether.Diagnostics
         public static readonly FeatureHealth Previews = Registry.Add("previews", "building previews", false);
 
         /// <summary>
-        /// w6/invites: Steam lobby, rich presence, invites (overlay dialog and direct) and the friends list. Fallback:
+        /// Steam lobby, rich presence, invites (overlay dialog and direct) and the friends list. Fallback:
         /// friends join with the host's Steam ID.
         /// </summary>
         public static readonly FeatureHealth Invites = Registry.Add("invites", "Steam invites and friends list", false);
 
         /// <summary>
-        /// w8/mods: the integration API for other mods (session events, the mod channel; docs/MOD-INTEGRATION.md). Fallback:
+        /// The integration API for other mods (session events, the mod channel; docs/MOD-INTEGRATION.md). Fallback:
         /// mods see no session (their delegates report "not in a session") and their channel messages are not sent.
         /// </summary>
         public static readonly FeatureHealth Mods = Registry.Add("mods", "mod integration API", false);

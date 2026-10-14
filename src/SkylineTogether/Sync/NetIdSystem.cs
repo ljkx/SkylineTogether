@@ -26,7 +26,7 @@ namespace SkylineTogether.Sync
     /// reads and drops them. The tables never grow without a session.
     /// </para>
     /// <para>
-    /// w2/ids: ids are reused. On the host (<see cref="Authority"/>) every unbinding hands the id to the quarantine of
+    /// Ids are reused. On the host (<see cref="Authority"/>) every unbinding hands the id to the quarantine of
     /// <see cref="Ids"/> (<see cref="NetIdAllocator"/>), which frees it only after every peer applied the despawn; an
     /// id unbound without a despawn on the wire waits in <see cref="TakePendingDespawns"/> until the capture writes one.
     /// Per-family index sets (<see cref="ScannedIds"/>) replace scans over the whole table. Session start compacts the
@@ -54,7 +54,7 @@ namespace SkylineTogether.Sync
         private readonly IdIndexSet _structure = new IdIndexSet();
         private readonly int[] _familyCounts = new int[FamilyCount];
         private readonly List<uint> _pendingDespawns = new List<uint>();
-        private readonly HashSet<uint> _pendingDespawnSet = new HashSet<uint>(); // crashfix: O(1) membership (was List.Contains per unbind)
+        private readonly HashSet<uint> _pendingDespawnSet = new HashSet<uint>(); // O(1) membership (was List.Contains per unbind)
         private bool _warnedExhausted;
 
         public NetIdAllocator Ids { get; } = new NetIdAllocator(Mod.Log);
@@ -76,7 +76,7 @@ namespace SkylineTogether.Sync
         /// <summary>Bound ids of the value-scanned families (<see cref="FamilyClassifier.IsScanned"/>).</summary>
         public IdIndexSet ScannedIds => _scanned;
 
-        /// <summary>w3/agents: bound ids of the agent family (the host's rolling agent scan).</summary>
+        /// <summary>Bound ids of the agent family (the host's rolling agent scan).</summary>
         public IdIndexSet AgentIds => _agents;
 
         /// <summary>
@@ -112,7 +112,7 @@ namespace SkylineTogether.Sync
 
         public void Clear()
         {
-            // review fix: a client session can end on exit after the world destroyed this system (lists disposed)
+            // a client session can end on exit after the world destroyed this system (lists disposed)
             if (!_writer.IsCreated || !_reader.IsCreated || !_family.IsCreated) return;
             _writer.Clear();
             _reader.Clear();

@@ -7,7 +7,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w2/simvals: the sim-values and statistics message codecs.</summary>
+    /// <summary>The sim-values and statistics message codecs.</summary>
     public sealed class SimValuesStatisticsTests
     {
         private static byte[] Shifted(ByteWriter w, int shift)

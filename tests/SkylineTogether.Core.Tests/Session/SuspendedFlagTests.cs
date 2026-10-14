@@ -3,7 +3,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Session
 {
-    /// <summary>polish: the joiner's achievements flag is given back as it was before the session.</summary>
+    /// <summary>The joiner's achievements flag is given back as it was before the session.</summary>
     public sealed class SuspendedFlagTests
     {
         [Test]

@@ -14,7 +14,7 @@ namespace SkylineTogether.Core.Scheduling
         {
             public long Cell;
             public float X, Z;
-            /// <summary>crashfix: the id's index in its cell's list (O(1) removal; a tower's households share one cell).</summary>
+            /// <summary>The id's index in its cell's list (O(1) removal; a tower's households share one cell).</summary>
             public int Slot;
         }
 
@@ -102,7 +102,7 @@ namespace SkylineTogether.Core.Scheduling
             long minZ = Coord(cz - radius), maxZ = Coord(cz + radius);
             int found = 0;
             // a radius larger than the populated area: walking the populated cells is cheaper than the empty ones
-            // (crashfix: it walked every entry, which is every agent of the city)
+            // (it walked every entry, which is every agent of the city)
             if (((double)(maxX - minX) + 1.0) * ((double)(maxZ - minZ) + 1.0) > _cells.Count)
             {
                 foreach (KeyValuePair<long, List<uint>> cell in _cells)

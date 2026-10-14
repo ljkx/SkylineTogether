@@ -39,17 +39,17 @@ namespace SkylineTogether.Sync
             "Game.AutoSaveSystem",
             // feat/integrity: writes nothing but warning icons, which come from the host (D11, IconSync)
             "Game.Net.ConnectionWarningSystem",
-            // w3/audit: event entities come from the host; its initializer would ignite, damage and pick random targets
+            // event entities come from the host; its initializer would ignite, damage and pick random targets
             "Game.Events.InitializeSystem",
             // CreateChirpSystem is NOT gated: TriggerSystem and LifePathEventSystem write into its queue and the game asserts
             // that it runs (in-game crash report). ChirpDrainSystem empties the queue right before it, so no local chirps.
-            // w3/agents: cascades the host sends itself (every despawn, every changed reverse buffer, ARCH 4.2.6)
+            // cascades the host sends itself (every despawn, every changed reverse buffer, ARCH 4.2.6)
             "Game.Citizens.HouseholdAndCitizenRemoveSystem",
             "Game.Citizens.HouseholdPetRemoveSystem",
             "Game.Simulation.RemovedSystem",
             "Game.Buildings.SchoolUpdatedSystem",
             "Game.Events.AddHealthProblemSystem",
-            // w8/robust (gap b of crashfix): Modification2, not GameSimulation, so the follower clock leaves it on. On
+            // Modification2, not GameSimulation, so the follower clock leaves it on. On
             // terrain-change bounds (buildings, flatten/clip roads, terrain areas, TerrainSync tile copies) it re-samples
             // edge Curve y, node y, on-ground object Transform and area node y from this client's own height cascade,
             // which each peer renders itself from local lots and road clipping (16-bit heights: one step is 6 cm, the
@@ -66,7 +66,7 @@ namespace SkylineTogether.Sync
         };
 
         /// <summary>
-        /// polish: the rest of the route-tool preview pipeline. On a client the preview of a segment is computed as on the
+        /// The rest of the route-tool preview pipeline. On a client the preview of a segment is computed as on the
         /// host (decompiled <c>Game.Common/SystemOrder.cs</c>): the route tool's temp waypoints get their lanes from
         /// <c>WaypointConnectionSystem</c> (Modification5, gated above), <c>RoutePathSystem</c> (ModificationEnd, gated
         /// above) enqueues a high-priority <c>PathfindAction</c> with the <c>uint.MaxValue</c> deadline
@@ -160,7 +160,7 @@ namespace SkylineTogether.Sync
             _log.Debug(LogCategory.Gate, "route preview window " + (open ? "open" : "closed"));
         }
 
-        /// <summary>polish: turns on, for the window, every preview pipeline system something else turned off.</summary>
+        /// <summary>Turns on, for the window, every preview pipeline system something else turned off.</summary>
         private void EnsurePipeline()
         {
             World world = World.DefaultGameObjectInjectionWorld;

@@ -6,7 +6,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w2/ids: the per-family index set that replaces scans over the whole id table.</summary>
+    /// <summary>The per-family index set that replaces scans over the whole id table.</summary>
     public sealed class IdIndexSetTests
     {
         [Test]

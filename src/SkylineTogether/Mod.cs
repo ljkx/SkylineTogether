@@ -37,7 +37,7 @@ namespace SkylineTogether
 
         public static SyncController Sync { get; private set; }
 
-        /// <summary>Remote presence (cursors, tools, name tags; presence branch).</summary>
+        /// <summary>Remote presence (cursors, tools, name tags).</summary>
         public static PresenceController Presence { get; private set; }
 
         /// <summary>Movers branch: the client's follower clock.</summary>
@@ -98,14 +98,14 @@ namespace SkylineTogether
                 if (Settings == null) throw new InvalidOperationException("the settings did not load");
                 Sessions = new SessionManager(Settings, log);
                 Sync = new SyncController(Sessions, log);
-                Presence = new PresenceController(Sessions); // presence branch
+                Presence = new PresenceController(Sessions);
                 // movers branch: follower clock (time runs, gameplay simulation off) and mover replication
                 Clock = new FollowerClock(Sessions, log);
                 Movers = new MoverSync(Sessions, log);
                 Toasts = new SessionToasts(Sessions);
                 Invites = new SteamInvites(Sessions, Settings, log);
                 Replay = new SkylineTogether.Replay.ReplayController(Sessions, log); // solo testing
-                Compat.ModIntegration.Attach(Sessions, log); // w8/mods: session events and the channel for other mods
+                Compat.ModIntegration.Attach(Sessions, log); // session events and the channel for other mods
             });
             if (!core)
             {
@@ -151,10 +151,10 @@ namespace SkylineTogether
             });
             Step(log, "panel bindings", () => updateSystem.UpdateAt<SessionUISystem>(SystemUpdatePhase.UIUpdate));
             Step(log, "solo testing bindings", () => updateSystem.UpdateAt<ReplayUISystem>(SystemUpdatePhase.UIUpdate));
-            Step(log, "invite bindings", () => updateSystem.UpdateAt<InviteUISystem>(SystemUpdatePhase.UIUpdate)); // w6/invites: friends list, overlay state
+            Step(log, "invite bindings", () => updateSystem.UpdateAt<InviteUISystem>(SystemUpdatePhase.UIUpdate)); // friends list, overlay state
             Step(log, "presence system", () =>
             {
-                // presence branch: remote cursors drawn into the overlay buffer right before it renders (ARCH K15)
+                // remote cursors drawn into the overlay buffer right before it renders (ARCH K15)
                 updateSystem.UpdateBefore<PresenceSystem, Game.Rendering.OverlayRenderSystem>(SystemUpdatePhase.Rendering);
             });
             Step(log, "session driver", () =>
@@ -207,7 +207,7 @@ namespace SkylineTogether
             }
             Invites = null;
             Toasts = null;
-            // review fix: the codec's persistent native buffers and serialization contexts were never freed
+            // the codec's persistent native buffers and serialization contexts were never freed
             try
             {
                 Sync?.Dispose();

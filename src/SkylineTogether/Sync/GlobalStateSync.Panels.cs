@@ -13,7 +13,7 @@ using Unity.Mathematics;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// w3/audit: system state the info panels read that clients cannot compute, because the systems that write it are
+    /// System state the info panels read that clients cannot compute, because the systems that write it are
     /// <c>GameSimulation</c> systems (off on clients) or because it lives outside the entities that replicate
     /// (docs/design/SYNC-COVERAGE.md):
     /// <list type="bullet">
@@ -110,7 +110,7 @@ namespace SkylineTogether.Sync
             {
                 _log.Warn(LogCategory.Replication, "following citizens will stay local", ex);
             }
-            // w8/robust (host): the production tables and the fee list are written by the systems' own jobs; reading them
+            // host: the production tables and the fee list are written by the systems' own jobs; reading them
             // without completing those (what the vanilla Serialize does first) races a hash map insert against GetKeyArray
             AddCustom("Production.Statistic", 2.0, WriteProduction, ReadProduction, null, ProductionWriters);
             AddCustom("Fees.Collected", 1.0, WriteCollectedFees, ReadCollectedFees, () =>
@@ -141,7 +141,7 @@ namespace SkylineTogether.Sync
 
         private static System.Reflection.PropertyInfo _dependency;
 
-        /// <summary>w8/robust: the outstanding jobs of a system (its protected <c>Dependency</c>), or none when not readable.</summary>
+        /// <summary>The outstanding jobs of a system (its protected <c>Dependency</c>), or none when not readable.</summary>
         private static JobHandle SystemJobs(SystemBase system)
         {
             try
@@ -155,7 +155,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>w8/robust: every job that writes what <see cref="WriteProduction"/> reads (as the vanilla Serialize completes).</summary>
+        /// <summary>Every job that writes what <see cref="WriteProduction"/> reads (as the vanilla Serialize completes).</summary>
         private JobHandle ProductionWriters()
         {
             _production.GetConsumptionQueue(out JobHandle all);
@@ -174,7 +174,7 @@ namespace SkylineTogether.Sync
             return JobHandle.CombineDependencies(all, SystemJobs(_production));
         }
 
-        /// <summary>w8/robust: the jobs that write the collected fee list.</summary>
+        /// <summary>The jobs that write the collected fee list.</summary>
         private JobHandle FeeWriters()
         {
             _feeSystem.GetFeeQueue(out JobHandle queue);
@@ -368,7 +368,7 @@ namespace SkylineTogether.Sync
             _chirpNames = names;
         }
 
-        /// <summary>w3/audit: client end of the after-apply step (chirp names written after the chirp's first frame).</summary>
+        /// <summary>Client end of the after-apply step (chirp names written after the chirp's first frame).</summary>
         private void PanelsAfterApply()
         {
             try
@@ -381,7 +381,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>w3/audit: forgets received panel state (session start or end).</summary>
+        /// <summary>Forgets received panel state (session start or end).</summary>
         private void ResetPanels()
         {
             _chirpNames = new Dictionary<uint, ReceivedChirp>();
@@ -437,7 +437,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// polish: a viewer's client undoes its own follow/unfollow (the host refuses it anyway, see
+        /// A viewer's client undoes its own follow/unfollow (the host refuses it anyway, see
         /// <see cref="RequiredPermission"/>), so the shared followed list never diverges locally. The vanilla
         /// <c>LifePathEventSystem</c> calls are used in reverse; an unfollow already marked the local life-path entries
         /// deleted, the host's agent replication brings them back with the citizen.

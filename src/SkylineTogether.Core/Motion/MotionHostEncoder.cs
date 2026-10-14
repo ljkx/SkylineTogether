@@ -871,7 +871,7 @@ namespace SkylineTogether.Core.Motion
         {
             public readonly object Sync = new object();
             public readonly PeerId Peer;
-            public readonly InterestSlotTable Table = new InterestSlotTable(MotionWire.MaxInterestSlots); // w8/robust: what clients accept
+            public readonly InterestSlotTable Table = new InterestSlotTable(MotionWire.MaxInterestSlots); // what clients accept
             public readonly Dictionary<uint, int> TrackOf = new Dictionary<uint, int>();
             public readonly Stack<int> FreeTracks = new Stack<int>();
             public readonly ByteWriter Message = new ByteWriter(MotionWire.MaxDatagramBytes);

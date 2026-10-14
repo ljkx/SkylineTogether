@@ -56,13 +56,13 @@ namespace SkylineTogether.Core.Tests.Contracts
             {
                 Assert.Equal(1 + i, Convert.ToInt32((MessageKind)Enum.Parse(typeof(MessageKind), sequential[i])), "MessageKind." + sequential[i]);
             }
-            // branch-owned ranges (merge coordination): w2/ids owns 60-64, w2/simvals owns 65-69
+            // reserved ranges: 60-64 network id reuse, 65-69 simulation values
             Pin((MessageKind.ApplyAck, 60), (MessageKind.SimValues, 65), (MessageKind.CellMaps, 66), (MessageKind.Statistics, 67));
-            // w3/agents owns 90-94
+            // 90-94 agents
             Pin((MessageKind.AgentValues, 90), (MessageKind.AgentRefresh, 91));
-            // w4/flow owns 100-104
+            // 100-104 utility flow status
             Pin((MessageKind.FlowStatus, 100));
-            // w8/mods owns 110-114
+            // 110-114 mod integration
             Pin((MessageKind.ModChannel, 110));
             Assert.Equal(sequential.Length + 8, Enum.GetNames(typeof(MessageKind)).Length, "every MessageKind is pinned");
         }

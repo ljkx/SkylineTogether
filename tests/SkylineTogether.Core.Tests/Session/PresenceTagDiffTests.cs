@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Session
 {
-    /// <summary>polish: name tags are pushed to the UI only when they change noticeably.</summary>
+    /// <summary>Name tags are pushed to the UI only when they change noticeably.</summary>
     public sealed class PresenceTagDiffTests
     {
         private static PresenceTag Tag(byte peer, float x, float y, bool on = true, string activity = "") =>

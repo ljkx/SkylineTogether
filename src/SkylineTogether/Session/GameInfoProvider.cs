@@ -27,7 +27,7 @@ namespace SkylineTogether.Session
         public ulong ModBuild => _modBuild;
 
         /// <summary>
-        /// w8/security: the build id (<see cref="Core.Session.BuildId"/>): the first 48 bits of the SHA-256 of the loaded
+        /// The build id (<see cref="Core.Session.BuildId"/>): the first 48 bits of the SHA-256 of the loaded
         /// SkylineTogether.dll file, the value the installer prints. Only when the file cannot be read (no location)
         /// it falls back to the assembly's MVID, and <see cref="BuildSource"/> says so. Computed once.
         /// </summary>

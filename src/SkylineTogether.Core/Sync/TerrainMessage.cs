@@ -35,10 +35,10 @@ namespace SkylineTogether.Core.Sync
         public float Angle, Size, Strength, Opacity;
         public float DeltaTime;
 
-        /// <summary>w8/robust: the largest coordinate of a stamp's positions (the playable map is 14 km wide, its surroundings 57 km).</summary>
+        /// <summary>The largest coordinate of a stamp's positions (the playable map is 14 km wide, its surroundings 57 km).</summary>
         public const float MaxCoordinate = 100_000f;
 
-        /// <summary>w8/robust: the largest brush strength magnitude (tools use about 0..1, compensated by the frame time).</summary>
+        /// <summary>The largest brush strength magnitude (tools use about 0..1, compensated by the frame time).</summary>
         public const float MaxStrength = 1000f;
 
         /// <summary>True when every float is finite and the size is positive and plausible (validation of received stamps).</summary>
@@ -50,7 +50,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// w8/robust: <see cref="IsPlausible(float)"/>, and every position within <paramref name="maxCoordinate"/>, the
+        /// <see cref="IsPlausible(float)"/>, and every position within <paramref name="maxCoordinate"/>, the
         /// opacity within 0..1, the strength within <paramref name="maxStrength"/> and the frame time within 0..1 s (huge
         /// coordinates become undefined int casts in the brush's area computations).
         /// </summary>
@@ -138,7 +138,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// polish: whether a client keeps a terrain message that arrives before it is live in the city (still waiting
+        /// Whether a client keeps a terrain message that arrives before it is live in the city (still waiting
         /// for, downloading or loading the snapshot). Stamps are dropped: those from before the snapshot are in it
         /// already and a replay would apply them twice; those after it are covered by the host's settled tiles, which
         /// are absolute and kept (as are manifests). Malformed bodies are kept and refused later by the normal decode.

@@ -54,7 +54,7 @@ namespace SkylineTogether.Core.Session
         public Permission BuilderPermissions = Permission.All;
     }
 
-    /// <summary>w8/security: what a <see cref="ControlKind.PlayerAction"/> request asks for.</summary>
+    /// <summary>What a <see cref="ControlKind.PlayerAction"/> request asks for.</summary>
     public enum PlayerActionKind : byte
     {
         Kick,

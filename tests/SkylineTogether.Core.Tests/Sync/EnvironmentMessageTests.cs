@@ -282,7 +282,7 @@ namespace SkylineTogether.Core.Tests.Sync
         [Test]
         public void JoinersDropStrokeReplaysButKeepTilesAndManifests()
         {
-            // polish: stamps that reach a joiner before it is live are in its snapshot already (or covered by the host's
+            // stamps that reach a joiner before it is live are in its snapshot already (or covered by the host's
             // settled tiles); tiles and manifests are absolute and kept
             var w = new ByteWriter();
             TerrainMessage.WriteStamps(w, new PeerId(2), new[] { Stamp(1) });

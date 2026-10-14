@@ -91,7 +91,7 @@ namespace SkylineTogether.Core.Session
                 Attempt = 0;
                 if (kind == ClientEndKind.Resync)
                 {
-                    // w8/security: the player asked for a fresh copy of the city: reconnect at once
+                    // the player asked for a fresh copy of the city: reconnect at once
                     CanReconnect = true;
                     NextAttemptAt = now;
                     Phase = RejoinPhase.Waiting;

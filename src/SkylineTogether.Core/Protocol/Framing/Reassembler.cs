@@ -10,7 +10,7 @@ namespace SkylineTogether.Core.Protocol
     /// duplicate, an inconsistent header or a size above the kind's limit is a protocol violation
     /// (<see cref="DecodeException"/>), after which the partial message is dropped. Fragments of up to
     /// <see cref="Limits.MaxPartialMessagesPerPeer"/> messages may interleave (messages sent from different threads);
-    /// a further concurrent message is rejected. Memory per peer is therefore bounded by four messages; w8/robust: and by
+    /// a further concurrent message is rejected. Memory per peer is therefore bounded by four messages and by
     /// the bytes actually received (a buffer grows with the fragments instead of being allocated at the declared total,
     /// so a fragment that merely declares 8 MB costs nothing).
     /// <para>Not thread-safe: used on the network thread of its connection.</para>
@@ -45,7 +45,7 @@ namespace SkylineTogether.Core.Protocol
         /// <see cref="EnvelopeCodec.Decode"/>. Throws <see cref="ArgumentException"/> for an envelope that is not a
         /// fragment and <see cref="DecodeException"/> for a malformed or out-of-order fragment.
         /// </summary>
-        /// <remarks>w8/robust: <c>maxTotal</c> is a lower limit on the message's total length than the kind's own.</remarks>
+        /// <remarks><c>maxTotal</c> is a lower limit on the message's total length than the kind's own.</remarks>
         public bool Accept(Envelope fragment, out byte[] message, out int length, int maxTotal = int.MaxValue)
         {
             message = null;
@@ -90,7 +90,7 @@ namespace SkylineTogether.Core.Protocol
                     Kind = fragment.Kind,
                     FragmentCount = (int)count,
                     TotalLength = (int)total,
-                    // w8/tests: grown as fragments arrive (Grow below) instead of allocated at the declared total: a
+                    // grown as fragments arrive (Grow below) instead of allocated at the declared total: a
                     // first fragment of a few bytes declaring 8 MiB made the host allocate 8 MiB (32 MiB for four),
                     // even from a peer that had not finished its handshake. Memory now follows the bytes received.
                     Buffer = new byte[Math.Min((int)total, chunk)]

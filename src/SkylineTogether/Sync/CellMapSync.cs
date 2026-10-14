@@ -99,7 +99,7 @@ namespace SkylineTogether.Sync
                 NativeArray<TCell> map = System.GetMap(true, out JobHandle deps);
                 deps.Complete();
                 NativeArray<byte> bytes = map.Reinterpret<byte>(UnsafeUtility.SizeOf<TCell>());
-                // w8/robust: the copy is not bounds-checked in a player build; the cached layout must still match the map
+                // the copy is not bounds-checked in a player build; the cached layout must still match the map
                 if (dst == null || dst.Length != bytes.Length) throw new InvalidOperationException("map size changed (" + bytes.Length + " bytes, expected " + (dst?.Length ?? 0) + ")");
                 NativeArray<byte>.Copy(bytes, 0, dst, 0, bytes.Length);
             }
@@ -109,7 +109,7 @@ namespace SkylineTogether.Sync
                 NativeArray<TCell> map = System.GetMap(false, out JobHandle deps);
                 deps.Complete();
                 NativeArray<byte> bytes = map.Reinterpret<byte>(UnsafeUtility.SizeOf<TCell>());
-                if (src == null || src.Length != bytes.Length) throw new InvalidOperationException("map size changed (" + bytes.Length + " bytes, received " + (src?.Length ?? 0) + ")"); // w8/robust
+                if (src == null || src.Length != bytes.Length) throw new InvalidOperationException("map size changed (" + bytes.Length + " bytes, received " + (src?.Length ?? 0) + ")");
                 NativeArray<byte>.Copy(src, 0, bytes, 0, bytes.Length);
                 System.AddWriter(default(JobHandle));
             }
@@ -131,7 +131,7 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<byte, HostPeer> _peers = new Dictionary<byte, HostPeer>();
         private readonly Dictionary<byte, Dictionary<uint, ulong[]>> _joinBaselines = new Dictionary<byte, Dictionary<uint, ulong[]>>();
         private readonly Queue<(PeerId Peer, byte[] Data)> _inbox = new Queue<(PeerId, byte[])>();
-        // w8/robust (host): what one peer may have waiting in the inbox
+        // host: what one peer may have waiting in the inbox
         private readonly InboundQuota _hostQuota = new InboundQuota(64, 16L << 20);
         private readonly ByteWriter _out = new ByteWriter(64 * 1024);
         private readonly List<PeerId> _peerScratch = new List<PeerId>();
@@ -250,7 +250,7 @@ namespace SkylineTogether.Sync
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.CellMaps) return;
-                // w8/robust: a peer's waiting paint patches are bounded (clients send at most a few per second)
+                // a peer's waiting paint patches are bounded (clients send at most a few per second)
                 if (!_hostQuota.TryAdmit(peer, e.BodyCount))
                 {
                     if (_hostQuota.TakeOverflow(peer)) _log.Warn(LogCategory.Fields, peer + " sends map patches faster than they are applied; further ones are dropped");
@@ -266,7 +266,7 @@ namespace SkylineTogether.Sync
             {
                 _peers.Remove(peer.Value);
                 _joinBaselines.Remove(peer.Value);
-                _hostQuota.Forget(peer); // w8/robust
+                _hostQuota.Forget(peer);
             };
         }
 
@@ -276,7 +276,7 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.CellMaps) return;
-                // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                // with the feature off nothing drains the inbox (it grew for the rest of the session); the
                 // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
                 if (!Diagnostics.Features.SimValues.IsAvailable) return;
                 var copy = new byte[e.BodyCount];
@@ -481,7 +481,7 @@ namespace SkylineTogether.Sync
             if (IsHost)
             {
                 if (h.Type != CellMapMessage.TypePatch || c.PaintMask == null) return;
-                // final review: resource painting is a terrain tool brush; a peer without the right is ignored (the
+                // resource painting is a terrain tool brush; a peer without the right is ignored (the
                 // periodic per-peer audit gives its replica the host's tiles back)
                 SessionHost host = _sessions.Host;
                 if (peer != PeerId.Host && host != null && !RolePermissions.Allows(host.GetRole(peer), Permission.Terraform)) return;

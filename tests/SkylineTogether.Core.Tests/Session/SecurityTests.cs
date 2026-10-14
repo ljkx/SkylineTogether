@@ -10,7 +10,7 @@ using SkylineTogether.Core.Tests.Framework;
 namespace SkylineTogether.Core.Tests.Session
 {
     /// <summary>
-    /// w8/security: authentication, password limits, bans, the join policy, co-host moderation, refusal reasons and the
+    /// Authentication, password limits, bans, the join policy, co-host moderation, refusal reasons and the
     /// build id, against scripted raw peers (<see cref="RawPeer"/>) and real clients on the loopback transport.
     /// </summary>
     public sealed class SecurityTests
@@ -102,7 +102,7 @@ namespace SkylineTogether.Core.Tests.Session
             rig.Run(400);
             Assert.Equal(ClientState.Live, anna.State, anna.EndReason);
 
-            // a direct connection claims Anna's Steam ID: before w8/security the host believed it and dropped Anna's
+            // a direct connection claims Anna's Steam ID: previously the host believed it and dropped Anna's
             // connection as "stale"; now the claim is ignored and the stranger only gets a password challenge
             var imposter = Handshake(rig, new RawPeer(rig, new PeerIdentity(0, "203.0.113.66:1000", "Anna", true), 8001));
             Assert.NotNull(imposter.Challenge());

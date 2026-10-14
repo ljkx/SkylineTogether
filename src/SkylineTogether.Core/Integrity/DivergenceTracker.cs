@@ -24,7 +24,7 @@ namespace SkylineTogether.Core.Integrity
     /// so one stubborn entity cannot keep its bucket mismatching.
     /// </para>
     /// <para>
-    /// <b>Storm guards</b> (crashfix: a real session repaired the same derived areas again and again, because every repair
+    /// <b>Storm guards</b> (a real session repaired the same derived areas again and again, because every repair
     /// matched for a moment, resolved the entry and with it its attempt count, before the client's own geometry system
     /// regenerated the value): a per-entity repair <i>history</i> outlives the entry for <see cref="HistorySeconds"/>, so
     /// an entity that keeps coming back waits an exponential backoff (<see cref="BackoffSeconds"/> doubled per earlier
@@ -43,7 +43,7 @@ namespace SkylineTogether.Core.Integrity
         public double ConfirmSeconds = 1.5;
 
         /// <summary>
-        /// crashfix: an optional per-entity confirmation window (seconds) replacing <see cref="ConfirmSeconds"/>; a value
+        /// An optional per-entity confirmation window (seconds) replacing <see cref="ConfirmSeconds"/>; a value
         /// not above zero falls back to it. The client gives agents a window longer than the host's agent scan cycle.
         /// </summary>
         public Func<uint, double> ConfirmSecondsFor;
@@ -66,22 +66,22 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>An observation not seen again for this long is forgotten by <see cref="Sweep"/> (seconds).</summary>
         public double ForgetSeconds = 300;
 
-        /// <summary>crashfix: how long an entity's repairs are remembered after its last one (seconds).</summary>
+        /// <summary>How long an entity's repairs are remembered after its last one (seconds).</summary>
         public double HistorySeconds = 1800;
 
-        /// <summary>crashfix: repairs within the history after which an entity is tolerated even if each repair matched briefly.</summary>
+        /// <summary>Repairs within the history after which an entity is tolerated even if each repair matched briefly.</summary>
         public int MaxRepairsInHistory = 3;
 
-        /// <summary>crashfix: an entity repaired before waits this long times 2^(earlier repairs - 1) since its last repair (seconds).</summary>
+        /// <summary>An entity repaired before waits this long times 2^(earlier repairs - 1) since its last repair (seconds).</summary>
         public double BackoffSeconds = 10;
 
-        /// <summary>crashfix: tolerance periods after which an entity is given up for the session.</summary>
+        /// <summary>Tolerance periods after which an entity is given up for the session.</summary>
         public int MaxTolerances = 2;
 
-        /// <summary>crashfix: repairs per minute at most, all entities together (a token bucket with a burst of the same size).</summary>
+        /// <summary>Repairs per minute at most, all entities together (a token bucket with a burst of the same size).</summary>
         public double MaxRepairsPerMinute = 120;
 
-        /// <summary>crashfix: histories kept at most (further first repairs are not remembered).</summary>
+        /// <summary>Histories kept at most (further first repairs are not remembered).</summary>
         public int MaxHistory = 50000;
 
         private readonly Dictionary<uint, Entry> _entries = new Dictionary<uint, Entry>();
@@ -125,10 +125,10 @@ namespace SkylineTogether.Core.Integrity
             /// <summary>Entities tolerated by this detail.</summary>
             public readonly List<uint> NewlyTolerated = new List<uint>();
 
-            /// <summary>crashfix: entities given up for the session by this detail (also in <see cref="NewlyTolerated"/>).</summary>
+            /// <summary>Entities given up for the session by this detail (also in <see cref="NewlyTolerated"/>).</summary>
             public readonly List<uint> GivenUp = new List<uint>();
 
-            /// <summary>crashfix: repaired entities that were repaired before (candidates for a rate-limited explanation).</summary>
+            /// <summary>Repaired entities that were repaired before (candidates for a rate-limited explanation).</summary>
             public readonly List<uint> Repeated = new List<uint>();
 
             /// <summary>True when the bucket should be detailed again (an observation awaits confirmation or a repair awaits verification).</summary>
@@ -164,7 +164,7 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>Entities being observed, repaired or tolerated.</summary>
         public int Tracked => _entries.Count;
 
-        /// <summary>crashfix: entities whose repair history is remembered.</summary>
+        /// <summary>Entities whose repair history is remembered.</summary>
         public int Histories => _history.Count;
 
         /// <summary>Confirmed mismatches since creation.</summary>
@@ -179,13 +179,13 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>Mismatches ignored because <see cref="MaxTracked"/> entities were tracked.</summary>
         public long Overflow { get; private set; }
 
-        /// <summary>crashfix: confirmed repairs postponed because the global budget was spent.</summary>
+        /// <summary>Confirmed repairs postponed because the global budget was spent.</summary>
         public long BudgetDeferred { get; private set; }
 
-        /// <summary>crashfix: confirmed repairs postponed by the per-entity backoff.</summary>
+        /// <summary>Confirmed repairs postponed by the per-entity backoff.</summary>
         public long BackedOff { get; private set; }
 
-        /// <summary>crashfix: entities given up for the session.</summary>
+        /// <summary>Entities given up for the session.</summary>
         public long GivenUpCount { get; private set; }
 
         /// <summary>Entities currently tolerated.</summary>
@@ -199,7 +199,7 @@ namespace SkylineTogether.Core.Integrity
             return n;
         }
 
-        /// <summary>crashfix: repairs of the entity remembered in its history (0 when none).</summary>
+        /// <summary>Repairs of the entity remembered in its history (0 when none).</summary>
         public int RepairsOf(uint netId) => _history.TryGetValue(netId, out History h) ? h.Repairs : 0;
 
         /// <summary>Evaluates one bucket detail: the host's and the client's hashes of the same bucket.</summary>
@@ -404,7 +404,7 @@ namespace SkylineTogether.Core.Integrity
             if (!_entries.TryGetValue(id, out Entry e)) return;
             if (e.ToleratedUntil == double.MaxValue) return; // given up for the session
             if (e.Attempts > 0) RepairsSucceeded++;
-            RemoveEntry(id); // crashfix: the history stays, so a resolved entry no longer resets the repair count
+            RemoveEntry(id); // the history stays, so a resolved entry no longer resets the repair count
         }
 
         /// <summary>
@@ -442,11 +442,11 @@ namespace SkylineTogether.Core.Integrity
             return false;
         }
 
-        /// <summary>True when any tracked entity lies in the bucket (O(1); crashfix: was a scan over every entry per digest).</summary>
+        /// <summary>True when any tracked entity lies in the bucket (O(1); was a scan over every entry per digest).</summary>
         public bool HasEntriesIn(uint bucket) => _perBucket.ContainsKey(bucket);
 
         /// <summary>
-        /// crashfix: the id was despawned or deleted locally: its observation, tolerance and history no longer describe
+        /// The id was despawned or deleted locally: its observation, tolerance and history no longer describe
         /// anything (the id may be reused for another entity).
         /// </summary>
         public void Forget(uint netId)

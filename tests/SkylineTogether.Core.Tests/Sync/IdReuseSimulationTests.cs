@@ -7,7 +7,7 @@ using SkylineTogether.Core.Tests.Framework;
 namespace SkylineTogether.Core.Tests.Sync
 {
     /// <summary>
-    /// w2/ids: the reuse protocol end to end with the real allocator, ack book and tracker: a host spawning and despawning
+    /// The reuse protocol end to end with the real allocator, ack book and tracker: a host spawning and despawning
     /// at random, peers on links with random latency that apply late, send acknowledgements and proposals that name the
     /// ids they know, and peers joining from a snapshot taken after their admission. Invariants: a proposal never reaches
     /// a host binding of a different entity under the same id, a despawn never hits a reused binding, and every peer

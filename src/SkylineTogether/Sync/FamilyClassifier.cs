@@ -30,7 +30,7 @@ namespace SkylineTogether.Sync
             ("Game.Simulation.ElectricityFlowEdge", FamilyMarker.FlowGraph),
             ("Game.Simulation.WaterPipeNode", FamilyMarker.FlowGraph),
             ("Game.Simulation.WaterPipeEdge", FamilyMarker.FlowGraph),
-            // w4/flow: ElectricityNodeConnection/WaterPipeNodeConnection are NOT markers: the graph systems add them to the
+            // ElectricityNodeConnection/WaterPipeNodeConnection are NOT markers: the graph systems add them to the
             // net nodes and edges themselves (ElectricityEdgeGraphSystem.GetOrCreateNetNodeConnection), so as markers they
             // made every road, power line and pipe a derived FlowGraph entity (rule 8 precedes the net rules). The
             // connection components are excluded from replication instead (TypeHandlers.Excluded).
@@ -109,7 +109,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w2/ids perf pass: the family of every entity of an archetype when it does not depend on per-entity facts (one
+        /// The family of every entity of an archetype when it does not depend on per-entity facts (one
         /// cached lookup per chunk); false when the entities must be classified one by one (<see cref="Classify"/>).
         /// </summary>
         public bool TryClassifyArchetype(EntityArchetype archetype, out Family family)
@@ -217,7 +217,7 @@ namespace SkylineTogether.Sync
                 case Family.WaterSource:
                 case Family.ModEntity:
                     return true;
-                // w3/audit: events and disasters, chirps, journal entries (host-only family, see IsHostOnly)
+                // events and disasters, chirps, journal entries (host-only family, see IsHostOnly)
                 case Family.Event:
                     return Diagnostics.Features.Events.IsAvailable;
                 default:
@@ -226,17 +226,17 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w3/agents: true while the host replicates agents (citizens, households, pets, companies) in this session; set by
+        /// True while the host replicates agents (citizens, households, pets, companies) in this session; set by
         /// <see cref="AgentSync"/> at host session start when <c>Features.Agents</c> is available, false otherwise and on
         /// clients (a client applies whatever the host sends, it never decides).
         /// </summary>
         public static bool AgentsReplicated { get; set; }
 
-        /// <summary>w3/agents: the agent family (ARCH §3.2 rule 16, class A).</summary>
+        /// <summary>The agent family (ARCH §3.2 rule 16, class A).</summary>
         public static bool IsAgent(Family family) => family == Family.Agent;
 
         /// <summary>
-        /// w3/agents: families the host binds, captures and streams: the replicated structure families plus agents while
+        /// Families the host binds, captures and streams: the replicated structure families plus agents while
         /// <see cref="AgentsReplicated"/>. Agents are host-owned: <see cref="IsReplicated"/> stays false for them, so a
         /// client can never propose, edit or delete one (proposal validation, client capture, rollbacks).
         /// </summary>
@@ -246,13 +246,13 @@ namespace SkylineTogether.Sync
         public static bool IsScanned(Family family) => family == Family.Route || family == Family.Waypoint || family == Family.Segment || family == Family.Singleton || family == Family.Event;
 
         /// <summary>
-        /// w3/audit: replicated families only the host's simulation creates, changes and deletes (events, disasters,
+        /// Replicated families only the host's simulation creates, changes and deletes (events, disasters,
         /// chirps, journal entries). Clients never propose them, the host refuses proposals that touch them, and the
         /// integrity check leaves them out (their values change every simulation tick).
         /// </summary>
         public static bool IsHostOnly(Family family) => family == Family.Event;
 
-        /// <summary>w3/audit: families whose structure entities the presence watch covers (components the simulation
+        /// <summary>Families whose structure entities the presence watch covers (components the simulation
         /// adds and removes without an <c>Updated</c> tag).</summary>
         public static bool IsPresenceWatched(Family family) => family == Family.Object || family == Family.NetEdge || family == Family.NetNode || family == Family.Area;
     }

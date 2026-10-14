@@ -6,7 +6,7 @@ using System.Threading;
 namespace SkylineTogether.Core.Transport
 {
     /// <summary>
-    /// loadspeed: a background thread that calls registered pump actions every few milliseconds, independent of the
+    /// A background thread that calls registered pump actions every few milliseconds, independent of the
     /// frame rate. The session ticks once per rendered frame, and while a host holds its simulation for a joiner, or a
     /// big city renders at 15-20 fps, a frame hitch used to leave the transport without chunks to send; this thread
     /// keeps <see cref="BlobSender"/> and <see cref="PeerOutbox"/> (both thread-safe, built for a network thread)

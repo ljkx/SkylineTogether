@@ -3,7 +3,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>polish: limits of request-only batches (id grants, full re-sends) and the client's id re-request backoff.</summary>
+    /// <summary>Limits of request-only batches (id grants, full re-sends) and the client's id re-request backoff.</summary>
     public sealed class RequestThrottleTests
     {
         [Test]

@@ -24,7 +24,7 @@ namespace SkylineTogether.Core.Protocol
         SessionReset,
         /// <summary>Host → client: the player was removed (payload: text reason); they may join again.</summary>
         Kick,
-        /// <summary>w8/security: host → client: the player was removed and banned (payload: text reason).</summary>
+        /// <summary>Host → client: the player was removed and banned (payload: text reason).</summary>
         Ban,
         SpeedRequest,
         SpeedChanged,
@@ -48,7 +48,7 @@ namespace SkylineTogether.Core.Protocol
         /// <summary>Client → host: join progress while downloading and loading (payload: f32 fraction of the phase 0..1, u8 phase 0 = download, 1 = load).</summary>
         LoadProgress,
         /// <summary>
-        /// w8/security: client → host: a moderation request of a co-host (payload: u8 action 0 = kick, 1 = set role |
+        /// Client → host: a moderation request of a co-host (payload: u8 action 0 = kick, 1 = set role |
         /// u8 target peer | u8 role); the host checks the sender's role (<c>Session.Moderation</c>) and ignores the rest.
         /// </summary>
         PlayerAction

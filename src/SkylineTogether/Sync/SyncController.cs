@@ -34,7 +34,7 @@ namespace SkylineTogether.Sync
     /// batch, sent as <see cref="SyncRecordKind.Epoch"/>; a client names the newest one it applied as the
     /// <c>BaseEpoch</c> of its proposals, and the host refuses edits of entities authored by somebody else after it
     /// (conflicts, ARCH §5.4.1).</item>
-    /// <item><b>Release frames</b> (w2/ids, <see cref="ApplyAckBook"/>): one per host frame, sealed at frame start, with
+    /// <item><b>Release frames</b> (<see cref="ApplyAckBook"/>): one per host frame, sealed at frame start, with
     /// a per-peer watermark of the <c>MessageKind.Epoch</c> messages queued so far. Clients acknowledge how many
     /// <c>Epoch</c> messages they <i>applied</i> (<see cref="MessageKind.ApplyAck"/>, in order with their proposals); a
     /// released net id is reused (<see cref="NetIdAllocator"/>) only once every peer applied the frame of its despawn
@@ -42,7 +42,7 @@ namespace SkylineTogether.Sync
     /// </list>
     /// </para>
     /// <para>
-    /// w2/ids: structure is always sent; scanned values and re-sends wait per peer in a coalescing queue and are sent
+    /// Structure is always sent; scanned values and re-sends wait per peer in a coalescing queue and are sent
     /// only while the peer's link has room (ARCH D4: congestion becomes staleness, not backlog); motion yields to both.
     /// </para>
     /// </summary>
@@ -51,7 +51,7 @@ namespace SkylineTogether.Sync
         private const double ApplyBudgetMs = 6.0;
         private const int MaxBatchesPerFrame = 64;
         /// <summary>
-        /// loadspeed: right after a client went live it applies the backlog that queued up during its join in big bounded
+        /// Right after a client went live it applies the backlog that queued up during its join in big bounded
         /// slices (its own simulation is gated anyway): this budget per frame and this many batches, until the backlog is
         /// empty (the "catching up" state, <see cref="Core.Session.JoinTimeline.CatchingUp"/>).
         /// </summary>
@@ -66,9 +66,9 @@ namespace SkylineTogether.Sync
         private const double RouteWindowLinger = 2.0;
         private const double AckInterval = 0.1;
         private const int ResendChunkRecords = 512;
-        private const int MaxRollbackRecords = 512; // crashfix: full records a rollback writes in its frame
+        private const int MaxRollbackRecords = 512; // full records a rollback writes in its frame
 
-        // w8/robust (host): a peer's proposals and acks waiting to be applied are bounded; a peer that keeps sending
+        // host: a peer's proposals and acks waiting to be applied are bounded; a peer that keeps sending
         // faster than the host applies, or whose applied frame stops advancing, is dropped with a rejoin offer
         private readonly InboundQuota _hostInboxQuota = new InboundQuota(4096, 64L << 20);
         private ReferenceAudit _audit;
@@ -95,12 +95,12 @@ namespace SkylineTogether.Sync
             public readonly CoalescingQueue Queue = new CoalescingQueue();
             public long SentRecords;
             public double LastFlush;
-            /// <summary>w8/robust: a full re-send in progress: the next id to mark (0: none) and the ids marked so far.</summary>
+            /// <summary>A full re-send in progress: the next id to mark (0: none) and the ids marked so far.</summary>
             public int ResendCursor;
             public int ResendMarked;
         }
 
-        /// <summary>w8/robust: ids a full re-send walks per frame (the whole table in one frame cost 30-60 ms in a big city).</summary>
+        /// <summary>Ids a full re-send walks per frame (the whole table in one frame cost 30-60 ms in a big city).</summary>
         private const int ResendIdsPerFrame = 20000;
 
         private readonly SessionManager _sessions;
@@ -119,20 +119,20 @@ namespace SkylineTogether.Sync
         // global state (taxes, budgets, fees, loan, policies, names, demand): own batch, so a peer that cannot decode a
         // global record never loses entity data
         private readonly GlobalStateSync _global;
-        // w3/audit: events, disasters, chirps: presence watch (host) and client fix-ups
+        // events, disasters, chirps: presence watch (host) and client fix-ups
         private readonly EventSync _events;
-        private readonly SignalFollower _signals; // w3/audit: clients derive lane signals and signal heads
+        private readonly SignalFollower _signals; // clients derive lane signals and signal heads
         private readonly SyncBatch.Writer _globalBatch = new SyncBatch.Writer();
         private readonly ClientGate _gate;
         // feat/terrain: terrain and water sync (self-contained; they follow the session events themselves)
         private readonly TerrainSync _terrain;
         private readonly WaterSync _water;
-        // w2/simvals: simulation values by attention (+ time-aligned panels), cell maps, statistics history (self-contained)
+        // simulation values by attention (+ time-aligned panels), cell maps, statistics history (self-contained)
         private readonly AttentionValues _simValues;
         private readonly CellMapSync _cellMaps;
-        private readonly FlowStatusSync _flow; // w4/flow: electricity and water flow status for the infoviews
+        private readonly FlowStatusSync _flow; // electricity and water flow status for the infoviews
         private readonly StatisticsSync _statistics;
-        // w3/agents: citizens, households, pets and companies (existence here, values and attention there)
+        // citizens, households, pets and companies (existence here, values and attention there)
         private readonly AgentSync _agents;
         // gameplay branch: UI intents, host validation (ARCH §5.4-5.6), conflicts, build order
         private readonly ActionSync _actions;
@@ -140,7 +140,7 @@ namespace SkylineTogether.Sync
         // direct-write tools may propose every frame; the limit only stops floods (violations kick, ARCH §5.6)
         private readonly ProposalRateLimiter _rate = new ProposalRateLimiter(120, 240);
 
-        /// <summary>polish: limits of request records (more ids, full re-sends), which request-only batches carry past
+        /// <summary>Limits of request records (more ids, full re-sends), which request-only batches carry past
         /// <see cref="_rate"/>.</summary>
         private readonly RequestThrottle _requests = new RequestThrottle();
         private readonly ViolationTracker _violations = new ViolationTracker();
@@ -163,13 +163,13 @@ namespace SkylineTogether.Sync
         private uint _baseEpoch;
         private uint _seq;
         private bool _subElementFrame;
-        // w2/ids: id quarantine, grants, deferred values
+        // id quarantine, grants, deferred values
         private readonly ApplyAckBook _acks = new ApplyAckBook();
         private readonly IdGrantBook _grants = new IdGrantBook();
         private readonly Dictionary<byte, PeerOut> _out = new Dictionary<byte, PeerOut>();
         private readonly List<PeerOut> _outList = new List<PeerOut>();
         private readonly List<(uint Start, uint Count)> _grantRuns = new List<(uint, uint)>();
-        private readonly List<uint> _scratchValues = new List<uint>(); // w3/audit
+        private readonly List<uint> _scratchValues = new List<uint>();
         private readonly List<uint> _scratchIds = new List<uint>();
         private readonly LinkBudgetConfig _linkConfig = new LinkBudgetConfig();
         private readonly FrameBudget _applyBudget = new FrameBudget(ApplyBudgetMs);
@@ -236,9 +236,9 @@ namespace SkylineTogether.Sync
             _sessions = sessions;
             _log = log;
             _gate = new ClientGate(log);
-            _audit = new ReferenceAudit(log); // w8/robust
+            _audit = new ReferenceAudit(log);
             _global = new GlobalStateSync(log);
-            _events = new EventSync(log); // w3/audit
+            _events = new EventSync(log);
             _signals = new SignalFollower(log);
             // gameplay branch: semantic intents beside the global channels; both report refusals here (rollback)
             _actions = new ActionSync(log)
@@ -254,7 +254,7 @@ namespace SkylineTogether.Sync
             };
             _global.Actions = _actions;
             _global.Allows = Allows;
-            // polish: a viewer's client undoes its own edits of shared state no tool gate covers (following citizens)
+            // a viewer's client undoes its own edits of shared state no tool gate covers (following citizens)
             _global.LocalAllows = needed =>
             {
                 SessionClient client = _sessions.Client;
@@ -266,12 +266,12 @@ namespace SkylineTogether.Sync
             _water = new WaterSync(sessions, log);
             _terrain.HeightsChanged += _water.MarkHot;
             Integrity = new IntegritySync(sessions, log); // feat/integrity
-            _simValues = new AttentionValues(sessions, log); // w2/simvals
+            _simValues = new AttentionValues(sessions, log);
             _cellMaps = new CellMapSync(sessions, log) { PeerTopics = _simValues.PeerTopics };
             _flow = new FlowStatusSync(sessions, log) { PeerTopics = _simValues.PeerTopics, InView = _simValues.InView, LocalTopics = () => _simValues.LocalTopics };
             _statistics = new StatisticsSync(sessions, log);
-            _agents = new AgentSync(sessions, log); // w3/agents
-            Integrity.TouchAgent = _agents.Touch; // crashfix: agents of a requested bucket are scanned first
+            _agents = new AgentSync(sessions, log);
+            Integrity.TouchAgent = _agents.Touch; // agents of a requested bucket are scanned first
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
             _mayCreate = MayCreate;
@@ -318,7 +318,7 @@ namespace SkylineTogether.Sync
         /// <summary>Mod compatibility: assets the host uses that this game lacks, with the number of records skipped.</summary>
         public IReadOnlyDictionary<string, int> MissingAssets => _codec?.MissingAssets;
 
-        /// <summary>w8/mods: where a missing asset comes from and what to do about it (diagnostics).</summary>
+        /// <summary>Where a missing asset comes from and what to do about it (diagnostics).</summary>
         public string ExplainMissing(string asset) => _codec?.ExplainMissing(asset) ?? asset;
 
         /// <summary>feat/integrity: divergence detection and repair, host icons, line check (see <see cref="IntegritySync"/>).</summary>
@@ -351,7 +351,7 @@ namespace SkylineTogether.Sync
                     if (deferred > 0) s += ", " + deferred + " values waiting (slow link)";
                     if (_ids.Ids.QuarantinedCount > 0) s += ", " + _ids.Ids.QuarantinedCount + " ids in quarantine";
                 }
-                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status, _agents.Status, _flow.Status }) // feat/terrain, w2/simvals, w3/agents, w4/flow
+                foreach (string env in new[] { _terrain.Status, _water.Status, _simValues.Status, _cellMaps.Status, _statistics.Status, _agents.Status, _flow.Status }) // feat/terrain
                 {
                     if (env.Length > 0) s += ", " + env;
                 }
@@ -385,11 +385,11 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>w2/ids: the id tables, the quarantine, the deferred queues and the perf counters (diagnostics dump).</summary>
+        /// <summary>The id tables, the quarantine, the deferred queues and the perf counters (diagnostics dump).</summary>
         public void Describe(List<string> lines)
         {
             if (_ids != null) lines.Add("net ids: " + _ids.Describe());
-            if (IsHost) lines.Add("presence watch (w3/audit): " + _events.PresenceResends + " re-sends of component sets changed without a tag");
+            if (IsHost) lines.Add("presence watch: " + _events.PresenceResends + " re-sends of component sets changed without a tag");
             if (IsHost)
             {
                 lines.Add("release frames: sealed " + _acks.CurrentFrame + ", slowest peer " + _acks.MaxLag + " behind" + (_barrier != 0 ? ", join barrier at " + _barrier : "")
@@ -408,16 +408,16 @@ namespace SkylineTogether.Sync
             }
             if (_codec != null)
             {
-                // crashfix: reference safety of the applier and the client's deletion bookkeeping
+                // reference safety of the applier and the client's deletion bookkeeping
                 lines.Add("reference safety: " + _codec.UnresolvedSpawnsTotal + " new objects not created (owner/node/parent missing), " + _codec.UnsafeTotal
                           + " untagged or sanitized for broken net references, " + _codec.DeadReferencesTotal + " references to destroyed/deleted entities dropped; "
                           + _localDeletes.Count + " local deletions awaiting the host, " + _localDeleteSkips + " stale host records skipped, " + _cascadeUnbinds + " cascade unbinds");
-                // w8/robust: decode-boundary validation and the client's removal clean-up
+                // decode-boundary validation and the client's removal clean-up
                 lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal
                           + " reads past a payload stopped; removal clean-up: " + DeletionCascade.Removed + " references to despawned entities removed");
                 if (!IsHost) lines.Add(_audit.Describe());
             }
-            _agents.Describe(lines); // w3/agents
+            _agents.Describe(lines);
             Perf.Counters.Describe(Perf.Now, lines);
         }
 
@@ -434,12 +434,12 @@ namespace SkylineTogether.Sync
             _codec = new EntityCodec(world, _ids, _log);
             _watcher = new Compat.ModStateWatcher(_codec, _ids, _log);
             Integrity.Attach(_codec, _ids); // feat/integrity
-            _simValues.Attach(_codec, _ids); // w2/simvals
-            _flow.Attach(world, _ids); // w4/flow
-            _agents.Attach(_codec, _ids); // w3/agents
+            _simValues.Attach(_codec, _ids);
+            _flow.Attach(world, _ids);
+            _agents.Attach(_codec, _ids);
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             _tools = world.GetOrCreateSystemManaged<ToolSystem>();
-            _tools.EventToolChanged += OnToolChanged; // polish: the route preview window opens with the tool
+            _tools.EventToolChanged += OnToolChanged; // the route preview window opens with the tool
             _zones = world.GetOrCreateSystemManaged<ZoneSystem>();
             _city = world.GetOrCreateSystemManaged<CitySystem>();
             EntityManager em = world.EntityManager;
@@ -459,7 +459,7 @@ namespace SkylineTogether.Sync
                 None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>() },
             });
             _global.Attach(world, _codec, _ids);
-            _events.Attach(world, _codec, _ids); // w3/audit
+            _events.Attach(world, _codec, _ids);
             _signals.Attach(world);
             _actions.Attach(world, _codec, _ids); // gameplay branch
             _generateEdges = world.GetOrCreateSystemManaged<Game.Tools.GenerateEdgesSystem>();
@@ -478,7 +478,7 @@ namespace SkylineTogether.Sync
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Proposal && e.Kind != MessageKind.ApplyAck) return;
-                // w8/robust: bounded per peer (the kick happens in the apply loop, not inside the transport callback)
+                // bounded per peer (the kick happens in the apply loop, not inside the transport callback)
                 if (!_hostInboxQuota.TryAdmit(peer, e.BodyCount))
                 {
                     if (_hostInboxQuota.TakeOverflow(peer))
@@ -496,7 +496,7 @@ namespace SkylineTogether.Sync
                 _inbox.Enqueue(new Inbound { Peer = peer, Data = copy, IsAck = e.Kind == MessageKind.ApplyAck });
                 Perf.Counters.AddBytes(Perf.ReceivedBytes, e.BodyCount, Perf.Now);
             };
-            // w3/agents: decided once per session, before the city is bound (agents are bound with everything else)
+            // decided once per session, before the city is bound (agents are bound with everything else)
             FamilyClassifier.AgentsReplicated = Features.Agents.IsAvailable;
             if (!FamilyClassifier.AgentsReplicated) _log.Warn(LogCategory.Replication, "agents are not replicated in this session (feature unavailable); clients keep their snapshot's citizens");
             BindCity();
@@ -517,17 +517,17 @@ namespace SkylineTogether.Sync
             _wasClient = true;
             _lastAckSent = -1;
             _ids.Authority = false;
-            FamilyClassifier.AgentsReplicated = false; // w3/agents: the host decides; a client applies what arrives
+            FamilyClassifier.AgentsReplicated = false; // the host decides; a client applies what arrives
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Epoch) return;
-                // review fix: mover batches belong to MoverClient; here they were decoded three more times for nothing
+                // mover batches belong to MoverClient; here they were decoded three more times for nothing
                 // and counted as backlog (which suspends the integrity comparison)
                 if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount)) return;
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 long seq = client.ApplyAcks.Received;
-                client.ApplyAcks.Hold(seq); // w2/ids: acknowledged once applied
+                client.ApplyAcks.Hold(seq); // acknowledged once applied
                 _inbox.Enqueue(new Inbound { Peer = PeerId.Host, Data = copy, Seq = seq });
                 Perf.Counters.AddBytes(Perf.ReceivedBytes, e.BodyCount, Perf.Now);
             };
@@ -549,15 +549,15 @@ namespace SkylineTogether.Sync
             if (_wasClient) SafeCall("restoring mod settings", _modSettings.RestoreClient);
             SafeCall("mod gates", () => Compat.ModCompat.OnSessionEnded(_log));
             _watcher?.Stop();
-            _audit.Reset(); // w8/robust
+            _audit.Reset();
             _modSettings.Reset();
             _holds.Clear();
-            _localDeletes.Clear(); // crashfix
+            _localDeletes.Clear();
             _dependencies.Clear();
             _missingNotified = false;
-            _codec?.ResetSession(); // final review: the missing-asset list is per session
+            _codec?.ResetSession(); // the missing-asset list is per session
             _wasClient = false; // (the id tables are cleared below for host and client alike)
-            FamilyClassifier.AgentsReplicated = false; // w3/agents
+            FamilyClassifier.AgentsReplicated = false;
             if (_ids != null)
             {
                 // nobody can address a quarantined id any more
@@ -577,7 +577,7 @@ namespace SkylineTogether.Sync
             _clientLive = false;
             _routeWindowOpen = false;
             _routeWindowUntil = 0;
-            // review fix: a value scan interrupted by the session end resumed in the next session with the old id list
+            // a value scan interrupted by the session end resumed in the next session with the old id list
             _scanCursor = 0;
             _scanIds.Clear();
             _appliedThisFrame.Clear();
@@ -594,7 +594,7 @@ namespace SkylineTogether.Sync
         private void ResetGameplay()
         {
             _actions.Reset();
-            _events.Reset(); // w3/audit
+            _events.Reset();
             _signals.Reset();
             _ledger.Clear();
             _rate.Clear();
@@ -608,7 +608,7 @@ namespace SkylineTogether.Sync
             _buildOrders = new BuildOrderAllocator();
         }
 
-        /// <summary>w2/ids: forgets release frames, grants and deferred queues (session start or end).</summary>
+        /// <summary>Forgets release frames, grants and deferred queues (session start or end).</summary>
         private void ResetHostState()
         {
             _hostInboxQuota.Clear();
@@ -644,11 +644,11 @@ namespace SkylineTogether.Sync
                 _log.Debug(LogCategory.Replication, "disposing the codec: " + ex.Message);
             }
             _codec = null; // every entry point checks it (and EnsureWorld refuses after disposal)
-            if (_tools != null) _tools.EventToolChanged -= OnToolChanged; // polish
+            if (_tools != null) _tools.EventToolChanged -= OnToolChanged;
         }
 
         /// <summary>
-        /// Host session start (ARCH K17): compacts the ids (w2/ids; no peer holds any yet), then binds every persistent
+        /// Host session start (ARCH K17): compacts the ids (no peer holds any yet), then binds every persistent
         /// entity and every prefab before anyone joins.
         /// </summary>
         private void BindCity()
@@ -665,10 +665,10 @@ namespace SkylineTogether.Sync
                 foreach (Entity e in entities)
                 {
                     Family family = _codec.Families.Classify(em, e);
-                    if (!FamilyClassifier.IsHostReplicated(family) && family != Family.Singleton) continue; // w3/agents: agents too
+                    if (!FamilyClassifier.IsHostReplicated(family) && family != Family.Singleton) continue; // agents too
                     uint known = _ids.GetNetId(e);
                     if (known == 0 && (known = _ids.BindNew(e, family)) != 0) bound++;
-                    // w3/audit: the snapshot gives joiners this component set; the presence watch compares against it
+                    // the snapshot gives joiners this component set; the presence watch compares against it
                     if (known != 0) _events.NoteWritten(em, known, e, family);
                 }
             }
@@ -707,7 +707,7 @@ namespace SkylineTogether.Sync
 
         private void OnPeerJoining(PeerId peer)
         {
-            // w2/ids: the peer's stream starts now; every release frame sealed so far counts as applied by it
+            // the peer's stream starts now; every release frame sealed so far counts as applied by it
             _acks.AddPeer(peer.Value);
             var o = new PeerOut { Peer = peer };
             _out[peer.Value] = o;
@@ -728,13 +728,12 @@ namespace SkylineTogether.Sync
         private void OnPeerLeft(PeerId peer)
         {
             _proposalHealth.Remove(peer.Value);
-            _hostInboxQuota.Forget(peer); // w8/robust
+            _hostInboxQuota.Forget(peer);
             _ackStall.Forget(peer.Value);
             // gameplay branch
             _rate.Forget(peer.Value);
             _requests.Forget(peer.Value);
             _violations.Forget(peer.Value);
-            // w2/ids
             _acks.RemovePeer(peer.Value);
             if (_out.TryGetValue(peer.Value, out PeerOut o))
             {
@@ -820,7 +819,7 @@ namespace SkylineTogether.Sync
                 long maps = Perf.Start();
                 try
                 {
-                    _cellMaps.ApplyIncoming(); // w2/simvals: host merges paint patches, clients write map tiles
+                    _cellMaps.ApplyIncoming(); // host merges paint patches, clients write map tiles
                     _statistics.ApplyIncoming();
                 }
                 catch (Exception ex)
@@ -837,7 +836,7 @@ namespace SkylineTogether.Sync
             }
             long start = Perf.Start();
             double now = Perf.Now;
-            // w2/ids: everything the previous frame sent is out: close its release frame
+            // everything the previous frame sent is out: close its release frame
             if (IsHost) _ids.Ids.Seal(_acks.SealFrame(_epochSent), now);
             if (IsHost) KickQueued();
             // client: local global-state edits are detected before host data can overwrite them
@@ -860,7 +859,7 @@ namespace SkylineTogether.Sync
                 {
                     try
                     {
-                        _events.ClientBeforeApply(); // w3/audit: the player's chirp likes, the gated chirp queue
+                        _events.ClientBeforeApply(); // the player's chirp likes, the gated chirp queue
                     }
                     catch (Exception ex)
                     {
@@ -868,7 +867,7 @@ namespace SkylineTogether.Sync
                     }
                 }
             }
-            // loadspeed: a client that just went live catches up with bigger slices
+            // a client that just went live catches up with bigger slices
             SessionClient joining = IsHost ? null : _sessions.Client;
             bool catchingUp = joining != null && joining.Timeline.Has(JoinStage.Live) && !joining.Timeline.Has(JoinStage.CaughtUp);
             FrameBudget budget = catchingUp ? _catchUpBudget : _applyBudget;
@@ -904,12 +903,12 @@ namespace SkylineTogether.Sync
                     if (item.Seq != 0) _sessions.Client?.ApplyAcks.Release(item.Seq);
                 }
             }
-            // loadspeed: the backlog left after this frame (zero ends the catch-up and logs the join's timings)
+            // the backlog left after this frame (zero ends the catch-up and logs the join's timings)
             joining?.ReportBacklog(_inbox.Count);
             RetryZones();
-            // w2/simvals (client): simulation values after the structure batches, so ids spawned this frame resolve
+            // client: simulation values after the structure batches, so ids spawned this frame resolve
             if (!IsHost) _simValues.ApplyIncoming(_inbox.Count);
-            // w4/flow (client): flow status into the derived flow edges (after the structure apply, so new owners resolve)
+            // client: flow status into the derived flow edges (after the structure apply, so new owners resolve)
             if (!IsHost && Features.FlowStatus.IsAvailable)
             {
                 try
@@ -921,9 +920,9 @@ namespace SkylineTogether.Sync
                     Guard.Report(Features.FlowStatus, "flow status apply", ex);
                 }
             }
-            // w3/agents (client): agent values once the structure batches that spawn them are applied
+            // client: agent values once the structure batches that spawn them are applied
             if (!IsHost && Features.Agents.IsAvailable) _agents.ApplyIncoming(_inbox.Count);
-            // w3/audit (client): per-player chirp likes, event target lists, weather phenomenon hotspot frames, tree growth
+            // client: per-player chirp likes, event target lists, weather phenomenon hotspot frames, tree growth
             if (!IsHost && Features.Events.IsAvailable)
             {
                 try
@@ -935,7 +934,7 @@ namespace SkylineTogether.Sync
                     Guard.Report(Features.Events, "events (after apply)", ex);
                 }
             }
-            // w3/audit (client): lane signals and signal heads from the host's junction phases
+            // client: lane signals and signal heads from the host's junction phases
             if (!IsHost && Features.SimValues.IsAvailable)
             {
                 long signals = Perf.Start();
@@ -966,7 +965,7 @@ namespace SkylineTogether.Sync
                 SafeCall("milestones", _milestonesCall); // gameplay branch
             }
             if (IsHost) UpdateQuarantine(now);
-            // w8/robust (client): the rolling audit of references the game follows unchecked (diagnostics only)
+            // client: the rolling audit of references the game follows unchecked (diagnostics only)
             if (!IsHost && Features.Integrity.IsAvailable) _audit.Update(now);
             budget.EndFrame(Perf.Stop(Perf.Apply, start));
         }
@@ -1027,7 +1026,7 @@ namespace SkylineTogether.Sync
                 _barrier = 0;
             }
             _ids.Ids.Update(_acks.MinAckedFrame, _barrier, now);
-            // w8/robust: a live peer that stopped applying (its replication feature switched off, its apply is stuck)
+            // a live peer that stopped applying (its replication feature switched off, its apply is stuck)
             // pins the quarantine and only falls further behind: a rejoin with a fresh snapshot is its catch-up
             // (live peers only: a joiner acknowledges nothing while it downloads and loads the city; checked once a second)
             if (now - _lastAckStallCheck < 1.0) return;
@@ -1045,7 +1044,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>w8/robust (host): drops the peers queued for removal (outside the transport callbacks).</summary>
+        /// <summary>Host: drops the peers queued for removal (outside the transport callbacks).</summary>
         private void KickQueued()
         {
             if (_kicks.Count == 0) return;
@@ -1061,7 +1060,7 @@ namespace SkylineTogether.Sync
         private void ApplyFromHost(byte[] data)
         {
             List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length); // decoded once for every consumer
-            // crashfix: ids this player deleted locally wait for the host's despawn; a rejected proposal releases its ids
+            // ids this player deleted locally wait for the host's despawn; a rejected proposal releases its ids
             // (the rollback in the same message recreates them)
             if (_localDeletes.Count > 0) UpdateLocalDeletes(records);
             // mod compatibility: records of entities the player is dragging with a direct-write tool wait (edit hold)
@@ -1093,7 +1092,7 @@ namespace SkylineTogether.Sync
             if (!_missingNotified && _codec.MissingAssets.Count > 0)
             {
                 _missingNotified = true;
-                // w8/mods: name the packages and mods (and what to do) instead of only pointing at the diagnostics
+                // name the packages and mods (and what to do) instead of only pointing at the diagnostics
                 SessionManager.Notify(Core.Modding.MissingAssets.Summary(_codec.MissingBySource()) ?? "Some objects of the host's city use assets or mods you do not have; they are left out. See the diagnostics for the list.", seconds: 15f);
             }
             foreach (Entity e in r.Touched) _appliedThisFrame.Add(e);
@@ -1116,7 +1115,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>crashfix (client): an entity this player deleted, waiting for the host's despawn.</summary>
+        /// <summary>Client: an entity this player deleted, waiting for the host's despawn.</summary>
         private struct LocalDelete
         {
             public uint Seq;
@@ -1129,7 +1128,7 @@ namespace SkylineTogether.Sync
         private long _localDeleteSkips, _cascadeUnbinds;
 
         /// <summary>
-        /// crashfix (client): expires local deletions the host never answered (after <see cref="LocalDeleteSeconds"/> the
+        /// Client: expires local deletions the host never answered (after <see cref="LocalDeleteSeconds"/> the
         /// integrity check takes over) and releases those of proposals this batch reports as rejected.
         /// </summary>
         private void UpdateLocalDeletes(List<SyncRecord> records)
@@ -1197,7 +1196,7 @@ namespace SkylineTogether.Sync
                 Entity written = _ids.GetEntity(rec.NetId);
                 if (written == Entity.Null) continue;
                 _authoredThisFrame[written] = peer.Value;
-                // w2/ids: the ids the client created with are used now (no-op for ids that are not its grants)
+                // the ids the client created with are used now (no-op for ids that are not its grants)
                 _grants.TryConsume(peer.Value, rec.NetId);
             }
             string summary = peer + ": " + r;
@@ -1228,7 +1227,7 @@ namespace SkylineTogether.Sync
                 double now = _sessions.Clock.Seconds;
                 if (rec.Request == SyncRequest.MoreIds)
                 {
-                    // polish: request-only batches skip the proposal rate limit, so grants have their own (and a cap on
+                    // request-only batches skip the proposal rate limit, so grants have their own (and a cap on
                     // the ids a peer holds unused); a refused request is dropped and the client asks again with backoff
                     if (!_requests.TryGrantIds(peer.Value, now, _grants.UnusedCount(peer.Value)))
                     {
@@ -1243,7 +1242,7 @@ namespace SkylineTogether.Sync
                 else if (rec.Request == SyncRequest.ResendRoutes || rec.Request == SyncRequest.ResendAll)
                 {
                     bool routesOnly = rec.Request == SyncRequest.ResendRoutes;
-                    // polish: a re-send scans the whole id table; over the limit it is deferred (FlushDeferred serves it)
+                    // a re-send scans the whole id table; over the limit it is deferred (FlushDeferred serves it)
                     if (_requests.TryResend(peer.Value, routesOnly, now)) Resend(peer, routesOnly);
                     else _log.Debug(LogCategory.Replication, peer + ": re-send request over the limit; deferred");
                 }
@@ -1309,11 +1308,11 @@ namespace SkylineTogether.Sync
                 {
                     case SyncRecordKind.Spawn:
                     {
-                        // w3/audit: events, chirps and journal entries come from the host's simulation only
+                        // events, chirps and journal entries come from the host's simulation only
                         if (FamilyClassifier.IsHostOnly(r.Family)) return RejectReason.Invalid;
                         Entity existing = _ids.GetEntity(r.NetId);
                         bool bound = existing != Entity.Null && em.Exists(existing);
-                        // w2/ids: a creation needs an unused id of the sender's own grants (released ids are never reusable by a client)
+                        // a creation needs an unused id of the sender's own grants (released ids are never reusable by a client)
                         if (!bound && !_grants.IsUnused(peer.Value, r.NetId)) return RejectReason.Invalid;
                         if (bound && _ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
@@ -1326,7 +1325,7 @@ namespace SkylineTogether.Sync
                         // edited meanwhile deleted by somebody else (or never committed: a refused earlier proposal)
                         if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return RejectReason.Conflict;
                         if (!FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId))) return RejectReason.Invalid;
-                        if (FamilyClassifier.IsHostOnly(_ids.GetFamily(r.NetId))) return RejectReason.Invalid; // w3/audit
+                        if (FamilyClassifier.IsHostOnly(_ids.GetFamily(r.NetId))) return RejectReason.Invalid;
                         if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
                     }
@@ -1337,7 +1336,7 @@ namespace SkylineTogether.Sync
                         // mod compatibility: mod tools may delete vehicles, citizens and animals (Better Bulldozer)
                         Family despawned = _ids.GetFamily(r.NetId);
                         if (!FamilyClassifier.IsReplicated(despawned) && !(despawned == Family.Mover && (facts.Flags & ProposalFlags.DirectTool) != 0)) return RejectReason.Invalid;
-                        if (FamilyClassifier.IsHostOnly(despawned)) return RejectReason.Invalid; // w3/audit
+                        if (FamilyClassifier.IsHostOnly(despawned)) return RejectReason.Invalid;
                         if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
                     }
@@ -1420,7 +1419,7 @@ namespace SkylineTogether.Sync
                     }
                     else if (FamilyClassifier.IsReplicated(family) && full >= MaxRollbackRecords && paced != null)
                     {
-                        // crashfix (host lag): a refused mass edit (a big bulldoze) re-encoded every entity in one frame;
+                        // host lag: a refused mass edit (a big bulldoze) re-encoded every entity in one frame;
                         // beyond the first records the rest goes through the peer's paced queue
                         paced.Queue.Mark(id, DeferredClass.Upsert, Perf.Now);
                     }
@@ -1557,7 +1556,7 @@ namespace SkylineTogether.Sync
                 foreach (ArchetypeChunk chunk in chunks)
                 {
                     bool known = _codec.Families.TryClassifyArchetype(chunk.Archetype, out Family chunkFamily);
-                    if (known && !FamilyClassifier.IsHostReplicated(chunkFamily)) continue; // lanes, blocks, movers... (w3/agents: agents are bound)
+                    if (known && !FamilyClassifier.IsHostReplicated(chunkFamily)) continue; // lanes, blocks, movers... (agents are bound)
                     NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
                     for (int i = 0; i < entities.Length; i++)
                     {
@@ -1595,7 +1594,7 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    _cellMaps.OnToolApply(); // w2/simvals: resource brushes (ore, oil, fertility, groundwater)
+                    _cellMaps.OnToolApply(); // resource brushes (ore, oil, fertility, groundwater)
                 }
                 catch (Exception ex)
                 {
@@ -1664,7 +1663,7 @@ namespace SkylineTogether.Sync
                 long maps = Perf.Start();
                 try
                 {
-                    _cellMaps.CaptureOutgoing(); // w2/simvals: host map tiles, client paint patches
+                    _cellMaps.CaptureOutgoing(); // host map tiles, client paint patches
                     _statistics.CaptureOutgoing();
                 }
                 catch (Exception ex)
@@ -1694,7 +1693,7 @@ namespace SkylineTogether.Sync
                                 long simValues = Perf.Start();
                                 try
                                 {
-                                    _simValues.CaptureOutgoing(now); // w2/simvals: attention values and inspection samples
+                                    _simValues.CaptureOutgoing(now); // attention values and inspection samples
                                 }
                                 catch (Exception ex)
                                 {
@@ -1706,7 +1705,7 @@ namespace SkylineTogether.Sync
                             {
                                 try
                                 {
-                                    _flow.CaptureOutgoing(now); // w4/flow: flow status to peers with the Electricity/Water topic
+                                    _flow.CaptureOutgoing(now); // flow status to peers with the Electricity/Water topic
                                 }
                                 catch (Exception ex)
                                 {
@@ -1720,7 +1719,7 @@ namespace SkylineTogether.Sync
                             CaptureClient(now);
                             SafeCall("action capture", _clientActionCall); // gameplay branch
                             Perf.Stop(Perf.ClientCapture, client);
-                            if (Features.Agents.IsAvailable) _agents.ClientFrameEnd(now); // w3/agents: refresh requests
+                            if (Features.Agents.IsAvailable) _agents.ClientFrameEnd(now); // refresh requests
                         }
                     }
                     if (Features.Integrity.IsAvailable)
@@ -1819,7 +1818,7 @@ namespace SkylineTogether.Sync
                 {
                     _batch.Despawn(id);
                     _shadow.Remove(id);
-                    _events.Forget(id); // w3/audit
+                    _events.Forget(id);
                     _ledger.Forget(id);
                     DropDeferred(id, DeferredClass.Upsert);
                     _ids.Ids.Release(id);
@@ -1834,7 +1833,7 @@ namespace SkylineTogether.Sync
                     foreach (ArchetypeChunk chunk in chunks)
                     {
                         bool deleted = chunk.Has<Game.Common.Deleted>();
-                        // w2/ids perf pass: one classification per chunk; whole chunks of derived or agent families
+                        // one classification per chunk; whole chunks of derived or agent families
                         // (lanes, movers, citizens, icons, ...) are skipped without touching their entities
                         bool known = _codec.Families.TryClassifyArchetype(chunk.Archetype, out Family chunkFamily);
                         bool subElements = _subElementFrame && deleted && (chunkFamily == Family.Lane || chunkFamily == Family.PrefabSubObject);
@@ -1855,7 +1854,7 @@ namespace SkylineTogether.Sync
                     chunks.Dispose();
                 }
             }
-            // w3/audit: components the simulation added or removed without a tag (fires, damage, floods, accident sites)
+            // components the simulation added or removed without a tag (fires, damage, floods, accident sites)
             if (Features.Events.IsAvailable)
             {
                 long watch = Perf.Start();
@@ -1878,7 +1877,7 @@ namespace SkylineTogether.Sync
                 Family family = _codec.Families.Classify(em, e);
                 if (FamilyClassifier.IsReplicated(family)) WriteHostEntity(em, e, family, _ids.GetNetId(e), em.HasComponent<Game.Common.Created>(e), em.HasComponent<PrefabRef>(e));
             }
-            // w3/agents: the agent scan slice, key-link changes and the co-captured owners of this frame's agent changes
+            // the agent scan slice, key-link changes and the co-captured owners of this frame's agent changes
             _agents.HostCapture(_batch, _writtenThisFrame, _writeAgent ?? (_writeAgent = WriteAgentRecord));
             // mod compatibility: the dependencies all of the above needed, untagged mod state, and its dependencies
             WriteDependencies(_writtenThisFrame);
@@ -1918,7 +1917,7 @@ namespace SkylineTogether.Sync
             long deferred = Perf.Start();
             FlushDeferred(now, dt);
             Perf.Stop(Perf.Deferred, deferred);
-            _agents.HostStream(now); // w3/agents: owner buffers, then each peer's agents by attention (after the batch)
+            _agents.HostStream(now); // owner buffers, then each peer's agents by attention (after the batch)
         }
 
         private AgentSync.RecordWriter _writeAgent;
@@ -1937,7 +1936,7 @@ namespace SkylineTogether.Sync
             }
             if (family == Family.Agent)
             {
-                if (FamilyClassifier.AgentsReplicated) CaptureHostAgent(em, e, deleted, created, hasPrefab); // w3/agents
+                if (FamilyClassifier.AgentsReplicated) CaptureHostAgent(em, e, deleted, created, hasPrefab);
                 return;
             }
             if (!FamilyClassifier.IsReplicated(family)) return;
@@ -1945,11 +1944,11 @@ namespace SkylineTogether.Sync
             if (deleted)
             {
                 if (id == 0) return;
-                if (family == Family.Object) _agents.OnOwnerDespawned(em, e); // w3/agents: its renters, workers, students
+                if (family == Family.Object) _agents.OnOwnerDespawned(em, e); // its renters, workers, students
                 _batch.Despawn(id);
                 _ids.Unbind(id, despawnSent: true);
                 _shadow.Remove(id);
-                _events.Forget(id); // w3/audit
+                _events.Forget(id);
                 _ledger.Forget(id);
                 DropDeferred(id, DeferredClass.Upsert);
                 return;
@@ -1958,7 +1957,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w3/agents: births, arrivals and new companies are spawned (their owners' reverse buffers follow in the same batch,
+        /// Births, arrivals and new companies are spawned (their owners' reverse buffers follow in the same batch,
         /// <see cref="AgentSync"/>), deaths and departures despawned; any other tag only moves the agent to the front of the
         /// value scan (agents change all the time, their values are budgeted per peer).
         /// </summary>
@@ -1986,7 +1985,7 @@ namespace SkylineTogether.Sync
             _agents.Touch(id);
         }
 
-        /// <summary>w3/agents: an agent's full record into the frame's broadcast batch (key-link changes, co-captured owners).</summary>
+        /// <summary>An agent's full record into the frame's broadcast batch (key-link changes, co-captured owners).</summary>
         private void WriteAgentRecord(Entity e, uint id, SyncRecordKind kind)
         {
             EntityManager em = _codec.EntityManager;
@@ -2010,7 +2009,7 @@ namespace SkylineTogether.Sync
             _writtenThisFrame.Add(e);
             DropDeferred(id, DeferredClass.Upsert); // the full record supersedes waiting values and re-sends
             if (FamilyClassifier.IsScanned(family)) _shadow[id] = _codec.HashEntity(e, true, family);
-            _events.NoteWritten(em, id, e, family); // w3/audit: the component set clients now hold
+            _events.NoteWritten(em, id, e, family); // the component set clients now hold
             // gameplay branch: authored changes (committed proposals and intents, the host player's tool) for conflicts
             if (_authoredThisFrame.TryGetValue(e, out byte author)) _ledger.MarkAuthored(id, author);
             else if (em.HasComponent<Game.Common.Applied>(e) || _toolOriginals.Contains(e)) _ledger.MarkAuthored(id, PeerId.Host.Value);
@@ -2084,9 +2083,9 @@ namespace SkylineTogether.Sync
             {
                 PeerOut o = _outList[p];
                 if (!host.TryGetLink(o.Peer, out PeerSendState link) || !link.Live) continue;
-                // polish: a re-send the request limit deferred is served once its bucket refilled
+                // a re-send the request limit deferred is served once its bucket refilled
                 if (_requests.HasDeferred(o.Peer.Value) && _requests.TakeDeferred(o.Peer.Value, _sessions.Clock.Seconds, out bool routesOnly)) Resend(o.Peer, routesOnly);
-                if (o.ResendCursor > 0) AdvanceResend(o, now); // w8/robust
+                if (o.ResendCursor > 0) AdvanceResend(o, now);
                 if (o.Queue.Count > 0 && Stopwatch.GetTimestamp() - start <= cpuBudget)
                 {
                     int bytes = LinkBudget.DeferredBytes(link.QueuedReliableBytes, link.PendingReliableBytes, link.SendRateBytesPerSecond, dt, _linkConfig);
@@ -2133,7 +2132,7 @@ namespace SkylineTogether.Sync
             int n = 0;
             if (routesOnly)
             {
-                // crashfix (host lag): lines are value-scanned families with their own index set; walking the whole id
+                // host lag: lines are value-scanned families with their own index set; walking the whole id
                 // table (every agent of the city) on each route-tool close cost milliseconds per peer
                 IdIndexSet scanned = _ids.ScannedIds;
                 for (int i = 0; i < scanned.Count; i++)
@@ -2149,13 +2148,13 @@ namespace SkylineTogether.Sync
                 _log.Info(LogCategory.Replication, peer + ": re-sending " + n + " line entities (paced by its link)");
                 return;
             }
-            // w8/robust: the whole table is walked over several frames (AdvanceResend), not in this one
+            // the whole table is walked over several frames (AdvanceResend), not in this one
             if (o.ResendCursor == 0) _log.Info(LogCategory.Replication, peer + ": re-sending every entity (marked over the next frames, paced by its link)");
             o.ResendCursor = 1;
             o.ResendMarked = 0;
         }
 
-        /// <summary>w8/robust: marks the next slice of a full re-send for <paramref name="o"/>.</summary>
+        /// <summary>Marks the next slice of a full re-send for <paramref name="o"/>.</summary>
         private void AdvanceResend(PeerOut o, double now)
         {
             EntityManager em = _codec.EntityManager;
@@ -2252,7 +2251,7 @@ namespace SkylineTogether.Sync
                 foreach (Entity e in changed)
                 {
                     bool isDeleted = em.HasComponent<Game.Common.Deleted>(e);
-                    // crashfix: an entity the applier touched and the local game then deleted is still a deletion to handle
+                    // an entity the applier touched and the local game then deleted is still a deletion to handle
                     if (_appliedThisFrame.Contains(e) && !isDeleted) continue;
                     if (!toolPath && !isDeleted) continue;
                     Family family = _codec.Families.Classify(em, e);
@@ -2274,7 +2273,7 @@ namespace SkylineTogether.Sync
                         continue;
                     }
                     if (!FamilyClassifier.IsReplicated(family)) continue;
-                    // w3/audit: events, chirps and journal entries are the host simulation's alone (a local like is per player)
+                    // events, chirps and journal entries are the host simulation's alone (a local like is per player)
                     if (FamilyClassifier.IsHostOnly(family)) continue;
                     uint id = _ids.GetNetId(e);
                     if (em.HasComponent<Game.Common.Deleted>(e))
@@ -2284,7 +2283,7 @@ namespace SkylineTogether.Sync
                         {
                             if (!IsUiDeletion(em, e, family))
                             {
-                                // crashfix: a cascade of the local game (the owner was despawned: sub-nets, sub-areas,
+                                // a cascade of the local game (the owner was despawned: sub-nets, sub-areas,
                                 // upgrades) destroys the entity at the end of this frame. Its binding must not outlive it:
                                 // a later record naming the id would otherwise resolve to a destroyed entity (a dangling
                                 // reference the game's jobs follow unchecked). Not proposed: the host deletes it itself.
@@ -2299,7 +2298,7 @@ namespace SkylineTogether.Sync
                         _batch.Despawn(id);
                         _ids.Unbind(id);
                         _shadow.Remove(id);
-                        // crashfix: until the host's despawn (or its rollback) arrives, records the host sent before it
+                        // until the host's despawn (or its rollback) arrives, records the host sent before it
                         // applied this deletion must not bring the entity back (in-flight repairs, upserts)
                         _localDeletes[id] = new LocalDelete { Seq = _seq + 1, Until = _sessions.Clock.Seconds + LocalDeleteSeconds };
                         Integrity.OnLocalDelete(id);
@@ -2355,7 +2354,7 @@ namespace SkylineTogether.Sync
             if (_toolCost != 0) _batch.Cost(_toolCost);
             // gameplay branch: sequence, base ledger epoch and kind of the proposal (host validation, rollback)
             if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
-            if (_pool.ShouldRequestMore(_sessions.Clock.Seconds)) _batch.Request(SyncRequest.MoreIds); // polish: retried with backoff
+            if (_pool.ShouldRequestMore(_sessions.Clock.Seconds)) _batch.Request(SyncRequest.MoreIds); // retried with backoff
             if (!_batch.IsEmpty)
             {
                 ArraySegment<byte> bytes = _batch.Finish();
@@ -2370,7 +2369,7 @@ namespace SkylineTogether.Sync
         /// requested again, so no locally derived line state survives.
         /// </summary>
         /// <summary>
-        /// polish: opens the route preview window in the frame the route tool is selected (<c>ToolSystem.activeTool</c>
+        /// Opens the route preview window in the frame the route tool is selected (<c>ToolSystem.activeTool</c>
         /// raises <c>EventToolChanged</c>), not at that frame's end capture, so the temp segments the tool creates in its
         /// first ToolUpdate already get their road-following path from <c>RoutePathSystem</c> (an <c>Updated</c> tag is
         /// seen once only). Closing stays with <see cref="UpdateRouteWindow"/> (linger, host line re-send).
@@ -2424,7 +2423,7 @@ namespace SkylineTogether.Sync
                 Game.Zones.ZoneType z = cells[i].m_Zone;
                 if (z.Equals(Game.Zones.ZoneType.None)) continue;
                 Entity prefab = _zones.GetPrefab(z);
-                // review fix: only the host allocates ids. A client's EnsurePrefab allocated from its local counter
+                // only the host allocates ids. A client's EnsurePrefab allocated from its local counter
                 // (the host's high-water mark at snapshot time), which the host has long handed to new entities and
                 // movers since; the host then rebound that id to the zone prefab and lost the entity's binding
                 zones[i] = IsHost ? _codec.EnsurePrefab(prefab, w) : _ids.GetNetId(prefab);

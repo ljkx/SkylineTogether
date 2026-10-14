@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// w3/audit: an order-independent 64-bit signature of a set of replicated component types (the type hashes of an
+    /// An order-independent 64-bit signature of a set of replicated component types (the type hashes of an
     /// entity's archetype). Two archetypes that hold the same replicated types have the same signature, whatever order
     /// the archetype lists them in; adding or removing one type changes it.
     /// </summary>
@@ -42,7 +42,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// w3/audit, host: the replicated component set (<see cref="TypeSetSignature"/>) each structure entity had when it
+    /// Host: the replicated component set (<see cref="TypeSetSignature"/>) each structure entity had when it
     /// was last sent. The simulation adds and removes components without an <c>Updated</c> tag (a building catches
     /// fire, is flooded, damaged or endangered, an accident site appears on a road), which the tag-driven capture never
     /// sees; comparing the current set with this baseline finds them, and the caller re-sends the entity as a full
@@ -88,7 +88,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// w3/audit: a budgeted rolling pass over a snapshot of ids. <see cref="Refill"/> takes a new snapshot once the
+    /// A budgeted rolling pass over a snapshot of ids. <see cref="Refill"/> takes a new snapshot once the
     /// previous pass is complete (and not more often than the caller allows); <see cref="Next"/> hands out one id at a
     /// time. Not thread-safe.
     /// </summary>

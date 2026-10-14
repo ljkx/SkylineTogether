@@ -5,7 +5,7 @@ using System.Text;
 
 namespace SkylineTogether.Core.Session
 {
-    /// <summary>w8/security: who may join a session at all (<see cref="HostOptions.JoinPolicy"/>).</summary>
+    /// <summary>Who may join a session at all (<see cref="HostOptions.JoinPolicy"/>).</summary>
     public enum JoinPolicy : byte
     {
         /// <summary>Anyone who knows the host's Steam ID (or address) and the password, if one is set.</summary>
@@ -41,7 +41,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// w8/security: the host's ban list (persisted by the game layer in its settings, <see cref="Serialize"/>). A Steam
+    /// The host's ban list (persisted by the game layer in its settings, <see cref="Serialize"/>). A Steam
     /// ban matches the authenticated Steam ID of a connection; an address ban matches the remote address (without port)
     /// of a connection that has no Steam identity. Main thread only.
     /// </summary>
@@ -214,7 +214,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// w8/security: limits wrong password answers per key (the authenticated Steam ID, and the address of a direct or
+    /// Limits wrong password answers per key (the authenticated Steam ID, and the address of a direct or
     /// unauthenticated connection). The first <see cref="FreeFailures"/> wrong answers cost nothing; every further one
     /// locks the key out for <see cref="BaseLockoutSeconds"/>, doubled per extra failure up to
     /// <see cref="MaxLockoutSeconds"/>. A key without failures for <see cref="ForgetSeconds"/> starts over; a right
@@ -324,7 +324,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// w8/security: what each role may do to other players (enforced by the host on every request; the UI only offers
+    /// What each role may do to other players (enforced by the host on every request; the UI only offers
     /// what is allowed). The host may do everything. A co-host may kick builders and viewers and switch them between
     /// builder and viewer, but cannot touch the host or another co-host, cannot ban, cannot appoint co-hosts and cannot
     /// change the host's options, password, join policy or ban list (those live on the host's machine). Builders and

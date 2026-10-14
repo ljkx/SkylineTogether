@@ -1,7 +1,7 @@
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// polish: a game flag a session turns off for its own duration and gives back afterwards (the joiner's
+    /// A game flag a session turns off for its own duration and gives back afterwards (the joiner's
     /// <c>PlatformManager.achievementsEnabled</c>). The value from before the first suspension is kept, so suspending
     /// again (a rejoin loads a fresh snapshot) never records the session's own <c>false</c> as the player's choice.
     /// </summary>

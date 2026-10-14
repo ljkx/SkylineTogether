@@ -18,7 +18,7 @@ namespace SkylineTogether.Net
     /// <c>Send</c> and <c>GetStats</c>, which the host's snapshot pump also calls from its background thread (Steam
     /// Networking Sockets is thread-safe; <see cref="IThreadSafeConnection"/>).
     /// <para>
-    /// loadspeed: Steam does not estimate a connection's bandwidth; it sends at <c>SendRateMin/Max</c>, by default a
+    /// Steam does not estimate a connection's bandwidth; it sends at <c>SendRateMin/Max</c>, by default a
     /// fixed 128-256 KiB/s, which made a 100 MB city take minutes over a relay. Every connection now starts at
     /// 1 MiB/s and a <see cref="SendRateController"/> per connection raises the rate while the link is busy and clean
     /// and backs off on loss or queueing delay (both limits set to the chosen rate, connection scope). The receive
@@ -30,20 +30,20 @@ namespace SkylineTogether.Net
     {
         private const int AppCloseReason = 1000; // k_ESteamNetConnectionEnd_App_Generic
         private const int MaxMessagesPerPoll = 256;
-        // w8/robust: long enough for a SessionEnd or Kick queued behind several MB of snapshot chunks to get out
+        // long enough for a SessionEnd or Kick queued behind several MB of snapshot chunks to get out
         private const double ListenLingerSeconds = 10.0;
 
         /// <summary>
-        /// w8/robust: messages delivered per poll at most, and the time spent delivering them; the rest stays queued in
+        /// Messages delivered per poll at most, and the time spent delivering them; the rest stays queued in
         /// Steam for the next frame. A flood (or a long backlog after a stall) never freezes one frame.
         /// </summary>
         private const int MaxMessagesPerFrame = 8192;
         private const double MaxPollMilliseconds = 25;
 
-        /// <summary>loadspeed: the send buffer per connection (the outbox's <c>OutboxConfig.SendBufferBytes</c> matches it).</summary>
+        /// <summary>The send buffer per connection (the outbox's <c>OutboxConfig.SendBufferBytes</c> matches it).</summary>
         private const int SendBufferBytes = 16 << 20;
 
-        /// <summary>loadspeed: <c>k_ESteamNetworkingConfig_RecvBufferSize</c> (47) and its value; newer than this Steamworks.NET's enum.</summary>
+        /// <summary><c>k_ESteamNetworkingConfig_RecvBufferSize</c> (47) and its value; newer than this Steamworks.NET's enum.</summary>
         private const ESteamNetworkingConfigValue RecvBufferSizeKey = (ESteamNetworkingConfigValue)47;
         private const int RecvBufferBytes = 32 << 20;
 
@@ -338,7 +338,7 @@ namespace SkylineTogether.Net
             return "connection closed";
         }
 
-        /// <summary>w8/security: the connection was accepted on this transport's direct-IP listen socket.</summary>
+        /// <summary>The connection was accepted on this transport's direct-IP listen socket.</summary>
         private bool IsDirect(SteamNetConnectionInfo_t info) => _ipSocket != HSteamListenSocket.Invalid && info.m_hListenSocket == _ipSocket;
 
         /// <summary>
@@ -379,12 +379,12 @@ namespace SkylineTogether.Net
             return new[]
             {
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendBufferSize, SendBufferBytes),
-                // loadspeed: the starting rate (Steam's default is a fixed 128-256 KiB/s); the controller takes over
+                // the starting rate (Steam's default is a fixed 128-256 KiB/s); the controller takes over
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMin, RateOptions.InitialBytesPerSecond),
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, RateOptions.InitialBytesPerSecond),
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutConnected, 30000),
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutInitial, 20000),
-                // w8/security: direct-IP connections may arrive without Steam authentication (no certificate exchange,
+                // direct-IP connections may arrive without Steam authentication (no certificate exchange,
                 // e.g. a LAN or a firewall that blocks Steam's servers); Steam then reports no Steam ID for them. The
                 // session layer never admits such a connection without the session password: the host refuses direct
                 // and unauthenticated connections when no password is set and challenges them otherwise
@@ -464,7 +464,7 @@ namespace SkylineTogether.Net
             }
         }
 
-        /// <summary>loadspeed: per-connection settings that cannot go into the creation options (newer than this SDK's enum).</summary>
+        /// <summary>Per-connection settings that cannot go into the creation options (newer than this SDK's enum).</summary>
         private void ConfigureNew(SteamConnection connection)
         {
             bool ok = SetInt32(connection, RecvBufferSizeKey, RecvBufferBytes);
@@ -481,7 +481,7 @@ namespace SkylineTogether.Net
 
         private double _nextRateUpdate;
 
-        /// <summary>loadspeed: runs each connection's send rate controller and applies a changed rate (main thread).</summary>
+        /// <summary>Runs each connection's send rate controller and applies a changed rate (main thread).</summary>
         private void UpdateSendRates()
         {
             double now = DeferredClock.Elapsed.TotalSeconds;
@@ -570,7 +570,7 @@ namespace SkylineTogether.Net
 
     internal sealed class SteamConnection : IThreadSafeConnection, IConnectionTimeouts
     {
-        /// <summary>loadspeed: chooses this connection's send rate (main thread, <see cref="SteamSocketsTransport"/>'s poll).</summary>
+        /// <summary>Chooses this connection's send rate (main thread, <see cref="SteamSocketsTransport"/>'s poll).</summary>
         public readonly SendRateController Rate = new SendRateController();
 
         private static int _nextId;
@@ -607,7 +607,7 @@ namespace SkylineTogether.Net
 
         public override string ToString() => "steam connection " + Id + " (" + Peer + ")";
 
-        /// <summary>loadspeed: this connection's send rate state.</summary>
+        /// <summary>This connection's send rate state.</summary>
         public string DescribeRate() => Rate.ToString();
     }
 }

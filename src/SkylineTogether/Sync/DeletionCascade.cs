@@ -7,7 +7,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// w8/robust (gap a of crashfix): the reference clean-up the game does when an entity is deleted, done on a client
+    /// The reference clean-up the game does when an entity is deleted, done on a client
     /// at the moment the host's despawn is applied.
     ///
     /// On the host, deleting a building runs <c>Game.Simulation.RemovedSystem</c> (Modification5): every renter loses its

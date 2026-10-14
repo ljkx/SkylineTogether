@@ -113,7 +113,7 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Water) return;
-                // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                // with the feature off nothing drains the inbox (it grew for the rest of the session); the
                 // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
                 if (!Diagnostics.Features.Water.IsAvailable) return;
                 var copy = new byte[e.BodyCount];
@@ -405,7 +405,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>w8/robust: the largest sea level magnitude accepted from the host (heights span 4096 m).</summary>
+        /// <summary>The largest sea level magnitude accepted from the host (heights span 4096 m).</summary>
         private const float MaxSeaLevel = 10000f;
 
         private void ApplyMessage(byte[] data, double now)
@@ -418,7 +418,7 @@ namespace SkylineTogether.Sync
                 if (_warned.Add("grid")) _log.Warn(LogCategory.Fields, "the host's water grid " + info + " differs from ours " + GridInfo + "; water tiles ignored");
                 return;
             }
-            // w8/robust: only a sea level within the terrain's height range (the GPU simulation takes it as is)
+            // only a sea level within the terrain's height range (the GPU simulation takes it as is)
             if (math.abs(_water.SeaLevel - seaLevel) > 0.01f && seaLevel >= -MaxSeaLevel && seaLevel <= MaxSeaLevel)
             {
                 _log.Info(LogCategory.Fields, "sea level follows the host: " + _water.SeaLevel + " → " + seaLevel);

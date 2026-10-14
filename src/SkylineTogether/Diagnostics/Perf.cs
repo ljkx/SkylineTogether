@@ -4,7 +4,7 @@ using SkylineTogether.Core.Diagnostics;
 namespace SkylineTogether.Diagnostics
 {
     /// <summary>
-    /// w2/ids: the mod's per-frame timings and channel byte rates (<see cref="PerfCounters"/>), shown in
+    /// The mod's per-frame timings and channel byte rates (<see cref="PerfCounters"/>), shown in
     /// <c>SyncController.Status</c> and the diagnostics dump. Components time themselves with <see cref="Start"/> /
     /// <see cref="Stop"/> (Stopwatch ticks, no allocation); the frame closes once per frame at the end of the capture.
     /// Main thread only.
@@ -24,7 +24,7 @@ namespace SkylineTogether.Diagnostics
         public const string MotionWrite = "motion write";
         public const string AgentScan = "agent scan";
         public const string AgentApply = "agent apply";
-        public const string FlowScan = "flow scan"; // w4/flow
+        public const string FlowScan = "flow scan";
         // perf pass: components that were not measured before
         public const string SimValues = "sim values";          // host: attention values scan, samples, streams
         public const string PresenceWatch = "presence watch";  // host: component sets changed without a tag (events)
@@ -48,7 +48,7 @@ namespace SkylineTogether.Diagnostics
         public const string MotionBytes = "motion";
         public const string AgentBytes = "agents";
         public const string ProposalBytes = "proposals";
-        public const string FlowBytes = "flow"; // w4/flow
+        public const string FlowBytes = "flow";
         public const string ReceivedBytes = "received";
 
         private static readonly double MsPerTick = 1000.0 / Stopwatch.Frequency;

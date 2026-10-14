@@ -4,7 +4,7 @@ using System.Text;
 
 namespace SkylineTogether.Core.Session
 {
-    /// <summary>The stages of one join, in order (loadspeed: <see cref="JoinTimeline"/>).</summary>
+    /// <summary>The stages of one join, in order (<see cref="JoinTimeline"/>).</summary>
     public enum JoinStage : byte
     {
         /// <summary>Client: <c>Connect</c> was called. Host: the player was admitted.</summary>
@@ -34,7 +34,7 @@ namespace SkylineTogether.Core.Session
     }
 
     /// <summary>
-    /// loadspeed: precise stage timings of one join (host per player, and on the client), for the log, the diagnostics
+    /// Precise stage timings of one join (host per player, and on the client), for the log, the diagnostics
     /// dump and the UI. Times are the session clock's seconds; a stage that was never reached is NaN, and so is every
     /// duration that needs it. The first mark of a stage wins (a later one is ignored unless it overwrites). Pure; main
     /// thread (not thread-safe).

@@ -26,11 +26,11 @@ namespace SkylineTogether.Core.Session
         /// <summary>Longest wait for the host's "live" after the city loaded.</summary>
         public double LiveWaitTimeoutSeconds = 120;
         /// <summary>
-        /// w8/robust: a live session in which nothing at all arrives from the host for this long ends (the host pings every
+        /// A live session in which nothing at all arrives from the host for this long ends (the host pings every
         /// second): its game froze or is gone while the connection itself stays up. The player is offered a rejoin.
         /// </summary>
         public double LiveSilenceTimeoutSeconds = 120;
-        /// <summary>w8/robust: the longest the local load of the host's city may take before the join is abandoned.</summary>
+        /// <summary>The longest the local load of the host's city may take before the join is abandoned.</summary>
         public double LoadTimeoutSeconds = 1200;
     }
 
@@ -82,11 +82,11 @@ namespace SkylineTogether.Core.Session
         /// a fresh snapshot repairs it (offered, not automatic: a deterministic fault would loop).</summary>
         LocalFault,
 
-        /// <summary>w8/security: the host removed the player and banned them (they cannot join again).</summary>
+        /// <summary>The host removed the player and banned them (they cannot join again).</summary>
         Banned,
 
         /// <summary>
-        /// w8/security: this game left on purpose to rejoin with a fresh snapshot, because its city differs from the
+        /// This game left on purpose to rejoin with a fresh snapshot, because its city differs from the
         /// host's in too many places for object repairs (the player accepted the resync). Retryable.
         /// </summary>
         Resync
@@ -116,7 +116,7 @@ namespace SkylineTogether.Core.Session
         private readonly ByteWriter _payload = new ByteWriter(4096);
         private readonly ByteReader _reader = new ByteReader();
         private readonly Queue<Buffered> _buffered = new Queue<Buffered>();
-        // w8/tests: snapshot chunks that overtook the manifest (see Handle, BlobChunk)
+        // snapshot chunks that overtook the manifest (see Handle, BlobChunk)
         private readonly List<byte[]> _earlyChunks = new List<byte[]>();
         private long _earlyChunkBytes;
         private const long MaxEarlyChunkBytes = 16L << 20;
@@ -133,7 +133,7 @@ namespace SkylineTogether.Core.Session
         private float _loadProgress;
         private double _lastChunkAt;
         private double _loadedAt = -1;
-        // w8/robust: when anything last arrived from the host (live silence watchdog)
+        // when anything last arrived from the host (live silence watchdog)
         private double _lastHeard;
         private bool _disposed;
         private Action<Envelope> _appMessage;
@@ -213,14 +213,14 @@ namespace SkylineTogether.Core.Session
         public ConnectionStats Stats => _connection != null ? _connection.GetStats() : default(ConnectionStats);
 
         /// <summary>
-        /// loadspeed: the stage timings of this join (connect, welcome, download, verify, load, live, catch-up) for the
+        /// The stage timings of this join (connect, welcome, download, verify, load, live, catch-up) for the
         /// log, the diagnostics dump and the UI. The session marks every stage up to live; the replication layer reports
         /// the backlog it still has to apply (<see cref="ReportBacklog"/>), which marks the catch-up.
         /// </summary>
         public JoinTimeline Timeline { get; } = new JoinTimeline { Who = "this player" };
 
         /// <summary>
-        /// loadspeed: the replication layer's backlog after going live (batches still waiting to be applied). Zero
+        /// The replication layer's backlog after going live (batches still waiting to be applied). Zero
         /// once live ends the "catching up" state and logs the join's timings.
         /// </summary>
         public void ReportBacklog(int remaining)
@@ -239,7 +239,7 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>Replication-layer messages from the host, in order, only while live (earlier ones are buffered).</summary>
         /// <summary>
-        /// w2/ids: sequence numbers of the host's <c>Epoch</c> messages in dispatch order. A handler of <see cref="AppMessage"/>
+        /// Sequence numbers of the host's <c>Epoch</c> messages in dispatch order. A handler of <see cref="AppMessage"/>
         /// that applies an <c>Epoch</c> message later holds <see cref="Sync.ApplyAckTracker.Received"/> and releases it once
         /// applied; the replication layer acknowledges <see cref="Sync.ApplyAckTracker.AppliedThrough"/> to the host.
         /// </summary>
@@ -335,7 +335,7 @@ namespace SkylineTogether.Core.Session
             }
             if (State == ClientState.Live && _options.LiveSilenceTimeoutSeconds > 0 && now - _lastHeard > _options.LiveSilenceTimeoutSeconds)
             {
-                // w8/robust: the transport polled first, so anything that was waiting for this side counted already
+                // the transport polled first, so anything that was waiting for this side counted already
                 End("The host stopped responding (nothing received for " + (int)(now - _lastHeard) + " s). Their game may be frozen or closed.", ClientEndKind.Timeout);
                 return;
             }
@@ -379,12 +379,12 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// w8/security: asks the host to remove a player (co-hosts only; the host checks the role and ignores what this
+        /// Asks the host to remove a player (co-hosts only; the host checks the role and ignores what this
         /// player may not do). False when not live.
         /// </summary>
         public bool RequestKick(PeerId target) => SendPlayerAction(PlayerActionKind.Kick, target, SessionRole.Viewer);
 
-        /// <summary>w8/security: asks the host to give a player another role (co-hosts: builder ↔ viewer only).</summary>
+        /// <summary>Asks the host to give a player another role (co-hosts: builder ↔ viewer only).</summary>
         public bool RequestRole(PeerId target, SessionRole role) => SendPlayerAction(PlayerActionKind.SetRole, target, role);
 
         private bool SendPlayerAction(PlayerActionKind action, PeerId target, SessionRole role)
@@ -397,7 +397,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// w8/security: leaves to rejoin with a fresh snapshot (<see cref="ClientEndKind.Resync"/>): tells the host it is
+        /// Leaves to rejoin with a fresh snapshot (<see cref="ClientEndKind.Resync"/>): tells the host it is
         /// leaving, like <see cref="Leave"/>; the game layer's recovery reconnects at once.
         /// </summary>
         public void LeaveForResync(string reason)
@@ -551,7 +551,7 @@ namespace SkylineTogether.Core.Session
                 case MessageKind.BlobChunk:
                     if (_receiver == null && State == ClientState.WaitingForSnapshot)
                     {
-                        // w8/tests: chunks travel on the bulk lane, the manifest on the reliable lane, and lanes are
+                        // chunks travel on the bulk lane, the manifest on the reliable lane, and lanes are
                         // ordered independently: chunks can arrive before the manifest. They used to be dropped, and
                         // when every chunk was (a snapshot of one chunk) nothing asked for them again: the join hung
                         // until the 120 s stall watchdog. They are kept (bounded) and fed in once the receiver exists.
@@ -586,7 +586,7 @@ namespace SkylineTogether.Core.Session
                 default:
                     if (State == ClientState.Live && _buffered.Count == 0)
                     {
-                        if (e.Kind == MessageKind.Epoch) ApplyAcks.OnReceived(); // w2/ids
+                        if (e.Kind == MessageKind.Epoch) ApplyAcks.OnReceived();
                         DeliverApp(e);
                     }
                     else if (State != ClientState.Ended)
@@ -786,7 +786,7 @@ namespace SkylineTogether.Core.Session
             _log.Info(LogCategory.Join, "live after " + Timeline.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s; "
                                         + _buffered.Count + " buffered message(s) (" + backlogBytes + " bytes) follow");
             SetState(ClientState.Live);
-            // final review: one throwing listener used to stop GoLive here: the later listeners (gate, clock, movers)
+            // one throwing listener used to stop GoLive here: the later listeners (gate, clock, movers)
             // never ran and the buffered messages stayed queued, so every later message was queued behind them and the
             // client stayed "live" without applying anything. Each listener and each delivery is isolated now.
             Action live = BecameLive;
@@ -807,7 +807,7 @@ namespace SkylineTogether.Core.Session
             while (_buffered.Count > 0 && State == ClientState.Live)
             {
                 Buffered b = _buffered.Dequeue();
-                if (b.Kind == MessageKind.Epoch) ApplyAcks.OnReceived(); // w2/ids
+                if (b.Kind == MessageKind.Epoch) ApplyAcks.OnReceived();
                 DeliverApp(new Envelope { Kind = b.Kind, Body = b.Body, BodyOffset = 0, BodyCount = b.Body.Length });
             }
         }
@@ -874,7 +874,7 @@ namespace SkylineTogether.Core.Session
 
         private void SetState(ClientState state)
         {
-            if (state == ClientState.Live) _lastHeard = _clock.Seconds; // w8/robust: the silence watchdog starts at live
+            if (state == ClientState.Live) _lastHeard = _clock.Seconds; // the silence watchdog starts at live
             if (State == state) return;
             State = state;
             _stateSince = _clock.Seconds;

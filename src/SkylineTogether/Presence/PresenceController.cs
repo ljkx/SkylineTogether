@@ -96,7 +96,7 @@ namespace SkylineTogether.Presence
 
         /// <summary>
         /// Replaces the tags when they differ noticeably from the ones the UI shows (<see cref="PresenceTagDiff"/>); the
-        /// version (and with it the UI binding) changes only then. polish: the projection runs every frame, a push only
+        /// version (and with it the UI binding) changes only then. The projection runs every frame, a push only
         /// when a tag moved by a few pixels or changed. <paramref name="tags"/> is copied, so the caller may reuse it.
         /// </summary>
         public void SetTags(List<PresenceTag> tags)

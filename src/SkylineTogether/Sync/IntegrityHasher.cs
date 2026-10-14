@@ -26,12 +26,12 @@ namespace SkylineTogether.Sync
     /// the client records which types each received record carried as presence only (<see cref="OnRecord"/>) and hashes
     /// them as presence too, whatever its local value. Entities that came with the join snapshot have no record; their
     /// values are the host's own, so both sides resolve (or fail to resolve) the same references.</item>
-    /// <item><b>Agents</b> (w3/agents: citizens, households, pets, companies): existence plus the key links listed in
+    /// <item><b>Agents</b> (citizens, households, pets, companies): existence plus the key links listed in
     /// <see cref="AgentTypeNames"/>: household membership both ways, the reverse lists compared as multisets. Their
     /// values (happiness, money, workplace, property, ...) stream by attention and lag legitimately; the citizen prefab
     /// is left out as well, because a load re-rolls it (<c>Game.Serialization.CitizenSystem</c>, gated on clients but not
     /// worth a repair storm if the gate is missing).</item>
-    /// <item><b>Derived values</b> (crashfix) are verified as presence: the nodes of slave areas, the position of
+    /// <item><b>Derived values</b> are verified as presence: the nodes of slave areas, the position of
     /// non-standalone net nodes and the Transform of attached or aligned objects. Each peer's game recomputes them on
     /// every <c>Updated</c> tag in its own buffer order, so a repair could never make them stick (a repair storm).</item>
     /// <item><b>Derived references</b> (lanes, station stops) are reduced to kind, owner and prefab
@@ -61,7 +61,7 @@ namespace SkylineTogether.Sync
             "Game.Areas.Area",
         };
 
-        /// <summary>w3/agents: the key links verified on agents (types this game lacks are skipped).</summary>
+        /// <summary>The key links verified on agents (types this game lacks are skipped).</summary>
         public static readonly string[] AgentTypeNames =
         {
             "Game.Citizens.HouseholdMember",
@@ -127,7 +127,7 @@ namespace SkylineTogether.Sync
             output.Clear();
             EntityManager em = _codec.EntityManager;
             _presenceOnly.TryGetValue(netId, out ulong[] mask);
-            // w2/ids perf pass: the members of an archetype are cached (no type enumeration or name lookup per entity)
+            // the members of an archetype are cached (no type enumeration or name lookup per entity)
             EntityArchetype archetype = em.GetChunk(e).Archetype;
             bool all = HashesAllValues(family);
             bool agent = family == Family.Agent;
@@ -137,7 +137,7 @@ namespace SkylineTogether.Sync
                 members = agent ? Filter(_codec.HandlersOf(archetype), AgentKeys()) : BuildMembers(archetype, all);
                 cache[archetype] = members;
             }
-            // crashfix: the nodes of a slave area (AreaFlags.Slave) are derived: Game.Areas.GeometrySystem regenerates them
+            // the nodes of a slave area (AreaFlags.Slave) are derived: Game.Areas.GeometrySystem regenerates them
             // from the owner area and the holes of its buildings whenever the area is Updated, in each machine's own
             // sub-object order, so their value legitimately differs between peers (a real session repaired such areas
             // over and over: every repair tagged Updated and the client regenerated its own nodes). Verified as presence.
@@ -171,14 +171,14 @@ namespace SkylineTogether.Sync
             return cached;
         }
 
-        /// <summary>crashfix: an object whose Transform the game derives from its parent (attached) or owner (aligned).</summary>
+        /// <summary>An object whose Transform the game derives from its parent (attached) or owner (aligned).</summary>
         public static bool IsPlacedByParent(EntityManager em, Entity e)
         {
             if (em.HasComponent<Game.Objects.Aligned>(e)) return true;
             return em.HasComponent<Game.Objects.Attached>(e) && em.GetComponentData<Game.Objects.Attached>(e).m_Parent != Entity.Null;
         }
 
-        /// <summary>crashfix: true for an area whose nodes the game derives (<c>AreaFlags.Slave</c>).</summary>
+        /// <summary>True for an area whose nodes the game derives (<c>AreaFlags.Slave</c>).</summary>
         public static bool IsSlaveArea(EntityManager em, Entity e)
         {
             return em.HasComponent<Game.Areas.Area>(e) && (em.GetComponentData<Game.Areas.Area>(e).m_Flags & Game.Areas.AreaFlags.Slave) != 0;

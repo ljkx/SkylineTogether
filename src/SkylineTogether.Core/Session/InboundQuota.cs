@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// w8/robust: bounds what one peer may have waiting in a host-side inbox (proposals, terrain strokes, map patches).
+    /// Bounds what one peer may have waiting in a host-side inbox (proposals, terrain strokes, map patches).
     /// Messages are copied into a queue on arrival and applied later under a frame budget; without a bound, a client that
     /// sends faster than the host applies (a bug, a mod, a hostile client) grows the host's memory without end. Each
     /// admitted message is counted until it is released; a message over the item or byte limit is refused and the peer is

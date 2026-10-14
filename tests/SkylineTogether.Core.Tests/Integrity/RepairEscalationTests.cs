@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 namespace SkylineTogether.Core.Tests.Integrity
 {
     /// <summary>
-    /// w8/security: the escalation above object repairs: bucket rebaselines when repairs do not converge, a resync offer
+    /// The escalation above object repairs: bucket rebaselines when repairs do not converge, a resync offer
     /// for massive divergence, and the guards that keep both from looping.
     /// </summary>
     public sealed class RepairEscalationTests

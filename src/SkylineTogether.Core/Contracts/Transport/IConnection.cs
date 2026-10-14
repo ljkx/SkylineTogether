@@ -25,7 +25,7 @@ namespace SkylineTogether.Core
 namespace SkylineTogether.Core
 {
     /// <summary>
-    /// loadspeed: marks a connection whose <see cref="IConnection.Send"/> and <see cref="IConnection.GetStats"/> may be
+    /// Marks a connection whose <see cref="IConnection.Send"/> and <see cref="IConnection.GetStats"/> may be
     /// called from a background thread while the main thread uses it (Steam Networking Sockets is thread-safe). Only
     /// such connections get their snapshot chunks pumped by the host's <c>BackgroundPump</c>.
     /// </summary>

@@ -52,7 +52,7 @@ namespace SkylineTogether.Sync
         private readonly ChannelHold _hold = new ChannelHold(HoldSeconds);
         private readonly HashSet<string> _loggedOnce = new HashSet<string>();
         private readonly List<BlobChannel> _blobs = new List<BlobChannel>();
-        private readonly ChannelPacer _pacer = new ChannelPacer(); // w3/audit
+        private readonly ChannelPacer _pacer = new ChannelPacer();
 
         private World _world;
         private EntityCodec _codec;
@@ -106,22 +106,22 @@ namespace SkylineTogether.Sync
             public string Name;
             public uint Id;
             public ISerializable State;
-            /// <summary>w3/audit: a custom host serializer (null: <see cref="State"/>'s own <c>Serialize</c>).</summary>
+            /// <summary>A custom host serializer (null: <see cref="State"/>'s own <c>Serialize</c>).</summary>
             public Action<NetWriter> Write;
-            /// <summary>w3/audit: a custom client deserializer (null: <see cref="State"/>'s own <c>Deserialize</c>).</summary>
+            /// <summary>A custom client deserializer (null: <see cref="State"/>'s own <c>Deserialize</c>).</summary>
             public Action<NetReader> Read;
             /// <summary>Host: the system's outstanding writers (public getter), completed before reading.</summary>
             public Func<JobHandle> HostWriters;
             /// <summary>Client: the system's private job handles, completed before writing.</summary>
             public object Owner;
             public FieldInfo[] ClientHandles;
-            /// <summary>w3/audit: client work before the state is written (completing the readers of a public getter).</summary>
+            /// <summary>Client work before the state is written (completing the readers of a public getter).</summary>
             public Action ClientBefore;
-            /// <summary>w3/audit: minimum seconds between two offers (0: every 1 Hz pass); dirty channels are always due.</summary>
+            /// <summary>Minimum seconds between two offers (0: every 1 Hz pass); dirty channels are always due.</summary>
             public double Interval;
             public bool Disabled;
             /// <summary>
-            /// w8/robust (client): the byte length of this game's own encoding of the state, for channels written by the
+            /// Client: the byte length of this game's own encoding of the state, for channels written by the
             /// system's own <c>Deserialize</c> (0: not known yet, -1: not checkable). Those methods write into fixed-size
             /// native arrays with counts read from the payload (the happiness factors: 16 per count into 416 entries) and
             /// no bounds check in a player build, so a payload of another size is never handed to them.
@@ -245,7 +245,7 @@ namespace SkylineTogether.Sync
                 AddBlob<IndustrialDemandSystem>("Demand.Industrial", s => { s.GetIndustrialDemandFactors(out JobHandle d); return d; }, "m_ReadDependencies", "m_WriteDependencies");
                 AddBlob<CountHouseholdDataSystem>("Count.Household", s => { s.GetResourceNeeds(out JobHandle d); return d; }, "m_HouseholdDataReadDependencies", "m_HouseholdDataWriteDependencies");
                 AddBlob<CountWorkplacesSystem>("Count.Workplaces", null);
-                AttachPanels(); // w3/audit: info panels, budget inputs, chirper names, signature buildings
+                AttachPanels(); // info panels, budget inputs, chirper names, signature buildings
                 _codec = codec;
                 _ids = ids;
             }
@@ -260,7 +260,7 @@ namespace SkylineTogether.Sync
             AddBlob(name, 0, hostWriters, clientHandles);
         }
 
-        /// <summary>w3/audit: <see cref="AddBlob{T}(string, Func{T, JobHandle}, string[])"/> with a minimum interval.</summary>
+        /// <summary><see cref="AddBlob{T}(string, Func{T, JobHandle}, string[])"/> with a minimum interval.</summary>
         private void AddBlob<T>(string name, double interval, Func<T, JobHandle> hostWriters, params string[] clientHandles) where T : ComponentSystemBase
         {
             T system = _world.GetOrCreateSystemManaged<T>();
@@ -289,7 +289,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w3/audit: a channel with its own serializer pair (state that is not a whole system blob: a getter's arrays, a
+        /// A channel with its own serializer pair (state that is not a whole system blob: a getter's arrays, a
         /// private cache, prefab components). The reader must consume exactly what the writer wrote.
         /// </summary>
         private void AddCustom(string name, double interval, Action<NetWriter> write, Action<NetReader> read, Action clientBefore = null, Func<JobHandle> hostWriters = null)
@@ -301,7 +301,7 @@ namespace SkylineTogether.Sync
                 Write = write,
                 Read = read,
                 ClientBefore = clientBefore,
-                HostWriters = hostWriters, // w8/robust: the jobs that write what Write reads
+                HostWriters = hostWriters, // the jobs that write what Write reads
                 ClientHandles = Array.Empty<FieldInfo>(),
                 Interval = interval,
             });
@@ -311,7 +311,7 @@ namespace SkylineTogether.Sync
         public void Reset()
         {
             _send.Clear();
-            _pacer.Clear(); // w3/audit
+            _pacer.Clear();
             _late.Clear(); // gameplay branch
             _hold.Clear();
             _primed = false;
@@ -324,7 +324,7 @@ namespace SkylineTogether.Sync
             _namePending.Clear();
             _cityNamePending = null;
             _policyPending.Clear();
-            ResetPanels(); // w3/audit
+            ResetPanels();
             foreach (BlobChannel b in _blobs) b.Disabled = false;
         }
 
@@ -350,7 +350,7 @@ namespace SkylineTogether.Sync
             {
                 if (b.Disabled) continue;
                 BlobChannel channel = b;
-                // w3/audit: panel statistics may ask for a longer interval than the 1 Hz pass
+                // panel statistics may ask for a longer interval than the 1 Hz pass
                 bool dirty = _send.IsDirty(b.Id);
                 if (!dirty && !(due && _pacer.Due(b.Id, b.Interval, now, false))) continue;
                 if (dirty) _pacer.Due(b.Id, b.Interval, now, true);
@@ -438,7 +438,7 @@ namespace SkylineTogether.Sync
                 return;
             }
             if (!Permitted(peer, channel, RequiredPermission(channel), payload)) return;
-            if (ApplyPanelProposal(peer, channel, payload)) return; // w3/audit: followed citizens
+            if (ApplyPanelProposal(peer, channel, payload)) return; // followed citizens
             if (channel == GlobalChannel.Tax)
             {
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
@@ -540,7 +540,7 @@ namespace SkylineTogether.Sync
             if (channel == GlobalChannel.Tax || channel == GlobalChannel.Budget || channel == GlobalChannel.Fee || channel == GlobalChannel.Loan) return Permission.Economy;
             if (channel == GlobalChannel.Policy) return Permission.Policies;
             if (channel == GlobalChannel.Name || channel == GlobalChannel.CityName) return Permission.Names;
-            // polish: the followed-citizen list is shared city state (50 slots, life-path entries), so viewers may not
+            // the followed-citizen list is shared city state (50 slots, life-path entries), so viewers may not
             // change it; following is a cosmetic, city-wide choice like names
             if (channel == FollowChannel) return Permission.Names;
             return Permission.None;
@@ -626,7 +626,7 @@ namespace SkylineTogether.Sync
                 Entity budget = _budgetQuery.GetSingletonEntity();
                 // GetBuffer (read-write) completes the jobs that read the budgets (CityServiceBudgetSystem)
                 DynamicBuffer<ServiceBudgetData> buffer = em.GetBuffer<ServiceBudgetData>(budget);
-                // w8/robust: only live services (as the host checks), budgets clamped, one entry per service; a service the
+                // only live services (as the host checks), budgets clamped, one entry per service; a service the
                 // host names that is not bound here yet keeps its current entry instead of vanishing from the list
                 var wanted = new Dictionary<Entity, int>();
                 var unresolved = 0;
@@ -710,7 +710,7 @@ namespace SkylineTogether.Sync
         private void ApplyBlob(BlobChannel b, byte[] payload)
         {
             if (b.Disabled) return;
-            // w8/robust: a vanilla Deserialize only ever gets a payload of exactly this game's own size for the state
+            // a vanilla Deserialize only ever gets a payload of exactly this game's own size for the state
             if (b.Read == null && b.State != null)
             {
                 if (b.ExpectedLength == 0)
@@ -749,7 +749,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                // w8/robust: a malformed payload (overrun, bad length) disables the channel instead of escaping half-applied
+                // a malformed payload (overrun, bad length) disables the channel instead of escaping half-applied
                 b.Disabled = true;
                 _log.Warn(LogCategory.Replication, "global state: " + b.Name + " could not be applied (" + ex.GetType().Name + ": " + ex.Message + "); channel disabled for this session");
                 return;
@@ -797,7 +797,7 @@ namespace SkylineTogether.Sync
             if (_hold.IsHeld(GlobalChannel.Fee, now)) ReassertFees();
             else _feePredicted.Clear();
             Rebaseline();
-            PanelsAfterApply(); // w3/audit: chirp names
+            PanelsAfterApply(); // chirp names
         }
 
         /// <summary>Client, end of frame: detects local edits and policy events and appends them as proposals.</summary>
@@ -832,7 +832,7 @@ namespace SkylineTogether.Sync
             Guard("loan", _detectLoan);
             Guard("names", _detectNames);
             Guard("city name", _detectCityName);
-            Guard("followed citizens", _detectFollowed); // w3/audit
+            Guard("followed citizens", _detectFollowed);
         }
 
         private void DetectTax(double now)
@@ -951,7 +951,7 @@ namespace SkylineTogether.Sync
                 if (_loanPending.HasValue) Put(w, GlobalChannel.Loan, GlobalPayload.WriteInts(GlobalPayloadMode.Delta, new[] { new KeyValuePair<uint, int>(0, _loanPending.Value) }));
                 if (_policyPending.Count > 0) Put(w, GlobalChannel.Policy, GlobalPayload.WritePolicies(GlobalPayloadMode.Delta, _policyPending));
                 if (_namePending.Count > 0) Put(w, GlobalChannel.Name, GlobalPayload.WriteStrings(GlobalPayloadMode.Delta, new List<KeyValuePair<uint, string>>(_namePending)));
-                FlushFollowed(w); // w3/audit
+                FlushFollowed(w);
                 if (_cityNamePending != null && !string.IsNullOrWhiteSpace(_cityNamePending))
                 {
                     Put(w, GlobalChannel.CityName, GlobalPayload.WriteStrings(GlobalPayloadMode.Delta, new[] { new KeyValuePair<uint, string>(0, _cityNamePending) }));
@@ -999,7 +999,7 @@ namespace SkylineTogether.Sync
             _stringScratch.Clear();
             if (ReadNames(_stringScratch)) Copy(_stringScratch, _nameBase);
             _cityNameBase = _config.cityName ?? "";
-            RebaselineFollowed(); // w3/audit
+            RebaselineFollowed();
         }
 
         // ================================================================== state readers

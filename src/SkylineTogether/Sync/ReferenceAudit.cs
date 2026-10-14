@@ -8,7 +8,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// w8/robust (client): a budgeted rolling audit of the entity references the game's jobs follow without a check. The
+    /// Client: a budgeted rolling audit of the entity references the game's jobs follow without a check. The
     /// first real session crashed natively on a bulldoze and the log could not say which reference dangled (a native
     /// crash leaves no managed stack). This audit walks one reference type at a time, a few chunks per frame, and logs
     /// every reference to an entity that is destroyed (or Null where the game expects one) with the component, the

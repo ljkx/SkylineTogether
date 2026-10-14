@@ -15,7 +15,7 @@ using ILog = SkylineTogether.Core.ILog;
 namespace SkylineTogether.Session
 {
     /// <summary>
-    /// Steam friends integration (w6/invites). The session itself always runs over the P2P transport to the host's Steam
+    /// Steam friends integration. The session itself always runs over the P2P transport to the host's Steam
     /// ID; Steam only carries the invitation:
     /// <list type="bullet">
     /// <item>While hosting, a friends-only Steam lobby (member limit = max players) carries <see cref="LobbyInfo"/>; it is
@@ -312,7 +312,7 @@ namespace SkylineTogether.Session
         }
 
         /// <summary>
-        /// w8/security: the "friends and invited only" join policy (<c>HostOptions.IsFriendOrInvited</c>): true for the
+        /// The "friends and invited only" join policy (<c>HostOptions.IsFriendOrInvited</c>): true for the
         /// host's Steam friends (the same immediate-friends list the panel shows) and for players this host invited from
         /// the panel during this session. Friends are read from Steam at most every 10 s.
         /// </summary>

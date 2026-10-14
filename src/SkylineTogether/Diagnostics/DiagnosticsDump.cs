@@ -111,7 +111,7 @@ namespace SkylineTogether.Diagnostics
                     NetLine(sb, h.GetNetStats());
                     Line(sb, "connections:");
                     foreach (string p in h.DescribePeers()) Line(sb, "  " + p);
-                    // loadspeed: stage timings of the last completed joins (oldest first)
+                    // stage timings of the last completed joins (oldest first)
                     Safe(sb, () =>
                     {
                         IReadOnlyList<Core.Session.JoinTimeline> joins = h.RecentJoins;
@@ -126,7 +126,7 @@ namespace SkylineTogether.Diagnostics
                              + ", session \"" + (c.Session?.SessionName ?? "?") + "\" hosted by " + (c.Session?.HostName ?? "?"));
                     Line(sb, "speed: " + c.Speed + (c.EndReason != null ? ", end reason: " + c.EndReason + " (" + c.EndKind + ")" : "") + ", entered the city " + c.EnteredCity + ", was live " + c.WasLive);
                     NetLine(sb, c.GetNetStats());
-                    // loadspeed: this join's stage timings (and whether the backlog is still being applied)
+                    // this join's stage timings (and whether the backlog is still being applied)
                     Safe(sb, () => Line(sb, c.Timeline.Describe() + (c.Timeline.CatchingUp ? " (catching up, " + c.Timeline.BacklogRemaining + " batch(es) left)" : "")));
                 }
                 IReadOnlyList<PlayerInfo> players = s.Host != null ? s.Host.GetPlayers() : s.Client?.Players;
@@ -161,7 +161,7 @@ namespace SkylineTogether.Diagnostics
                 Line(sb, "host: " + sync.IsHost + ", live client: " + sync.IsLiveClient + ", bound entities: " + sync.BoundCount);
                 Line(sb, "status: " + sync.Status);
                 Line(sb, "last apply: " + sync.LastApply);
-                // w2/ids: id tables and quarantine, epochs, deferred queues, per-component ms/frame and bytes/s per channel
+                // id tables and quarantine, epochs, deferred queues, per-component ms/frame and bytes/s per channel
                 var details = new List<string>();
                 sync.Describe(details);
                 foreach (string d in details) Line(sb, "  " + d);
@@ -215,7 +215,7 @@ namespace SkylineTogether.Diagnostics
                 if (missing != null && missing.Count > 0)
                 {
                     Line(sb, missing.Count + " missing assets (objects using them were left out):");
-                    foreach (KeyValuePair<string, int> m in missing) Line(sb, "  " + (Mod.Sync?.ExplainMissing(m.Key) ?? m.Key) + " (" + m.Value + " records)"); // w8/mods: source and advice
+                    foreach (KeyValuePair<string, int> m in missing) Line(sb, "  " + (Mod.Sync?.ExplainMissing(m.Key) ?? m.Key) + " (" + m.Value + " records)"); // source and advice
                 }
             });
 

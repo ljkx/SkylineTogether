@@ -7,7 +7,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Fields
 {
-    /// <summary>w2/simvals: cell-map region diffing (layout, tile hashes, per-peer state), tile and patch codecs, masked merge.</summary>
+    /// <summary>Cell-map region diffing (layout, tile hashes, per-peer state), tile and patch codecs, masked merge.</summary>
     public sealed class CellMapSyncTests
     {
         private static byte[] RandomMap(CellMapLayout layout, ulong seed)

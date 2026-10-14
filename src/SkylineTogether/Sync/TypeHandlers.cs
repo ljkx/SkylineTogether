@@ -35,27 +35,27 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// crashfix: deserializes the value without writing it anywhere, so the reader's unresolved flag tells whether its
+        /// Deserializes the value without writing it anywhere, so the reader's unresolved flag tells whether its
         /// references resolve here (spawn validation of structural references). Data components only; others read nothing.
         /// </summary>
         public virtual void Probe(NetReader r)
         {
         }
 
-        /// <summary>crashfix: true when <see cref="Probe"/> reads the value (data components).</summary>
+        /// <summary>True when <see cref="Probe"/> reads the value (data components).</summary>
         public virtual bool CanProbe => false;
 
         /// <summary>
-        /// w8/robust: true when decoded values are checked for NaN, infinite and out-of-range floats before they are
+        /// True when decoded values are checked for NaN, infinite and out-of-range floats before they are
         /// written (<see cref="FloatSanity"/>); a value that fails throws a <see cref="DecodeException"/> and is not written.
         /// </summary>
         public virtual bool ChecksFloats => false;
 
-        /// <summary>w8/robust: the field offsets of a value type as Unity lays it out (for <see cref="FloatLayout"/>).</summary>
+        /// <summary>The field offsets of a value type as Unity lays it out (for <see cref="FloatLayout"/>).</summary>
         internal static int FieldOffset(System.Reflection.FieldInfo f) => Unity.Collections.LowLevel.Unsafe.UnsafeUtility.GetFieldOffset(f);
 
         /// <summary>
-        /// w3/agents: an order-insensitive hash of a reference list (reverse buffers, ARCH §4.2.4); false for every other
+        /// An order-insensitive hash of a reference list (reverse buffers, ARCH §4.2.4); false for every other
         /// type and when an element cannot be named on the other peer.
         /// </summary>
         public virtual bool TryHashAsSet(EntityManager em, Entity e, NetIdSystem ids, out ulong hash)
@@ -73,7 +73,7 @@ namespace SkylineTogether.Sync
 
     internal sealed class DataHandler<T> : TypeHandler where T : unmanaged, IComponentData, ISerializable
     {
-        // w8/robust: geometry values are checked before they are written (null: the type is not checked)
+        // geometry values are checked before they are written (null: the type is not checked)
         private static readonly FloatLayout Floats = FloatSanity.LayoutOf(typeof(T), FieldOffset);
 
         public override bool ChecksFloats => Floats != null;
@@ -94,7 +94,7 @@ namespace SkylineTogether.Sync
             T value = em.GetComponentData<T>(e);
             value.Deserialize(r);
             Check(value);
-            // crashfix: a reference that did not resolve (unknown, destroyed or deleted here) would be written as a null
+            // a reference that did not resolve (unknown, destroyed or deleted here) would be written as a null
             // over a valid local reference; an existing entity keeps its value until a record that resolves arrives
             if (r.Unresolved && r.KeepOnUnresolved) return;
             em.SetComponentData(e, value);
@@ -114,7 +114,7 @@ namespace SkylineTogether.Sync
     {
         private const int MaxElements = 1 << 20;
 
-        // w8/robust: area polygons are checked element by element; one bad element refuses the whole buffer (dropping a
+        // area polygons are checked element by element; one bad element refuses the whole buffer (dropping a
         // node would change the shape)
         private static readonly FloatLayout Floats = FloatSanity.LayoutOf(typeof(T), FieldOffset);
 
@@ -135,7 +135,7 @@ namespace SkylineTogether.Sync
         {
             r.Read(out int count);
             if (count < 0 || count > MaxElements) throw new DecodeException(Name + ": buffer of " + count + " elements");
-            // w8/robust: elements are at least one byte unless their format writes nothing (few, short buffers)
+            // elements are at least one byte unless their format writes nothing (few, short buffers)
             if (count > 4096 && count > r.Remaining) throw new DecodeException(Name + ": buffer of " + count + " elements in " + r.Remaining + " bytes");
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e);
             int old = buffer.Length;
@@ -147,7 +147,7 @@ namespace SkylineTogether.Sync
                 T element = i < old ? buffer[i] : default(T);
                 element.Deserialize(r);
                 if (Floats != null && !Floats.IsSane(element)) throw new DecodeException(Name + ": NaN, infinite or out-of-range element refused");
-                // crashfix: an element whose reference did not resolve is left out instead of pointing at nothing
+                // an element whose reference did not resolve is left out instead of pointing at nothing
                 // (ConnectedNode, AggregateElement, LayoutElement, ...: the game's jobs index such references unchecked)
                 if (r.TakeUnresolved())
                 {
@@ -162,7 +162,7 @@ namespace SkylineTogether.Sync
             for (int i = 0; i < kept; i++) buffer[i] = elements[i];
         }
 
-        /// <summary>w8/robust: decodes the elements without writing them (spawn validation of checked geometry).</summary>
+        /// <summary>Decodes the elements without writing them (spawn validation of checked geometry).</summary>
         public override void Probe(NetReader r)
         {
             r.Read(out int count);
@@ -195,10 +195,10 @@ namespace SkylineTogether.Sync
         {
             r.Read(out int count);
             if (count < 0 || count > 65536) throw new DecodeException("route with " + count + " waypoints");
-            if (count > r.Remaining / 4) throw new DecodeException("route with " + count + " waypoints" + " in " + r.Remaining + " bytes"); // w8/robust: 4 bytes per reference
+            if (count > r.Remaining / 4) throw new DecodeException("route with " + count + " waypoints" + " in " + r.Remaining + " bytes"); // 4 bytes per reference
             var items = new Entity[count];
             for (int i = 0; i < count; i++) r.Read(out items[i]);
-            // crashfix: a line keeps its waypoint list while a waypoint is unknown here (a null element made route
+            // a line keeps its waypoint list while a waypoint is unknown here (a null element made route
             // systems index nothing; dropping one would misalign the segment list, which is indexed by waypoint)
             if (r.Unresolved && r.KeepOnUnresolved) return;
             DynamicBuffer<Game.Routes.RouteWaypoint> buffer = em.GetBuffer<Game.Routes.RouteWaypoint>(e);
@@ -223,10 +223,10 @@ namespace SkylineTogether.Sync
         {
             r.Read(out int count);
             if (count < 0 || count > 65536) throw new DecodeException("route with " + count + " segments");
-            if (count > r.Remaining / 4) throw new DecodeException("route with " + count + " segments" + " in " + r.Remaining + " bytes"); // w8/robust: 4 bytes per reference
+            if (count > r.Remaining / 4) throw new DecodeException("route with " + count + " segments" + " in " + r.Remaining + " bytes"); // 4 bytes per reference
             var items = new Entity[count];
             for (int i = 0; i < count; i++) r.Read(out items[i]);
-            if (r.Unresolved && r.KeepOnUnresolved) return; // crashfix: see RouteWaypointsHandler
+            if (r.Unresolved && r.KeepOnUnresolved) return; // see RouteWaypointsHandler
             DynamicBuffer<Game.Routes.RouteSegment> buffer = em.GetBuffer<Game.Routes.RouteSegment>(e);
             buffer.Clear();
             for (int i = 0; i < count; i++)
@@ -237,7 +237,7 @@ namespace SkylineTogether.Sync
     }
 
     /// <summary>
-    /// w3/agents: reverse buffers the save format marks as derived (<c>IEmptySerializable</c>) but which only simulation
+    /// Reverse buffers the save format marks as derived (<c>IEmptySerializable</c>) but which only simulation
     /// systems (off on clients) maintain during play (ARCH §4.2.4, K5): building <c>Renter</c> and <c>Student</c>,
     /// household <c>HouseholdCitizen</c> and <c>HouseholdAnimal</c>. They travel as lists of net ids in the host's order;
     /// an element the reader cannot resolve yet (a member spawned in a later batch) is left out, and the integrity hash
@@ -264,7 +264,7 @@ namespace SkylineTogether.Sync
         {
             r.Read(out int count);
             if (count < 0 || count > MaxElements) throw new DecodeException(Name + ": list of " + count + " entries");
-            if (count > r.Remaining / 4) throw new DecodeException(Name + ": list of " + count + " entries" + " in " + r.Remaining + " bytes"); // w8/robust: 4 bytes per reference
+            if (count > r.Remaining / 4) throw new DecodeException(Name + ": list of " + count + " entries" + " in " + r.Remaining + " bytes"); // 4 bytes per reference
             var items = new Entity[count];
             for (int i = 0; i < count; i++) r.Read(out items[i]);
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e);
@@ -349,7 +349,7 @@ namespace SkylineTogether.Sync
             // feat/integrity: maintained by IconCommandSystem on every peer (icons come from the host through IconSync);
             // reconciling its presence would strip a client owner's buffer and orphan its icon entities
             "Game.Notifications.IconElement",
-            // w4/flow: the flow-graph connections on net nodes, edges and buildings point at derived flow nodes and edges
+            // the flow-graph connections on net nodes, edges and buildings point at derived flow nodes and edges
             // that every peer builds itself (graph systems in Modification phases). As presence-only components a spawn
             // would add them with null references, which the edge graph system then takes for an existing flow node.
             // Flow values travel by flow key instead (FlowStatusSync, ARCH 4.11.5).
@@ -414,7 +414,7 @@ namespace SkylineTogether.Sync
             TypeHandler special = null;
             if (type == typeof(Game.Routes.RouteWaypoint)) special = new RouteWaypointsHandler();
             else if (type == typeof(Game.Routes.RouteSegment)) special = new RouteSegmentsHandler();
-            // w3/agents: reverse buffers replicated as data (K5)
+            // reverse buffers replicated as data (K5)
             else if (type == typeof(Game.Buildings.Renter)) special = new RenterListHandler();
             else if (type == typeof(Game.Citizens.HouseholdCitizen)) special = new HouseholdCitizenListHandler();
             else if (type == typeof(Game.Citizens.HouseholdAnimal)) special = new HouseholdAnimalListHandler();

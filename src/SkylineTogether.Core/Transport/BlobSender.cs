@@ -98,7 +98,7 @@ namespace SkylineTogether.Core.Transport
         }
 
         /// <summary>
-        /// loadspeed: like <see cref="Start(uint, Stream, string, int)"/>, but with the source's digest already known
+        /// Like <see cref="Start(uint, Stream, string, int)"/>, but with the source's digest already known
         /// (computed while the file was written, or for an earlier receiver of the same file), so nothing is read
         /// before the first chunk. The caller vouches that <paramref name="knownDigest"/> is the XXH3-128 of the whole
         /// source; a wrong one makes the receiver reject the blob at the end. Null hashes the source as before.
@@ -363,7 +363,7 @@ namespace SkylineTogether.Core.Transport
             get { lock (_lock) return _totalSentBytes; }
         }
 
-        /// <summary>loadspeed: milliseconds <see cref="Start(uint, Stream, string, int, Digest128?)"/> spent hashing the source (0 with a known digest).</summary>
+        /// <summary>Milliseconds <see cref="Start(uint, Stream, string, int, Digest128?)"/> spent hashing the source (0 with a known digest).</summary>
         public double DigestMilliseconds
         {
             get { lock (_lock) return _digestMilliseconds; }

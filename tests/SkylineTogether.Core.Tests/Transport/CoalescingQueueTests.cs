@@ -6,7 +6,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Transport
 {
-    /// <summary>w2/ids: per-peer deferred updates (ARCH D4: congestion becomes staleness, not backlog).</summary>
+    /// <summary>Per-peer deferred updates (ARCH D4: congestion becomes staleness, not backlog).</summary>
     public sealed class CoalescingQueueTests
     {
         [Test]

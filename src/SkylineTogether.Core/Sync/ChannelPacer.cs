@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// w3/audit: per-channel minimum intervals of the host's global-state channels. The global capture runs at 1 Hz;
+    /// Per-channel minimum intervals of the host's global-state channels. The global capture runs at 1 Hz;
     /// panel statistics that change with every simulation update (happiness factors, company counts) would then resend
     /// several kilobytes a second, so each channel may ask for a longer interval. A dirty channel (a joiner, a change
     /// the host just applied) is always due. Not thread-safe.
@@ -28,7 +28,7 @@ namespace SkylineTogether.Core.Sync
         public void Clear() => _last.Clear();
     }
 
-    /// <summary>w3/audit: the members to add and to remove so a local set equals a received one.</summary>
+    /// <summary>The members to add and to remove so a local set equals a received one.</summary>
     [ThreadAffinity(ThreadKind.Any)]
     public static class IdSetDiff
     {

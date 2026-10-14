@@ -44,7 +44,7 @@ namespace SkylineTogether.Core.Motion
         public const int MaxControlOps = ushort.MaxValue;
 
         /// <summary>
-        /// w8/robust: the highest interest-slot number a client accepts. The host assigns the lowest free slot and keeps
+        /// The highest interest-slot number a client accepts. The host assigns the lowest free slot and keeps
         /// interest near 2500 movers per peer; a client allocates (and walks every frame) one ring per slot number, so an
         /// unbounded number from the wire was a memory and CPU amplifier.
         /// </summary>

@@ -15,7 +15,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// w4/flow: the flow-status channel of ARCH §4.11.5. The electricity and water flow graphs are derived per peer
+    /// The flow-status channel of ARCH §4.11.5. The electricity and water flow graphs are derived per peer
     /// (<c>FamilyMarker.FlowGraph</c>, rebuilt by the graph systems in the Modification phases), but their flow values
     /// (<c>ElectricityFlowEdge</c> flow, capacity and Bottleneck/BeyondBottleneck/Disconnected flags, <c>WaterPipeEdge</c>
     /// fresh and sewage flow, capacities, pollution and flags) are written only by the GameSimulation flow systems
@@ -108,7 +108,7 @@ namespace SkylineTogether.Sync
             public readonly Dictionary<FlowKey, FlowValue> Cache = new Dictionary<FlowKey, FlowValue>();
             public bool Completed;
             /// <summary>
-            /// w8/robust (host): peers whose plan against the finished pass is still to be made, one per frame (a plan walks
+            /// Host: peers whose plan against the finished pass is still to be made, one per frame (a plan walks
             /// the whole table: 100k+ edges; every peer in the frame the pass finished was a spike of tens of ms).
             /// </summary>
             public readonly Queue<HostPeer> PendingPlans = new Queue<HostPeer>();
@@ -385,7 +385,7 @@ namespace SkylineTogether.Sync
             if (host && g.PendingPlans.Count > 0)
             {
                 HostPeer next = g.PendingPlans.Dequeue();
-                if (_peers.TryGetValue(next.Peer.Value, out HostPeer still) && still == next) Plan(g, next); // w8/robust
+                if (_peers.TryGetValue(next.Peer.Value, out HostPeer still) && still == next) Plan(g, next);
             }
             if (g.Stage == Stage.Idle)
             {
@@ -451,7 +451,7 @@ namespace SkylineTogether.Sync
             }
             if (host)
             {
-                // w8/robust: planned one peer per frame (Advance), not all of them in this frame
+                // planned one peer per frame (Advance), not all of them in this frame
                 g.PendingPlans.Clear();
                 foreach (HostPeer p in _peers.Values)
                 {

@@ -7,7 +7,7 @@ using SkylineTogether.Core.Tests.Framework;
 namespace SkylineTogether.Core.Tests.Integrity
 {
     /// <summary>
-    /// crashfix: the storm guards of the rolling verification. A real two-PC session re-sent the same derived areas again
+    /// The storm guards of the rolling verification. A real two-PC session re-sent the same derived areas again
     /// and again (each repair matched for a moment, which reset the attempt count) and repaired hundreds of agents whose
     /// key links had only not reached the client yet.
     /// </summary>

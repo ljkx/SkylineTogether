@@ -49,7 +49,7 @@ namespace SkylineTogether.Sync
         private const double ScanBudgetMs = 1.0;
         private const double HotShare = 0.6;
         private const double ViewInterval = 1.0;
-        // w8/robust: a camera that did not move re-queries its view every 10 s (the 1 s refresh re-walked thousands of
+        // a camera that did not move re-queries its view every 10 s (the 1 s refresh re-walked thousands of
         // cells per peer each second for nothing), and a view holds at most this many entities (the radius shrinks)
         private const double IdleViewInterval = 10.0;
         private const int MaxViewEntities = 4000;
@@ -58,7 +58,7 @@ namespace SkylineTogether.Sync
         private const long MaxBacklogBytes = 384 * 1024;
         private const int MaxMessageBytes = 32 * 1024;
         private const int MaxInboxPerFrame = 32;
-        private const int MaxHeldValueMessages = 512; // final review: held behind the structure backlog at most this many
+        private const int MaxHeldValueMessages = 512; // held behind the structure backlog at most this many
         private const float GridCell = 128f;
 
         private sealed class HostPeer
@@ -71,7 +71,7 @@ namespace SkylineTogether.Sync
             public AttentionTopic Topics;
             public double NextView;
             public float ViewX, ViewZ, ViewRadius;
-            /// <summary>w8/robust: shrinks the view radius while views come back larger than <see cref="MaxViewEntities"/>.</summary>
+            /// <summary>Shrinks the view radius while views come back larger than <see cref="MaxViewEntities"/>.</summary>
             public float ViewScale = 1f;
             public readonly PeerByteBudget Budget = new PeerByteBudget(BytesPerSecond, BurstBytes, MaxBacklogBytes);
             public readonly HashSet<uint> View = new HashSet<uint>();
@@ -79,7 +79,7 @@ namespace SkylineTogether.Sync
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
-        private TypeHandler _trafficLightsHandler; // w3/audit
+        private TypeHandler _trafficLightsHandler;
         private EntityCodec _codec;
         private NetIdSystem _ids;
         private SimulationSystem _simulation;
@@ -148,10 +148,10 @@ namespace SkylineTogether.Sync
         /// <summary>Host: the attention topics of a peer's active infoview and panels (none before its first view report).</summary>
         public AttentionTopic PeerTopics(PeerId peer) => _peers.TryGetValue(peer.Value, out HostPeer p) ? p.Topics : AttentionTopic.None;
 
-        /// <summary>w4/flow: host, true when the entity is in the peer's current attention view (camera ring).</summary>
+        /// <summary>Host, true when the entity is in the peer's current attention view (camera ring).</summary>
         public bool InView(PeerId peer, uint netId) => netId != 0 && _peers.TryGetValue(peer.Value, out HostPeer p) && p.View.Contains(netId);
 
-        /// <summary>w4/flow: client, the attention topics of this player's active infoview (none without one).</summary>
+        /// <summary>Client, the attention topics of this player's active infoview (none without one).</summary>
         public AttentionTopic LocalTopics => _infoview != null ? (AttentionTopic)_infomodeMask & TopicMap.AllTopics : AttentionTopic.None;
 
         /// <summary>Called by <see cref="SyncController"/> once its codec exists.</summary>
@@ -188,7 +188,7 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.SimValues) return;
-                // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                // with the feature off nothing drains the inbox (it grew for the rest of the session); the
                 // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
                 if (!Diagnostics.Features.SimValues.IsAvailable) return;
                 var copy = new byte[e.BodyCount];
@@ -304,7 +304,7 @@ namespace SkylineTogether.Sync
         {
             _scanCursor = 0;
             _scanIds.Clear();
-            // perf pass: the bound objects, edges, areas and nodes (w3/audit: nodes for traffic light phases and wear) come
+            // perf pass: the bound objects, edges, areas and nodes (nodes for traffic light phases and wear) come
             // from their index set, not from a walk over the whole id table
             IdIndexSet structure = _ids.StructureIds;
             structure.CopyTo(_scanIds);
@@ -326,7 +326,7 @@ namespace SkylineTogether.Sync
         private void RebuildHot()
         {
             _hotDirty = false;
-            HashSet<uint> set = _hotScratch; // w8/robust: reused, not allocated per rebuild
+            HashSet<uint> set = _hotScratch; // reused, not allocated per rebuild
             set.Clear();
             foreach (HostPeer p in _peers.Values)
             {
@@ -420,7 +420,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w3/audit: a node's value hash. Traffic lights count by their phase (state, flags, signal groups), not by the
+        /// A node's value hash. Traffic lights count by their phase (state, flags, signal groups), not by the
         /// timer that ticks every update, so a junction is sent when its lights change; clients derive lane signals and
         /// signal heads from the phase (<see cref="SignalFollower"/>).
         /// </summary>
@@ -672,7 +672,7 @@ namespace SkylineTogether.Sync
             try
             {
                 int n = 0;
-                // final review: values sent after structure batches that are still queued (budgeted apply after
+                // values sent after structure batches that are still queued (budgeted apply after
                 // go-live or a burst) were applied first: values of entities not spawned yet were dropped for good and
                 // an older Upsert applied afterwards overwrote newer values. They wait like the agent values do.
                 bool hold = structureBacklog > 0 && _inbox.Count < MaxHeldValueMessages;

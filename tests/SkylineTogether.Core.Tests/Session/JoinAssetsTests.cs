@@ -6,7 +6,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Session
 {
-    /// <summary>polish: package-bundled render prefabs travel in front of the join snapshot.</summary>
+    /// <summary>Package-bundled render prefabs travel in front of the join snapshot.</summary>
     public sealed class JoinAssetsTests
     {
         private static List<JoinAssetEntry> Sample() => new List<JoinAssetEntry>

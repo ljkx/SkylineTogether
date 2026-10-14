@@ -8,7 +8,7 @@ using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Tests.Transport
 {
-    /// <summary>loadspeed: send rate control (pacing), the background pump, and snapshot throughput over NetSim.</summary>
+    /// <summary>Send rate control (pacing), the background pump, and snapshot throughput over NetSim.</summary>
     public sealed class LoadSpeedTransportTests
     {
         private static ConnectionStats Busy(int rate, float quality = 1f, int ping = 40) => new ConnectionStats

@@ -29,7 +29,7 @@ namespace SkylineTogether.Core.Tests.Session
         }
 
         /// <summary>
-        /// w8/security: a peer with the given transport identity (e.g. a direct connection without Steam identity),
+        /// A peer with the given transport identity (e.g. a direct connection without Steam identity),
         /// whose hello claims <paramref name="claimedSteamId"/>.
         /// </summary>
         public RawPeer(SessionRig rig, PeerIdentity identity, ulong claimedSteamId)
@@ -398,7 +398,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void ConcurrentPasswordHandshakesCannotOverfillTheSession()
         {
             // MaxPlayers counts the host: two clients fit. Three clients that all pass hello + manifest before any
-            // of them answered the password challenge must not all be admitted (before w8/tests the capacity check
+            // of them answered the password challenge must not all be admitted (previously the capacity check
             // ran only before the challenge, so every pending handshake was admitted).
             var rig = new SessionRig(new HostOptions { Password = "pw", MaxPlayers = 3 });
             var peers = new List<RawPeer>();
@@ -587,7 +587,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void SnapshotChunksThatOvertakeTheManifestAreNotLost()
         {
             // the snapshot fits into one chunk (bulk lane); the manifest (reliable lane) is held back until the chunk
-            // has arrived. Before w8/tests the client dropped the chunk (no receiver yet) and, since no later chunk
+            // has arrived. Previously the client dropped the chunk (no receiver yet) and, since no later chunk
             // revealed the gap, waited for the 120 s download watchdog.
             var rig = new SessionRig(snapshotBytes: 100_000);
             rig.Snapshots.Hold = true;

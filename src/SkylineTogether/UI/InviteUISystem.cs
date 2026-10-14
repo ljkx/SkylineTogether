@@ -7,7 +7,7 @@ using SkylineTogether.Session;
 namespace SkylineTogether.UI
 {
     /// <summary>
-    /// Steam invite bindings (group <c>skylineTogether</c>, w6/invites), consumed by the panel:
+    /// Steam invite bindings (group <c>skylineTogether</c>), consumed by the panel:
     /// <list type="bullet">
     /// <item><c>friends</c>: a JSON string, an array of <c>{"id": "&lt;SteamID64&gt;", "name": string, "state":
     /// "ingame"|"online"|"away"|"offline", "inSession": bool}</c> (<c>ingame</c> = playing Cities: Skylines II), in-game

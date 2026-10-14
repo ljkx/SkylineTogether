@@ -12,7 +12,7 @@ using Unity.Mathematics;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// w3/audit: events, disasters and the chirper feed (docs/design/SYNC-COVERAGE.md). The entities themselves
+    /// Events, disasters and the chirper feed (docs/design/SYNC-COVERAGE.md). The entities themselves
     /// (<c>Game.Events.Event</c> entities: fires, traffic accidents, weather phenomena, floods and tsunamis, health,
     /// crime, calendar and spectator events; event journal entries; chirps and life-path events) are host-only
     /// structure (<see cref="FamilyClassifier.IsHostOnly"/>): the host's capture streams them like any structure entity
@@ -67,7 +67,7 @@ namespace SkylineTogether.Sync
         };
 
         /// <summary>
-        /// w8/robust: watched types that sit on thousands of buildings in a big city (properties on the market, abandoned and
+        /// Watched types that sit on thousands of buildings in a big city (properties on the market, abandoned and
         /// condemned buildings, construction sites) and change slowly: swept every 2 s instead of every 0.25 s (the sweep
         /// walks every entity that has one; at four times a second that was a few ms per second of host time).
         /// </summary>
@@ -82,7 +82,7 @@ namespace SkylineTogether.Sync
 
         private const double SlowWatchInterval = 2.0;
 
-        /// <summary>w8/robust: one presence watch (a query, its interval and the ids it saw at its previous sweep).</summary>
+        /// <summary>One presence watch (a query, its interval and the ids it saw at its previous sweep).</summary>
         private sealed class Watch
         {
             public EntityQuery Query;
@@ -426,7 +426,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Drops targets that resolve to nothing; w8/robust: also targets that are destroyed or being deleted here (the
+        /// Drops targets that resolve to nothing; also targets that are destroyed or being deleted here (the
         /// event systems index a target's components from the list).
         /// </summary>
         private static void DropNullTargets(EntityManager em, DynamicBuffer<Game.Events.TargetElement> targets)
@@ -453,7 +453,7 @@ namespace SkylineTogether.Sync
                 foreach (Entity e in entities)
                 {
                     Game.Events.WeatherPhenomenon w = em.GetComponentData<Game.Events.WeatherPhenomenon>(e);
-                    // w8/robust: a non-finite hotspot would feed the interpolation and rendering of the phenomenon
+                    // a non-finite hotspot would feed the interpolation and rendering of the phenomenon
                     if (!math.all(math.isfinite(w.m_HotspotPosition)) || !math.all(math.isfinite(w.m_HotspotVelocity))) continue;
                     DynamicBuffer<Game.Events.HotspotFrame> frames = em.GetBuffer<Game.Events.HotspotFrame>(e);
                     if (frames.Length != 4)

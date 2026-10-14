@@ -466,7 +466,7 @@ namespace SkylineTogether.Core.Sync
             }
         }
 
-        /// <summary>polish: the granted ids of the peer it has not used yet (the request throttle's cap).</summary>
+        /// <summary>The granted ids of the peer it has not used yet (the request throttle's cap).</summary>
         public long UnusedCount(byte peer)
         {
             if (!_byPeer.TryGetValue(peer, out List<Range> list)) return 0;
@@ -558,7 +558,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// Adds a range the host granted. w8/robust: a range that starts at 0, runs past <see cref="NetIdAllocator.MaxId"/>
+        /// Adds a range the host granted. A range that starts at 0, runs past <see cref="NetIdAllocator.MaxId"/>
         /// or wraps around is refused (false): taking ids from it would bind entities to ids no table holds. A pool holds at
         /// most <see cref="MaxQueuedRanges"/> ranges.
         /// </summary>
@@ -577,13 +577,13 @@ namespace SkylineTogether.Core.Sync
             return true;
         }
 
-        /// <summary>w8/robust: ranges a pool keeps at most (a grant is up to 16 runs; refills arrive one grant at a time).</summary>
+        /// <summary>Ranges a pool keeps at most (a grant is up to 16 runs; refills arrive one grant at a time).</summary>
         public const int MaxQueuedRanges = 1024;
 
-        /// <summary>w8/robust: ranges refused by <see cref="Add"/> (diagnostics).</summary>
+        /// <summary>Ranges refused by <see cref="Add"/> (diagnostics).</summary>
         public long Refused { get; private set; }
 
-        /// <summary>w8/robust: a usable id range: starts above 0, ends at or below <see cref="NetIdAllocator.MaxId"/>.</summary>
+        /// <summary>A usable id range: starts above 0, ends at or below <see cref="NetIdAllocator.MaxId"/>.</summary>
         public static bool IsValidRange(uint start, uint count) => start != 0 && count != 0 && start <= NetIdAllocator.MaxId && count - 1 <= NetIdAllocator.MaxId - start;
 
         /// <summary>Owner check for the host: is <paramref name="id"/> inside one of the granted ranges?</summary>

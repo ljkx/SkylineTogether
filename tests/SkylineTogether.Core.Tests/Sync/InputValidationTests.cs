@@ -55,7 +55,7 @@ namespace SkylineTogether.Core.Tests.Sync
         public byte m_Kind;
     }
 
-    /// <summary>w8/robust: validation at the decode boundary (Core parts).</summary>
+    /// <summary>Validation at the decode boundary (Core parts).</summary>
     public sealed class InputValidationTests
     {
         private static int OffsetOf(FieldInfo f) => (int)Marshal.OffsetOf(f.DeclaringType, f.Name);

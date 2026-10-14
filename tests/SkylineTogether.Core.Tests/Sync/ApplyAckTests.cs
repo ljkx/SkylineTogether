@@ -7,7 +7,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w2/ids: per-peer epoch acknowledgements on the host and applied-message tracking on the client.</summary>
+    /// <summary>Per-peer epoch acknowledgements on the host and applied-message tracking on the client.</summary>
     public sealed class ApplyAckTests
     {
         [Test]

@@ -87,7 +87,7 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<(Entity, bool), Archetypes> _archetypes = new Dictionary<(Entity, bool), Archetypes>();
         private readonly List<(ComponentSystemBase System, bool WasEnabled)> _gated = new List<(ComponentSystemBase, bool)>();
         private readonly List<Entity> _lights = new List<Entity>();
-        // w3/agents: agent links whose citizen, pet, keeper or owner is not bound here yet (retried for a few seconds)
+        // agent links whose citizen, pet, keeper or owner is not bound here yet (retried for a few seconds)
         private readonly Dictionary<uint, (MoverAgentLinks Links, double Until)> _pendingLinks = new Dictionary<uint, (MoverAgentLinks, double)>();
         private readonly List<uint> _linkScratch = new List<uint>();
         private const double LinkRetrySeconds = 5.0;
@@ -119,7 +119,7 @@ namespace SkylineTogether.Sync
         private double _lastReport;
         private long _spawned, _despawned;
 
-        /// <summary>w8/robust: motion datagrams held at most (about 4 s of a busy view at 60 fps); newer ones are dropped.</summary>
+        /// <summary>Motion datagrams held at most (about 4 s of a busy view at 60 fps); newer ones are dropped.</summary>
         private const int MaxQueuedMotion = 256;
         private long _motionDropped, _recordFailures, _familyMismatches, _ridersReleased;
         private double _lastFailureLog = double.NegativeInfinity;
@@ -136,7 +136,7 @@ namespace SkylineTogether.Sync
         {
             _active = false;
             _pendingLive = false;
-            _pendingLinks.Clear(); // w3/agents
+            _pendingLinks.Clear();
             _linksApplied = 0;
             _batches.Clear();
             _motion.Clear();
@@ -176,11 +176,11 @@ namespace SkylineTogether.Sync
             {
                 case MessageKind.Epoch:
                     // only the movers' own batches (their first record is a mover record); SyncController skips them
-                    // final review: with the movers feature off nothing applies (or releases) these batches; holding
+                    // with the movers feature off nothing applies (or releases) these batches; holding
                     // them froze the apply acks, so the host never reused a released net id again
                     if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount) && Diagnostics.Features.Movers.IsAvailable)
                     {
-                        // w2/ids: held until applied, so the host reuses a despawned mover's id only after this batch
+                        // held until applied, so the host reuses a despawned mover's id only after this batch
                         long seq = 0;
                         SessionClient client = _sessions.Client;
                         if (client != null)
@@ -193,7 +193,7 @@ namespace SkylineTogether.Sync
                     break;
                 case MessageKind.Motion:
                 case MessageKind.MotionControl:
-                    // w8/robust: nothing drains the queue once the movers feature is off, and a run of slow frames must
+                    // nothing drains the queue once the movers feature is off, and a run of slow frames must
                     // not let it grow without end (motion is lossy by design: newer samples supersede old ones)
                     if (!Diagnostics.Features.Movers.IsAvailable) break;
                     if (_motion.Count >= MaxQueuedMotion && e.Kind == MessageKind.Motion)
@@ -209,7 +209,7 @@ namespace SkylineTogether.Sync
         /// <summary>The movers feature switched itself off: releases the held batches so the apply acks move on.</summary>
         public void DropHeld()
         {
-            _motion.Clear(); // w8/robust: the feature is off, nothing will drain it
+            _motion.Clear(); // the feature is off, nothing will drain it
             if (_batches.Count == 0) return;
             SessionClient client = _sessions.Client;
             while (_batches.Count > 0)
@@ -257,7 +257,7 @@ namespace SkylineTogether.Sync
             int n = 0;
             while (_batches.Count > 0 && n < MaxBatchesPerFrame)
             {
-                // w2/ids: budgeted in milliseconds with carry-over; at least one batch per frame, never split
+                // budgeted in milliseconds with carry-over; at least one batch per frame, never split
                 if (n > 0 && Perf.Elapsed(start) > allowance) break;
                 n++;
                 (byte[] data, long seq) = _batches.Dequeue();
@@ -391,7 +391,7 @@ namespace SkylineTogether.Sync
                         case SyncRecordKind.MoverState:
                         {
                             Entity e = _ids.GetEntity(r.NetId);
-                            // w8/robust: an id bound to something that is not a mover here (ids out of step) is never
+                            // an id bound to something that is not a mover here (ids out of step) is never
                             // turned into one: that would swap a building's or a road's components
                             if (e != Entity.Null && em.Exists(e) && !em.HasComponent<Deleted>(e) && _ids.GetFamily(r.NetId) != Family.Mover)
                             {
@@ -419,7 +419,7 @@ namespace SkylineTogether.Sync
                         case SyncRecordKind.MoverDespawn:
                         {
                             Entity e = _ids.GetEntity(r.NetId);
-                            // w8/robust: a mover despawn never deletes a building or a road whose id it names
+                            // a mover despawn never deletes a building or a road whose id it names
                             if (e != Entity.Null && em.Exists(e) && _ids.GetFamily(r.NetId) != Family.Mover)
                             {
                                 _familyMismatches++;
@@ -428,9 +428,9 @@ namespace SkylineTogether.Sync
                             }
                             _ids.Unbind(r.NetId);
                             _force.Remove(r.NetId);
-                            _pendingLinks.Remove(r.NetId); // w3/agents
+                            _pendingLinks.Remove(r.NetId);
                             if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) break;
-                            // w8/robust: riders of a vehicle (ObjectEmergeSystem's job on the host, gated here) must not
+                            // riders of a vehicle (ObjectEmergeSystem's job on the host, gated here) must not
                             // keep a Relative/CurrentVehicle pointing at it once it is destroyed (RelativeObjectSystem
                             // indexes the parent's bone history unchecked)
                             ReleaseRiders(em, e);
@@ -451,7 +451,7 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    // w8/robust: a mover the same batch despawned stays deleted (no components, no passenger entry)
+                    // a mover the same batch despawned stays deleted (no components, no passenger entry)
                     if (em.Exists(e) && !em.HasComponent<Deleted>(e)) ApplyState(em, e, rec, isNew);
                     if (isNew) (created ?? (created = new HashSet<Entity>())).Add(e);
                 }
@@ -460,7 +460,7 @@ namespace SkylineTogether.Sync
                     NoteFailure("mover state failed: " + ex.Message);
                 }
             }
-            // w3/agents: the agents of the movers (vanilla reference systems pick them up for movers created this frame)
+            // the agents of the movers (vanilla reference systems pick them up for movers created this frame)
             foreach (SyncRecord r in records)
             {
                 if (r.Kind != SyncRecordKind.MoverAgents || r.AgentLinks == null) continue;
@@ -479,7 +479,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w3/agents: writes a mover's agent links (<c>Resident.m_Citizen</c>, <c>Pet.m_HouseholdPet</c>,
+        /// Writes a mover's agent links (<c>Resident.m_Citizen</c>, <c>Pet.m_HouseholdPet</c>,
         /// <c>PersonalCar.m_Keeper</c>, a vehicle's <c>Owner</c>). Unresolved targets are left alone; returns false when one
         /// is still missing (retried). For a mover created in this frame the vanilla reference systems derive the reverse
         /// links (the citizen's <c>CurrentTransport</c>, the owner's <c>OwnedVehicle</c>); later owner changes keep the
@@ -646,7 +646,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w8/robust: a failure of one mover record, state, link or motion message: counted (diagnostics), logged as a
+        /// A failure of one mover record, state, link or motion message: counted (diagnostics), logged as a
         /// warning at most every 10 s. The integrity check asks the host again for movers that stay wrong.
         /// </summary>
         private void NoteFailure(string what)
@@ -663,7 +663,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w8/robust: the riders of a vehicle about to be deleted (its own and its trailers' passenger lists) leave it: no
+        /// The riders of a vehicle about to be deleted (its own and its trailers' passenger lists) leave it: no
         /// Relative or CurrentVehicle pointing at a destroyed entity; they are hidden (Unspawned) until the host's next
         /// state for them arrives (usually in the same batch).
         /// </summary>
@@ -702,7 +702,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w8/robust: the bone indices of a rider, checked against the vehicle (RelativeObjectSystem reads
+        /// The bone indices of a rider, checked against the vehicle (RelativeObjectSystem reads
         /// <c>boneHistory[parent]</c> when y &gt;= 0 and the prefab's <c>SubMesh[z]</c> unchecked); an index the vehicle does
         /// not have becomes -1 (the rider is placed relative to the vehicle itself).
         /// </summary>
@@ -726,8 +726,8 @@ namespace SkylineTogether.Sync
             Archetypes types = prefab != Entity.Null ? TypesOf(em, prefab, rec.TrainController) : null;
             bool structural = false;
             Entity vehicle = rec.Vehicle != 0 ? _ids.GetEntity(rec.Vehicle) : Entity.Null;
-            if (vehicle != Entity.Null && (!em.Exists(vehicle) || em.HasComponent<Deleted>(vehicle))) vehicle = Entity.Null; // crashfix: never a deleted vehicle
-            // w8/robust: and never something that is not a vehicle (the id may name any family)
+            if (vehicle != Entity.Null && (!em.Exists(vehicle) || em.HasComponent<Deleted>(vehicle))) vehicle = Entity.Null; // never a deleted vehicle
+            // and never something that is not a vehicle (the id may name any family)
             if (vehicle != Entity.Null && (_ids.GetFamily(rec.Vehicle) != Family.Mover || !em.HasComponent<Vehicle>(vehicle))) vehicle = Entity.Null;
             bool riding = rec.Kind == MoverKind.Riding && vehicle != Entity.Null;
             bool inVehicle = rec.Kind == MoverKind.Inside || rec.Kind == MoverKind.Riding;
@@ -970,7 +970,7 @@ namespace SkylineTogether.Sync
                         }
                         finally
                         {
-                            // w8/robust: ops before a malformed one stay applied; their released movers are pinned anyway
+                            // ops before a malformed one stay applied; their released movers are pinned anyway
                             foreach (MotionPin pin in _pins)
                             {
                                 try
@@ -996,7 +996,7 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
-                    NoteFailure(kind + " failed: " + ex.Message); // w8/robust: one bad message never loses the frame's slot writes
+                    NoteFailure(kind + " failed: " + ex.Message); // one bad message never loses the frame's slot writes
                 }
             }
         }
@@ -1116,8 +1116,8 @@ namespace SkylineTogether.Sync
             _view.CamX = Finite(position.x);
             _view.CamY = Finite(position.y);
             _view.CamZ = Finite(position.z);
-            AttentionValues.Instance?.FillViewReport(_view); // w2/simvals: selected entity and infoview topics
-            AgentSync.Instance?.FillViewReport(_view); // w3/agents: the followed entity (follow camera)
+            AttentionValues.Instance?.FillViewReport(_view); // selected entity and infoview topics
+            AgentSync.Instance?.FillViewReport(_view); // the followed entity (follow camera)
             _report.Reset();
             ViewReport.Write(_report, _view);
             client.SendToHost(MessageKind.View, _report.Buffer, 0, _report.Length);

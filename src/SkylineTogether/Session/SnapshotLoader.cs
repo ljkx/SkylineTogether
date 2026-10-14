@@ -44,12 +44,12 @@ namespace SkylineTogether.Session
 
         public bool IsLoading { get; private set; }
 
-        /// <summary>polish: the joiner's achievements flag from before the first join load (achievements are off in
+        /// <summary>The joiner's achievements flag from before the first join load (achievements are off in
         /// the host's city).</summary>
         private readonly SuspendedFlag _achievements = new SuspendedFlag();
 
         /// <summary>
-        /// polish: gives the achievements flag back as it was before the join (session over, offline copy, main menu).
+        /// Gives the achievements flag back as it was before the join (session over, offline copy, main menu).
         /// With <paramref name="forget"/> the held value is dropped instead: another city is loading, and the vanilla
         /// main menu set the flag for that city already (<c>MenuUISystem</c>), which must not be overwritten.
         /// </summary>
@@ -91,7 +91,7 @@ namespace SkylineTogether.Session
             Directory.CreateDirectory(_folder);
             _db = AssetDatabase.GetTransient(0L, _folder);
             _data = _db.AddAsset<SaveGameData>("SkylineTogetherJoin");
-            // polish: the host's bundled render prefabs arrive in front of the save data (JoinAssetTransfer)
+            // the host's bundled render prefabs arrive in front of the save data (JoinAssetTransfer)
             _splitter = new JoinBlobSplitter(_data.GetWriteStream());
             return _splitter;
         }
@@ -111,12 +111,12 @@ namespace SkylineTogether.Session
             }
             if (bundle == null || bundle.Count == 0)
             {
-                // loadspeed: nothing to import (the usual case): check the render prefabs now and start the load at once,
+                // nothing to import (the usual case): check the render prefabs now and start the load at once,
                 // instead of a detour over the save/load queue and the next frame
                 if (!RenderPrefabsMissing(manifest, onDone)) StartLoad(manifest, onDone);
                 return;
             }
-            // polish: add the host's bundled render prefabs, then check that every render prefab resolves, before the
+            // add the host's bundled render prefabs, then check that every render prefab resolves, before the
             // load (the asset database registration is asynchronous)
             IsLoading = true;
             string folder = Path.Combine(_root, "assets-" + Guid.NewGuid().ToString("N"));
@@ -141,7 +141,7 @@ namespace SkylineTogether.Session
                         return;
                     }
                     if (RenderPrefabsMissing(manifest, onDone)) return;
-                    ReportMissingAssetSources(manifest); // w8/mods
+                    ReportMissingAssetSources(manifest);
                     StartLoad(manifest, onDone);
                 });
             }, 1);
@@ -169,7 +169,7 @@ namespace SkylineTogether.Session
         }
 
         /// <summary>
-        /// w8/mods: names the packages and mods of the host's city that this game lacks (from the manifest's asset
+        /// Names the packages and mods of the host's city that this game lacks (from the manifest's asset
         /// sources), with what to do, before the load: objects using them will be left out. The join goes on (the host's
         /// city stays playable without them); the same list is in the log and, per asset, in the diagnostics.
         /// </summary>
@@ -202,7 +202,7 @@ namespace SkylineTogether.Session
             GameManager game = GameManager.instance;
             if (game.isGameLoading)
             {
-                // review fix: a second load on top of a running one would fail obscurely (or not at all)
+                // a second load on top of a running one would fail obscurely (or not at all)
                 onDone(new LoadOutcome { Success = false, FailureKey = "busy", FailureDetail = "your game is still loading another city. Wait until it has finished, then join again" });
                 return;
             }
@@ -222,7 +222,7 @@ namespace SkylineTogether.Session
             map.mapName = "Skyline Together";
             try
             {
-                // polish: the player's own value is kept and given back when the session ends (RestoreAchievements)
+                // the player's own value is kept and given back when the session ends (RestoreAchievements)
                 PlatformManager.instance.achievementsEnabled = _achievements.Suspend(PlatformManager.instance.achievementsEnabled);
             }
             catch (Exception ex)
@@ -253,7 +253,7 @@ namespace SkylineTogether.Session
                 {
                     gameplay.pausedAfterLoading = pausedBefore;
                     IsLoading = false;
-                    // review fix (robust branch): release this load's own database; if a newer download replaced the
+                    // release this load's own database; if a newer download replaced the
                     // fields meanwhile (a rejoin attempt), Dispose() would have released the newer one instead
                     if (ReferenceEquals(_data, data)) Dispose();
                     else Release(db, folder);
@@ -278,7 +278,7 @@ namespace SkylineTogether.Session
         {
             if (IsLoading)
             {
-                _disposeRequested = true; // polish: honoured after the asset import (the load's completion disposes anyway)
+                _disposeRequested = true; // honoured after the asset import (the load's completion disposes anyway)
                 // the load's completion callback disposes
                 return;
             }

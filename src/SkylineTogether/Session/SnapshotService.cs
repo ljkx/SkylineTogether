@@ -20,10 +20,10 @@ namespace SkylineTogether.Session
     /// <summary>
     /// Host side of joining (R12 §4.3): serializes the live city with the game's own <see cref="SaveGameSystem"/> into a
     /// temporary file on the "SaveLoadGame" queue (so it never overlaps an autosave or a manual save). Unlike a normal
-    /// save it writes no package, no preview, no "Continue" entry and does not collect garbage. polish: the prefabs a save
+    /// save it writes no package, no preview, no "Continue" entry and does not collect garbage. The prefabs a save
     /// would store into its package travel in front of the save data (<see cref="JoinAssetTransfer"/>).
     /// <para>
-    /// loadspeed: the file is written through a <see cref="DigestingWriteStream"/>, so its XXH3-128 digest and length
+    /// The file is written through a <see cref="DigestingWriteStream"/>, so its XXH3-128 digest and length
     /// are known the moment the save completes (<see cref="SnapshotReady.DigestKnown"/>) and no joiner's transfer reads
     /// the file before its first chunk. The save itself is the game's: <c>WriteSystem</c> compresses every buffer with
     /// ZStd level 3 (hard-coded, the game's fast setting), and <c>StreamBinaryWriter</c> only writes sequentially,
@@ -37,7 +37,7 @@ namespace SkylineTogether.Session
         private readonly string _folder;
         private readonly Dictionary<uint, string> _files = new Dictionary<uint, string>();
 
-        /// <summary>polish: the transient database of each snapshot's bundled assets (released with the snapshot).</summary>
+        /// <summary>The transient database of each snapshot's bundled assets (released with the snapshot).</summary>
         private readonly Dictionary<uint, Colossal.IO.AssetDatabase.ILocalAssetDatabase> _assets = new Dictionary<uint, Colossal.IO.AssetDatabase.ILocalAssetDatabase>();
         private uint _next = 1;
 
@@ -56,7 +56,7 @@ namespace SkylineTogether.Session
             PrefabSystem prefabs = world.GetExistingSystemManaged<PrefabSystem>();
             GameModeSystem modes = world.GetExistingSystemManaged<GameModeSystem>();
             SimulationSystem simulation = world.GetExistingSystemManaged<SimulationSystem>();
-            // w8/mods: where the city's prefabs that are not base game come from; the joiner names what it lacks before loading
+            // where the city's prefabs that are not base game come from; the joiner names what it lacks before loading
             List<Core.Modding.AssetSourceUse> assetSources = null;
             try
             {
@@ -76,13 +76,13 @@ namespace SkylineTogether.Session
                 {
                     double queueSeconds = queued.Elapsed.TotalSeconds;
                     var watch = System.Diagnostics.Stopwatch.StartNew();
-                    // loadspeed: the digest is computed as the save writes (the game writes sequentially, never seeks)
+                    // the digest is computed as the save writes (the game writes sequentially, never seeks)
                     var stream = new DigestingWriteStream(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16));
                     string[] renderIds = new string[0];
                     try
                     {
                         var context = new Context(Purpose.SaveGame, Game.Version.current, Colossal.Hash128.Empty);
-                        // polish: package-bundled render prefabs go in front of the save data (JoinAssetTransfer); like
+                        // package-bundled render prefabs go in front of the save data (JoinAssetTransfer); like
                         // GameManager.Save this runs before the save and remaps them in the save's context
                         List<JoinAssetEntry> bundle;
                         try
@@ -129,7 +129,7 @@ namespace SkylineTogether.Session
                         ChunkSize = BlobCodec.DefaultChunkBytes,
                         FrameIndex = simulation.frameIndex,
                         GameModeName = modes.currentModeName ?? "",
-                        RenderPrefabIds = renderIds, // polish: the joiner refuses clearly when it cannot resolve one
+                        RenderPrefabIds = renderIds, // the joiner refuses clearly when it cannot resolve one
                         ReferencedContent = content.ToArray(),
                         AssetSources = assetSources,
                     };
@@ -154,7 +154,7 @@ namespace SkylineTogether.Session
                     _log.Error(LogCategory.Join, "taking the snapshot failed", ex);
                     _main.Post(() =>
                     {
-                        // review fix: the half-written temp file was never released (the host only releases ids it got)
+                        // the half-written temp file was never released (the host only releases ids it got)
                         _files.Remove(id);
                         TryDelete(path);
                         onFailed(ex.Message);
@@ -205,7 +205,7 @@ namespace SkylineTogether.Session
             {
                 if (!Directory.Exists(_folder)) return;
                 foreach (string f in Directory.GetFiles(_folder)) TryDelete(f);
-                foreach (string d in Directory.GetDirectories(_folder)) Directory.Delete(d, true); // polish: asset folders
+                foreach (string d in Directory.GetDirectories(_folder)) Directory.Delete(d, true); // asset folders
             }
             catch (Exception)
             {

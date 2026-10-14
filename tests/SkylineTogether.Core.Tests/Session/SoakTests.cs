@@ -19,7 +19,7 @@ namespace SkylineTogether.Core.Tests.Session
     {
         public const double Frame = 1 / 60.0;
 
-        /// <summary>loadspeed: the simulated frame time (a slow game ticks the session less often).</summary>
+        /// <summary>The simulated frame time (a slow game ticks the session less often).</summary>
         public double FrameSeconds = Frame;
 
         public readonly ManualClock Clock = new ManualClock(1000);

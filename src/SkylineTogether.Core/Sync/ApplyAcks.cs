@@ -110,7 +110,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// w8/robust (host): peers whose applied release frame stopped advancing while the host kept sealing frames. Such a
+    /// Host: peers whose applied release frame stopped advancing while the host kept sealing frames. Such a
     /// peer pins the id quarantine (released ids wait for every peer's acknowledgement) and is falling behind for good:
     /// its replication feature switched off, or its apply is stuck, while its connection still answers pings. After
     /// <see cref="LimitSeconds"/> it is reported (once), and the host drops it with a rejoin offer: a rejoin with a fresh

@@ -10,7 +10,7 @@ using SkylineTogether.Core.Transport;
 namespace SkylineTogether.Core.Tests.Session
 {
     /// <summary>
-    /// w8/robust: sessions under injected faults (loss, duplication, reordering, truncation, bit flips, huge length
+    /// Sessions under injected faults (loss, duplication, reordering, truncation, bit flips, huge length
     /// prefixes, garbage), hostile and silent peers, stalls and slow consumers. Every case must end deterministically: the
     /// faulty peer is dropped or carries on, the other players stay live, nothing throws out of a tick, the log does not
     /// flood, and a new player can still join afterwards.

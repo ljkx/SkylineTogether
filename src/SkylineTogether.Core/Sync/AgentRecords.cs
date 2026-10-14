@@ -5,7 +5,7 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// w3/agents: the agent identities a mover refers to (body of <see cref="SyncRecordKind.MoverAgents"/>, written into the
+    /// The agent identities a mover refers to (body of <see cref="SyncRecordKind.MoverAgents"/>, written into the
     /// movers branch's batches right after the mover's spawn or state record). Movers are spawned on clients from their
     /// prefab archetype, so without this record a client's pedestrian has no citizen (no citizen panel, no follow camera
     /// through <c>Resident.m_Citizen</c>), a pet no household pet and a car no keeper or owner. Net ids; 0 means "none".
@@ -73,7 +73,7 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// w3/agents: body of <see cref="MessageKind.AgentRefresh"/> (client → host): agents whose last received values held a
+    /// Body of <see cref="MessageKind.AgentRefresh"/> (client → host): agents whose last received values held a
     /// reference the client could not resolve yet (a partner spawned in a later batch). The host sends their current
     /// values again with focus priority. <c>u8 version | varint n | n × varint netId</c>.
     /// </summary>

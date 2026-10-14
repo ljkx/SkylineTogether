@@ -17,7 +17,7 @@ namespace SkylineTogether.Core.Session
         public int Connections;
     }
 
-    /// <summary>w2/ids: one admitted peer's send side, for the bandwidth scheduler (<see cref="SessionHost.TryGetLink"/>).</summary>
+    /// <summary>One admitted peer's send side, for the bandwidth scheduler (<see cref="SessionHost.TryGetLink"/>).</summary>
     public struct PeerSendState
     {
         /// <summary>The peer finished loading and applies what it receives.</summary>

@@ -25,7 +25,7 @@ namespace SkylineTogether.Sync
     /// frame (private fields, which date the samples in the chart) are set by reflection, then
     /// <c>eventStatisticsUpdated</c> refreshes the panel exactly like a local sample would.
     /// </para>
-    /// The host polls once a second and broadcasts the series that changed (normally right after a sample). loadspeed: a
+    /// The host polls once a second and broadcasts the series that changed (normally right after a sample). A
     /// peer that goes live gets only the series that changed since its admission (its snapshot, taken after the admission,
     /// carries the rest; the series' hashes at the admission are its baseline), instead of every series again; without a
     /// baseline it gets all of them as before. Main thread only.
@@ -40,7 +40,7 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<long, ulong> _sentHashes = new Dictionary<long, ulong>();
         private readonly Queue<byte[]> _inbox = new Queue<byte[]>();
         private readonly List<PeerId> _newPeers = new List<PeerId>();
-        /// <summary>loadspeed: per joining peer, the series' content hashes at its admission (what its snapshot holds).</summary>
+        /// <summary>Per joining peer, the series' content hashes at its admission (what its snapshot holds).</summary>
         private readonly Dictionary<byte, Dictionary<long, ulong>> _joinBaselines = new Dictionary<byte, Dictionary<long, ulong>>();
         private readonly ByteWriter _out = new ByteWriter(16 * 1024);
         private World _world;
@@ -69,7 +69,7 @@ namespace SkylineTogether.Sync
                 client.AppMessage += e =>
                 {
                     if (e.Kind != MessageKind.Statistics) return;
-                    // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                    // with the feature off nothing drains the inbox (it grew for the rest of the session); the
                     // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
                     if (!Diagnostics.Features.SimValues.IsAvailable) return;
                     var copy = new byte[e.BodyCount];
@@ -145,7 +145,7 @@ namespace SkylineTogether.Sync
                     List<StatisticSeries> all = Collect();
                     foreach (PeerId peer in _newPeers)
                     {
-                        // loadspeed: only what changed since the peer's snapshot (usually nothing: the simulation was held)
+                        // only what changed since the peer's snapshot (usually nothing: the simulation was held)
                         List<StatisticSeries> send = all;
                         if (_joinBaselines.TryGetValue(peer.Value, out Dictionary<long, ulong> baseline))
                         {
@@ -197,7 +197,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>loadspeed: the series' hashes now are what the joiner's snapshot (taken after its admission) holds.</summary>
+        /// <summary>The series' hashes now are what the joiner's snapshot (taken after its admission) holds.</summary>
         private void OnPeerJoining(PeerId peer)
         {
             try
@@ -239,7 +239,7 @@ namespace SkylineTogether.Sync
                     if (e == Entity.Null || !em.Exists(e) || !em.HasBuffer<CityStatistic>(e)) continue;
                     DynamicBuffer<CityStatistic> buffer = em.GetBuffer<CityStatistic>(e, true);
                     int n = Math.Min(buffer.Length, StatisticsMessage.MaxSamples);
-                    // w8/robust: the newest samples (the buffers grow without end; the charts read from the end and pad
+                    // the newest samples (the buffers grow without end; the charts read from the end and pad
                     // the front when a buffer is shorter than the sample count, StatisticsUISystem.EnsureDataSize)
                     int start = buffer.Length - n;
                     var s = new StatisticSeries { Type = (int)pairs.Keys[i].type, Parameter = pairs.Keys[i].parameter, Values = new double[n], Totals = new double[n] };
@@ -312,10 +312,10 @@ namespace SkylineTogether.Sync
                 DynamicBuffer<CityStatistic> buffer = em.GetBuffer<CityStatistic>(e);
                 int n = Math.Min(s.Values.Length, s.Totals.Length);
                 buffer.ResizeUninitialized(n);
-                for (int k = 0; k < n; k++) buffer[k] = new CityStatistic { m_Value = Finite(s.Values[k]), m_TotalValue = Finite(s.Totals[k]) }; // w8/robust
+                for (int k = 0; k < n; k++) buffer[k] = new CityStatistic { m_Value = Finite(s.Values[k]), m_TotalValue = Finite(s.Totals[k]) };
                 written++;
             }
-            // w8/robust: the charts allocate this many samples (EnsureDataSize); a wild value is clamped
+            // the charts allocate this many samples (EnsureDataSize); a wild value is clamped
             sampleCount = Math.Max(0, Math.Min(MaxSampleCount, sampleCount));
             try
             {
@@ -331,7 +331,7 @@ namespace SkylineTogether.Sync
             if (written > 0) _stats.eventStatisticsUpdated?.Invoke();
         }
 
-        /// <summary>w8/robust: the largest sample count accepted from the host (32 samples a game day).</summary>
+        /// <summary>The largest sample count accepted from the host (32 samples a game day).</summary>
         private const int MaxSampleCount = 1 << 20;
 
         private static double Finite(double v) => double.IsNaN(v) || double.IsInfinity(v) ? 0 : v;

@@ -50,7 +50,7 @@ namespace SkylineTogether.Sync
             "Game.Effects.EffectFlagSystem",
             // the budget UI reads its Enabled flag; it only derives the subsidy line from replicated values (ARCH §6.1)
             "Game.Simulation.GameModeGovernmentSubsidiesSystem",
-            // w3/audit: the economy panels' trade, wealth, worker and tourist figures; a pure read of the replicated city
+            // the economy panels' trade, wealth, worker and tourist figures; a pure read of the replicated city
             // statistics (BudgetSystem.UpdateData), without it they stay at the join snapshot
             "Game.Simulation.BudgetSystem",
         };
@@ -221,7 +221,7 @@ namespace SkylineTogether.Sync
                 _disabled.Clear();
                 Disable(systems);
                 _lastScan = Now;
-                // review fix: the model outlives sessions; a stale estimate from the previous session could keep this
+                // the model outlives sessions; a stale estimate from the previous session could keep this
                 // client ahead of the host (and of the motion stream) for minutes
                 _model.Reset();
                 _model.SetRate(0, Now);

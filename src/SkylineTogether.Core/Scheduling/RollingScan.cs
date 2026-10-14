@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// w3/agents: the order of a time-sliced rolling scan over a large id set (the host's agent value scan, ARCH §4.4.3
+    /// The order of a time-sliced rolling scan over a large id set (the host's agent value scan, ARCH §4.4.3
     /// SDC): ids touched since the last look (<see cref="Touch"/>: tagged by the game, members of a focus set, refresh
     /// requests) come first and once each, then the snapshot of the current pass in order. A pass ends when the snapshot
     /// is exhausted; the caller then starts the next one with a fresh snapshot (<see cref="Restart"/>), so ids bound
@@ -84,7 +84,7 @@ namespace SkylineTogether.Core.Scheduling
     }
 
     /// <summary>
-    /// w3/agents: a bounded breadth-first closure over an id graph (the agents behind a selected building, citizen or
+    /// A bounded breadth-first closure over an id graph (the agents behind a selected building, citizen or
     /// vehicle, ARCH §4.8.3 inspection closure). <c>expand</c> appends the neighbours of an id; the closure stops after
     /// <c>maxDepth</c> hops or at <c>maxCount</c> ids, and every id appears once. Pure.
     /// </summary>

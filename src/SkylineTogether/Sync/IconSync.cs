@@ -124,7 +124,7 @@ namespace SkylineTogether.Sync
         private double _lastRevalidate;
         private double _lastFallbackSweep;
         private long _commandsIssued;
-        private long _invalidIcons; // w8/robust: icons with a non-finite location left out
+        private long _invalidIcons; // icons with a non-finite location left out
 
         // filter
         private IconCommandSystem _iconSystem;
@@ -189,7 +189,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Client: the host despawned net id <paramref name="netId"/> (w2/ids: ids are reused after a quarantine). The icon
+        /// Client: the host despawned net id <paramref name="netId"/> (ids are reused after a quarantine). The icon
         /// set the host sent for that owner is forgotten, so it cannot attach to the next entity bound to the id.
         /// </summary>
         public void ForgetNetId(uint netId)
@@ -387,7 +387,7 @@ namespace SkylineTogether.Sync
             }
             foreach (Entity owner in _gone)
             {
-                // w2/ids: a reused net id may already name a new owner whose set went out above; never clear that one
+                // a reused net id may already name a new owner whose set went out above; never clear that one
                 SyncRef gone = _sent[owner].Ref;
                 if (!_liveRefs.Contains(gone)) batch.IconSet(gone, Array.Empty<SyncIcon>());
                 _sent.Remove(owner);
@@ -709,7 +709,7 @@ namespace SkylineTogether.Sync
                     if (targetLost) flags = (byte)(flags & ~FlagTargetLocation);
                     bool custom = (flags & FlagCustomLocation) != 0 || targetLost;
                     var location = new float3(d.X, d.Y, d.Z);
-                    // w8/robust: an icon placed at a NaN or infinite location would reach Icon.m_Location and the cluster
+                    // an icon placed at a NaN or infinite location would reach Icon.m_Location and the cluster
                     // system's centres and distances; such an icon is left out (the host's next icon set brings it back)
                     if (custom && !math.all(math.isfinite(location)))
                     {

@@ -18,13 +18,13 @@ namespace SkylineTogether.Sync
     public sealed class ApplyResult
     {
         public int Spawned, Upserted, Values, Despawned, Skipped, ZoneBlocks;
-        /// <summary>crashfix: spawns not created because a structural reference (owner, edge node, parent) is not here.</summary>
+        /// <summary>Spawns not created because a structural reference (owner, edge node, parent) is not here.</summary>
         public int UnresolvedSpawns;
-        /// <summary>crashfix: components that kept (existing entity) or nulled (new entity) a reference that did not resolve.</summary>
+        /// <summary>Components that kept (existing entity) or nulled (new entity) a reference that did not resolve.</summary>
         public int UnresolvedComponents;
-        /// <summary>crashfix: entities left untagged or sanitized because their net or owner references are broken.</summary>
+        /// <summary>Entities left untagged or sanitized because their net or owner references are broken.</summary>
         public int UnsafeSkipped;
-        /// <summary>w8/robust (client): references to despawned entities removed by <see cref="DeletionCascade"/>.</summary>
+        /// <summary>Client: references to despawned entities removed by <see cref="DeletionCascade"/>.</summary>
         public int Cascaded;
         public long Cost;
         public bool HasCost;
@@ -78,7 +78,7 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<uint, byte[]> _unresolvedPrefabs = new Dictionary<uint, byte[]>();
         private readonly Dictionary<uint, string> _unresolvedPrefabNames = new Dictionary<uint, string>();
         private readonly SortedDictionary<string, int> _missingAssets = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        // w8/mods: where the host's non-base-game prefabs come from (client: by prefab id, and by missing asset name for
+        // where the host's non-base-game prefabs come from (client: by prefab id, and by missing asset name for
         // the reports; host: by prefab entity), the explanation of each missing asset, and the prefab count at the
         // last name fallback attempt of an id (retried only when a mod added prefabs since)
         private readonly Dictionary<uint, Core.Modding.AssetSource> _prefabSources = new Dictionary<uint, Core.Modding.AssetSource>();
@@ -96,7 +96,7 @@ namespace SkylineTogether.Sync
         private EntityArchetype _pathEventArchetype;
         private EntityArchetype _colorEventArchetype;
         private bool _disposed;
-        // w2/ids perf pass: per-archetype handler lists and pooled apply collections (no allocation per record)
+        // per-archetype handler lists and pooled apply collections (no allocation per record)
         private readonly Dictionary<EntityArchetype, TypeHandler[]> _handlersByArchetype = new Dictionary<EntityArchetype, TypeHandler[]>();
         private readonly List<TypeHandler> _handlerScratch = new List<TypeHandler>(64);
         private readonly ApplyResult _result = new ApplyResult();
@@ -107,7 +107,7 @@ namespace SkylineTogether.Sync
         private readonly List<Entity> _pathUpdated = new List<Entity>();
         private readonly ByteReader _keyReader = new ByteReader();
         private TypeHandler _pathElement, _pathInformation, _connected, _prefabRef;
-        private TypeHandler _journalEntry, _lifePathEvent, _chirp; // w3/audit: archetypes of host-only families
+        private TypeHandler _journalEntry, _lifePathEvent, _chirp; // archetypes of host-only families
         private bool _handlersResolved;
 
         public EntityCodec(World world, NetIdSystem ids, ILog log)
@@ -150,7 +150,7 @@ namespace SkylineTogether.Sync
         public IReadOnlyDictionary<string, int> MissingAssets => _missingAssets;
 
         /// <summary>
-        /// Mod compatibility (w8/mods): the missing assets grouped by where the host said they come from
+        /// Mod compatibility: the missing assets grouped by where the host said they come from
         /// (<see cref="SyncRecordKind.PrefabSource"/>), with the number of distinct missing prefabs of each; prefabs
         /// without a source record count under an unknown source.
         /// </summary>
@@ -167,7 +167,7 @@ namespace SkylineTogether.Sync
             return new List<KeyValuePair<Core.Modding.AssetSource, int>>(counts);
         }
 
-        /// <summary>Mod compatibility (w8/mods): the one-line explanation of a missing asset (source and what to do).</summary>
+        /// <summary>Mod compatibility: the one-line explanation of a missing asset (source and what to do).</summary>
         public string ExplainMissing(string asset)
         {
             if (_missingTexts.TryGetValue(asset ?? "", out string text)) return text;
@@ -175,7 +175,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// final review: session end. The missing-asset report and the unresolved prefab ids belong to one host's
+        /// Session end. The missing-asset report and the unresolved prefab ids belong to one host's
         /// session; kept, they showed (and toasted) the previous session's assets, and an unresolved id could bind a
         /// later session's record to the old host's prefab name.
         /// </summary>
@@ -204,7 +204,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w8/robust: copies a received batch into the native read buffer, followed by <see cref="NetReaderState.Padding"/>
+        /// Copies a received batch into the native read buffer, followed by <see cref="NetReaderState.Padding"/>
         /// zero bytes (the game's reader may read a few bytes past a payload before the bounds check of
         /// <see cref="NetReader"/> stops it; they must stay inside the allocation).
         /// </summary>
@@ -276,10 +276,10 @@ namespace SkylineTogether.Sync
         {
             TypeHandler[] handlers = HandlersOf(e);
             w.BeginEntity(kind, netId, family, kind != SyncRecordKind.Values);
-            // w3/audit: events and chirps keep their values when they name an entity that does not replicate (a citizen
+            // events and chirps keep their values when they name an entity that does not replicate (a citizen
             // sender, a household target): that reference travels as null instead of dropping the whole component
             _ws.NullRefs = LenientRefs(family);
-            // w3/agents: references of agents to transient agents (job and school seekers, meetings), service requests and
+            // references of agents to transient agents (job and school seekers, meetings), service requests and
             // icons never replicate; they travel as null so the values beside them are not lost (as simulation values do)
             bool lenient = family == Family.Agent;
             try
@@ -415,7 +415,7 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// A 64-bit hash of an entity's replicated values as <see cref="WriteEntity"/> writes them for
-        /// <paramref name="family"/> (w3/audit: host-only families hash with their non-replicated references nulled).
+        /// <paramref name="family"/> (host-only families hash with their non-replicated references nulled).
         /// </summary>
         public ulong HashEntity(Entity e, bool valuesOnly, Family family)
         {
@@ -449,7 +449,7 @@ namespace SkylineTogether.Sync
         private static readonly Func<Entity, bool> AnyRef = _ => true;
 
         /// <summary>
-        /// w3/audit: the references a family's structure records may null. Host-only families (events, chirps, journal
+        /// The references a family's structure records may null. Host-only families (events, chirps, journal
         /// entries) point at citizens, households and service requests, which do not replicate as entities; their
         /// other values must still arrive. Every other family keeps the strict rule (an unresolvable reference sends
         /// the component as presence only).
@@ -470,7 +470,7 @@ namespace SkylineTogether.Sync
         {
             hash = 0;
             if (h == null || h.Kind == SyncComponentKind.Presence) return false;
-            // w3/agents: reverse buffers are compared as multisets (ARCH 4.2.4)
+            // reverse buffers are compared as multisets (ARCH 4.2.4)
             if (h.TryHashAsSet(EntityManager, e, _ids, out hash)) return true;
             if (!TrySerialize(h, e, out int length)) return false;
             int head = _payload.Length;
@@ -674,7 +674,7 @@ namespace SkylineTogether.Sync
                 return;
             }
             if (p == null) return;
-            // w8/mods: where a prefab that is not base game comes from, so a client without it can say what is missing
+            // where a prefab that is not base game comes from, so a client without it can say what is missing
             if (!_sourceOf.TryGetValue(prefab, out Core.Modding.AssetSource source)) _sourceOf[prefab] = source = Compat.AssetSources.Of(p);
             if (source != null) w.PrefabSource(id, source);
             PrefabID pid = p.GetPrefabID();
@@ -701,7 +701,7 @@ namespace SkylineTogether.Sync
             _unresolvedPrefabs[rec.NetId] = data;
             string key = string.IsNullOrEmpty(pid) ? (rec.PrefabName ?? "#" + rec.NetId) : pid;
             _unresolvedPrefabNames[rec.NetId] = key;
-            // w8/mods: the host's source record says where it comes from and what the player can do about it
+            // the host's source record says where it comes from and what the player can do about it
             _prefabSources.TryGetValue(rec.NetId, out Core.Modding.AssetSource source);
             _missingSources[key] = source;
             _missingTexts[key] = Core.Modding.MissingAssets.Describe(key, rec.PrefabName, source);
@@ -723,7 +723,7 @@ namespace SkylineTogether.Sync
                 _position.Value = 0;
                 var reader = default(BinaryReader);
                 reader.Initialize(_readContext, native, _position, _ids.ReaderTable);
-                // w8/robust: a prefab id holds strings whose lengths come from the wire; the bounded reader refuses them
+                // a prefab id holds strings whose lengths come from the wire; the bounded reader refuses them
                 // before the game's reader allocates or reads past the record
                 _rs.Bound(_position, data.Length);
                 _rs.Keys.Clear();
@@ -751,7 +751,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w8/mods: the name fallback of prefab binding. A prefab a mod creates at runtime is the same prefab on every peer
+        /// The name fallback of prefab binding. A prefab a mod creates at runtime is the same prefab on every peer
         /// when its type and name are, even if its <c>PrefabID</c> hash differs (the mod reused a local file as its asset);
         /// bound only when unambiguous (Core <c>MissingAssets.ChooseNameFallback</c>). Tried again for an id only after a
         /// mod added prefabs (the prefab count changed), so records of a missing asset cost a dictionary lookup.
@@ -786,7 +786,7 @@ namespace SkylineTogether.Sync
                     var keys = new ByteReader(c.Data, c.Offset, c.Count);
                     if (keys.ReadVarUInt32() != 0) return null;
                     _position.Value = c.Offset - batchOffset + keys.Position;
-                    if (_position.Value < 0 || _position.Value + 4 > c.Offset - batchOffset + c.Count) return null; // w8/robust: malformed, the normal read reports it
+                    if (_position.Value < 0 || _position.Value + 4 > c.Offset - batchOffset + c.Count) return null; // malformed, the normal read reports it
                     var inner = default(BinaryReader);
                     inner.Initialize(_readContext, _batch, _position, _ids.ReaderTable);
                     inner.Read(out int index);
@@ -881,7 +881,7 @@ namespace SkylineTogether.Sync
             result.Reset();
             LoadBatch(data, offset, count);
             EntityManager em = EntityManager;
-            // review fix (direction check): mayCreate is given exactly when the host applies a client's proposal. Host →
+            // direction check: mayCreate is given exactly when the host applies a client's proposal. Host →
             // client records (prefab bindings above all) and writes to host-owned bindings (movers, prefabs, the city
             // singleton) are refused: one Prefab record rebinds a host prefab to the client's id and evicts whatever
             // entity the host had bound to it.
@@ -903,7 +903,7 @@ namespace SkylineTogether.Sync
                 switch (r.Kind)
                 {
                     case SyncRecordKind.PrefabSource:
-                        if (r.Source != null) _prefabSources[r.NetId] = r.Source; // w8/mods: written right before its Prefab record
+                        if (r.Source != null) _prefabSources[r.NetId] = r.Source; // written right before its Prefab record
                         break;
                     case SyncRecordKind.Prefab:
                         BindPrefab(r, result);
@@ -921,7 +921,7 @@ namespace SkylineTogether.Sync
                 }
             }
 
-            // 0b (w8/robust): despawns of this batch. Their entities are dead to every reference read below (an upsert or a
+            // 0b: despawns of this batch. Their entities are dead to every reference read below (an upsert or a
             // new entity that names one would otherwise keep a reference to an entity deleted a moment later); a record of
             // an id the same batch despawns afterwards is not applied (it goes away anyway); a despawn that comes before
             // a spawn of the same id (an id reused within one batch) is applied first.
@@ -960,10 +960,10 @@ namespace SkylineTogether.Sync
             return result;
         }
 
-        /// <summary>w8/robust: ids despawned by the batch being applied, with the index of their first despawn record.</summary>
+        /// <summary>Ids despawned by the batch being applied, with the index of their first despawn record.</summary>
         private readonly Dictionary<uint, int> _despawnAt = new Dictionary<uint, int>();
 
-        /// <summary>w8/robust: despawn records already applied before the entity steps (id reuse within one batch).</summary>
+        /// <summary>Despawn records already applied before the entity steps (id reuse within one batch).</summary>
         private readonly HashSet<int> _earlyDespawns = new HashSet<int>();
 
         private void ApplySteps(List<SyncRecord> records, int offset, byte[] data, bool proposal, Func<uint, Family, bool> mayCreate, Func<SyncRecord, bool> skip, ApplyResult result)
@@ -981,7 +981,7 @@ namespace SkylineTogether.Sync
                 }
                 if (_despawnAt.TryGetValue(r.NetId, out int despawnAt) && despawnAt > i)
                 {
-                    result.Skipped++; // w8/robust: despawned later in this batch
+                    result.Skipped++; // despawned later in this batch
                     continue;
                 }
                 // mod compatibility: never apply a record whose asset is missing here (or was unnamed on the sender)
@@ -1001,7 +1001,7 @@ namespace SkylineTogether.Sync
                 }
                 else if (e != Entity.Null && em.HasComponent<Game.Common.Deleted>(e))
                 {
-                    // crashfix: the entity is being deleted this frame; writing it (or creating a twin) would resurrect it
+                    // the entity is being deleted this frame; writing it (or creating a twin) would resurrect it
                     // with references the game's cleanup is about to invalidate
                     result.Skipped++;
                     continue;
@@ -1055,7 +1055,7 @@ namespace SkylineTogether.Sync
                 _targets.Add((r, e));
             }
 
-            // 1b (crashfix): new entities whose structural references (owner, edge nodes, parent) do not resolve here are
+            // 1b: new entities whose structural references (owner, edge nodes, parent) do not resolve here are
             // not created: the game's reference systems index them unchecked (SubObjectReferencesSystem, Net.ReferencesSystem)
             if (_spawned.Count > 0) DropUnresolvableSpawns(offset, data, result);
 
@@ -1070,7 +1070,7 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
-                    result.Problems.Add("#" + r.NetId + " component set: " + ex.Message); // crashfix: one record never stops the batch
+                    result.Problems.Add("#" + r.NetId + " component set: " + ex.Message); // one record never stops the batch
                 }
             }
 
@@ -1122,7 +1122,7 @@ namespace SkylineTogether.Sync
             {
                 (SyncRecord r, Entity e) = _targets[t];
                 if (r.Kind == SyncRecordKind.Values) continue;
-                // w3/agents: nothing derives from agents; Updated on them would only wake systems for nothing
+                // nothing derives from agents; Updated on them would only wake systems for nothing
                 if (r.Family == Family.Agent) continue;
                 _touch.Add(e);
                 if (r.Family == Family.NetEdge || r.Family == Family.NetNode) Closure(e, _touch);
@@ -1143,7 +1143,7 @@ namespace SkylineTogether.Sync
             foreach (Entity e in _touch)
             {
                 if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                // crashfix: Net.ReferencesSystem indexes an Updated edge's nodes and connected nodes unchecked; an edge whose
+                // Net.ReferencesSystem indexes an Updated edge's nodes and connected nodes unchecked; an edge whose
                 // node is missing here is left untagged (and reported) instead of crashing the game
                 if (!IsNetSafe(em, e))
                 {
@@ -1169,7 +1169,7 @@ namespace SkylineTogether.Sync
                 return;
             }
             Entity e = _ids.GetEntity(r.NetId);
-            // w2/ids: the host keeps the binding of a proposed deletion; its capture sees the Deleted tag, broadcasts
+            // the host keeps the binding of a proposed deletion; its capture sees the Deleted tag, broadcasts
             // the despawn to every peer and only then releases the id (unbinding here hid the despawn from the
             // other clients)
             if (!proposal) _ids.Unbind(r.NetId);
@@ -1178,9 +1178,9 @@ namespace SkylineTogether.Sync
             {
                 Family family = _families.Classify(em, e);
                 if (family == Family.NetEdge || family == Family.NetNode) Closure(e, _touch);
-                // crashfix: the game's reference systems process a Deleted entity's owner and edge nodes unchecked
+                // the game's reference systems process a Deleted entity's owner and edge nodes unchecked
                 if (SanitizeForDelete(em, e)) result.UnsafeSkipped++;
-                // w8/robust (client): what the gated removal systems would do to the entity's renters, workers, pupils and
+                // client: what the gated removal systems would do to the entity's renters, workers, pupils and
                 // reverse lists, so nothing on this client keeps pointing at it while the host's own records travel
                 if (!proposal)
                 {
@@ -1246,7 +1246,7 @@ namespace SkylineTogether.Sync
                     SyncComponent comp = r.Components[c];
                     if (comp.Kind == SyncComponentKind.Presence) continue;
                     TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
-                    // w8/robust: a payload of another kind than this game's type (data vs buffer) would be misread
+                    // a payload of another kind than this game's type (data vs buffer) would be misread
                     if (h == null || h.Kind == SyncComponentKind.Presence || h.Kind != comp.Kind || !em.HasComponent(e, h.Type)) continue;
                     if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
                     // gameplay branch: state vanilla keeps beside some values (mesh colour enable bit, line colour events)
@@ -1272,7 +1272,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        // ================================================================== crashfix: reference safety
+        // ================================================================== reference safety
 
         private TypeHandler[] _hardTypes;
         private readonly Dictionary<Entity, List<Entity>> _spawnRefs = new Dictionary<Entity, List<Entity>>();
@@ -1284,19 +1284,19 @@ namespace SkylineTogether.Sync
         private string _probeFailure;
         private long _malformedTotal;
 
-        /// <summary>w8/robust: component values refused as malformed (overruns, NaN or out-of-range geometry), session total.</summary>
+        /// <summary>Component values refused as malformed (overruns, NaN or out-of-range geometry), session total.</summary>
         public long MalformedTotal => _malformedTotal;
 
-        /// <summary>w8/robust: reads the bounded reader refused because they ran past their payload (session total).</summary>
+        /// <summary>Reads the bounded reader refused because they ran past their payload (session total).</summary>
         public long OverrunsTotal => _rs.Overruns;
 
-        /// <summary>crashfix: spawns skipped because a structural reference did not resolve (session total).</summary>
+        /// <summary>Spawns skipped because a structural reference did not resolve (session total).</summary>
         public long UnresolvedSpawnsTotal => _unresolvedSpawnsTotal;
 
-        /// <summary>crashfix: entities left untagged or sanitized because of broken net references (session total).</summary>
+        /// <summary>Entities left untagged or sanitized because of broken net references (session total).</summary>
         public long UnsafeTotal => _unsafeTotal;
 
-        /// <summary>crashfix: references the reader dropped because their entity was destroyed or deleted (session total).</summary>
+        /// <summary>References the reader dropped because their entity was destroyed or deleted (session total).</summary>
         public long DeadReferencesTotal => _rs.DeadReferences;
 
         /// <summary>
@@ -1342,7 +1342,7 @@ namespace SkylineTogether.Sync
                         if (comp.Kind == SyncComponentKind.Presence) continue;
                         TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
                         if (h == null || h.Kind != comp.Kind || !h.CanProbe) continue;
-                        // w8/robust: geometry is checked too: a new entity at a NaN position is never created
+                        // geometry is checked too: a new entity at a NaN position is never created
                         bool structural = comp.Kind == SyncComponentKind.Data && Array.IndexOf(hard, h) >= 0;
                         if (!structural && !h.ChecksFloats) continue;
                         _probeFailure = null;
@@ -1414,7 +1414,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// crashfix: false for an edge whose start, end or connected node is missing here: tagging it would make
+        /// False for an edge whose start, end or connected node is missing here: tagging it would make
         /// <c>Net.ReferencesSystem</c> index the missing node's <c>ConnectedEdge</c> buffer (a native crash).
         /// </summary>
         internal static bool IsNetSafe(EntityManager em, Entity e)
@@ -1434,7 +1434,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// crashfix: before an entity is tagged <c>Deleted</c>, references the game's reference systems would follow
+        /// Before an entity is tagged <c>Deleted</c>, references the game's reference systems would follow
         /// unchecked are made safe: an owner that no longer exists is removed (<c>SubObjectReferencesSystem</c>,
         /// <c>ServiceUpgradeReferencesSystem</c>, <c>SubNetReferencesSystem</c> index the owner's buffer), connected nodes
         /// that are gone are dropped, and an edge node that is gone is replaced by the edge's other node (the reference
@@ -1575,7 +1575,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// crashfix: deserializes a data component without writing it; true when one of its references does not resolve
+        /// Deserializes a data component without writing it; true when one of its references does not resolve
         /// here (unknown, destroyed or deleted). <see cref="NetReaderState.Collect"/> receives the resolved references.
         /// </summary>
         private bool ProbeComponent(TypeHandler h, in SyncComponent c, int batchOffset, byte[] data, ApplyResult result)
@@ -1589,7 +1589,7 @@ namespace SkylineTogether.Sync
             keys.Reset(data, c.Offset, c.Count);
             _rs.Keys.Clear();
             _rs.Unresolved = false;
-            // crashfix: references to destroyed or deleted entities resolve to nothing; an existing entity keeps its value
+            // references to destroyed or deleted entities resolve to nothing; an existing entity keeps its value
             _rs.CheckLiveness = true;
             _rs.EntityManager = EntityManager;
             _rs.KeepOnUnresolved = keepOnUnresolved;
@@ -1615,7 +1615,7 @@ namespace SkylineTogether.Sync
                 int end = c.Offset - batchOffset + c.Count;
                 if (start < 0 || end < start || end > _batch.Length - NetReaderState.Padding) throw new DecodeException(h.Name + ": payload outside the batch");
                 _position.Value = start;
-                _rs.Bound(_position, end); // w8/robust: no read past the component's payload
+                _rs.Bound(_position, end); // no read past the component's payload
                 _rs.Table = _ids.ReaderTable;
                 var inner = default(BinaryReader);
                 inner.Initialize(_readContext, _batch, _position, _rs.Table);
@@ -1636,7 +1636,7 @@ namespace SkylineTogether.Sync
             {
                 result.Problems.Add(h.Name + ": " + ex.Message);
                 if (probe) _probeFailure = ex.Message;
-                // w8/robust: malformed or refused values (NaN geometry, overruns) are counted; the integrity check asks
+                // malformed or refused values (NaN geometry, overruns) are counted; the integrity check asks
                 // the host for the entity again, and the session-wide count shows in the diagnostics
                 if (ex is DecodeException) _malformedTotal++;
                 if (_failedTypes.Add(h.Hash ^ 0xA5A5A5A5UL)) _log.Warn(LogCategory.Replication, (probe ? "checking " : "applying ") + h.Name + " failed", ex);
@@ -1686,7 +1686,7 @@ namespace SkylineTogether.Sync
                 keys.Reset(c.Data, c.Offset, c.Count);
                 if (keys.ReadVarUInt32() != 0) return Entity.Null;
                 _position.Value = c.Offset - batchOffset + keys.Position;
-                _rs.Bound(_position, c.Offset - batchOffset + c.Count); // w8/robust
+                _rs.Bound(_position, c.Offset - batchOffset + c.Count);
                 _rs.Keys.Clear();
                 _rs.Table = _ids.ReaderTable;
                 var inner = default(BinaryReader);
@@ -1740,7 +1740,7 @@ namespace SkylineTogether.Sync
                 case Family.Segment:
                     return em.HasComponent<RouteData>(prefab) ? em.GetComponentData<RouteData>(prefab).m_SegmentArchetype : default;
                 case Family.Event:
-                    // w3/audit: journal entries and life-path events carry their event's prefab; vanilla creates them
+                    // journal entries and life-path events carry their event's prefab; vanilla creates them
                     // from ad-hoc archetypes, which the record's own type set reproduces (generic fallback)
                     if (HasComponent(r, _journalEntry) || HasComponent(r, _lifePathEvent)) return default;
                     if (HasComponent(r, _chirp))
@@ -1750,7 +1750,7 @@ namespace SkylineTogether.Sync
                     }
                     return em.HasComponent<EventData>(prefab) ? em.GetComponentData<EventData>(prefab).m_Archetype : default;
                 case Family.Agent:
-                    // w3/agents: citizens, households, pets and companies are created from the ArchetypeData of their
+                    // citizens, households, pets and companies are created from the ArchetypeData of their
                     // prefab, exactly as BirthSystem, HouseholdSpawnSystem and the company spawn systems create them
                     return em.HasComponent<ArchetypeData>(prefab) ? em.GetComponentData<ArchetypeData>(prefab).m_Archetype : default;
                 default:
@@ -1841,7 +1841,7 @@ namespace SkylineTogether.Sync
             {
                 if (count > 0) NativeArray<byte>.Copy(data, offset, native, 0, count);
                 _position.Value = 0;
-                _rs.Bound(_position, count); // w8/robust: no read past the blob
+                _rs.Bound(_position, count); // no read past the blob
                 _rs.Keys.Clear();
                 _rs.Unresolved = false;
                 _rs.Table = _ids.ReaderTable;

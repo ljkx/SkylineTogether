@@ -6,7 +6,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Scheduling
 {
-    /// <summary>w2/simvals: attention planner (priorities, budgets, joins), spatial grid, inspection cadence, peer budgets.</summary>
+    /// <summary>Attention planner (priorities, budgets, joins), spatial grid, inspection cadence, peer budgets.</summary>
     public sealed class AttentionSchedulingTests
     {
         private static readonly PeerId A = new PeerId(1);

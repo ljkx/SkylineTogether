@@ -9,7 +9,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// w2/simvals: the simulation-value path of the codec (<see cref="AttentionValues"/>, ARCH D5, §4.7.9). A simulation
+    /// The simulation-value path of the codec (<see cref="AttentionValues"/>, ARCH D5, §4.7.9). A simulation
     /// value is a data component or buffer of a structure entity that the host's simulation changes without update tags
     /// (building condition, efficiency, consumers and producers, stored resources, service facility state, road traffic
     /// flow and condition, land value, coverage, area amounts, tree growth, ...). Structure and identity types (prefab,
@@ -180,7 +180,7 @@ namespace SkylineTogether.Sync
 
         /// <summary>
         /// <see cref="WriteSimValues(ByteWriter, uint, Family, Entity)"/> without the component of <paramref name="skip"/>
-        /// (w3/audit: a node's traffic lights are hashed by phase, not by their tick timer).
+        /// (a node's traffic lights are hashed by phase, not by their tick timer).
         /// </summary>
         public int WriteSimValues(ByteWriter w, uint netId, Family family, Entity e, TypeHandler skip)
         {
@@ -238,13 +238,13 @@ namespace SkylineTogether.Sync
             EntityManager em = EntityManager;
             if (!em.Exists(e)) return true;
             if (em.HasComponent<Game.Simulation.ServiceRequest>(e) || em.HasComponent<Game.Notifications.Icon>(e)) return true;
-            // w3/agents: transient agents (seekers, meetings) never replicate (ARCH 2.2, A-low: references tolerate staleness)
+            // transient agents (seekers, meetings) never replicate (ARCH 2.2, A-low: references tolerate staleness)
             return em.HasComponent<Game.Agents.JobSeeker>(e) || em.HasComponent<Game.Citizens.SchoolSeeker>(e)
                    || em.HasComponent<Game.Citizens.LookingForPartner>(e) || em.HasComponent<Game.Citizens.CoordinatedMeeting>(e);
         }
 
         /// <summary>
-        /// w3/agents: appends the given components of an entity to a <see cref="SimValueMessage"/> (the reverse buffers of
+        /// Appends the given components of an entity to a <see cref="SimValueMessage"/> (the reverse buffers of
         /// an owner after a membership change). Returns the number of components written (0: nothing was appended).
         /// </summary>
         public int WriteValueSubset(ByteWriter w, uint netId, Family family, Entity e, IReadOnlyList<TypeHandler> handlers)
@@ -271,7 +271,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w3/agents, client: writes decoded agent value records (<c>MessageKind.AgentValues</c>) into the bound entities,
+        /// Client: writes decoded agent value records (<c>MessageKind.AgentValues</c>) into the bound entities,
         /// without tags. Only simulation-value types are written (never prefab, owner or seed; never movers). Ids whose
         /// values held a reference that did not resolve yet are added to <paramref name="unresolved"/>. Returns the
         /// entities written.

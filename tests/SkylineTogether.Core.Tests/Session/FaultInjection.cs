@@ -5,7 +5,7 @@ using SkylineTogether.Core.Protocol;
 
 namespace SkylineTogether.Core.Tests.Session
 {
-    /// <summary>What a <see cref="FaultInjectingTransport"/> does to the messages it carries (w8/robust).</summary>
+    /// <summary>What a <see cref="FaultInjectingTransport"/> does to the messages it carries.</summary>
     internal enum Fault
     {
         None,
@@ -26,7 +26,7 @@ namespace SkylineTogether.Core.Tests.Session
     }
 
     /// <summary>
-    /// w8/robust: a transport wrapper for fault-injection tests. Messages sent on the wrapped connections (outbound) and
+    /// A transport wrapper for fault-injection tests. Messages sent on the wrapped connections (outbound) and
     /// messages delivered to the wrapped sink (inbound) are subjected to <see cref="Fault"/>s with the configured
     /// probabilities, once <see cref="Armed"/> is set. Deterministic for a given seed.
     /// </summary>

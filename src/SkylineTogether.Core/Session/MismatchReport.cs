@@ -30,7 +30,7 @@ namespace SkylineTogether.Core.Session
         public string ClientGameVersion;
         public string HostProtocol;
         public string ClientProtocol;
-        /// <summary>w8/security: the build ids (<see cref="BuildId"/>, 12 hex digits) of a "build" mismatch.</summary>
+        /// <summary>The build ids (<see cref="BuildId"/>, 12 hex digits) of a "build" mismatch.</summary>
         public string HostBuild;
         public string ClientBuild;
         /// <summary>Mods the host runs and the joiner lacks (the joiner enables or subscribes to them).</summary>

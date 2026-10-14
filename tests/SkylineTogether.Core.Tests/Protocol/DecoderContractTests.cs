@@ -106,7 +106,7 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void AFirstFragmentDeclaringMegabytesAllocatesOnlyWhatArrived()
         {
-            // before w8/tests the reassembler allocated the declared total (up to 8 MiB) on the first fragment: four
+            // previously the reassembler allocated the declared total (up to 8 MiB) on the first fragment: four
             // 12-byte packets from a peer that was not even admitted cost the host 32 MiB
             var reassembler = new Reassembler();
             long before = GC.GetAllocatedBytesForCurrentThread();
@@ -357,14 +357,13 @@ namespace SkylineTogether.Core.Tests.Protocol
                         SnapshotId = 1, Size = 123456, ChunkSize = 65536, Epoch = new EpochId(4), GameModeName = "Normal", RenderPrefabIds = new[] { "A", "B" },
                         ReferencedContent = new[] { "C" }, FamilyCounts = new Dictionary<Family, int> { { Family.Object, 5 }, { Family.Agent, 1000 } }
                     }),
-                    // w8/mods: with the trailing asset sources
+                    // with the trailing asset sources
                     Encode<SnapshotManifest>(SnapshotManifestCodec.Write, new SnapshotManifest
                     {
                         SnapshotId = 2, Size = 10, ChunkSize = 1024, GameModeName = "Normal", FamilyCounts = null,
                         AssetSources = new List<AssetSourceUse> { new AssetSourceUse { Source = new AssetSource { Kind = AssetSourceKind.Package, Name = "Pack", PlatformId = "100454" }, Prefabs = 3, Example = "Pagoda" } }
                     })
                 }, b => SnapshotManifestCodec.Decode(b, 0, b.Length)),
-                // w8/mods
                 ("ModChannel", new[] { Encode<ModChannelMessage>(ModChannelMessage.Write, new ModChannelMessage { Channel = "MyMod", From = new PeerId(2), Target = ModChannelTarget.Player, TargetPeer = new PeerId(3), Payload = new byte[] { 1, 2, 3 } }) },
                  b => ModChannelMessage.Decode(b, 0, b.Length)),
             };

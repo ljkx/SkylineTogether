@@ -8,7 +8,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w3/agents: the pure parts of agent replication (records, planner, scan order, closures, links, throttles).</summary>
+    /// <summary>The pure parts of agent replication (records, planner, scan order, closures, links, throttles).</summary>
     public sealed class AgentReplicationTests
     {
         private static readonly PeerId A = new PeerId(1);

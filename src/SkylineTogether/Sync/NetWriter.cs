@@ -34,7 +34,7 @@ namespace SkylineTogether.Sync
         /// <summary>Builds a derived key for an unbound entity; null disables keys.</summary>
         public KeyBuilder Keys;
         /// <summary>
-        /// w2/simvals: unbound references this predicate accepts are written as null instead of making the value
+        /// Unbound references this predicate accepts are written as null instead of making the value
         /// unresolved (simulation values that point at service requests, <c>EntityCodec.SimValues</c>); null = off.
         /// </summary>
         public System.Func<Entity, bool> NullRefs;

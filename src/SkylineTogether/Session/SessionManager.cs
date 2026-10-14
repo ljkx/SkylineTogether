@@ -288,7 +288,7 @@ namespace SkylineTogether.Session
                 Features.Registry.RearmAll();
                 string name = PlayerName;
                 transport = new SteamSocketsTransport(TransportKind.SteamP2P, _log);
-                // w8/security: the direct-IP socket opens only with a password (the host would refuse every direct
+                // the direct-IP socket opens only with a password (the host would refuse every direct
                 // joiner without one anyway, HostOptions.PasswordForUnauthenticated)
                 bool direct = _settings.AllowDirectConnections && !string.IsNullOrEmpty(_settings.HostPassword);
                 if (_settings.AllowDirectConnections && !direct)
@@ -305,9 +305,9 @@ namespace SkylineTogether.Session
                     MaxPlayers = Math.Max(2, Math.Min(16, _settings.MaxPlayers)),
                     RequireSameMods = _settings.RequireSameMods,
                     Listen = new ListenOptions { VirtualPort = VirtualPort, AllowIp = direct, IpPort = _settings.DirectPort, MaxConnections = Math.Max(2, _settings.MaxPlayers) },
-                    // loadspeed: snapshot chunks are pumped between frames too (Steam connections are thread-safe)
+                    // snapshot chunks are pumped between frames too (Steam connections are thread-safe)
                     BackgroundPump = true,
-                    // w8/security: join policy and the persisted ban list
+                    // join policy and the persisted ban list
                     JoinPolicy = _settings.FriendsOnly ? JoinPolicy.FriendsAndInvited : JoinPolicy.Open,
                     IsFriendOrInvited = id => Mod.Invites != null && Mod.Invites.IsFriendOrInvited(id),
                     Bans = BanList.Parse(_settings.BannedPlayers),
@@ -349,7 +349,7 @@ namespace SkylineTogether.Session
                 _log.Error(LogCategory.Session, "hosting failed", ex);
                 if (Host == null)
                 {
-                    // review fix: Start() failed (no listen socket), so the transport's Steam callback and poll group leaked;
+                    // Start() failed (no listen socket), so the transport's Steam callback and poll group leaked;
                     // the host owns the transport once it exists
                     try
                     {
@@ -392,7 +392,7 @@ namespace SkylineTogether.Session
                     MaxPlayers = 2,
                     RequireSameMods = true,
                     Listen = new ListenOptions { MaxConnections = 2 },
-                    // w8/security: no network part: the only peer is the in-process test recorder (no Steam identity)
+                    // no network part: the only peer is the in-process test recorder (no Steam identity)
                     PasswordForUnauthenticated = false,
                 };
                 var host = new SessionHost(composite, _info, _snapshots, options, _clock, _log);
@@ -508,7 +508,7 @@ namespace SkylineTogether.Session
         {
             if (!CanJoin)
             {
-                // review fix: say why (a joiner whose game is still loading used to be told "Already in a session")
+                // say why (a joiner whose game is still loading used to be told "Already in a session")
                 string why;
                 if (_rejoin.Recovering) why = LocaleSource.Resolve("st.toast.join.recovering");
                 else if (InSession) why = LocaleSource.Resolve("st.toast.join.inSession");
@@ -578,7 +578,7 @@ namespace SkylineTogether.Session
             {
                 _log.Error(LogCategory.Session, rejoin ? "rejoining failed" : "joining failed", ex);
                 if (!rejoin) Notify(LocaleSource.Resolve("st.toast.joinFailed", "ERROR", ex.Message), ProgressState.Failed);
-                // review fix: listeners saw ClientStarted, so they must also see SessionEnded (and the loader is reset)
+                // listeners saw ClientStarted, so they must also see SessionEnded (and the loader is reset)
                 if (Client != null)
                 {
                     SessionClient failed = Client;
@@ -639,7 +639,7 @@ namespace SkylineTogether.Session
             if (!_rejoin.Recovering && !_holdingCity) return;
             _rejoin.Reset();
             ReleaseCity();
-            _loader.RestoreAchievements(); // polish
+            _loader.RestoreAchievements();
             _recoveryVersion++;
             AddChat(new ChatEntry { IsSystem = true, Text = LocaleSource.Resolve("st.chat.offlineCopy") });
             Notify(LocaleSource.Resolve("st.toast.offlineCopy"), ProgressState.Complete);
@@ -656,7 +656,7 @@ namespace SkylineTogether.Session
             }
             _rejoin.Reset();
             ReleaseCity();
-            _loader.RestoreAchievements(); // polish: the main menu sets the flag again for the next city it loads
+            _loader.RestoreAchievements(); // the main menu sets the flag again for the next city it loads
             _recoveryVersion++;
             try
             {
@@ -722,14 +722,14 @@ namespace SkylineTogether.Session
             else if (Client != null && Client.LocalRole == SessionRole.CoHost) Client.RequestKick(new PeerId(peer));
         }
 
-        /// <summary>w8/security: the host removes a player and bans them (Steam ID, or address without Steam identity).</summary>
+        /// <summary>The host removes a player and bans them (Steam ID, or address without Steam identity).</summary>
         public void Ban(byte peer)
         {
             if (Host == null || peer == 0) return;
             Host.Ban(new PeerId(peer), "Banned by the host");
         }
 
-        /// <summary>w8/security: the host makes a player co-host, or a co-host a builder again.</summary>
+        /// <summary>The host makes a player co-host, or a co-host a builder again.</summary>
         public void ToggleCoHost(byte peer)
         {
             SessionHost host = Host;
@@ -738,7 +738,7 @@ namespace SkylineTogether.Session
             host.SetRole(id, host.GetRole(id) == SessionRole.CoHost ? SessionRole.Builder : SessionRole.CoHost);
         }
 
-        /// <summary>w8/security: lifts a ban (the host's options; also outside a session, on the stored list).</summary>
+        /// <summary>Lifts a ban (the host's options; also outside a session, on the stored list).</summary>
         public void Unban(string key)
         {
             if (string.IsNullOrEmpty(key)) return;
@@ -754,10 +754,10 @@ namespace SkylineTogether.Session
             _playersVersion++;
         }
 
-        /// <summary>w8/security: the bans for the host options' unban list (the running session's, or the stored list).</summary>
+        /// <summary>The bans for the host options' unban list (the running session's, or the stored list).</summary>
         public IReadOnlyList<BanEntry> Bans => Host != null ? Host.Options.Bans.Entries : BanList.Parse(_settings.BannedPlayers).Entries;
 
-        /// <summary>w8/security: friends and invited players only (applies at once to a running session).</summary>
+        /// <summary>Friends and invited players only (applies at once to a running session).</summary>
         public void SetFriendsOnly(bool on)
         {
             _settings.FriendsOnly = on;
@@ -780,7 +780,7 @@ namespace SkylineTogether.Session
         }
 
         /// <summary>
-        /// w8/security: the city differs from the host's in too many places for object repairs (the integrity layer
+        /// The city differs from the host's in too many places for object repairs (the integrity layer
         /// offered a resync, the player accepted): leave and rejoin at once with a fresh snapshot through recovery.
         /// </summary>
         public void Resync()
@@ -805,7 +805,7 @@ namespace SkylineTogether.Session
         }
 
         /// <summary>
-        /// gameplay branch: the host toggles a player between builder and viewer (ARCH §5.6); w8/security: a co-host
+        /// gameplay branch: the host toggles a player between builder and viewer (ARCH §5.6); a co-host
         /// asks the host for the same (builders and viewers only; the host checks).
         /// </summary>
         public void ToggleRole(byte peer)
@@ -838,7 +838,7 @@ namespace SkylineTogether.Session
             long start = timed ? Perf.Start() : 0;
             try
             {
-                SteamSocketsTransport.PumpDeferredCloses(); // presence branch: listen sockets of ended sessions linger briefly
+                SteamSocketsTransport.PumpDeferredCloses(); // listen sockets of ended sessions linger briefly
                 Host?.Tick();
                 if (Client != null)
                 {
@@ -958,7 +958,7 @@ namespace SkylineTogether.Session
             if (!recovering)
             {
                 if (wasRecovering) ReleaseCity();
-                _loader.RestoreAchievements(); // polish: the session is over
+                _loader.RestoreAchievements(); // the session is over
                 if (!string.IsNullOrEmpty(reason)) AddChat(new ChatEntry { IsSystem = true, Text = reason });
                 Notify(string.IsNullOrEmpty(reason) ? LocaleSource.Resolve("st.toast.disconnected") : reason, kind == ClientEndKind.Left ? ProgressState.Complete : ProgressState.Warning);
                 return;
@@ -977,7 +977,7 @@ namespace SkylineTogether.Session
                 case RejoinPhase.NeedsChoice:
                     if (kind == ClientEndKind.Kicked || kind == ClientEndKind.Banned)
                     {
-                        // w8/security: removed after loading the city: say so (it used to read "the session has ended")
+                        // removed after loading the city: say so (it used to read "the session has ended")
                         Notify(LocaleSource.Resolve(kind == ClientEndKind.Banned ? "st.toast.recovery.banned" : "st.toast.recovery.kicked", "REASON", reason ?? ""), ProgressState.Warning);
                     }
                     else if (kind == ClientEndKind.SessionEnded)
@@ -1052,7 +1052,7 @@ namespace SkylineTogether.Session
             {
                 _log.Warn(LogCategory.Session, "stopping the host failed", ex);
             }
-            _snapshots.ReleaseAll(); // review fix: no snapshot temp file outlives the session
+            _snapshots.ReleaseAll(); // no snapshot temp file outlives the session
             LastEndReason = reason;
             _playersVersion++;
             RaiseSessionEnded();
@@ -1141,7 +1141,7 @@ namespace SkylineTogether.Session
             {
                 // our own join load replaces the city on purpose; any other load leaves the session
                 if (Client != null && Client.State == ClientState.Loading && _loader.IsLoading) return;
-                // polish: leaving the host's city gives the achievements flag back; a city loaded from the main menu
+                // leaving the host's city gives the achievements flag back; a city loaded from the main menu
                 // got its own value there already (MenuUISystem), so the held one is only dropped then
                 _loader.RestoreAchievements(forget: (mode & GameMode.MainMenu) == 0);
                 if (Host != null)
@@ -1158,7 +1158,7 @@ namespace SkylineTogether.Session
                 }
                 else if (Client != null && (mode & GameMode.Game) != 0 && !_rejoin.Recovering && !_holdingCity)
                 {
-                    // w8/robust: the player loads another city while a join is still connecting or downloading: the join
+                    // the player loads another city while a join is still connecting or downloading: the join
                     // would replace that city later without a word; it is cancelled with an explanation instead
                     _log.Info(LogCategory.Session, "another city is loading during the join (" + Client.State + ", " + purpose + ", " + mode + "); join cancelled");
                     Client.Leave();
@@ -1220,7 +1220,7 @@ namespace SkylineTogether.Session
 
         /// <summary>
         /// A toast in the game's notification list (top left), removed again after <paramref name="seconds"/>. Title and
-        /// text are values, not localization ids (review fix: plain strings became ids, and the toasts never went away).
+        /// text are values, not localization ids (plain strings became ids, and the toasts never went away).
         /// </summary>
         public static void Notify(string text, ProgressState? state = null, string id = null, float seconds = 7f)
         {

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Hashing
 {
     /// <summary>
-    /// w3/agents: an order-insensitive hash of a multiset of ids (ARCH §4.2.4: reverse buffers such as
+    /// An order-insensitive hash of a multiset of ids (ARCH §4.2.4: reverse buffers such as
     /// <c>HouseholdCitizen</c> or <c>Renter</c> are hashed as multisets, because a loaded save rebuilds them in chunk order
     /// while the host keeps insertion order). Each id is mixed alone and the mixes are summed, then combined with the
     /// count, so duplicates count and order does not. Pure.

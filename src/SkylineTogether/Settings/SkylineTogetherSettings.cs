@@ -66,12 +66,12 @@ namespace SkylineTogether.Settings
         [SettingsUISection(MainSection, HostGroup)]
         public bool RequireSameMods { get; set; }
 
-        /// <summary>w8/security: only the host's Steam friends and players invited from the panel may join (others: "not invited").</summary>
+        /// <summary>Only the host's Steam friends and players invited from the panel may join (others: "not invited").</summary>
         [SettingsUISection(MainSection, HostGroup)]
         public bool FriendsOnly { get; set; }
 
         /// <summary>
-        /// w8/security: also accept direct connections on a UDP port. They are only opened while a host password is set
+        /// Also accept direct connections on a UDP port. They are only opened while a host password is set
         /// (the host refuses direct joiners without one anyway, <c>HostOptions.PasswordForUnauthenticated</c>).
         /// </summary>
         [SettingsUISection(MainSection, HostGroup)]
@@ -79,7 +79,7 @@ namespace SkylineTogether.Settings
         public bool AllowDirectConnections { get; set; }
 
         /// <summary>
-        /// w8/security: the host's ban list (<c>Core.Session.BanList.Serialize</c>: one "steam|ip TAB id TAB time TAB
+        /// The host's ban list (<c>Core.Session.BanList.Serialize</c>: one "steam|ip TAB id TAB time TAB
         /// name" line per ban), kept with this player's settings; edited in the panel's unban list only.
         /// </summary>
         [SettingsUIHidden]

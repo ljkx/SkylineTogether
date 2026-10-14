@@ -33,12 +33,12 @@ namespace SkylineTogether.Core
         /// <summary>Water correction tiles (ARCH §4.10.10, <see cref="Sync.WaterMessage"/>), host → client.</summary>
         Water = 21,
 
-        // w2/ids (merge coordination: kinds 60-64 are reserved for this branch)
+        // 60-64: network id reuse
         /// <summary>Client → host: how many of the host's <c>Epoch</c> messages the client has applied
         /// (<see cref="Sync.ApplyAckMessage"/>); gates the reuse of released net ids (ARCH §3.1).</summary>
         ApplyAck = 60,
 
-        // w2/simvals (merge coordination: this branch owns 65-69)
+        // 65-69: simulation values, cell maps, statistics
         /// <summary>Attention-driven simulation values and time-aligned inspection samples (ARCH D5, §4.7.9, §4.8;
         /// <see cref="Sync.SimValueMessage"/>), host → client.</summary>
         SimValues = 65,
@@ -48,7 +48,7 @@ namespace SkylineTogether.Core
         /// <summary>City statistics history (<see cref="Sync.StatisticsMessage"/>), host → client.</summary>
         Statistics = 67,
 
-        // w3/agents (merge coordination: this branch owns 90-94)
+        // 90-94: agents
         /// <summary>Values of citizens, households, pets and companies, streamed by attention, plus the reverse buffers of
         /// their owners after a membership change (<see cref="Sync.SimValueMessage"/> format), host → client.</summary>
         AgentValues = 90,
@@ -56,12 +56,12 @@ namespace SkylineTogether.Core
         /// (<see cref="Sync.AgentRefreshMessage"/>).</summary>
         AgentRefresh = 91,
 
-        // w4/flow (merge coordination: this branch owns 100-104)
+        // 100-104: utility flow status
         /// <summary>Flow status of the electricity and water graphs by flow key, to peers with the Electricity or Water
         /// infoview topic active (ARCH §4.11.5; <see cref="Sync.FlowStatusMessage"/>), host → client.</summary>
         FlowStatus = 100,
 
-        // w8/mods (merge coordination: this branch owns 110-114)
+        // 110-114: mod integration
         /// <summary>Opaque bytes of another mod on its own channel (<see cref="Protocol.ModChannelMessage"/>; docs/MOD-INTEGRATION.md),
         /// client → host and host → client; the host relays between clients.</summary>
         ModChannel = 110

@@ -43,11 +43,11 @@ namespace SkylineTogether.Presence
 
         private readonly Dictionary<byte, float3> _shown = new Dictionary<byte, float3>();
 
-        /// <summary>polish: this frame's tags; <see cref="PresenceController.SetTags"/> copies them only when they changed
+        /// <summary>This frame's tags; <see cref="PresenceController.SetTags"/> copies them only when they changed
         /// noticeably, so the UI is not rebuilt for every projected frame.</summary>
         private readonly List<PresenceTag> _tagScratch = new List<PresenceTag>();
 
-        /// <summary>polish: the activity text per peer for its last tool and prefab (no string building per frame).</summary>
+        /// <summary>The activity text per peer for its last tool and prefab (no string building per frame).</summary>
         private readonly Dictionary<byte, (byte Tool, int Prefab, string Text)> _activity = new Dictionary<byte, (byte, int, string)>();
         private readonly PresenceMessage _outgoing = new PresenceMessage();
 
@@ -100,7 +100,7 @@ namespace SkylineTogether.Presence
             {
                 _subscribed = presence;
                 presence.SessionChanged += _ranks.Invalidate;
-                presence.SessionChanged += _activity.Clear; // polish: titles come from the rank index
+                presence.SessionChanged += _activity.Clear; // titles come from the rank index
             }
             if (!presence.Active || !Diagnostics.Features.Presence.IsAvailable)
             {

@@ -20,34 +20,34 @@ namespace SkylineTogether.Sync
         public bool Unresolved;
 
         /// <summary>
-        /// crashfix: when set, a reference whose bound entity no longer exists or carries <c>Deleted</c> resolves to
+        /// When set, a reference whose bound entity no longer exists or carries <c>Deleted</c> resolves to
         /// <c>Entity.Null</c> and counts as unresolved. A stale binding (an entity the local game destroyed, a despawn
         /// applied by an earlier batch of the same frame) otherwise became a component or buffer reference to a destroyed
         /// entity, which the game's Burst jobs dereference without a check (a native crash, not an exception).
         /// </summary>
         public bool CheckLiveness;
 
-        /// <summary>crashfix: the entity manager the liveness check uses (valid while <see cref="CheckLiveness"/>).</summary>
+        /// <summary>The entity manager the liveness check uses (valid while <see cref="CheckLiveness"/>).</summary>
         public EntityManager EntityManager;
 
-        /// <summary>crashfix: references dropped because their entity was destroyed or deleted (diagnostics).</summary>
+        /// <summary>References dropped because their entity was destroyed or deleted (diagnostics).</summary>
         public long DeadReferences;
 
-        /// <summary>crashfix: see <see cref="NetReader.KeepOnUnresolved"/>.</summary>
+        /// <summary>See <see cref="NetReader.KeepOnUnresolved"/>.</summary>
         public bool KeepOnUnresolved;
 
-        /// <summary>crashfix: when not null, every resolved reference is added (spawn validation follows references).</summary>
+        /// <summary>When not null, every resolved reference is added (spawn validation follows references).</summary>
         public List<Entity> Collect;
 
         /// <summary>
-        /// w8/robust: zero bytes every read buffer carries beyond its last valid byte. A primitive read checks the position
+        /// Zero bytes every read buffer carries beyond its last valid byte. A primitive read checks the position
         /// before it reads (<see cref="Limit"/>); the longest read the game's reader can still make past the limit (a 4-byte
         /// UTF-8 char after a 1-byte check) stays inside the allocation.
         /// </summary>
         public const int Padding = 16;
 
         /// <summary>
-        /// w8/robust: the read position (shared with the game's reader) and the end of the bytes this read may consume
+        /// The read position (shared with the game's reader) and the end of the bytes this read may consume
         /// (the component's payload, the blob). The game's <c>BinaryReader</c> indexes its <c>NativeArray</c> without a
         /// bounds check in a player build and copies array reads with an unchecked <c>MemCpy</c>, so a truncated or
         /// hostile payload read past its end reads (or, through a wire count, allocates) arbitrary memory. Every read of
@@ -56,23 +56,23 @@ namespace SkylineTogether.Sync
         /// </summary>
         public NativeReference<int> Position;
 
-        /// <summary>w8/robust: see <see cref="Position"/>.</summary>
+        /// <summary>See <see cref="Position"/>.</summary>
         public int Limit = -1;
 
-        /// <summary>w8/robust: reads refused because they would have run past the payload (diagnostics).</summary>
+        /// <summary>Reads refused because they would have run past the payload (diagnostics).</summary>
         public long Overruns;
 
-        /// <summary>w8/robust: binds the bounds check to a read of the bytes before <paramref name="limit"/>.</summary>
+        /// <summary>Binds the bounds check to a read of the bytes before <paramref name="limit"/>.</summary>
         public void Bound(NativeReference<int> position, int limit)
         {
             Position = position;
             Limit = limit;
         }
 
-        /// <summary>w8/robust: the bytes left before <see cref="Limit"/> (int.MaxValue when unbounded).</summary>
+        /// <summary>The bytes left before <see cref="Limit"/> (int.MaxValue when unbounded).</summary>
         public int Remaining => Limit < 0 || !Position.IsCreated ? int.MaxValue : Limit - Position.Value;
 
-        /// <summary>w8/robust: throws unless <paramref name="bytes"/> more bytes may be read.</summary>
+        /// <summary>Throws unless <paramref name="bytes"/> more bytes may be read.</summary>
         public void Need(long bytes)
         {
             if (Limit < 0 || !Position.IsCreated) return;
@@ -84,7 +84,7 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>w8/robust: throws when a variable-length read ran past the limit (it stayed inside the padding).</summary>
+        /// <summary>Throws when a variable-length read ran past the limit (it stayed inside the padding).</summary>
         public void CheckAfter()
         {
             if (Limit < 0 || !Position.IsCreated) return;
@@ -96,12 +96,12 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w8/robust: entities the batch being applied despawns. They still exist while its records are read, but a
+        /// Entities the batch being applied despawns. They still exist while its records are read, but a
         /// reference to one would dangle a moment later, so it resolves to nothing like a deleted entity.
         /// </summary>
         public readonly HashSet<Entity> Dying = new HashSet<Entity>();
 
-        /// <summary>crashfix: true when the entity may be referenced (exists and is not being deleted).</summary>
+        /// <summary>True when the entity may be referenced (exists and is not being deleted).</summary>
         public bool IsLive(Entity e)
         {
             if (!CheckLiveness || e == Entity.Null) return true;
@@ -138,17 +138,17 @@ namespace SkylineTogether.Sync
         {
             Need(4);
             ReaderBlock block = _inner.Begin(out size);
-            // w8/robust: a block that ends outside the payload is malformed (End would move the position there)
+            // a block that ends outside the payload is malformed (End would move the position there)
             if (size < 0 || size > Remaining) Fail("block of " + size + " byte(s)");
             return block;
         }
 
         public bool End(ReaderBlock block) => _inner.End(block);
 
-        /// <summary>w8/robust: the bounds check (see <see cref="NetReaderState.Position"/>); a no-op without state.</summary>
+        /// <summary>The bounds check (see <see cref="NetReaderState.Position"/>); a no-op without state.</summary>
         private void Need(long bytes) => _state?.Need(bytes);
 
-        /// <summary>w8/robust: the bytes this read may still consume (int.MaxValue when unbounded).</summary>
+        /// <summary>The bytes this read may still consume (int.MaxValue when unbounded).</summary>
         public int Remaining => _state?.Remaining ?? int.MaxValue;
 
         private void Fail(string what)
@@ -190,10 +190,10 @@ namespace SkylineTogether.Sync
             else _state.Collect?.Add(value);
         }
 
-        /// <summary>crashfix: true once a reference of the current component could not be resolved (unknown, destroyed or deleted).</summary>
+        /// <summary>True once a reference of the current component could not be resolved (unknown, destroyed or deleted).</summary>
         public bool Unresolved => _state != null && _state.Unresolved;
 
-        /// <summary>crashfix: clears the unresolved flag and returns its previous value (per-element bookkeeping of buffers).</summary>
+        /// <summary>Clears the unresolved flag and returns its previous value (per-element bookkeeping of buffers).</summary>
         public bool TakeUnresolved()
         {
             if (_state == null) return false;
@@ -202,14 +202,14 @@ namespace SkylineTogether.Sync
             return was;
         }
 
-        /// <summary>crashfix: sets the unresolved flag again (restores what <see cref="TakeUnresolved"/> took).</summary>
+        /// <summary>Sets the unresolved flag again (restores what <see cref="TakeUnresolved"/> took).</summary>
         public void MarkUnresolved()
         {
             if (_state != null) _state.Unresolved = true;
         }
 
         /// <summary>
-        /// crashfix: true when a component whose references did not all resolve must keep the entity's current value
+        /// True when a component whose references did not all resolve must keep the entity's current value
         /// instead of writing nulls over it (set by the codec for existing entities).
         /// </summary>
         public bool KeepOnUnresolved => _state != null && _state.KeepOnUnresolved;
@@ -227,7 +227,7 @@ namespace SkylineTogether.Sync
         {
             Need(4);
             _inner.Read(out int count);
-            // w8/robust: the count comes from the wire; each reference is 4 bytes
+            // the count comes from the wire; each reference is 4 bytes
             if (count < 0 || count > Remaining / 4) Fail("list of " + count + " references");
             if (value.Length != count) value.ResizeUninitialized(count);
             for (int i = 0; i < count; i++)
@@ -254,7 +254,7 @@ namespace SkylineTogether.Sync
 
         public void Read<TSerializable>(TSerializable value) where TSerializable : class, ISerializable => value.Deserialize(this);
 
-        // w8/robust: array reads are unchecked MemCpy calls in the game's reader: their size is checked first
+        // array reads are unchecked MemCpy calls in the game's reader: their size is checked first
         public void Read(NativeArray<int> value)
         {
             Need((long)value.Length * 4);
@@ -315,7 +315,7 @@ namespace SkylineTogether.Sync
         {
             Need(4);
             _inner.Read(out int count);
-            // w8/robust: a char is 1 to 4 UTF-8 bytes; the game's reader allocates the wire count unchecked
+            // a char is 1 to 4 UTF-8 bytes; the game's reader allocates the wire count unchecked
             if (count < 0 || count > Remaining) Fail("string of " + count + " chars");
             var chars = new char[count];
             for (int i = 0; i < count; i++)

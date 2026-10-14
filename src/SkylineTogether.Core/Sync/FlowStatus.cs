@@ -343,7 +343,7 @@ namespace SkylineTogether.Core.Sync
                     value.SewageFlow = r.ReadVarInt32();
                     value.SewageCapacity = Math.Max(0, r.ReadVarInt32());
                     float pollution = r.ReadSingle();
-                    // w8/robust: capacities are never negative and the pollution share is finite and not negative
+                    // capacities are never negative and the pollution share is finite and not negative
                     value.Pollution = float.IsNaN(pollution) || float.IsInfinity(pollution) ? 0f : Math.Max(0f, pollution);
                 }
                 output.Add(new KeyValuePair<FlowKey, FlowValue>(key, value));

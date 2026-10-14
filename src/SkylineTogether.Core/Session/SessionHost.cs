@@ -16,19 +16,19 @@ namespace SkylineTogether.Core.Session
         /// <summary>Empty: no password. Read live: a change applies to the next challenge.</summary>
         public string Password = "";
         /// <summary>
-        /// w8/security: a connection that arrived on the direct-IP socket or has no Steam identity must answer the
+        /// A connection that arrived on the direct-IP socket or has no Steam identity must answer the
         /// password challenge; without a password set such connections are refused (<c>NotInvited</c>), so a direct-IP
         /// listen socket never admits anyone unauthenticated. In-process connections (<see cref="PeerIdentity.Local"/>, the
         /// solo test recorder) are exempt; turn it off only for a host without any network part.
         /// </summary>
         public bool PasswordForUnauthenticated = true;
-        /// <summary>w8/security: open, or Steam friends and invited players only (read live).</summary>
+        /// <summary>Open, or Steam friends and invited players only (read live).</summary>
         public JoinPolicy JoinPolicy = JoinPolicy.Open;
-        /// <summary>w8/security: true when a Steam ID is the host's Steam friend or was invited (null: nobody is).</summary>
+        /// <summary>True when a Steam ID is the host's Steam friend or was invited (null: nobody is).</summary>
         public Func<ulong, bool> IsFriendOrInvited;
-        /// <summary>w8/security: banned Steam IDs and addresses (read live; the game layer persists it).</summary>
+        /// <summary>Banned Steam IDs and addresses (read live; the game layer persists it).</summary>
         public BanList Bans = new BanList();
-        /// <summary>w8/security: password challenges that may be open at once per Steam ID or address.</summary>
+        /// <summary>Password challenges that may be open at once per Steam ID or address.</summary>
         public int MaxPendingChallengesPerKey = 2;
         public int MaxPlayers = 8;
         /// <summary>Refuse joiners whose mod list differs from the host's.</summary>
@@ -44,44 +44,44 @@ namespace SkylineTogether.Core.Session
         /// <summary>Presence updates of a peer that arrive faster than this are dropped instead of relayed.</summary>
         public double PresenceMinIntervalSeconds = 0.04;
         /// <summary>
-        /// loadspeed: a joiner admitted within this many seconds of the last snapshot request gets that snapshot (still
+        /// A joiner admitted within this many seconds of the last snapshot request gets that snapshot (still
         /// being written, or finished and kept) instead of a new one, as long as the city cannot have changed since the
         /// request: nothing was broadcast and the simulation was held or paused at every tick. 0 turns reuse off.
         /// </summary>
         public double SnapshotReuseSeconds = 30;
         /// <summary>
-        /// loadspeed: snapshot chunks are also pumped from a background thread every 2 ms (<see cref="Transport.BackgroundPump"/>),
+        /// Snapshot chunks are also pumped from a background thread every 2 ms (<see cref="Transport.BackgroundPump"/>),
         /// so a low frame rate or a frame hitch never leaves the transport idle. Only connections that are
         /// <see cref="IThreadSafeConnection"/> (Steam) use it; the session's own tick keeps pumping as well.
         /// </summary>
         public bool BackgroundPump;
 
         /// <summary>
-        /// w8/robust: a live peer that sends nothing at all (live clients answer the host's pings every second and
+        /// A live peer that sends nothing at all (live clients answer the host's pings every second and
         /// acknowledge every batch) for this long is dropped as not responding, so a frozen client does not pin the id
         /// quarantine and its queue forever. Its game is offered a rejoin.
         /// </summary>
         public double LiveSilenceTimeoutSeconds = 120;
 
         /// <summary>
-        /// w8/robust: the longest a join may take from admission to live, whatever the joiner reports (a joiner that
+        /// The longest a join may take from admission to live, whatever the joiner reports (a joiner that
         /// keeps sending load progress but never finishes would hold the host's simulation forever).
         /// </summary>
         public double MaxJoinSeconds = 1800;
 
         /// <summary>
-        /// w8/robust: a snapshot the save system has not delivered after this long is abandoned (the waiting joiners are
+        /// A snapshot the save system has not delivered after this long is abandoned (the waiting joiners are
         /// told, the next join requests a new one); without it a lost callback blocked every later join.
         /// </summary>
         public double SnapshotTimeoutSeconds = 360; // beyond the joiner's own 300 s wait (ClientOptions.SnapshotWaitTimeoutSeconds)
 
-        /// <summary>w8/robust: the largest message a connection may send before it is admitted (handshake messages only).</summary>
+        /// <summary>The largest message a connection may send before it is admitted (handshake messages only).</summary>
         public int UnadmittedMaxBodyBytes = 1024 * 1024;
 
-        /// <summary>w8/robust: message handling failures (other than malformed data) after which a peer is disconnected.</summary>
+        /// <summary>Message handling failures (other than malformed data) after which a peer is disconnected.</summary>
         public int MaxHandlingFailures = 50;
 
-        /// <summary>w8/robust: chat lines a peer may send per second (on average; bursts of 5).</summary>
+        /// <summary>Chat lines a peer may send per second (on average; bursts of 5).</summary>
         public double ChatPerSecond = 2;
     }
 
@@ -114,25 +114,25 @@ namespace SkylineTogether.Core.Session
             public HandshakeManifest Manifest;
             public bool AwaitingPassword;
             public byte[] HostNonce;
-            /// <summary>w8/security: the remote address (meaningful for direct connections only).</summary>
+            /// <summary>The remote address (meaningful for direct connections only).</summary>
             public string Address;
-            /// <summary>w8/security: the connection arrived on the direct-IP socket.</summary>
+            /// <summary>The connection arrived on the direct-IP socket.</summary>
             public bool Direct;
-            /// <summary>w8/security: an in-process connection (the test recorder): no Steam identity needed, no join policy.</summary>
+            /// <summary>An in-process connection (the test recorder): no Steam identity needed, no join policy.</summary>
             public bool Local;
-            /// <summary>w8/security: Steam authenticated <see cref="SteamId"/> (the hello's claim is never trusted).</summary>
+            /// <summary>Steam authenticated <see cref="SteamId"/> (the hello's claim is never trusted).</summary>
             public bool SteamAuthenticated;
-            /// <summary>w8/security: the password was right, or none was needed; nothing compatibility-related is sent before.</summary>
+            /// <summary>The password was right, or none was needed; nothing compatibility-related is sent before.</summary>
             public bool Authenticated;
-            /// <summary>w8/security: the keys of the password attempt limiter (Steam ID and/or address).</summary>
+            /// <summary>The keys of the password attempt limiter (Steam ID and/or address).</summary>
             public string[] AuthKeys;
-            /// <summary>w8/security: the chat line when this player is removed (" was removed", " was banned"); null: " left".</summary>
+            /// <summary>The chat line when this player is removed (" was removed", " was banned"); null: " left".</summary>
             public string LeaveText;
             public double Since;
             public BlobSender Sender;
             public FileStream SenderStream;
             public SnapshotReady Snapshot;
-            // final review: the first snapshot request this peer may use (one issued after its admission)
+            // the first snapshot request this peer may use (one issued after its admission)
             public uint MinSnapshotGen;
             public long SnapshotSize;
             public float LoadProgress;
@@ -146,26 +146,26 @@ namespace SkylineTogether.Core.Session
             public double LastPingSent;
             public uint PingSequence;
             public bool Admitted;
-            /// <summary>Reliable <c>Epoch</c> messages queued for this peer (w2/ids: the watermarks of <c>ApplyAckBook</c>).</summary>
+            /// <summary>Reliable <c>Epoch</c> messages queued for this peer (the watermarks of <c>ApplyAckBook</c>).</summary>
             public long EpochSent;
             /// <summary>gameplay branch: the player's role (ARCH §5.6); the host toggles builder ↔ viewer in the panel.</summary>
             public SessionRole Role = SessionRole.Builder;
-            /// <summary>loadspeed: the stage timings of this player's join (from its admission).</summary>
+            /// <summary>The stage timings of this player's join (from its admission).</summary>
             public JoinTimeline Timeline;
-            /// <summary>loadspeed: the background pump's registration of this peer's snapshot transfer (null without one).</summary>
+            /// <summary>The background pump's registration of this peer's snapshot transfer (null without one).</summary>
             public IDisposable PumpToken;
-            /// <summary>w8/robust: when the peer was admitted (join deadline).</summary>
+            /// <summary>When the peer was admitted (join deadline).</summary>
             public double AdmittedAt;
-            /// <summary>w8/robust: message handling failures that were not decode errors, and when the last was logged.</summary>
+            /// <summary>Message handling failures that were not decode errors, and when the last was logged.</summary>
             public int Failures;
             public double LastFailureLog = double.NegativeInfinity;
-            /// <summary>w8/robust: flood guards for chat lines and blob have-bitmaps.</summary>
+            /// <summary>Flood guards for chat lines and blob have-bitmaps.</summary>
             public double ChatTokens = 5;
             public double ChatRefilledAt;
             public double LastHave = double.NegativeInfinity;
         }
 
-        /// <summary>loadspeed: completed joins kept for the diagnostics and the UI.</summary>
+        /// <summary>Completed joins kept for the diagnostics and the UI.</summary>
         private const int RecentJoinCount = 8;
 
         private static readonly long JoinerQueueLimitBytes = new OutboxConfig().DisconnectQueuedBytes;
@@ -188,7 +188,7 @@ namespace SkylineTogether.Core.Session
         private readonly List<SnapshotReady> _retired = new List<SnapshotReady>();
         private bool _snapshotPending;
         private uint _snapshotGen;
-        // loadspeed: the generation of _snapshot, when the latest request was issued, and whether the city can have
+        // the generation of _snapshot, when the latest request was issued, and whether the city can have
         // changed since (a broadcast, or a tick with the simulation running): only an unchanged city reuses a snapshot
         private uint _snapshotReadyGen;
         private double _snapshotRequestedAt = double.NegativeInfinity;
@@ -203,15 +203,15 @@ namespace SkylineTogether.Core.Session
         private SpeedState _sentSpeed;
         private bool _disposed;
         private bool _stopping;
-        // w8/security: the PBKDF2 key of the current password (derived once per password, not per answer)
+        // the PBKDF2 key of the current password (derived once per password, not per answer)
         private string _keyFor;
         private byte[] _key;
         private Action<PeerId, Envelope> _appMessage;
-        // w8/robust: frame stalls of the host itself (a long save, a hitch, a minimised game): the silence and age limits
+        // frame stalls of the host itself (a long save, a hitch, a minimised game): the silence and age limits
         // are suspended for a while afterwards, because the peers' messages were waiting for this side
         private double _lastTickAt = double.NaN;
         private double _stallGraceUntil = double.NegativeInfinity;
-        // w8/robust: snapshot requests that timed out (their late callbacks release the snapshot and are otherwise ignored)
+        // snapshot requests that timed out (their late callbacks release the snapshot and are otherwise ignored)
         private uint _abandonedSnapshotGen;
         private long _listenerFailures;
 
@@ -229,10 +229,10 @@ namespace SkylineTogether.Core.Session
 
         public HostOptions Options => _options;
 
-        /// <summary>w8/security: wrong-password lockouts per Steam ID and address (tunable by tests).</summary>
+        /// <summary>Wrong-password lockouts per Steam ID and address (tunable by tests).</summary>
         public PasswordAttemptLimiter PasswordAttempts { get; } = new PasswordAttemptLimiter();
 
-        /// <summary>w8/security: the ban list changed (<see cref="Ban"/>, <see cref="Unban"/>); the game layer persists it.</summary>
+        /// <summary>The ban list changed (<see cref="Ban"/>, <see cref="Unban"/>); the game layer persists it.</summary>
         public event Action BansChanged;
 
         /// <summary>The player list changed (join, leave, state, ping).</summary>
@@ -323,7 +323,7 @@ namespace SkylineTogether.Core.Session
             if (_disposed) return;
             _transport.Poll(this);
             double now = _clock.Seconds;
-            // w8/robust: after a stall of this side, give the peers time to be heard before anything is judged silent
+            // after a stall of this side, give the peers time to be heard before anything is judged silent
             if (!double.IsNaN(_lastTickAt) && now - _lastTickAt > StallSeconds)
             {
                 _stallGraceUntil = now + StallGraceSeconds;
@@ -333,7 +333,7 @@ namespace SkylineTogether.Core.Session
             _lastTickAt = now;
             bool grace = now < _stallGraceUntil;
             if (_snapshotPending && _options.SnapshotTimeoutSeconds > 0 && now - _snapshotRequestedAt > _options.SnapshotTimeoutSeconds) AbandonSnapshot(now);
-            // loadspeed: a running simulation may change the city at any frame, so a snapshot requested earlier is no
+            // a running simulation may change the city at any frame, so a snapshot requested earlier is no
             // longer the city of a new joiner
             if (_snapshotUnchanged && !HoldSimulation && !_speed.Paused && !_speed.Held) _snapshotUnchanged = false;
             List<(Peer Peer, string Reason)> drop = null;
@@ -346,7 +346,7 @@ namespace SkylineTogether.Core.Session
                 }
                 if (p.Admitted && p.State != PlayerState.Live && _options.MaxJoinSeconds > 0 && now - p.AdmittedAt > _options.MaxJoinSeconds && !grace)
                 {
-                    // w8/robust: an absolute deadline, whatever progress the joiner reports
+                    // an absolute deadline, whatever progress the joiner reports
                     _log.Warn(LogCategory.Join, p.Name + ": still joining after " + (int)(now - p.AdmittedAt) + " s (" + p.State + "); dropping it");
                     SystemMessage(p.Name + " took too long to join.");
                     SendText(p, ControlKind.SessionEnd, "Joining took too long (more than " + (int)(_options.MaxJoinSeconds / 60) + " minutes). Try joining again.");
@@ -355,7 +355,7 @@ namespace SkylineTogether.Core.Session
                 }
                 if (p.Admitted && p.State == PlayerState.Live && _options.LiveSilenceTimeoutSeconds > 0 && now - p.LastHeard > _options.LiveSilenceTimeoutSeconds && !grace)
                 {
-                    // w8/robust: live clients answer pings every second; total silence means its game froze or is gone
+                    // live clients answer pings every second; total silence means its game froze or is gone
                     _log.Warn(LogCategory.Session, p.Name + ": nothing received for " + (int)(now - p.LastHeard) + " s; dropping it as not responding");
                     SystemMessage(p.Name + " stopped responding.");
                     SendText(p, ControlKind.Kick, "The host received nothing from your game for " + (int)_options.LiveSilenceTimeoutSeconds + " s. Join again to continue.");
@@ -372,7 +372,7 @@ namespace SkylineTogether.Core.Session
                 }
                 if (p.Sender != null)
                 {
-                    // loadspeed: with a background pump the transfer is pumped there (no lock contention on this thread)
+                    // with a background pump the transfer is pumped there (no lock contention on this thread)
                     if (p.PumpToken == null) p.Sender.Pump();
                     if (p.Sender.IsFailed)
                     {
@@ -393,7 +393,7 @@ namespace SkylineTogether.Core.Session
                 // then, not the 60 s age limit (which would drop a joiner whose load stalls its main thread)
                 PeerOutbox outbox = p.Channel.Outbox;
                 // (and for a minute after it went live, while it drains what queued up during its load)
-                // w8/robust: and not right after a stall of the host itself (its own frames, not the peer, held the queue)
+                // and not right after a stall of the host itself (its own frames, not the peer, held the queue)
                 bool ageApplies = !grace && (!p.Admitted || (p.State == PlayerState.Live && now - p.LiveSince > 60.0));
                 bool tooSlow = ageApplies
                     ? outbox.OverLimit
@@ -401,7 +401,7 @@ namespace SkylineTogether.Core.Session
                 if (tooSlow)
                 {
                     _log.Warn(LogCategory.Net, p.Name + ": the connection is too slow to keep up; disconnecting");
-                    // w8/robust: the players learn why (the dropped player rejoins with a fresh snapshot: its catch-up)
+                    // the players learn why (the dropped player rejoins with a fresh snapshot: its catch-up)
                     if (p.Admitted) SystemMessage(p.Name + " could not keep up with the session and was disconnected; joining again catches up.");
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "connection too slow"));
                     continue;
@@ -438,7 +438,7 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         public void Broadcast(MessageKind kind, byte[] body, int offset, int count, Lane lane = Lane.Reliable)
         {
-            // loadspeed: the city changed after the last snapshot request; a later joiner needs a newer snapshot
+            // the city changed after the last snapshot request; a later joiner needs a newer snapshot
             _snapshotUnchanged = false;
             Peer first = null;
             bool shared = false;
@@ -477,14 +477,14 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        /// <summary>w2/ids: every reliable <c>Epoch</c> message a peer is sent is counted (its client counts what it applied).</summary>
+        /// <summary>Every reliable <c>Epoch</c> message a peer is sent is counted (its client counts what it applied).</summary>
         private static void SendCounted(Peer p, MessageKind kind, byte[] body, int offset, int count, Lane lane)
         {
             bool ok = p.Channel.Send(kind, body, offset, count, lane);
             if (ok && kind == MessageKind.Epoch && lane == Lane.Reliable) p.EpochSent++;
         }
 
-        /// <summary>w2/ids: reliable <c>Epoch</c> messages queued so far for an admitted peer (0 when unknown).</summary>
+        /// <summary>Reliable <c>Epoch</c> messages queued so far for an admitted peer (0 when unknown).</summary>
         public long GetEpochSent(PeerId peer)
         {
             foreach (Peer p in _peers.Values)
@@ -495,12 +495,12 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// w2/ids: true while a join is in progress (a peer between admission and live, or a snapshot being taken): a
+        /// True while a join is in progress (a peer between admission and live, or a snapshot being taken): a
         /// snapshot may then still be written with the current bindings, so released net ids must stay quarantined.
         /// </summary>
         public bool JoinInProgress => _snapshotPending || HoldSimulation;
 
-        /// <summary>w2/ids: the admitted peers (appended to <paramref name="output"/>).</summary>
+        /// <summary>The admitted peers (appended to <paramref name="output"/>).</summary>
         public void GetAdmittedPeers(List<PeerId> output)
         {
             foreach (Peer p in _peers.Values)
@@ -510,7 +510,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// w2/ids: the send-side state of an admitted peer for the bandwidth scheduler (ARCH §4.8): whether it is live,
+        /// The send-side state of an admitted peer for the bandwidth scheduler (ARCH §4.8): whether it is live,
         /// the reliable bytes waiting in its outbox, the bytes the transport still holds and its send rate.
         /// </summary>
         public bool TryGetLink(PeerId peer, out PeerSendState link)
@@ -585,7 +585,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// loadspeed: the timings of the last completed joins (oldest first, at most 8; copies), for the diagnostics
+        /// The timings of the last completed joins (oldest first, at most 8; copies), for the diagnostics
         /// dump and the UI.
         /// </summary>
         public IReadOnlyList<JoinTimeline> RecentJoins
@@ -598,10 +598,10 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        /// <summary>loadspeed: the most recent completed join (a copy), or null.</summary>
+        /// <summary>The most recent completed join (a copy), or null.</summary>
         public JoinTimeline LastJoin => _recentJoins.Count > 0 ? _recentJoins[_recentJoins.Count - 1].Clone() : null;
 
-        /// <summary>loadspeed: a copy of the join timings of an admitted peer (null when unknown).</summary>
+        /// <summary>A copy of the join timings of an admitted peer (null when unknown).</summary>
         public JoinTimeline GetJoinTimeline(PeerId peer)
         {
             foreach (Peer p in _peers.Values)
@@ -611,7 +611,7 @@ namespace SkylineTogether.Core.Session
             return null;
         }
 
-        /// <summary>loadspeed: bumped whenever a join completes (UI refresh key).</summary>
+        /// <summary>Bumped whenever a join completes (UI refresh key).</summary>
         public int JoinsCompleted { get; private set; }
 
         /// <summary>
@@ -695,7 +695,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// w8/security: removes an admitted player and bans them: by authenticated Steam ID, or by address when the
+        /// Removes an admitted player and bans them: by authenticated Steam ID, or by address when the
         /// connection had no Steam identity. The player is told (<see cref="ControlKind.Ban"/>) and refused with
         /// <see cref="RefuseReason.Banned"/> from then on. False for the host or an unknown peer.
         /// </summary>
@@ -716,7 +716,7 @@ namespace SkylineTogether.Core.Session
             return true;
         }
 
-        /// <summary>w8/security: removes a ban by its <see cref="BanEntry.Key"/>; false when there is none.</summary>
+        /// <summary>Removes a ban by its <see cref="BanEntry.Key"/>; false when there is none.</summary>
         public bool Unban(string key)
         {
             if (!_options.Bans.Remove(key)) return false;
@@ -725,7 +725,7 @@ namespace SkylineTogether.Core.Session
             return true;
         }
 
-        /// <summary>w8/security: drops every connection the ban list matches now (after it changed from outside).</summary>
+        /// <summary>Drops every connection the ban list matches now (after it changed from outside).</summary>
         public void EnforceBans()
         {
             foreach (Peer p in new List<Peer>(_peers.Values))
@@ -759,7 +759,7 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>
         /// Ends the session for everyone: players get <see cref="ControlKind.SessionEnd"/>, connections still in the
-        /// handshake a <see cref="RefuseReason.HostShuttingDown"/> refusal (w8/security: before, they only saw the
+        /// handshake a <see cref="RefuseReason.HostShuttingDown"/> refusal (before, they only saw the
         /// connection drop).
         /// </summary>
         public void Stop(string reason)
@@ -811,7 +811,7 @@ namespace SkylineTogether.Core.Session
                 Direct = connection.Peer.Direct,
                 Local = connection.Peer.Local,
             };
-            // w8/robust: until it is admitted a connection may only send small handshake messages
+            // until it is admitted a connection may only send small handshake messages
             peer.Channel.MaxBodyBytes = _options.UnadmittedMaxBodyBytes;
             _peers[connection] = peer;
             _log.Info(LogCategory.Session, "connection from " + connection.Peer + "; waiting for its hello");
@@ -842,7 +842,7 @@ namespace SkylineTogether.Core.Session
             }
             catch (Exception ex)
             {
-                // w8/robust: rate-limited, and a peer whose messages keep failing is disconnected (no error storm)
+                // rate-limited, and a peer whose messages keep failing is disconnected (no error storm)
                 p.Failures++;
                 double now = _clock.Seconds;
                 if (now - p.LastFailureLog >= 10)
@@ -859,10 +859,10 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        /// <summary>w8/robust: a frame gap above this many seconds counts as a stall of the host.</summary>
+        /// <summary>A frame gap above this many seconds counts as a stall of the host.</summary>
         private const double StallSeconds = 5;
 
-        /// <summary>w8/robust: how long silence and queue-age limits wait after a stall of the host.</summary>
+        /// <summary>How long silence and queue-age limits wait after a stall of the host.</summary>
         private const double StallGraceSeconds = 15;
 
         /// <summary>Total exceptions thrown by app-message listeners (diagnostics).</summary>
@@ -883,7 +883,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// w8/robust: delivers a replication message to every listener on its own, like the client does: one listener
+        /// Delivers a replication message to every listener on its own, like the client does: one listener
         /// that throws (a feature's bug) neither stops the others nor counts against the peer.
         /// </summary>
         private void DeliverApp(PeerId peer, Envelope e)
@@ -908,7 +908,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// w8/robust: the save system did not deliver the requested snapshot in time: the waiting joiners are told and
+        /// The save system did not deliver the requested snapshot in time: the waiting joiners are told and
         /// removed, and the next join requests a new snapshot. A late delivery of the abandoned one is released unused.
         /// </summary>
         private void AbandonSnapshot(double now)
@@ -935,7 +935,7 @@ namespace SkylineTogether.Core.Session
                     var theirProtocol = HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount);
                     if (theirProtocol != ProtocolVersion.Current)
                     {
-                        // w8/security: a peer that still has to prove the password learns no version of the host
+                        // a peer that still has to prove the password learns no version of the host
                         if (NeedsPassword(p))
                         {
                             Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Update both games to the same mod version.");
@@ -949,7 +949,7 @@ namespace SkylineTogether.Core.Session
                     }
                     p.Hello = HelloMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
                     if (!string.IsNullOrEmpty(p.Hello.DisplayName)) p.Name = p.Hello.DisplayName;
-                    // w8/security: only the transport's authenticated Steam ID is an identity; before, the hello's claim
+                    // only the transport's authenticated Steam ID is an identity; before, the hello's claim
                     // replaced it, so anyone could pose as (and replace the connection of) another player
                     if (p.Hello.SteamId != 0 && p.Hello.SteamId != p.SteamId)
                     {
@@ -990,7 +990,7 @@ namespace SkylineTogether.Core.Session
                 case MessageKind.Chat:
                 {
                     if (!p.Admitted) return;
-                    // w8/robust: a token bucket per peer (bursts of 5, then ChatPerSecond); excess lines are dropped
+                    // a token bucket per peer (bursts of 5, then ChatPerSecond); excess lines are dropped
                     double t = _clock.Seconds;
                     p.ChatTokens = Math.Min(5, p.ChatTokens + (t - p.ChatRefilledAt) * _options.ChatPerSecond);
                     p.ChatRefilledAt = t;
@@ -1004,7 +1004,7 @@ namespace SkylineTogether.Core.Session
                 case MessageKind.BlobHave:
                 {
                     if (p.Sender == null) return;
-                    // w8/robust: an empty have-bitmap re-queues the whole snapshot; the receiver sends one per 0.5 s at most
+                    // an empty have-bitmap re-queues the whole snapshot; the receiver sends one per 0.5 s at most
                     double t = _clock.Seconds;
                     if (t - p.LastHave < 0.25) return;
                     p.LastHave = t;
@@ -1156,7 +1156,7 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        // ---------------------------------------------------------------- w8/security: screening, password, moderation
+        // ---------------------------------------------------------------- screening, password, moderation
 
         /// <summary>Bans and the join policy, judged on the transport's identity before anything else is sent.</summary>
         private bool Screen(Peer p)
@@ -1351,7 +1351,7 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
             }
-            // w8/tests: several handshakes may pass the password at once; each is checked here, after its own answer
+            // several handshakes may pass the password at once; each is checked here, after its own answer
             if (IsFull())
             {
                 Refuse(p, RefuseReason.Full, "The session is full.");
@@ -1380,7 +1380,7 @@ namespace SkylineTogether.Core.Session
             p.State = PlayerState.WaitingForSnapshot;
             double admittedAt = _clock.Seconds;
             p.AdmittedAt = admittedAt;
-            p.Channel.MaxBodyBytes = int.MaxValue; // w8/robust: admitted: the kinds' own limits apply
+            p.Channel.MaxBodyBytes = int.MaxValue; // admitted: the kinds' own limits apply
             p.Timeline = new JoinTimeline { Who = p.Name };
             p.Timeline.Mark(JoinStage.Start, admittedAt);
             p.Timeline.Mark(JoinStage.Welcome, admittedAt);
@@ -1405,7 +1405,7 @@ namespace SkylineTogether.Core.Session
             _log.Info(LogCategory.Session, "admitted " + p.Name + " as " + p.Id);
             SystemMessage(p.Name + " is joining…");
             PeerJoining?.Invoke(p.Id);
-            // loadspeed: nothing changed since the last request (no broadcast, simulation held or paused throughout):
+            // nothing changed since the last request (no broadcast, simulation held or paused throughout):
             // that snapshot is this city too, and the peer's stream (from now on) has no gap behind it
             if (SnapshotReusable(admittedAt))
             {
@@ -1424,7 +1424,7 @@ namespace SkylineTogether.Core.Session
                 StartTransfer(p);
                 return;
             }
-            // final review: a snapshot already requested may have serialized the city before this admission, and this
+            // a snapshot already requested may have serialized the city before this admission, and this
             // peer's stream starts only now; it waits for the next request (OnSnapshotReady issues it)
             p.MinSnapshotGen = _snapshotGen + 1;
             if (_snapshot != null && !_snapshotPending)
@@ -1437,7 +1437,7 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>
-        /// loadspeed: the latest snapshot request is recent and the city cannot have changed since (see
+        /// The latest snapshot request is recent and the city cannot have changed since (see
         /// <see cref="HostOptions.SnapshotReuseSeconds"/>), so its snapshot also serves a peer admitted now: while it is
         /// being written, or once written while it is still kept (another player still waits for it or downloads it; an
         /// unused snapshot file is released at once, as before).
@@ -1474,7 +1474,7 @@ namespace SkylineTogether.Core.Session
                 if (p.Admitted && p.State == PlayerState.WaitingForSnapshot && p.MinSnapshotGen <= gen) p.Timeline?.Mark(JoinStage.SnapshotRequested, _snapshotRequestedAt, overwrite: true);
             }
             _log.Info(LogCategory.Join, "taking a snapshot of the city");
-            // w8/robust: callbacks of an abandoned (timed-out) request are released and otherwise ignored
+            // callbacks of an abandoned (timed-out) request are released and otherwise ignored
             _snapshots.RequestSnapshot(ready => OnSnapshotReady(ready, gen), reason =>
             {
                 if (gen > _abandonedSnapshotGen) OnSnapshotFailed(reason);
@@ -1553,7 +1553,7 @@ namespace SkylineTogether.Core.Session
                 p.Snapshot = snapshot;
                 p.SenderStream = new FileStream(snapshot.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16);
                 p.Sender = new BlobSender(p.Channel.Outbox, _log);
-                // loadspeed: the digest is computed at most once per snapshot (by the provider while writing, or here for
+                // the digest is computed at most once per snapshot (by the provider while writing, or here for
                 // the first receiver) and reused for every later receiver of the same file
                 bool known = snapshot.DigestKnown && snapshot.Size == p.SenderStream.Length;
                 Hashing.Digest128? digest = known ? new Hashing.Digest128(snapshot.DigestLo, snapshot.DigestHi) : (Hashing.Digest128?)null;
@@ -1593,11 +1593,11 @@ namespace SkylineTogether.Core.Session
                 p.State = PlayerState.Downloading;
                 _playersDirty = true;
                 _log.Info(LogCategory.Join, p.Name + ": sending the snapshot (" + info.Size + " bytes, " + info.ChunkCount + " chunks)");
-                // loadspeed: the manifest and the first window of chunks leave now, not one frame later
+                // the manifest and the first window of chunks leave now, not one frame later
                 p.Channel.Pump();
                 p.Sender.Pump();
                 p.Channel.Pump();
-                // loadspeed: and between frames from the background thread (thread-safe transports only)
+                // and between frames from the background thread (thread-safe transports only)
                 if (_options.BackgroundPump && p.Channel.Connection is IThreadSafeConnection)
                 {
                     if (_pump == null) _pump = new BackgroundPump(_log, "Skyline Together snapshot pump");
@@ -1716,7 +1716,7 @@ namespace SkylineTogether.Core.Session
 
         private static void CloseSender(Peer p)
         {
-            // loadspeed: the background pump stops calling this transfer before it is cancelled and its file closed
+            // the background pump stops calling this transfer before it is cancelled and its file closed
             p.PumpToken?.Dispose();
             p.PumpToken = null;
             p.Sender?.Cancel();

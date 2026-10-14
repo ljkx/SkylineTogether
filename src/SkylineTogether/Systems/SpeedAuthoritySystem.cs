@@ -37,7 +37,7 @@ namespace SkylineTogether.Systems
         }
 
         /// <summary>
-        /// final review: a join hold must not survive the city it was made in. The host leaving the city mid-join stops
+        /// A join hold must not survive the city it was made in. The host leaving the city mid-join stops
         /// the session, but the next LateUpdate (in the newly loaded city) released the hold and restored the old city's
         /// speed, so the new city started running against "paused after loading".
         /// </summary>

@@ -40,7 +40,7 @@ namespace SkylineTogether.Session
             {
                 Guard.Report(Features.Ui, "UI probe", ex);
             }
-            Guard.Run(Features.Mods, "mod integration", Compat.ModIntegration.Tick); // w8/mods: binds other mods once they are loaded
+            Guard.Run(Features.Mods, "mod integration", Compat.ModIntegration.Tick); // binds other mods once they are loaded
         }
 
         private void OnApplicationQuit()

@@ -75,7 +75,7 @@ namespace SkylineTogether.Core.Sync
         /// </summary>
         PrefabSource = 112,
 
-        // ---- w3/agents (merge coordination: kinds 120-129 are reserved for it) ----
+        // ---- agents (kinds 120-129) ----
 
         /// <summary>
         /// Host → client, inside a movers batch right after the mover's record: the agents the mover refers to
@@ -83,7 +83,7 @@ namespace SkylineTogether.Core.Sync
         /// of a vehicle).
         /// </summary>
         MoverAgents = 120,
-        // ---- gameplay branch (w2/gameplay; kinds 80-89 are reserved for it): proposal validation and results ----
+        // ---- gameplay (kinds 80-89): proposal validation and results ----
 
         /// <summary>
         /// Host → client: the number of this structural broadcast (<see cref="AuthoredLedger"/>), the last record of every
@@ -234,7 +234,7 @@ namespace SkylineTogether.Core.Sync
         public IconControlMode IconMode;
         /// <summary>For <see cref="SyncRecordKind.MoverSpawn"/> and <see cref="SyncRecordKind.MoverState"/> (movers branch).</summary>
         public MoverRecord Mover;
-        /// <summary>For <see cref="SyncRecordKind.MoverAgents"/> (w3/agents, with <see cref="NetId"/> = the mover).</summary>
+        /// <summary>For <see cref="SyncRecordKind.MoverAgents"/> (with <see cref="NetId"/> = the mover).</summary>
         public MoverAgentLinks AgentLinks;
         /// <summary>For <see cref="SyncRecordKind.EnabledBits"/> (with <see cref="NetId"/>): the components' enabled states.</summary>
         public List<SyncEnabledBit> EnabledBits;
@@ -330,7 +330,7 @@ namespace SkylineTogether.Core.Sync
         {
             byte kind = FirstRecordKind(data, offset, count);
             return kind == (byte)SyncRecordKind.MoverSpawn || kind == (byte)SyncRecordKind.MoverState || kind == (byte)SyncRecordKind.MoverDespawn
-                   || kind == (byte)SyncRecordKind.MoverAgents; // w3/agents
+                   || kind == (byte)SyncRecordKind.MoverAgents;
         }
 
         /// <summary>
@@ -610,7 +610,7 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
-            /// <summary>w3/agents: the agents a mover refers to (<see cref="SyncRecordKind.MoverAgents"/>).</summary>
+            /// <summary>The agents a mover refers to (<see cref="SyncRecordKind.MoverAgents"/>).</summary>
             public void MoverAgents(uint netId, MoverAgentLinks links)
             {
                 if (links == null) throw new ArgumentNullException(nameof(links));
@@ -777,7 +777,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// w8/robust: a family byte, which must name a <see cref="Family"/> (the applier picks archetypes, id tables and
+        /// A family byte, which must name a <see cref="Family"/> (the applier picks archetypes, id tables and
         /// classification rules by it; an unknown value bound an entity to a family no rule knows).
         /// </summary>
         private static Family ReadFamily(ByteReader r)

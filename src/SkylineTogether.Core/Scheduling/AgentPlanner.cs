@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// w3/agents: per-peer delivery plan of agent values (citizens, households, pets, companies; ARCH §4.2.2 class A,
+    /// Per-peer delivery plan of agent values (citizens, households, pets, companies; ARCH §4.2.2 class A,
     /// §4.8.3-4.8.4). The host's rolling agent scan reports every agent whose values changed (<see cref="MarkChanged"/>);
     /// each live peer keeps the set of agents it still needs, so repeated changes of one agent coalesce into one entry and
     /// the value is serialised when it is sent (latest value wins). <see cref="Drain"/> offers them to an emitter within
