@@ -15,7 +15,12 @@ is repaired automatically.
 - Research on the game's internals with code citations: [`docs/research/`](docs/research/00-DIGEST.md).
 - Decision records: [`docs/decisions/`](docs/decisions/).
 
-Status: milestone M0 (foundations) is in progress. The mod does not provide multiplayer yet.
+Status: **early testing.** Hosting, joining (Steam invites or Steam ID), structure/line/economy/terrain sync, agents,
+integrity repair, shared building previews and chat all work in builds; real two-PC sessions are under way and bugs
+are expected. Back up your save before hosting.
+
+**Install for testing:** build `dist/SkylineTogether-Setup.zip` (see *Building* below / `tools/installer/`), unzip,
+double-click `Install.cmd`. Both players must show the same build id. `Collect-Logs.cmd` zips logs for bug reports.
 
 ## Solo testing (no second PC)
 
