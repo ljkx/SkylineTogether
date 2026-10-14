@@ -71,6 +71,7 @@ namespace SkylineTogether.Sync
         // w8/robust (host): a peer's proposals and acks waiting to be applied are bounded; a peer that keeps sending
         // faster than the host applies, or whose applied frame stops advancing, is dropped with a rejoin offer
         private readonly InboundQuota _hostInboxQuota = new InboundQuota(4096, 64L << 20);
+        private ReferenceAudit _audit;
         private readonly AckStallWatch _ackStall = new AckStallWatch(AckStallSeconds);
         private readonly List<(PeerId Peer, string Log, string Reason)> _kicks = new List<(PeerId, string, string)>();
         private readonly List<byte> _livePeerScratch = new List<byte>();
@@ -235,6 +236,7 @@ namespace SkylineTogether.Sync
             _sessions = sessions;
             _log = log;
             _gate = new ClientGate(log);
+            _audit = new ReferenceAudit(log); // w8/robust
             _global = new GlobalStateSync(log);
             _events = new EventSync(log); // w3/audit
             _signals = new SignalFollower(log);
@@ -410,6 +412,7 @@ namespace SkylineTogether.Sync
                 // w8/robust: decode-boundary validation and the client's removal clean-up
                 lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal
                           + " reads past a payload stopped; removal clean-up: " + DeletionCascade.Removed + " references to despawned entities removed");
+                if (!IsHost) lines.Add(_audit.Describe());
             }
             _agents.Describe(lines); // w3/agents
             Perf.Counters.Describe(Perf.Now, lines);
@@ -543,6 +546,7 @@ namespace SkylineTogether.Sync
             if (_wasClient) SafeCall("restoring mod settings", _modSettings.RestoreClient);
             SafeCall("mod gates", () => Compat.ModCompat.OnSessionEnded(_log));
             _watcher?.Stop();
+            _audit.Reset(); // w8/robust
             _modSettings.Reset();
             _holds.Clear();
             _localDeletes.Clear(); // crashfix
@@ -959,6 +963,8 @@ namespace SkylineTogether.Sync
                 SafeCall("milestones", _milestonesCall); // gameplay branch
             }
             if (IsHost) UpdateQuarantine(now);
+            // w8/robust (client): the rolling audit of references the game follows unchecked (diagnostics only)
+            if (!IsHost && Features.Integrity.IsAvailable) _audit.Update(now);
             budget.EndFrame(Perf.Stop(Perf.Apply, start));
         }
 

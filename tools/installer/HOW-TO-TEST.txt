@@ -21,6 +21,8 @@ TEST CHECKLIST (do each step, then both look at the same spot and compare)
  [ ] 3. Buildings grow on the zones -> both see the same buildings (wait a minute at speed 3).
  [ ] 4. Friend places a service building (e.g. school), host deletes something -> both identical.
  [ ] 4b. BULLDOZE: each player bulldozes a road, a building and a tree -> nobody crashes, both identical.
+ [ ] 4d. Bulldoze a FULL apartment block and a busy office/shop (residents and workers), then the friend opens
+         the Workplaces and Household info views right away -> nobody crashes; edge curves stay identical.
  [ ] 4c. BLUEPRINTS: one player starts drawing a road (don't click to finish) -> the other sees the outline
          in that player's colour. Same for placing a building, zoning, drawing a district. Esc -> it disappears.
  [ ] 5. TRAIN LINE: build two train stations, rails with a deliberate GAP, and a train line through both.
@@ -32,6 +34,9 @@ TEST CHECKLIST (do each step, then both look at the same spot and compare)
  [ ] 9. Terraform a hill (both), paint some ore -> identical.
  [ ] 10. Traffic: both see cars and pedestrians moving near their camera.
  [ ] 11. Friend leaves and joins again -> works; city identical.
+ [ ] 11b. ROBUSTNESS (each should end with a clear message or keep working, never a crash or a frozen game):
+         friend Alt-Tabs for a minute; host pauses for 2 minutes; host saves; host goes to the main menu while the
+         friend is still downloading; friend quits during the download and joins again.
  [ ] 12. Later: enable the same gameplay mods on both PCs (Traffic, Move It, Anarchy, ...) and repeat 2-6
          with them (Move It: move a building; Traffic: lane connections).
 
