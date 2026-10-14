@@ -128,14 +128,13 @@ Core types declare their thread with `[ThreadAffinity]`
 | Folder | Responsibility |
 |---|---|
 | `Buffers` | `ByteWriter`/`ByteReader` (little-endian, LEB128 varints, bounded reads that throw `DecodeException`), `BufferPool` |
-| `Contracts` | Shared value types and interfaces: identity (`NetId`, `PeerId`, `NetSlot`, ...), transport (`ITransport`, `IConnection`, `Lane`, `Delivery`), taxonomies (`MessageKind`, `Family`, `Permission`, `SessionRole`, `RejectReason`), session models (`HandshakeDigests`, `SnapshotManifest`), logging and clock seams. Some contracts are unused ([unused Core code](#unused-core-code)). |
+| `Contracts` | Shared value types and interfaces: identity (`NetId`, `PeerId`, `NetSlot`, ...), transport (`ITransport`, `IConnection`, `Lane`, `Delivery`), taxonomies (`MessageKind`, `Family`, `Permission`, `SessionRole`, `RejectReason`), session models (`HandshakeDigests`, `SnapshotManifest`), logging and clock seams. |
 | `Diagnostics` | `FeatureHealth` (trip logic of a feature), `PerfCounters` |
 | `Fields` | Terrain, water and cell-map tile codecs and grids, brush strength compensation, stroke settling |
 | `Follower` | `FollowerClockModel`, the client's estimate of the host frame |
 | `Hashing` | xxHash64, XXH3-64/128, digests, set hashes |
 | `Identity` | `FamilyRules` (family classification table), `BuildOrderAllocator`, `SlotBitSet` |
-| `Integrity` | `EntityDigest` (bucket arithmetic), `DivergenceTracker`, `RepairEscalation`, `RepairThresholds`, `DetailScheduler`, line-state rows and comparison, `IconSetDigest`; plus an unused beacon-based repair ladder |
-| `Intents` | Unused by the game layer ([unused Core code](#unused-core-code)) |
+| `Integrity` | `EntityDigest` (bucket arithmetic), `DivergenceTracker`, `RepairEscalation`, `RepairThresholds`, `DetailScheduler`, line-state rows and comparison, `IconSetDigest` |
 | `Json` | `MiniJson` reader and `JsonWriter` |
 | `Modding` | `ModFacts`, `IlScanner`, `ModDeclarations`, `ModClassifier`, `AdapterCheck`, `ModChannelRouter`/`ModChannelBudget`, `AssetSource`/`MissingAssets` |
 | `Motion` | Mover motion encoding: `MotionHostEncoder`, `MotionCodec`, `MotionClientStager`, `InterestSlotTable` |
@@ -144,7 +143,7 @@ Core types declare their thread with `[ThreadAffinity]`
 | `Scheduling` | `TokenBucket`, `PeerByteBudget`, `CoalescingQueue` + `LinkBudget`, `AttentionPlanner`, `AgentPlanner`, `RollingScan`, `SpatialHashGrid`, infoview topics |
 | `Session` | `SessionHost`, `SessionClient`, `PeerChannel`, `JoinSecurity` (bans, join policy, password lockout, moderation rules), `SessionCrypto`, `RejoinController`, `JoinTimeline`, presence and tool-preview codecs, mod-list comparison |
 | `Sync` | `SyncBatch` (the replication record format), `NetIdAllocator`, `ProposalGuard` (rate limits, conflict ledger, rules), apply acknowledgements, global-state, terrain, water, mover, flow-status, integrity and agent records |
-| `Testing` | Fakes for tests (`ManualClock`, `ListLog`, ...) and `StopwatchClock` |
+| `Testing` | Fakes for tests (`ManualClock`, `ListLog`, `NullLog`, `DeterministicRandom`) and `StopwatchClock` |
 | `Transport` | `PeerOutbox`, `SendRateController`, blob transfer, `BackgroundPump`, `CompositeTransport`, loopback and network-simulator transports (tests, solo test) |
 
 ### Game layer folders
@@ -1129,24 +1128,23 @@ Open design gaps and inconsistencies found while writing this document.
 - **Steam lanes.** Lanes are an outbox scheduling concept; Steam's own lanes are not configured, so lane B traffic
   shares Steam's single reliable stream with lane R (the outbox only hands B over while R is empty).
 - **Blob resume across reconnects** (`BlobSender.Rebind`) exists but is unused: a rejoin downloads a fresh snapshot.
-- **Two derived-key types.** The game layer uses its own `SkylineTogether.Sync.DerivedKey` (two kinds); Core's
-  `Contracts/Identity/DerivedKey` (seven kinds) is unused.
+### Core code the game layer does not reach
 
-### Unused Core code
+[`tools/reachability.py`](../tools/reachability.py) lists it ([dev/testing.md](dev/testing.md#what-the-mod-never-reaches)).
+What remains is kept on purpose:
 
-Core still contains parts of the original design that the game layer never reaches (tests cover some of them). Their
-comments cite the original design ([history/ARCHITECTURE-original.md](history/ARCHITECTURE-original.md)):
+- **Test infrastructure.** The `Testing/` fakes (`ManualClock`, `ListLog`, `NullLog`, `DeterministicRandom`) and the
+  network simulator `Transport/NetSimTransport` (with `NetSimConnection`, `NetSimOptions`, `NetSimCounters` and the
+  `Transport/RateMeter` it measures links with), which the multi-peer session simulation and the outbox tests run on
+  ([dev/testing.md](dev/testing.md)).
+- **Members of live types** that only tests or diagnostics read (counters and statistics properties), `BlobSender.Rebind`
+  (above) and the [reserved wire values](#reserved-wire-values).
 
-- `Intents/` (the original proposal and semantic-intent format; the game uses `SyncBatch` and `ActionIntent`);
-- the beacon-based repair ladder in `Integrity/` (`RepairCoordinator`, `HostRepairResponder`, `HashLedger`,
-  `BeaconPlanner`, `BucketSums`, `MemberHasher`, `LedgerArena`, `IntegrityRules`, `LeakTracker` and their small types)
-  with `Protocol/Messages/RepairRequestMessage`, `HashDetailMessage` and `RepairLevel`;
-- `Scheduling/AutoSpeedCap`, `DegradationController`, `HostUploadBudget`, `LinkEstimator`, `SchedulerConfig`,
-  `SchedulerSettings`;
-- `Contracts/Replication` (except `IPeerOutput`), `Contracts/Integrity`, `Contracts/Records`, `Contracts/Catalog`,
-  `NetRef`/`NetRefCodec`, `ZoneOverlayCodec`, `EntityKey`, `LocalId`, `TypeRank`, `TypeSetId`, `SectionType`, `SpawnFlags`,
-  `TouchFlags`;
-- `Limits` constants for multi-part epochs (`MaxEpochTotalBytes`, `MaxEpochParts`, `MaxSectionsPerEpoch`).
+The rest of the original design that the game layer never used (the proposal and semantic-intent format of `Intents/`,
+the beacon-based repair ladder, the bandwidth controllers `HostUploadBudget`, `LinkEstimator`, `AutoSpeedCap` and
+`DegradationController`, the replication-engine contracts and Core's own seven-kind `DerivedKey`) has been removed;
+[history/ARCHITECTURE-original.md](history/ARCHITECTURE-original.md) still describes it. The game layer's
+[`DerivedKey`](#derived-keys) is the only derived-key type.
 
 ### Reserved wire values
 

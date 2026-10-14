@@ -162,39 +162,9 @@ namespace SkylineTogether.Core.Tests.Protocol
             }, validSeeds: false);
         }
 
-        [Test(TimeoutSeconds = 300)]
-        public void NetRefsZoneOverlaysAndProtocolVersionPeek()
+        [Test]
+        public void ProtocolVersionPeek()
         {
-            var random = new DeterministicRandom(300);
-            var refs = new List<byte[]>();
-            for (int i = 0; i < 50; i++)
-            {
-                var w = new ByteWriter();
-                NetRefCodec.Write(w, NetRefCodecTests.RandomRef(random));
-                refs.Add(w.ToArray());
-            }
-            Fuzz("NetRefCodec.Read", refs, 20000, 301, (buffer, offset, count) => NetRefCodec.Read(new ByteReader(buffer, offset, count)));
-            var keys = new List<byte[]>();
-            var keyWriter = new ByteWriter();
-            NetRefCodec.WriteKey(keyWriter, NetRefCodecTests.LaneKey());
-            keys.Add(keyWriter.ToArray());
-            keyWriter.Reset();
-            NetRefCodec.WriteKey(keyWriter, NetRefCodecTests.SubObjectKey());
-            keys.Add(keyWriter.ToArray());
-            Fuzz("NetRefCodec.ReadKey", keys, 10000, 302, (buffer, offset, count) => NetRefCodec.ReadKey(new ByteReader(buffer, offset, count)));
-
-            var zones = new List<byte[]>();
-            for (int i = 0; i < 30; i++)
-            {
-                var cells = new ushort[random.Next(0, 61)];
-                for (int c = 0; c < cells.Length; c++) cells[c] = (ushort)(random.Next(3) == 0 ? random.Next(65536) : random.Next(3));
-                var w = new ByteWriter();
-                ZoneOverlayCodec.Encode(cells, cells.Length, w);
-                zones.Add(w.ToArray());
-            }
-            var target = new ushort[64];
-            Fuzz("ZoneOverlayCodec.Decode", zones, 20000, 303, (buffer, offset, count) => ZoneOverlayCodec.Decode(new ByteReader(buffer, offset, count), target));
-
             var hello = Encode<HelloMessage>(HelloMessage.Write, new HelloMessage { Digests = MessageGoldenTests.SampleDigests() });
             Fuzz("HelloMessage.PeekProtocolVersion", new[] { hello, Hex("ac02") }, 5000, 304, (buffer, offset, count) => HelloMessage.PeekProtocolVersion(buffer, offset, count));
         }
@@ -258,18 +228,6 @@ namespace SkylineTogether.Core.Tests.Protocol
             }, 3000, 411, (b, o, c) => PresenceMessage.Decode(b, o, c));
             Fuzz("Ping", new[] { Encode<PingMessage>(PingMessage.Write, new PingMessage { Sequence = 5, SentSeconds = 1.25, IsReply = true }) },
                  2000, 414, (b, o, c) => PingMessage.Decode(b, o, c));
-            Fuzz("HashDetail", new[]
-            {
-                Encode<HashDetailMessage>(HashDetailMessage.Write, new HashDetailMessage
-                {
-                    Class = ReplicationClass.A, Bucket = 2, AtEpoch = new EpochId(77),
-                    Slots = new[] { new NetSlot(2048), new NetSlot(2049), new NetSlot(3000) }, Hashes = new uint[] { 1, 2, 3 }
-                })
-            }, 5000, 415, (b, o, c) => HashDetailMessage.Decode(b, o, c));
-            Fuzz("RepairRequest", new[]
-            {
-                Encode<RepairRequestMessage>(RepairRequestMessage.Write, new RepairRequestMessage { Class = ReplicationClass.S, Slots = new[] { new NetSlot(1), new NetSlot(70000) }, LevelHint = RepairLevel.Entity })
-            }, 5000, 416, (b, o, c) => RepairRequestMessage.Decode(b, o, c));
             Fuzz("SnapshotManifest", new[]
             {
                 Encode<SnapshotManifest>(SnapshotManifestCodec.Write, new SnapshotManifest

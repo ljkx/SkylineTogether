@@ -338,18 +338,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                 }, b => PresenceMessage.Decode(b, 0, b.Length)),
                 ("Ping", new[] { Encode<PingMessage>(PingMessage.Write, new PingMessage { Sequence = 5, SentSeconds = 1.25, IsReply = true }) },
                  b => PingMessage.Decode(b, 0, b.Length)),
-                ("HashDetail", new[]
-                {
-                    Encode<HashDetailMessage>(HashDetailMessage.Write, new HashDetailMessage
-                    {
-                        Class = ReplicationClass.A, Bucket = 2, AtEpoch = new EpochId(77),
-                        Slots = new[] { new NetSlot(2048), new NetSlot(2049), new NetSlot(3000) }, Hashes = new uint[] { 1, 2, 3 }
-                    })
-                }, b => HashDetailMessage.Decode(b, 0, b.Length)),
-                ("RepairRequest", new[]
-                {
-                    Encode<RepairRequestMessage>(RepairRequestMessage.Write, new RepairRequestMessage { Class = ReplicationClass.S, Slots = new[] { new NetSlot(1), new NetSlot(70000) }, LevelHint = RepairLevel.Entity })
-                }, b => RepairRequestMessage.Decode(b, 0, b.Length)),
                 ("SnapshotManifest", new[]
                 {
                     Encode<SnapshotManifest>(SnapshotManifestCodec.Write, new SnapshotManifest

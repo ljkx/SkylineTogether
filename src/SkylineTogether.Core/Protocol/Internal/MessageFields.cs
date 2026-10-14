@@ -205,32 +205,6 @@ namespace SkylineTogether.Core.Protocol
             return plusOne == 0 ? PrefabRank.None : new PrefabRank((int)(plusOne - 1));
         }
 
-        internal static ReplicationClass ReadClass(ByteReader r, string field)
-        {
-            byte value = r.ReadByte();
-            if (value > (byte)ReplicationClass.OnDemand) throw new DecodeException(field + ": undefined replication class " + value.ToString(CultureInfo.InvariantCulture));
-            return (ReplicationClass)value;
-        }
-
-        internal static void WriteClass(ByteWriter w, ReplicationClass cls, string field)
-        {
-            if ((byte)cls > (byte)ReplicationClass.OnDemand) throw new ArgumentException("undefined replication class", field);
-            w.WriteByte((byte)cls);
-        }
-
-        internal static int ReadBucket(ByteReader r, string field)
-        {
-            uint value = r.ReadVarUInt32();
-            if (value > Limits.MaxBucket) throw new DecodeException(field + ": bucket " + WireFormat.Format(value) + " exceeds " + Limits.MaxBucket.ToString(CultureInfo.InvariantCulture));
-            return (int)value;
-        }
-
-        internal static void WriteBucket(ByteWriter w, int bucket, string field)
-        {
-            if (bucket < 0 || bucket > Limits.MaxBucket) throw new ArgumentOutOfRangeException(field, bucket, "0 ... " + Limits.MaxBucket.ToString(CultureInfo.InvariantCulture));
-            w.WriteVarUInt32((uint)bucket);
-        }
-
         /// <summary>A flags byte with only the bits of <paramref name="known"/>.</summary>
         internal static byte ReadFlags(ByteReader r, byte known, string field)
         {

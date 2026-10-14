@@ -6,8 +6,7 @@ namespace SkylineTogether.Core.Integrity
 {
     /// <summary>
     /// The escalation above the client's object repairs (ARCHITECTURE.md#escalation-and-resync-offer,
-    /// for the rolling verification of <see cref="DivergenceTracker"/> and <see cref="EntityDigest"/> buckets; the
-    /// beacon-based <see cref="RepairCoordinator"/> is not used by the game layer).
+    /// for the rolling verification of <see cref="DivergenceTracker"/> and <see cref="EntityDigest"/> buckets).
     /// <list type="bullet">
     /// <item><b>Bucket rebaseline</b> (level 3 for one bucket): when a bucket detail shows more differences than object
     /// repair is meant for (<see cref="RepairThresholds.EntityRepairLimit"/>), or a bucket still differs after its repairs

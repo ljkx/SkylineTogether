@@ -1,8 +1,7 @@
 namespace SkylineTogether.Core.Scheduling
 {
     /// <summary>
-    /// Attention topics (ARCHITECTURE.md#simulation-values): decodes a client's view report into the topics it asks for and names the related
-    /// entities those topics need (<see cref="ScopeOf"/>). The design's per-type topic table (policy topics plus
+    /// Attention topics (ARCHITECTURE.md#simulation-values): decodes a client's view report into the topics it asks for. The design's per-type topic table (policy topics plus
     /// built-in defaults) belonged to the unbuilt worker-thread scheduler and was removed; the host collects topic data
     /// in <c>AttentionValues</c> (game layer).
     /// <para>
@@ -22,11 +21,8 @@ namespace SkylineTogether.Core.Scheduling
 
         /// <summary>Topics whose data matters everywhere, not only in view: the line values of every line (transport
         /// infoview, transportation overview) and the city statistics (ARCHITECTURE.md#simulation-values). The topic data of every other
-        /// topic belongs to in-view entities and to the entities of <see cref="ScopeOf"/>.</summary>
+        /// topic belongs to in-view entities.</summary>
         public const AttentionTopic GlobalTopics = AttentionTopic.Transport | AttentionTopic.Statistics;
-
-        private const AttentionTopic ResidentTopics = AttentionTopic.Happiness | AttentionTopic.Health | AttentionTopic.Wellbeing
-                                                      | AttentionTopic.Education | AttentionTopic.Age;
 
         /// <summary>
         /// The topics of the active infoview: none when <paramref name="infoviewId"/> is 0 (no infoview), otherwise the
@@ -53,18 +49,6 @@ namespace SkylineTogether.Core.Scheduling
         {
             if (report == null) return AttentionTopic.None;
             return FromInfoview(report.Infoview, report.InfomodeMask) | FromPanels(report.PanelFlags);
-        }
-
-        /// <summary>Which related entities the host should collect into a peer's topic set for these topics.</summary>
-        public static TopicScope ScopeOf(AttentionTopic topics)
-        {
-            TopicScope scope = TopicScope.None;
-            if ((topics & ResidentTopics) != 0) scope |= TopicScope.ResidentsOfInView;
-            if ((topics & AttentionTopic.Wealth) != 0) scope |= TopicScope.HouseholdsOfInView;
-            if ((topics & AttentionTopic.Profitability) != 0) scope |= TopicScope.CompaniesOfInView;
-            if ((topics & AttentionTopic.Transport) != 0) scope |= TopicScope.AllLines;
-            if ((topics & AttentionTopic.Statistics) != 0) scope |= TopicScope.StatisticEntities;
-            return scope;
         }
     }
 }

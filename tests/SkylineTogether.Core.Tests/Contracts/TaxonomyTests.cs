@@ -30,12 +30,6 @@ namespace SkylineTogether.Core.Tests.Contracts
         }
 
         [Test]
-        public void ReplicationClassOrder()
-        {
-            SequentialFrom<ReplicationClass>(0, "Excluded", "Derived", "S", "G", "V", "A", "ALow", "M", "K", "Channel", "OnDemand");
-        }
-
-        [Test]
         public void FamilyOrder()
         {
             SequentialFrom<Family>(0, "ToolLocal", "Prefab", "Lane", "ZoneBlock", "Icon", "SecondaryObject", "PrefabSubObject", "FlowGraph",
@@ -68,13 +62,6 @@ namespace SkylineTogether.Core.Tests.Contracts
         }
 
         [Test]
-        public void SectionTypesStartAtOne()
-        {
-            SequentialFrom<SectionType>(1, "Tx", "Values", "SysState", "PrefabState", "Icons", "Events", "Names", "CellMaps", "Clock", "Hash",
-                                        "Session", "Inspection", "TypeSets");
-        }
-
-        [Test]
         public void RejectReasonsAreStable()
         {
             SequentialFrom<RejectReason>(0, "None", "Conflict", "NoPermission", "NotEnoughMoney", "Locked", "OutsideTiles", "Invalid", "RateLimited",
@@ -88,9 +75,7 @@ namespace SkylineTogether.Core.Tests.Contracts
             Pin((Priority.P0, 0), (Priority.P1, 1), (Priority.P2, 2), (Priority.P3, 3), (Priority.Bulk, 4));
             Pin((Lane.Reliable, 0), (Lane.Unreliable, 1), (Lane.Bulk, 2));
             Pin((Delivery.ReliableOrdered, 0), (Delivery.Unreliable, 1));
-            SequentialFrom<NetRefKind>(0, "Null", "Local", "Slot", "Prefab", "Provisional", "Derived");
             SequentialFrom<SessionRole>(0, "Host", "CoHost", "Builder", "Viewer");
-            SequentialFrom<ObserveSource>(0, "Spawn", "Edc", "Sdc", "HotSet", "Motion", "Coalesced", "Repair", "Commit", "Prime", "CoCapture", "PathResult");
             SequentialFrom<CompressionKind>(0, "None", "ManagedLz4", "Zstd", "Lz4");
             SequentialFrom<ThreadKind>(0, "Main", "Network", "Worker", "Any");
             SequentialFrom<LogLevel>(0, "Trace", "Debug", "Info", "Warn", "Error", "Critical");
@@ -99,8 +84,6 @@ namespace SkylineTogether.Core.Tests.Contracts
         [Test]
         public void FlagEnumsHaveTheirBitValues()
         {
-            Pin((TouchFlags.None, 0), (TouchFlags.Updated, 1), (TouchFlags.BatchesUpdated, 2), (TouchFlags.PathfindUpdated, 4), (TouchFlags.EffectsUpdated, 8));
-            Pin((SpawnFlags.None, 0), (SpawnFlags.Mover, 1), (SpawnFlags.HasUpdateFrame, 2), (SpawnFlags.Repair, 4));
             Assert.Equal(2097152u, (uint)AttentionTopic.Statistics);
             Assert.Equal(1048576u, (uint)AttentionTopic.Transport);
             Assert.Equal(1u, (uint)AttentionTopic.Happiness);
@@ -109,7 +92,7 @@ namespace SkylineTogether.Core.Tests.Contracts
         [Test]
         public void EveryFlagEnumMemberIsASingleBit()
         {
-            foreach (Type type in new[] { typeof(TouchFlags), typeof(SpawnFlags), typeof(AttentionTopic), typeof(Permission) })
+            foreach (Type type in new[] { typeof(AttentionTopic), typeof(Permission) })
             {
                 Assert.NotNull(type.GetCustomAttribute<FlagsAttribute>(), type.Name + " is [Flags]");
                 foreach (object value in Enum.GetValues(type))
@@ -141,11 +124,7 @@ namespace SkylineTogether.Core.Tests.Contracts
             Assert.Equal(ThreadKind.Network, attribute.Kind);
             var usage = typeof(ThreadAffinityAttribute).GetCustomAttribute<AttributeUsageAttribute>();
             Assert.Equal(AttributeTargets.All, usage.ValidOn);
-            var windowUsage = typeof(CaptureWindowAttribute).GetCustomAttribute<AttributeUsageAttribute>();
-            Assert.Equal(AttributeTargets.Method, windowUsage.ValidOn);
             Assert.Equal(ThreadKind.Any, typeof(ILog).GetCustomAttribute<ThreadAffinityAttribute>().Kind);
-            MethodInfo bind = typeof(IHostReplicationEngine).GetMethod("Bind");
-            Assert.NotNull(bind.GetCustomAttribute<CaptureWindowAttribute>(), "Bind is a capture-window member");
             MethodInfo poll = typeof(ITransport).GetMethod("Poll");
             Assert.Equal(ThreadKind.Network, poll.GetCustomAttribute<ThreadAffinityAttribute>().Kind);
         }

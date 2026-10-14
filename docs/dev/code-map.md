@@ -13,9 +13,9 @@ mod works is described in [ARCHITECTURE.md](../ARCHITECTURE.md), written from th
 | `tests/SkylineTogether.Core.Tests` | net8.0 console app | Compiles the Core sources directly and tests them with its own small framework ([testing.md](testing.md)). |
 | `ui/SkylineTogether.mjs` | ES module, no bundler | The in-game UI (panel, title screen page, chat dock, join and error screens). See [ui/README.md](../../ui/README.md). |
 
-Some Core code is not used by the game layer (the original intent format, a beacon-based repair ladder, several
-bandwidth controllers); [ARCHITECTURE.md](../ARCHITECTURE.md#unused-core-code) lists it. Check there before building on
-a Core type.
+Almost all Core code is reached by the game layer; the exceptions (test fakes and the network simulator) are listed in
+[ARCHITECTURE.md](../ARCHITECTURE.md#core-code-the-game-layer-does-not-reach). `python tools/reachability.py --explain
+<Type>` shows how the game layer reaches a Core type ([testing.md](testing.md#what-the-mod-never-reaches)).
 
 ## Where to start reading
 

@@ -266,40 +266,6 @@ namespace SkylineTogether.Core.Tests.Protocol
         }
 
         [Test]
-        public void HashDetail()
-        {
-            // class V | bucket 3 | atEpoch 128 | 2 slots: 3072, 3073 | hashes 0x11223344, 0xaabbccdd
-            const string hex = "04 | 03 | 8001 | 02 | 8018 8118 | 44332211 ddccbbaa";
-            var m = new HashDetailMessage
-            {
-                Class = ReplicationClass.V, Bucket = 3, AtEpoch = new EpochId(128),
-                Slots = new[] { new NetSlot(3072), new NetSlot(3073) }, Hashes = new uint[] { 0x11223344, 0xAABBCCDD }
-            };
-            AssertBytes(hex, Write<HashDetailMessage>(HashDetailMessage.Write, m));
-            byte[] bytes = Hex(hex);
-            HashDetailMessage read = HashDetailMessage.Decode(bytes, 0, bytes.Length);
-            Assert.Equal(ReplicationClass.V, read.Class);
-            Assert.Equal(3, read.Bucket);
-            Assert.Equal(new EpochId(128), read.AtEpoch);
-            Assert.SequenceEqual(m.Slots, read.Slots);
-            Assert.SequenceEqual(m.Hashes, read.Hashes);
-        }
-
-        [Test]
-        public void RepairRequest()
-        {
-            // class S | 2 slots: 5, 70000 | level hint Bucket
-            const string hex = "02 | 02 | 05 f0a204 | 02";
-            var m = new RepairRequestMessage { Class = ReplicationClass.S, Slots = new[] { new NetSlot(5), new NetSlot(70000) }, LevelHint = RepairLevel.Bucket };
-            AssertBytes(hex, Write<RepairRequestMessage>(RepairRequestMessage.Write, m));
-            byte[] bytes = Hex(hex);
-            RepairRequestMessage read = RepairRequestMessage.Decode(bytes, 0, bytes.Length);
-            Assert.Equal(ReplicationClass.S, read.Class);
-            Assert.SequenceEqual(m.Slots, read.Slots);
-            Assert.Equal(RepairLevel.Bucket, read.LevelHint);
-        }
-
-        [Test]
         public void SnapshotManifest()
         {
             // u32 id 9 | varint64 size 300 | digest lo 1 | digest hi 2 | varint chunk 256 KiB | varint epoch 5 | u32 frame 256

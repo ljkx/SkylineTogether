@@ -68,16 +68,8 @@ namespace SkylineTogether.Core.Tests.Scheduling
                 Assert.Equal(AttentionTopic.None, fromPanels & ~(AttentionTopic.Transport | AttentionTopic.Statistics), "other panels raise nothing");
                 var report = new ViewReport { Infoview = (byte)g.Int(0, 3), InfomodeMask = mask, PanelFlags = panels };
                 Assert.Equal(TopicMap.FromInfoview(report.Infoview, mask) | fromPanels, TopicMap.FromView(report));
-
-                TopicScope scope = TopicMap.ScopeOf(topics);
-                Assert.Equal((topics & InfomodeTopics.ResidentTopics) != 0, (scope & TopicScope.ResidentsOfInView) != 0);
-                Assert.Equal((topics & AttentionTopic.Wealth) != 0, (scope & TopicScope.HouseholdsOfInView) != 0);
-                Assert.Equal((topics & AttentionTopic.Profitability) != 0, (scope & TopicScope.CompaniesOfInView) != 0);
-                Assert.Equal((topics & AttentionTopic.Transport) != 0, (scope & TopicScope.AllLines) != 0);
-                Assert.Equal((topics & AttentionTopic.Statistics) != 0, (scope & TopicScope.StatisticEntities) != 0);
             });
             Assert.Equal(AttentionTopic.None, TopicMap.FromView(null));
-            Assert.Equal(TopicScope.None, TopicMap.ScopeOf(AttentionTopic.None));
         }
     }
 }

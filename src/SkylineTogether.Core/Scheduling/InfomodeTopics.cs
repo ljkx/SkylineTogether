@@ -12,9 +12,6 @@ namespace SkylineTogether.Core.Scheduling
     /// </summary>
     public static class InfomodeTopics
     {
-        private const AttentionTopic Residents = AttentionTopic.Happiness | AttentionTopic.Health | AttentionTopic.Wellbeing
-                                                 | AttentionTopic.Education | AttentionTopic.Age;
-
         // Game.Prefabs.BuildingStatusType, ObjectColorSystem.GetBuildingStatusColors (ObjectColorSystem.cs:846-1300)
         private static readonly AttentionTopic[] BuildingStatus =
         {
@@ -113,9 +110,6 @@ namespace SkylineTogether.Core.Scheduling
 
         /// <summary><c>ZoneSuitabilityInfomodePrefab</c>: zone suitability follows land value.</summary>
         public const AttentionTopic ZoneSuitabilityInfomode = AttentionTopic.LandValue;
-
-        /// <summary>The topics shared by every resident-based building status (happiness, health, wellbeing, education, age).</summary>
-        public const AttentionTopic ResidentTopics = Residents;
 
         /// <summary><c>BuildingStatusInfomodePrefab</c> / <c>BuildingStateInfomodePrefab</c> with this
         /// <c>Game.Prefabs.BuildingStatusType</c> value.</summary>

@@ -114,7 +114,6 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.Equal(Family.Event, FamilyRules.Classify(FamilyMarker.JournalOrChirpOrLifePath, default, out _));
             // a meeting is an event entity of the agents (service requests and meetings come first)
             Assert.Equal(Family.TransientAgent, FamilyRules.Classify(FamilyMarker.EventEntity | FamilyMarker.TransientAgent, default, out _));
-            Assert.Equal(ReplicationClass.S, FamilyRules.DefaultClass(Family.Event));
         }
     }
 }

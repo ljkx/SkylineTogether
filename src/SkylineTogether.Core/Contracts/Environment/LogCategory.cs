@@ -20,8 +20,6 @@ namespace SkylineTogether.Core
         public const string Protocol = "protocol";
         public const string Replication = "replication";
         public const string Integrity = "integrity";
-        public const string Intents = "intents";
-        public const string Scheduling = "scheduling";
         public const string Fields = "fields";
         public const string Compat = "compat";
         public const string Diagnostics = "diagnostics";

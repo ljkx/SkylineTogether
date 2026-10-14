@@ -29,19 +29,13 @@ namespace SkylineTogether.Core.Tests.Protocol
             Assert.Equal(512 * 1024, Limits.MaxMessageBytes);
             Assert.Equal(480 * 1024, Limits.FragmentThreshold);
             Assert.Equal(8 * 1024 * 1024, Limits.MaxUncompressedBytes);
-            Assert.Equal(256L * 1024 * 1024, Limits.MaxEpochTotalBytes);
             Assert.Equal(256 * 1024, Limits.MaxBulkChunkBytes);
             Assert.Equal(1200, Limits.MaxDatagramBytes);
             Assert.Equal(500, Limits.MaxChatChars);
             Assert.Equal(64, Limits.MaxNameChars);
             Assert.Equal(4 * 1024 * 1024, Limits.MaxProposalBytes);
-            Assert.Equal(64L * 1024 * 1024, Limits.MaxProposalTotalBytes);
-            Assert.Equal(200_000, Limits.MaxProposalEntities);
-            Assert.Equal(512, Limits.MaxRepairSlots);
             Assert.Equal(256, Limits.CompressThreshold);
             Assert.Equal(4, Limits.MaxPartialMessagesPerPeer);
-            Assert.Equal(16383, Limits.MaxBucket);
-            Assert.Equal(1024, Limits.MaxHashDetailSlots);
         }
 
         [Test]
@@ -54,8 +48,6 @@ namespace SkylineTogether.Core.Tests.Protocol
             long largestMessage = Limits.MaxUncompressedBytes + Limits.EnvelopeOverheadBytes;
             Assert.True((largestMessage + Fragmenter.ChunkBytes - 1) / Fragmenter.ChunkBytes <= Limits.MaxFragmentsPerMessage, "fragments of the largest message");
             Assert.True(2 + 5 + 1 <= Limits.EnvelopeOverheadBytes, "kind, flags, size varint and codec byte");
-
-            Assert.True(Limits.MaxComponentsPerRecord == 64, "type-set ordinals are below 64 (enabled bits and dirty masks are ulong)");
         }
 
         [Test]
@@ -112,16 +104,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                 }), "Presence"),
                 (MessageKind.Ping, Size<PingMessage>(PingMessage.Write, new PingMessage { Sequence = uint.MaxValue }), "Ping")
             };
-
-            var topSlots = new NetSlot[Limits.MaxHashDetailSlots];
-            for (int i = 0; i < topSlots.Length; i++) topSlots[i] = new NetSlot(((uint)Limits.MaxBucket << NetSlot.BucketShift) | (uint)i);
-            checks.Add((MessageKind.HashDetail, Size<HashDetailMessage>(HashDetailMessage.Write, new HashDetailMessage
-            {
-                Class = ReplicationClass.OnDemand, Bucket = Limits.MaxBucket, AtEpoch = new EpochId(uint.MaxValue), Slots = topSlots, Hashes = new uint[topSlots.Length]
-            }), "HashDetail"));
-            var repairSlots = new NetSlot[Limits.MaxRepairSlots];
-            for (int i = 0; i < repairSlots.Length; i++) repairSlots[i] = new NetSlot(NetSlot.MaxValue);
-            checks.Add((MessageKind.RepairRequest, Size<RepairRequestMessage>(RepairRequestMessage.Write, new RepairRequestMessage { Slots = repairSlots, LevelHint = RepairLevel.Snapshot }), "RepairRequest"));
 
             foreach ((MessageKind kind, int size, string name) in checks)
             {

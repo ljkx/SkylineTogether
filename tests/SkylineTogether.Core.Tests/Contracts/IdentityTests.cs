@@ -99,16 +99,6 @@ namespace SkylineTogether.Core.Tests.Contracts
         }
 
         [Test]
-        public void LocalIdNoneIsZero()
-        {
-            Assert.True(LocalId.None.IsNone);
-            Assert.True(default(LocalId).IsNone);
-            Assert.False(new LocalId(1).IsNone);
-            Assert.Equal(new LocalId(9), new LocalId(9));
-            Assert.True(new LocalId(9) != new LocalId(10));
-        }
-
-        [Test]
         public void PrefabRankNoneIsMinusOneAndDefaultIsRankZero()
         {
             Assert.Equal(-1, PrefabRank.None.Value);
@@ -120,26 +110,6 @@ namespace SkylineTogether.Core.Tests.Contracts
             Assert.Equal(new PrefabRank(5), new PrefabRank(5));
             Assert.Equal("prefab:none", PrefabRank.None.ToString());
             Assert.Equal("prefab:5", new PrefabRank(5).ToString());
-        }
-
-        [Test]
-        public void TypeRankComparesByValue()
-        {
-            Assert.True(new TypeRank(1) < new TypeRank(2));
-            Assert.True(new TypeRank(2) >= new TypeRank(2));
-            Assert.Equal(new TypeRank(65535), new TypeRank(ushort.MaxValue));
-            Assert.True(new TypeRank(3).CompareTo(new TypeRank(1)) > 0);
-            Assert.Equal(new TypeRank(7).GetHashCode(), new TypeRank(7).GetHashCode());
-        }
-
-        [Test]
-        public void TypeSetIdNoneIsZero()
-        {
-            Assert.True(TypeSetId.None.IsNone);
-            Assert.True(default(TypeSetId).IsNone);
-            Assert.False(new TypeSetId(1).IsNone);
-            Assert.Equal(new TypeSetId(3), new TypeSetId(3));
-            Assert.True(new TypeSetId(3) != new TypeSetId(4));
         }
 
         [Test]
@@ -166,19 +136,6 @@ namespace SkylineTogether.Core.Tests.Contracts
             Assert.Equal(new PeerId(4), new PeerId(4));
             Assert.Equal("peer:host", PeerId.Host.ToString());
             Assert.Equal("peer:4", new PeerId(4).ToString());
-        }
-
-        [Test]
-        public void EntityKeyMirrorsEntityNull()
-        {
-            Assert.True(EntityKey.Null.IsNull);
-            Assert.True(default(EntityKey).IsNull);
-            Assert.False(new EntityKey(0, 1).IsNull);
-            Assert.False(new EntityKey(1, 0).IsNull);
-            Assert.Equal(new EntityKey(5, 2), new EntityKey(5, 2));
-            Assert.True(new EntityKey(5, 2) != new EntityKey(5, 3), "a different version is a different entity");
-            Assert.Equal("Entity.Null", EntityKey.Null.ToString());
-            Assert.Equal("Entity(5:2)", new EntityKey(5, 2).ToString());
         }
     }
 }

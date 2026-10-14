@@ -317,40 +317,6 @@ namespace SkylineTogether.Core.Tests.Identity
         }
 
         [Test]
-        public void DefaultClassesFollowTheTreatmentColumn()
-        {
-            Assert.Equal(ReplicationClass.Excluded, FamilyRules.DefaultClass(Family.ToolLocal));
-            Assert.Equal(ReplicationClass.Channel, FamilyRules.DefaultClass(Family.Prefab));
-            Assert.Equal(ReplicationClass.Channel, FamilyRules.DefaultClass(Family.Icon));
-            foreach (Family derived in new[] { Family.Lane, Family.ZoneBlock, Family.SecondaryObject, Family.PrefabSubObject, Family.FlowGraph, Family.OwnedRoute })
-            {
-                Assert.Equal(ReplicationClass.Derived, FamilyRules.DefaultClass(derived), derived.ToString());
-                Assert.True(FamilyRules.IsDerived(derived), derived.ToString());
-            }
-            foreach (Family s in new[] { Family.NetNode, Family.NetEdge, Family.Aggregate, Family.Object, Family.Area, Family.Route, Family.Waypoint,
-                                         Family.Segment, Family.Event, Family.WaterSource, Family.ModEntity, Family.Generic })
-            {
-                Assert.Equal(ReplicationClass.S, FamilyRules.DefaultClass(s), s.ToString());
-                Assert.False(FamilyRules.IsDerived(s), s.ToString());
-            }
-            Assert.Equal(ReplicationClass.M, FamilyRules.DefaultClass(Family.Mover));
-            Assert.Equal(ReplicationClass.A, FamilyRules.DefaultClass(Family.Agent));
-            Assert.Equal(ReplicationClass.ALow, FamilyRules.DefaultClass(Family.TransientAgent));
-            Assert.Equal(ReplicationClass.V, FamilyRules.DefaultClass(Family.Statistic));
-            Assert.Equal(ReplicationClass.G, FamilyRules.DefaultClass(Family.Singleton));
-            Assert.Equal(ReplicationClass.Excluded, FamilyRules.DefaultClass((Family)200), "undefined values fail closed");
-            Assert.False(FamilyRules.IsDerived(Family.ToolLocal));
-            Assert.False(FamilyRules.IsDerived(Family.Prefab));
-
-            foreach (Family family in (Family[])Enum.GetValues(typeof(Family)))
-            {
-                // every defined family has a definite treatment
-                ReplicationClass cls = FamilyRules.DefaultClass(family);
-                Assert.True(family == Family.ToolLocal || cls != ReplicationClass.Excluded, family.ToString());
-            }
-        }
-
-        [Test]
         public void EveryRuleIsReachableAndDescribed()
         {
             var reached = new bool[FamilyRules.RuleCount + 1];

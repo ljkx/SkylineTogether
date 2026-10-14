@@ -25,8 +25,8 @@ All paths are under `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylin
 | `Player.log` | Unity's log (crashes, native errors) |
 
 The minimum level is Info and is not configurable. Categories (`Contracts/Environment/LogCategory.cs`): net, session,
-capture, apply, motion, join, gate, probe, ui, config, protocol, replication, integrity, intents, scheduling, fields,
-compat, diagnostics. Error pop-ups of the game's logger are suppressed for this log.
+capture, apply, motion, join, gate, probe, ui, config, protocol, replication, integrity, fields, compat,
+diagnostics. Error pop-ups of the game's logger are suppressed for this log.
 
 The first line after start is `Skyline Together <assembly version> loading`. The assembly version is pinned to
 `1.0.0.0` (the network id system is saved by assembly-qualified name), so it does not tell builds apart; see

@@ -88,59 +88,6 @@ namespace SkylineTogether.Core.Identity
             return consulted;
         }
 
-        /// <summary>
-        /// The built-in default replication class of a family (ARCHITECTURE.md#families, #host-capture); <c>policies.json</c>
-        /// <c>familyDefaults</c> may override it. Derived families are <see cref="ReplicationClass.Derived"/> (their keyed
-        /// state is K per type, by policy); prefab state and icons travel on channels; Event is S (existence and target
-        /// presence; chirps and journal entries get A per type by policy). Undefined values → Excluded (fail closed).
-        /// </summary>
-        public static ReplicationClass DefaultClass(Family family)
-        {
-            switch (family)
-            {
-                case Family.ToolLocal:
-                    return ReplicationClass.Excluded;
-                case Family.Prefab:
-                case Family.Icon:
-                    return ReplicationClass.Channel;
-                case Family.Lane:
-                case Family.ZoneBlock:
-                case Family.SecondaryObject:
-                case Family.PrefabSubObject:
-                case Family.FlowGraph:
-                case Family.OwnedRoute:
-                    return ReplicationClass.Derived;
-                case Family.NetNode:
-                case Family.NetEdge:
-                case Family.Aggregate:
-                case Family.Object:
-                case Family.Area:
-                case Family.Route:
-                case Family.Waypoint:
-                case Family.Segment:
-                case Family.Event:
-                case Family.WaterSource:
-                case Family.ModEntity:
-                case Family.Generic:
-                    return ReplicationClass.S;
-                case Family.Mover:
-                    return ReplicationClass.M;
-                case Family.Agent:
-                    return ReplicationClass.A;
-                case Family.TransientAgent:
-                    return ReplicationClass.ALow;
-                case Family.Statistic:
-                    return ReplicationClass.V;
-                case Family.Singleton:
-                    return ReplicationClass.G;
-                default:
-                    return ReplicationClass.Excluded;
-            }
-        }
-
-        /// <summary>True for families that every peer derives locally and that never get slots (ARCHITECTURE.md#derived-keys).</summary>
-        public static bool IsDerived(Family family) => DefaultClass(family) == ReplicationClass.Derived;
-
         /// <summary>A short text of a rule for the per-rule counts of the diagnostics dump.</summary>
         public static string DescribeRule(int ruleNumber)
         {
