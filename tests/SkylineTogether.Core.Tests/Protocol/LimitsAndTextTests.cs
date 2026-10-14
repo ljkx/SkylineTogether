@@ -25,7 +25,7 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void PlanConstantsArePinned()
         {
-            Assert.Equal(1, ProtocolVersion.Current);
+            Assert.Equal(2, ProtocolVersion.Current);
             Assert.Equal(512 * 1024, Limits.MaxMessageBytes);
             Assert.Equal(480 * 1024, Limits.FragmentThreshold);
             Assert.Equal(8 * 1024 * 1024, Limits.MaxUncompressedBytes);

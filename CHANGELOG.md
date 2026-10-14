@@ -70,6 +70,13 @@ No version has been published yet. Everything below is the work toward the first
   while you scroll up (with a "new below" button), shows times and a length counter, and wraps long words; text
   contrast raised to WCAG AA on the panels; repeated notifications replace each other instead of stacking; clearer
   English and German texts.
+- The host charges a forged or mod-tool proposal at least the vanilla price of the roads, tracks, pipes, power lines
+  and free-standing trees it creates (moving with mod tools stays free); game speed requests are rate-limited per
+  player; viewers may send mod channel messages only of kinds the mod declares with `viewer-message`.
+- Protocol version 2; every wire change now increments it (see `docs/dev/releasing.md`).
+- Less work per frame: decoded records are pooled, scanned entities are hashed from the record just written, deferred
+  and repair records are encoded once for all peers, link statistics are queried once per peer and frame, and clients
+  hash edit baselines only when a tool may need them and detect global-state edits once per frame.
 
 ### Fixed
 
