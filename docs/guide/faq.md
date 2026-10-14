@@ -47,7 +47,15 @@ Yes: in the player list, **…** → **Make viewer**. A viewer can only chat. **
 
 ### Can I ban a player?
 
-Not yet. **Kick** removes a player, but they can join again. Use a password to keep a session private.
+Yes. In the player list, **…** → **Ban** (click twice to confirm) removes the player and keeps them out of your sessions:
+by Steam ID, or by address for a player who joined by direct IP without a Steam identity. **Kick** only removes them;
+they may join again. The **Banned players** list in the host options has an **Unban** button per entry. To keep
+strangers out from the start, use a password or **Friends and invited only**.
+
+### Can someone help me manage the session?
+
+Yes: **…** → **Make co-host**. A co-host can kick builders and viewers and switch them between builder and viewer. A
+co-host cannot remove the host or another co-host, cannot ban and cannot change your settings or password.
 
 ### Which mods work?
 
@@ -65,8 +73,9 @@ No. Disable other multiplayer mods; two at once conflict.
 
 ### Is the connection encrypted? Is my password sent?
 
-Connections by Steam ID are encrypted by Steam Networking Sockets; optional direct IP connections are accepted without
-Steam authentication and may be unencrypted. The session password itself is never sent: the joining player's game
+Connections by Steam ID are encrypted by Steam Networking Sockets; optional direct IP connections may be accepted without
+Steam authentication and may be unencrypted, which is why they always need the session password (the port stays closed
+without one). The session password itself is never sent: the joining player's game
 proves that it knows the password with a challenge and response. See [SECURITY.md](../../SECURITY.md) for details and
 limits.
 

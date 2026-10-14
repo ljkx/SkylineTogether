@@ -278,7 +278,7 @@ namespace SkylineTogether.Net
                             return;
                         }
                         SteamNetworkingSockets.SetConnectionPollGroup(e.m_hConn, _pollGroup);
-                        var accepted = new SteamConnection(this, e.m_hConn, IdentityOf(e.m_info));
+                        var accepted = new SteamConnection(this, e.m_hConn, IdentityOf(e.m_info, IsDirect(e.m_info)));
                         _connections[key] = accepted;
                         ConfigureNew(accepted);
                     }
@@ -308,7 +308,7 @@ namespace SkylineTogether.Net
 
         private void ReportConnected(SteamConnection connection, SteamNetConnectionInfo_t info, ITransportEventSink sink)
         {
-            connection.Peer = IdentityOf(info);
+            connection.Peer = IdentityOf(info, connection.Peer.Direct || IsDirect(info));
             connection.Reported = true;
             _log.Info(LogCategory.Net, "connected: " + connection.Peer + " (" + info.m_szConnectionDescription + ")");
             sink.OnConnected(connection);
@@ -338,7 +338,16 @@ namespace SkylineTogether.Net
             return "connection closed";
         }
 
-        private static PeerIdentity IdentityOf(SteamNetConnectionInfo_t info)
+        /// <summary>w8/security: the connection was accepted on this transport's direct-IP listen socket.</summary>
+        private bool IsDirect(SteamNetConnectionInfo_t info) => _ipSocket != HSteamListenSocket.Invalid && info.m_hListenSocket == _ipSocket;
+
+        /// <summary>
+        /// The peer as Steam reports it. The Steam ID is set only when Steam authenticated the remote identity (P2P
+        /// always is; a direct-IP connection only when both ends had Steam certificates); an unauthenticated direct
+        /// connection has an IP identity and reports Steam ID 0. The host treats both direct and unauthenticated
+        /// connections as needing the session password (<c>HostOptions.PasswordForUnauthenticated</c>).
+        /// </summary>
+        private static PeerIdentity IdentityOf(SteamNetConnectionInfo_t info, bool direct)
         {
             ulong steamId = info.m_identityRemote.m_eType == ESteamNetworkingIdentityType.k_ESteamNetworkingIdentityType_SteamID ? info.m_identityRemote.GetSteamID64() : 0;
             string address = null;
@@ -362,7 +371,7 @@ namespace SkylineTogether.Net
                     name = null;
                 }
             }
-            return new PeerIdentity(steamId, address, name);
+            return new PeerIdentity(steamId, address, name, direct);
         }
 
         private static SteamNetworkingConfigValue_t[] ConnectionOptions()
@@ -375,6 +384,11 @@ namespace SkylineTogether.Net
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_SendRateMax, RateOptions.InitialBytesPerSecond),
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutConnected, 30000),
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_TimeoutInitial, 20000),
+                // w8/security: direct-IP connections may arrive without Steam authentication (no certificate exchange,
+                // e.g. a LAN or a firewall that blocks Steam's servers); Steam then reports no Steam ID for them. The
+                // session layer never admits such a connection without the session password: the host refuses direct
+                // and unauthenticated connections when no password is set and challenges them otherwise
+                // (SessionHost.NeedsPassword); Steam P2P connections are always authenticated by their Steam ID.
                 Int32Option(ESteamNetworkingConfigValue.k_ESteamNetworkingConfig_IP_AllowWithoutAuth, 1),
             };
         }

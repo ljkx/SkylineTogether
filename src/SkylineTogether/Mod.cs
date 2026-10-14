@@ -64,6 +64,14 @@ namespace SkylineTogether
             var log = new GameLog(Name);
             Log = log;
             log.Info(LogCategory.Session, "Skyline Together " + typeof(Mod).Assembly.GetName().Version + " loading");
+            try
+            {
+                log.Info(LogCategory.Session, "build " + Session.GameInfoProvider.BuildText + " (the installer shows the same id; players must match it)");
+            }
+            catch (Exception ex)
+            {
+                log.Warn(LogCategory.Session, "could not compute the build id", ex);
+            }
             Step(log, "settings", () =>
             {
                 Settings = new SkylineTogetherSettings(this);

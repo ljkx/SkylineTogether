@@ -25,11 +25,20 @@ namespace SkylineTogether.Core.Tests.Session
         private readonly ByteWriter _w = new ByteWriter();
 
         public RawPeer(SessionRig rig, string name, ulong steamId)
+            : this(rig, new PeerIdentity(steamId, "loop:" + name, name), steamId)
+        {
+        }
+
+        /// <summary>
+        /// w8/security: a peer with the given transport identity (e.g. a direct connection without Steam identity),
+        /// whose hello claims <paramref name="claimedSteamId"/>.
+        /// </summary>
+        public RawPeer(SessionRig rig, PeerIdentity identity, ulong claimedSteamId)
         {
             _clock = rig.Clock;
-            Transport = rig.HostTransport.CreateClient(new PeerIdentity(steamId, "loop:" + name, name));
-            Name = name;
-            SteamId = steamId;
+            Transport = rig.HostTransport.CreateClient(identity);
+            Name = identity.DisplayName ?? "raw";
+            SteamId = claimedSteamId;
             IConnection c = Transport.Connect(new Endpoint());
             Channel = new PeerChannel(c, PeerId.Host, rig.Clock, rig.Log);
         }

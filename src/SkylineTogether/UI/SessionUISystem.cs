@@ -74,7 +74,7 @@ namespace SkylineTogether.UI
             public int Players, Chat, Recovery, Probes, ClientState, Progress, RecoverySeconds, Settings, EndSeq;
             public bool CanHost, CanJoin, InGame, Steam, Hold;
             public ulong InviteTarget;
-            public string LastEnd, Sync;
+            public string LastEnd, Sync, Resync;
             public SpeedState Speed;
 
             public bool Equals(StateKey o)
@@ -82,7 +82,7 @@ namespace SkylineTogether.UI
                 return Mode == o.Mode && Players == o.Players && Chat == o.Chat && Recovery == o.Recovery && Probes == o.Probes && ClientState == o.ClientState
                        && Progress == o.Progress && RecoverySeconds == o.RecoverySeconds && Settings == o.Settings && EndSeq == o.EndSeq && CanHost == o.CanHost
                        && CanJoin == o.CanJoin && InGame == o.InGame && Steam == o.Steam && Hold == o.Hold && InviteTarget == o.InviteTarget
-                       && ReferenceEquals(LastEnd, o.LastEnd) && ReferenceEquals(Sync, o.Sync) && Speed.Equals(o.Speed);
+                       && ReferenceEquals(LastEnd, o.LastEnd) && ReferenceEquals(Sync, o.Sync) && ReferenceEquals(Resync, o.Resync) && Speed.Equals(o.Speed);
             }
 
             public override bool Equals(object obj) => obj is StateKey k && Equals(k);
@@ -123,6 +123,17 @@ namespace SkylineTogether.UI
             AddBinding(new TriggerBinding<int>(Group, "kick", peer => Trigger("kick", () => Mod.Sessions?.Kick((byte)Math.Max(0, Math.Min(255, peer))))));
             // gameplay branch: builder ↔ viewer
             AddBinding(new TriggerBinding<int>(Group, "toggleRole", peer => Trigger("toggleRole", () => Mod.Sessions?.ToggleRole((byte)Math.Max(0, Math.Min(255, peer))))));
+            // w8/security: bans, co-hosts, the join policy, the integrity resync offer
+            AddBinding(new TriggerBinding<int>(Group, "ban", peer => Trigger("ban", () => Mod.Sessions?.Ban((byte)Math.Max(0, Math.Min(255, peer))))));
+            AddBinding(new TriggerBinding<int>(Group, "toggleCoHost", peer => Trigger("toggleCoHost", () => Mod.Sessions?.ToggleCoHost((byte)Math.Max(0, Math.Min(255, peer))))));
+            AddBinding(new TriggerBinding<string>(Group, "unban", key => Trigger("unban", () => Mod.Sessions?.Unban(key))));
+            AddBinding(new TriggerBinding<bool>(Group, "setFriendsOnly", on => Trigger("setFriendsOnly", () => Mod.Sessions?.SetFriendsOnly(on))));
+            AddBinding(new TriggerBinding(Group, "resync", () => Trigger("resync", () =>
+            {
+                Mod.Sync?.Integrity.AcceptResync();
+                Mod.Sessions?.Resync();
+            })));
+            AddBinding(new TriggerBinding(Group, "dismissResync", () => Trigger("dismissResync", () => Mod.Sync?.Integrity.DeclineResync())));
             AddBinding(new TriggerBinding<string, string, string>(Group, "saveHostSettings", (name, session, password) => Trigger("saveHostSettings", () =>
             {
                 if (Mod.Settings == null) return;
@@ -135,6 +146,9 @@ namespace SkylineTogether.UI
                     Mod.Settings.HostPassword = password ?? "";
                     // the host reads its options live: a new password applies to the next joiner
                     if (Mod.Sessions?.Host != null) Mod.Sessions.Host.Options.Password = Mod.Settings.HostPassword;
+                    // w8/security: direct connections need a password; removing it turns them off (a running host
+                    // refuses direct joiners from now on, HostOptions.PasswordForUnauthenticated)
+                    if (string.IsNullOrEmpty(Mod.Settings.HostPassword)) Mod.Settings.AllowDirectConnections = false;
                 }
                 Mod.Settings.ApplyAndSave();
             })));
@@ -142,7 +156,8 @@ namespace SkylineTogether.UI
             {
                 if (Mod.Settings == null) return;
                 Mod.Settings.MaxPlayers = Math.Max(2, Math.Min(16, maxPlayers));
-                Mod.Settings.AllowDirectConnections = allowDirect; // listen sockets: applies the next time the player hosts
+                // listen sockets: applies the next time the player hosts; w8/security: only with a host password
+                Mod.Settings.AllowDirectConnections = allowDirect && !string.IsNullOrEmpty(Mod.Settings.HostPassword);
                 Mod.Settings.RequireSameMods = requireSameMods;
                 if (port >= 1024 && port <= 65535) Mod.Settings.DirectPort = port;
                 SessionHost host = Mod.Sessions?.Host;
@@ -459,6 +474,7 @@ namespace SkylineTogether.UI
                 InviteTarget = _inviteTarget,
                 LastEnd = s.LastEndReason,
                 Sync = _sync,
+                Resync = Mod.Sync?.Integrity.ResyncOffer,
                 Speed = s.Host != null ? s.Host.Speed : client != null ? client.Speed : default(SpeedState),
             };
             if (_hasKey && key.Equals(_key)) return _state;
@@ -508,6 +524,27 @@ namespace SkylineTogether.UI
             Prop(sb, "allowDirect", settings != null && settings.AllowDirectConnections).Append(',');
             Prop(sb, "requireSameMods", settings == null || settings.RequireSameMods).Append(',');
             Prop(sb, "portSetting", settings?.DirectPort ?? SessionManager.DefaultDirectPort).Append(',');
+            // w8/security: the build id (as the installer prints it), the join policy, this player's role, the ban list
+            Prop(sb, "build", GameInfoProvider.BuildText).Append(',');
+            Prop(sb, "friendsOnly", settings != null && settings.FriendsOnly).Append(',');
+            Prop(sb, "localRole", s.Host != null ? "host" : s.Client != null ? RoleOf(s.Client.LocalRole) : "").Append(',');
+            Prop(sb, "resync", s.Client != null ? Mod.Sync?.Integrity.ResyncOffer ?? "" : "").Append(',');
+            sb.Append("\"bans\":[");
+            {
+                bool firstBan = true;
+                foreach (BanEntry b in s.Bans)
+                {
+                    if (!firstBan) sb.Append(',');
+                    firstBan = false;
+                    sb.Append('{');
+                    Prop(sb, "key", b.Key).Append(',');
+                    Prop(sb, "name", b.Name ?? "").Append(',');
+                    Prop(sb, "kind", b.SteamId != 0 ? "steam" : "ip").Append(',');
+                    Prop(sb, "id", b.SteamId != 0 ? b.SteamId.ToString(CultureInfo.InvariantCulture) : b.Address ?? "");
+                    sb.Append('}');
+                }
+            }
+            sb.Append("],");
             Prop(sb, "canInvite", steam && inviteTarget != 0).Append(',');
             Prop(sb, "inviteSteamId", inviteTarget != 0 ? inviteTarget.ToString(CultureInfo.InvariantCulture) : "").Append(',');
             // robust branch: the self-test (ARCH §13.4) in one line, and what blocks hosting/joining if anything
@@ -576,7 +613,10 @@ namespace SkylineTogether.UI
             Prop(sb, "seconds", (int)Math.Ceiling(r.SecondsUntilAttempt(now))).Append(',');
             Prop(sb, "reason", r.Reason ?? "").Append(',');
             Prop(sb, "canReconnect", r.CanReconnect).Append(',');
-            Prop(sb, "hostEnded", r.StartKind == ClientEndKind.SessionEnded || r.StartKind == ClientEndKind.Kicked).Append(',');
+            Prop(sb, "hostEnded", r.StartKind == ClientEndKind.SessionEnded || r.StartKind == ClientEndKind.Kicked || r.StartKind == ClientEndKind.Banned).Append(',');
+            // w8/security: removed (or banned) after loading the city: the panel says so instead of "the session has ended"
+            Prop(sb, "kicked", r.StartKind == ClientEndKind.Kicked).Append(',');
+            Prop(sb, "banned", r.StartKind == ClientEndKind.Banned).Append(',');
             Prop(sb, "attemptStage", r.Phase == RejoinPhase.Attempting && s.Client != null ? StageOf(s.Client.State) : "");
             sb.Append("},");
 
@@ -627,7 +667,7 @@ namespace SkylineTogether.UI
 
         /// <summary>
         /// The error screen's model: <c>{seq, kind, refuse, text, target, reportKind, missing, extra, versions, hostGame,
-        /// yourGame, hostProto, yourProto}</c>, or null.
+        /// yourGame, hostProto, yourProto, hostBuild, yourBuild}</c>, or null.
         /// </summary>
         private static void WriteEnd(StringBuilder sb, SessionEndInfo end)
         {
@@ -649,6 +689,8 @@ namespace SkylineTogether.UI
             Prop(sb, "yourGame", r?.ClientGameVersion ?? "").Append(',');
             Prop(sb, "hostProto", r?.HostProtocol ?? "").Append(',');
             Prop(sb, "yourProto", r?.ClientProtocol ?? "").Append(',');
+            Prop(sb, "hostBuild", r?.HostBuild ?? "").Append(',');
+            Prop(sb, "yourBuild", r?.ClientBuild ?? "").Append(',');
             sb.Append("\"missing\":[");
             if (r != null)
             {
@@ -701,6 +743,7 @@ namespace SkylineTogether.UI
                 case ClientEndKind.Refused: return "refused";
                 case ClientEndKind.PasswordRequired: return "passwordRequired";
                 case ClientEndKind.Kicked: return "kicked";
+                case ClientEndKind.Banned: return "banned";
                 case ClientEndKind.SessionEnded: return "sessionEnded";
                 case ClientEndKind.Timeout: return "timeout";
                 case ClientEndKind.ConnectionLost: return "connectionLost";

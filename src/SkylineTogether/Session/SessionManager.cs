@@ -287,6 +287,14 @@ namespace SkylineTogether.Session
                 Features.Registry.RearmAll();
                 string name = PlayerName;
                 var transport = new SteamSocketsTransport(TransportKind.SteamP2P, _log);
+                // w8/security: the direct-IP socket opens only with a password (the host would refuse every direct
+                // joiner without one anyway, HostOptions.PasswordForUnauthenticated)
+                bool direct = _settings.AllowDirectConnections && !string.IsNullOrEmpty(_settings.HostPassword);
+                if (_settings.AllowDirectConnections && !direct)
+                {
+                    _log.Warn(LogCategory.Session, "direct connections are on but no host password is set; only Steam joining is open");
+                    Notify(LocaleSource.Resolve("st.toast.directNeedsPassword"), ProgressState.Warning, null, 10f);
+                }
                 var options = new HostOptions
                 {
                     HostName = name,
@@ -295,9 +303,13 @@ namespace SkylineTogether.Session
                     Password = _settings.HostPassword ?? "",
                     MaxPlayers = Math.Max(2, Math.Min(16, _settings.MaxPlayers)),
                     RequireSameMods = _settings.RequireSameMods,
-                    Listen = new ListenOptions { VirtualPort = VirtualPort, AllowIp = _settings.AllowDirectConnections, IpPort = _settings.DirectPort, MaxConnections = Math.Max(2, _settings.MaxPlayers) },
+                    Listen = new ListenOptions { VirtualPort = VirtualPort, AllowIp = direct, IpPort = _settings.DirectPort, MaxConnections = Math.Max(2, _settings.MaxPlayers) },
                     // loadspeed: snapshot chunks are pumped between frames too (Steam connections are thread-safe)
                     BackgroundPump = true,
+                    // w8/security: join policy and the persisted ban list
+                    JoinPolicy = _settings.FriendsOnly ? JoinPolicy.FriendsAndInvited : JoinPolicy.Open,
+                    IsFriendOrInvited = id => Mod.Invites != null && Mod.Invites.IsFriendOrInvited(id),
+                    Bans = BanList.Parse(_settings.BannedPlayers),
                 };
                 var composite = new CompositeTransport(transport); // solo testing: the test recorder attaches here
                 var host = new SessionHost(composite, _info, _snapshots, options, _clock, _log);
@@ -305,6 +317,7 @@ namespace SkylineTogether.Session
                 HostTransport = composite;
                 host.ChatReceived += AddChat;
                 host.PlayersChanged += () => _playersVersion++;
+                host.BansChanged += () => SaveBans(host);
                 host.SpeedRequested += (peer, speed) =>
                 {
                     _speedRequest = speed;
@@ -376,6 +389,8 @@ namespace SkylineTogether.Session
                     MaxPlayers = 2,
                     RequireSameMods = true,
                     Listen = new ListenOptions { MaxConnections = 2 },
+                    // w8/security: no network part: the only peer is the in-process test recorder (no Steam identity)
+                    PasswordForUnauthenticated = false,
                 };
                 var host = new SessionHost(composite, _info, _snapshots, options, _clock, _log);
                 created = host;
@@ -693,7 +708,83 @@ namespace SkylineTogether.Session
             return had;
         }
 
-        public void Kick(byte peer) => Host?.Kick(new PeerId(peer), "Removed by the host");
+        /// <summary>Removes a player: the host directly, a co-host by asking the host (which checks the role).</summary>
+        public void Kick(byte peer)
+        {
+            if (peer == 0) return;
+            if (Host != null) Host.Kick(new PeerId(peer), "Removed by the host");
+            else if (Client != null && Client.LocalRole == SessionRole.CoHost) Client.RequestKick(new PeerId(peer));
+        }
+
+        /// <summary>w8/security: the host removes a player and bans them (Steam ID, or address without Steam identity).</summary>
+        public void Ban(byte peer)
+        {
+            if (Host == null || peer == 0) return;
+            Host.Ban(new PeerId(peer), "Banned by the host");
+        }
+
+        /// <summary>w8/security: the host makes a player co-host, or a co-host a builder again.</summary>
+        public void ToggleCoHost(byte peer)
+        {
+            SessionHost host = Host;
+            if (host == null || peer == 0) return;
+            var id = new PeerId(peer);
+            host.SetRole(id, host.GetRole(id) == SessionRole.CoHost ? SessionRole.Builder : SessionRole.CoHost);
+        }
+
+        /// <summary>w8/security: lifts a ban (the host's options; also outside a session, on the stored list).</summary>
+        public void Unban(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return;
+            if (Host != null)
+            {
+                Host.Unban(key); // BansChanged saves it
+                return;
+            }
+            BanList list = BanList.Parse(_settings.BannedPlayers);
+            if (!list.Remove(key)) return;
+            _settings.BannedPlayers = list.Serialize();
+            _settings.ApplyAndSave();
+            _playersVersion++;
+        }
+
+        /// <summary>w8/security: the bans for the host options' unban list (the running session's, or the stored list).</summary>
+        public IReadOnlyList<BanEntry> Bans => Host != null ? Host.Options.Bans.Entries : BanList.Parse(_settings.BannedPlayers).Entries;
+
+        /// <summary>w8/security: friends and invited players only (applies at once to a running session).</summary>
+        public void SetFriendsOnly(bool on)
+        {
+            _settings.FriendsOnly = on;
+            _settings.ApplyAndSave();
+            if (Host != null) Host.Options.JoinPolicy = on ? JoinPolicy.FriendsAndInvited : JoinPolicy.Open;
+        }
+
+        private void SaveBans(SessionHost host)
+        {
+            try
+            {
+                _settings.BannedPlayers = host.Options.Bans.Serialize();
+                _settings.ApplyAndSave();
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Session, "saving the ban list failed", ex);
+            }
+            _playersVersion++;
+        }
+
+        /// <summary>
+        /// w8/security: the city differs from the host's in too many places for object repairs (the integrity layer
+        /// offered a resync, the player accepted): leave and rejoin at once with a fresh snapshot through recovery.
+        /// </summary>
+        public void Resync()
+        {
+            SessionClient client = Client;
+            if (client == null || client.State != ClientState.Live || IsReplay) return;
+            _log.Info(LogCategory.Session, "resync: rejoining for a fresh copy of the host's city");
+            client.LeaveForResync(LocaleSource.Resolve("st.chat.resync"));
+            EndClient();
+        }
 
         /// <summary>
         /// A save started on this game (seen right before <c>SaveGameSystem</c> runs). On a client it saves a local copy
@@ -707,13 +798,26 @@ namespace SkylineTogether.Session
             Notify(LocaleSource.Resolve("st.toast.localSave"), ProgressState.Warning);
         }
 
-        /// <summary>gameplay branch: the host toggles a player between builder and viewer (ARCH §5.6).</summary>
+        /// <summary>
+        /// gameplay branch: the host toggles a player between builder and viewer (ARCH §5.6); w8/security: a co-host
+        /// asks the host for the same (builders and viewers only; the host checks).
+        /// </summary>
         public void ToggleRole(byte peer)
         {
-            SessionHost host = Host;
-            if (host == null || peer == 0) return;
+            if (peer == 0) return;
             var id = new PeerId(peer);
-            host.SetRole(id, RolePermissions.Toggle(host.GetRole(id)));
+            SessionHost host = Host;
+            if (host != null)
+            {
+                host.SetRole(id, RolePermissions.Toggle(host.GetRole(id)));
+                return;
+            }
+            SessionClient client = Client;
+            if (client == null || client.LocalRole != SessionRole.CoHost) return;
+            foreach (PlayerInfo p in client.Players)
+            {
+                if (p.Id == id) client.RequestRole(id, RolePermissions.Toggle(p.Role));
+            }
         }
 
         // ---------------------------------------------------------------- frame
@@ -865,7 +969,12 @@ namespace SkylineTogether.Session
                     }
                     break;
                 case RejoinPhase.NeedsChoice:
-                    if (kind == ClientEndKind.SessionEnded)
+                    if (kind == ClientEndKind.Kicked || kind == ClientEndKind.Banned)
+                    {
+                        // w8/security: removed after loading the city: say so (it used to read "the session has ended")
+                        Notify(LocaleSource.Resolve(kind == ClientEndKind.Banned ? "st.toast.recovery.banned" : "st.toast.recovery.kicked", "REASON", reason ?? ""), ProgressState.Warning);
+                    }
+                    else if (kind == ClientEndKind.SessionEnded)
                     {
                         Notify(LocaleSource.Resolve("st.toast.recovery.ended", "REASON", reason ?? ""), ProgressState.Warning);
                     }

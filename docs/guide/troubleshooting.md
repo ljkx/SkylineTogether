@@ -16,21 +16,23 @@
 When the host's game refuses a join, the joining player sees a screen with a title, an explanation and, for most
 reasons, a box **Details from the host** with the host's own text. **Copy details** copies everything for a bug report.
 
-The host checks, in this order: protocol version, a second connection of the same player, mod build, game version,
-mods (only with **Require the same mods** on), player limit, password.
+The host checks, in this order: bans, **Friends and invited only**, protocol version, a second connection of the same
+player, password (always for direct IP joiners), and only then build, game version, mods (only with **Require the same
+mods** on) and the player limit. A player who has not passed the password learns nothing about versions or mods.
 
 | Screen title | Cause | What to do |
 |---|---|---|
-| **Skyline Together versions differ** | The protocol versions differ, or the two DLLs are different builds. Every compile is a different build, even with the same version number. | Install the same `SkylineTogether-Setup.zip` on every PC and compare the build id the installer prints. |
+| **Skyline Together versions differ** | The protocol versions differ, or the two DLLs are different builds. Every compile is a different build, even with the same version number. The screen shows "Host build … · Your build …". | Install the same `SkylineTogether-Setup.zip` on every PC and compare the build id the installer prints (also in the panel's footer). |
 | **Game versions differ** | The game versions differ (shown as "Host: … · You: …"). | Update the game on both PCs (Steam may hold back an update until the game restarts). |
 | **Your mods don't match the host's** | The host requires the same code mods and yours differ. The screen lists what to **Enable or subscribe**, **Disable** and **Update to the host's version**. | Change the mods as listed, restart the game, join again. See [Different builds, game versions or mods](#different-builds-game-versions-or-mods). |
 | **The session is full** | The session already has as many players as **Max players** (which counts the host). | Ask the host to raise the limit, or wait until someone leaves. |
-| **Wrong password** | The password does not match. | Enter the right password in the field on the screen and click **Join with this password**. |
+| **Wrong password** | The password does not match, or there were too many wrong passwords ("Try again in N s": three wrong guesses are free, then each one locks you out longer, up to 10 minutes). | Enter the right password in the field on the screen and click **Join with this password** (after the wait). |
 | **This session needs a password** | No password was entered (for example after accepting a Steam invite, which does not carry the password). | Ask the host for it and enter it on the screen. |
 | **The host isn't ready yet** | An earlier join attempt of yours is still running on the host (the host heard from it in the last 15 seconds). | Wait a moment and click **Try again**, or restart the game. |
 
-Two more screens exist for reasons the host does not send in the current version: **You can't join this session** and
-**The host is closing the session**.
+| **You are banned from this session** | The host banned you (by Steam ID, or by address for direct joiners). | Only the host can lift it (host options, **Banned players**, **Unban**). |
+| **You can't join this session** | The host allows only Steam friends and invited players, or you connected by direct IP to a host without a password. | Ask the host for an invite (or to set a password for direct IP). |
+| **The host is closing the session** | The host stopped hosting or left the city while you were joining. | Join again when the host hosts again. |
 
 ## Join fails or times out
 
@@ -49,8 +51,9 @@ responding while joining."
 
 ## Different builds, game versions or mods
 
-- **Build.** The game compares the identity of the Skyline Together DLL, so every player must install the very same
-  build. The installer prints a **build id** (the start of the DLL's SHA-256); compare it before you play. Building the
+- **Build.** The game compares the build id of the Skyline Together DLL, so every player must install the very same
+  build. The build id is the start of the DLL's SHA-256: the installer prints it, the panel's footer and the
+  diagnostics show it, and a refusal shows both players' ids; compare it before you play. Building the
   mod yourself from the same commit does not guarantee an identical DLL on another PC; share one setup zip instead.
 - **Game version.** Compared exactly. Update both games.
 - **Mods.** Only code mods count (assets don't). Mods are matched by name and compared by version. Mods that only

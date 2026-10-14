@@ -22,7 +22,8 @@ const cs = read("src/SkylineTogether/UI/SessionUISystem.cs") + "\n" + read("src/
 const csBindings = new Set([...cs.matchAll(/GetterValueBinding<[^>]+>\(Group, "([^"]+)"/g)].map((m) => m[1]));
 const csTriggers = new Set([...cs.matchAll(/TriggerBinding(?:<[^>]*>)?\(Group, "([^"]+)"/g)].map((m) => m[1]));
 for (const b of ["state", "join", "net", "presence"]) if (!csBindings.has(b)) fail("SessionUISystem lost the binding " + b);
-for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "writeDiagnostics", "toggleNetHud", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends"]) {
+for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "writeDiagnostics", "toggleNetHud", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends",
+  "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync"]) {
   if (!csTriggers.has(t)) fail("SessionUISystem lost the trigger " + t);
 }
 // the invite contract the panel consumes (w6/invites)
@@ -158,7 +159,14 @@ function runHandlers(label) {
 const base = { steam: true, steamId: "76561190000000000", players: [], chat: [], canHost: true, canJoin: true, keepPassword: "\u0001keep",
   playerName: "Me", sessionNameSetting: "", hasPassword: false, joinTarget: "", lastEnd: "", status: "", sync: "", speed: "", sessionName: "", progress: 0, directPort: 0,
   inGame: true, maxPlayers: 8, allowDirect: false, requireSameMods: true, portSetting: 27015, canInvite: false, inviteSteamId: "", hold: false, stage: "",
-  speedValue: 1, speedPaused: false, speedHeld: false, end: null };
+  speedValue: 1, speedPaused: false, speedHeld: false, end: null, build: "2f076aad4234", friendsOnly: false, localRole: "", resync: "", bans: [] };
+// w8/security: bans, co-hosts, removal after loading, resync offers
+const bans = [{ key: "steam:76561190000000007", name: "Griefer", kind: "steam", id: "76561190000000007" }, { key: "ip:203.0.113.9", name: "", kind: "ip", id: "203.0.113.9" }];
+const coPlayers = [{ id: 0, name: "Host", host: true, you: false, state: "Live", ping: 40, progress: 1, color: "#f2b84b", role: "host" },
+  { id: 1, name: "Me", host: false, you: true, state: "Live", ping: 0, progress: 1, color: "#3fb6e8", role: "cohost" },
+  { id: 2, name: "Bo", host: false, you: false, state: "Live", ping: 155, progress: 1, color: "#5fcf7a", role: "builder" },
+  { id: 3, name: "Cy", host: false, you: false, state: "Live", ping: 80, progress: 1, color: "#ef6a6a", role: "viewer" },
+  { id: 4, name: "Di", host: false, you: false, state: "Live", ping: 60, progress: 1, color: "#a07af0", role: "cohost" }];
 const tags = { tags: [{ id: 1, name: "Anna", color: "#3fb6e8", x: 0.4, y: 0.6, on: true, activity: "building Small Road" }, { id: 2, name: "Bo", color: "#5fcf7a", x: 2, y: -1, on: false, activity: "" }] };
 const net = { show: true, text: "ping 40 ms · in 12.0 KB/s · out 3.1 KB/s" };
 const players = [{ id: 0, name: "Host", host: true, you: true, state: "Live", ping: 0, progress: 1, color: "#f2b84b", role: "host" },
@@ -202,6 +210,19 @@ const cases = {
   endTimeout: { state: { ...base, mode: "None", end: end("timeout") } },
   endLost: { state: { ...base, mode: "None", end: end("connectionLost") } },
   endKicked: { state: { ...base, mode: "None", end: end("kicked") } },
+  endBanned: { state: { ...base, mode: "None", end: end("banned") } },
+  endRefusedBanned: { state: { ...base, mode: "None", end: end("refused", "Banned") } },
+  endNotInvited: { state: { ...base, mode: "None", end: end("refused", "NotInvited") } },
+  endClosing: { state: { ...base, mode: "None", end: end("refused", "HostShuttingDown") } },
+  endBuildIds: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "build", hostBuild: "2f076aad4234", yourBuild: "0123456789ab" }) } },
+  hostingSecurity: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", hasPassword: true, allowDirect: true, friendsOnly: true, localRole: "host", bans,
+    players: coPlayers.map((p) => Object.assign({}, p, { you: p.host })), chat }, net, presence: tags },
+  lobbyBans: { state: { ...base, mode: "None", bans, friendsOnly: true } },
+  lobbyMenuNoPassword: { state: { ...base, mode: "None", inGame: false, hasPassword: false, allowDirect: true, bans } },
+  clientCoHost: { state: { ...base, mode: "Client", status: "Connected", sessionName: "X", localRole: "cohost", players: coPlayers, chat,
+    resync: "34 of 200 checked areas still differed from the host after repairs, 2 checks in a row" }, net, presence: tags },
+  recoveryKicked: { state: { ...base, mode: "Recovering", recovery: { phase: "NeedsChoice", attempt: 0, max: 6, seconds: 0, reason: "The host removed you from the session: Removed by the host", canReconnect: false, hostEnded: true, kicked: true, banned: false, attemptStage: "" } } },
+  recoveryBanned: { state: { ...base, mode: "Recovering", recovery: { phase: "NeedsChoice", attempt: 0, max: 6, seconds: 0, reason: "The host removed you from the session and banned you: Banned by the host", canReconnect: false, hostEnded: true, kicked: false, banned: true, attemptStage: "" } } },
   endEnded: { state: { ...base, mode: "None", end: end("sessionEnded") } },
   endFailed: { state: { ...base, mode: "None", end: end("failed") } },
   // robust branch: recovery after an unexpected disconnect, self-test line, blocked hosting
@@ -269,6 +290,7 @@ for (const t of triggerNames) if (!csTriggers.has(t)) fail("trigger the C# side 
 for (const t of triggers) if (t[0] !== "skylineTogether" && !(t[0] === "menu" && t[1] === "setActiveScreen")) fail("trigger outside the group: " + t[0] + "." + t[1]);
 console.log("triggers used: " + [...triggerNames].sort().join(", "));
 for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends", "toggleNetHud", "writeDiagnostics", "toggleRole",
+  "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync",
   "inviteFriend", "openInviteOverlay", "refreshFriends", "recordStart", "recordStop", "replayStart", "replayStop", "replayRefresh", "reconnect", "cancelReconnect", "stayOffline", "mainMenu"]) {
   if (!triggerNames.has(t)) fail("no UI path fires the trigger " + t);
 }

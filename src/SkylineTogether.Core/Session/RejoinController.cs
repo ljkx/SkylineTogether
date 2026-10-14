@@ -29,8 +29,9 @@ namespace SkylineTogether.Core.Session
     /// Recovery of a client whose session ended while it was in the host's city (ARCH §7.8, §12.2, simplified): the
     /// world is the host's city without a session, which must not quietly turn into a single-player game. Retryable
     /// ends (lost connection, failed join) schedule automatic rejoins with backoff, each through the normal join path
-    /// (connect, handshake, fresh snapshot, load); everything else (the host ended the session, a kick, a refusal, a
-    /// repeated failure) asks the player. The game layer holds the city paused while <see cref="Recovering"/> and acts
+    /// (connect, handshake, fresh snapshot, load); everything else (the host ended the session, a kick or ban, a
+    /// refusal, a repeated failure) asks the player. A resync the player accepted (<see cref="ClientEndKind.Resync"/>)
+    /// reconnects at once. The game layer holds the city paused while <see cref="Recovering"/> and acts
     /// on <see cref="Tick"/> returning true. Pure logic: the clock is passed in. Main thread only.
     /// </summary>
     public sealed class RejoinController
@@ -88,7 +89,14 @@ namespace SkylineTogether.Core.Session
                 StartKind = kind;
                 Reason = reason;
                 Attempt = 0;
-                if (retryable)
+                if (kind == ClientEndKind.Resync)
+                {
+                    // w8/security: the player asked for a fresh copy of the city: reconnect at once
+                    CanReconnect = true;
+                    NextAttemptAt = now;
+                    Phase = RejoinPhase.Waiting;
+                }
+                else if (retryable)
                 {
                     CanReconnect = true;
                     Schedule(now);
@@ -108,7 +116,7 @@ namespace SkylineTogether.Core.Session
                 return false;
             }
             Reason = reason;
-            if (kind == ClientEndKind.SessionEnded || kind == ClientEndKind.Kicked)
+            if (kind == ClientEndKind.SessionEnded || kind == ClientEndKind.Kicked || kind == ClientEndKind.Banned)
             {
                 StartKind = kind;
                 CanReconnect = false;

@@ -27,8 +27,14 @@ No version has been published yet. Everything below is the work toward the first
 - **Integrity**: rolling hash verification of replicated objects, per-object repair, host-authoritative warning icons
   and transport line checks.
 - **Game speed**: the host's speed is everyone's speed; builders' speed requests are applied for everyone.
-- **Players**: roles (host, builder, viewer) with permissions, kick, player list with ping, cursor rings with name tags
-  and activity, live building previews of other players in their colour, chat.
+- **Players**: roles (host, co-host, builder, viewer) with permissions, kick and ban (with an unban list in the host
+  options), player list with ping, cursor rings with name tags and activity, live building previews of other players in
+  their colour, chat.
+- **Access control**: "Friends and invited only" join policy; wrong-password lockout per Steam ID and address; the
+  password is checked before any version or mod detail is revealed; refusals for banned, not invited and a host that is
+  shutting down.
+- **Resync**: when object repairs cannot keep up, a bucket is re-sent as a whole, and massive divergence offers the
+  player a rejoin with a fresh copy of the city.
 - **UI**: Multiplayer page in the title screen menu, in-game panel, chat dock, join and error screens, notifications,
   Steam friends invite list, Options page as a fallback; English and German texts.
 - **Mod compatibility**: classification of code mods into world-affecting and local-only, adapters for 12 mods
@@ -55,6 +61,9 @@ No version has been published yet. Everything below is the work toward the first
 
 - `SkylineTogether.Core` builds against the .NET SDK's netstandard2.1 reference assemblies when the game is not
   installed (compile check for CI); the real build is unchanged.
+- One build id everywhere: the game compares and shows the installer's id (the start of the DLL's SHA-256) in the
+  panel footer, refusals, the log and the diagnostics.
+- The password key is derived with PBKDF2-HMAC-SHA256 (10 000 rounds) instead of a single SHA-256.
 
 ### Fixed
 
@@ -62,5 +71,8 @@ No version has been published yet. Everything below is the work toward the first
 - Client crash on bulldozing, a repair storm in the integrity check and host lag.
 - The title screen Multiplayer page rendered nothing in game.
 - Many sync fixes found by the sync coverage audit; see [SYNC-COVERAGE.md](docs/design/SYNC-COVERAGE.md).
+- Direct IP connections without Steam authentication were admitted without a password, and a Steam ID claimed in the
+  hello could replace another player's connection; both are refused now.
+- A player removed after loading the city saw "The session has ended" instead of the removal.
 
 [Unreleased]: https://github.com/ljkx/SkylineTogether/commits/main

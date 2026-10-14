@@ -159,8 +159,15 @@ const EN = {
   "st.ui.host.requireMods": "Require the same mods",
   "st.ui.host.requireModsHint": "Refuse players whose code mods differ from yours. They get a list of what to enable, disable or update.",
   "st.ui.host.allowDirect": "Allow direct IP connections",
-  "st.ui.host.allowDirectHint": "Also accept connections on a UDP port (needs port forwarding). Steam connections always work.",
+  "st.ui.host.allowDirectHint": "Also accept connections on a UDP port (needs port forwarding and a host password). Steam connections always work.",
   "st.ui.host.allowDirectNextTime": "Applies the next time you host.",
+  "st.ui.host.friendsOnly": "Friends and invited only",
+  "st.ui.host.friendsOnlyHint": "Only your Steam friends and players you invite from this panel can join through Steam. Direct IP joiners still need the password.",
+  "st.ui.host.allowDirectNeedsPassword": "Set a password first: Steam does not check direct connections, so the password is what keeps strangers out.",
+  "st.ui.host.bans": "Banned players",
+  "st.ui.host.bansHint": "Banned players can't join your sessions until you unban them.",
+  "st.ui.host.unban": "Unban",
+  "st.ui.host.banAddress": "address {ADDRESS}",
   "st.ui.host.port": "Port",
   "st.ui.host.portHint": "The UDP port players connect to directly (1024 to 65535).",
   "st.ui.host.start": "Host this city",
@@ -228,10 +235,11 @@ const EN = {
   "st.ui.end.versions": "Host: {HOST} · You: {YOU}",
   "st.ui.end.title.build": "Skyline Together versions differ",
   "st.ui.end.text.build": "Both players need exactly the same Skyline Together version. Update the mod on both PCs.",
+  "st.ui.end.builds": "Host build {HOST} · Your build {YOU}",
   "st.ui.end.title.full": "The session is full",
   "st.ui.end.text.full": "Ask the host to raise the player limit, or try again when someone leaves.",
   "st.ui.end.title.notAllowed": "You can't join this session",
-  "st.ui.end.text.notAllowed": "The host does not accept you in this session.",
+  "st.ui.end.text.notAllowed": "The host's session is open to their Steam friends and invited players only, or direct connections need a password. Ask the host for an invite.",
   "st.ui.end.title.notReady": "The host isn't ready yet",
   "st.ui.end.text.notReady": "The host's session is still starting, or an earlier join attempt is still running. Try again in a moment.",
   "st.ui.end.title.closing": "The host is closing the session",
@@ -242,6 +250,8 @@ const EN = {
   "st.ui.end.text.lost": "The connection to the host was interrupted.",
   "st.ui.end.title.kicked": "You were removed from the session",
   "st.ui.end.text.kicked": "The host removed you from the session.",
+  "st.ui.end.title.banned": "You are banned from this session",
+  "st.ui.end.text.banned": "The host banned you. Only the host can lift the ban.",
   "st.ui.end.title.ended": "The session has ended",
   "st.ui.end.text.ended": "The host ended the session.",
   "st.ui.end.title.failed": "Joining failed",
@@ -287,6 +297,10 @@ const EN = {
   "st.ui.players.makeViewer": "Make viewer",
   "st.ui.players.makeBuilder": "Make builder",
   "st.ui.players.kickConfirm": "Sure?",
+  "st.ui.players.ban": "Ban",
+  "st.ui.players.banConfirm": "Ban for good?",
+  "st.ui.players.makeCoHost": "Make co-host",
+  "st.ui.players.removeCoHost": "Remove co-host",
   "st.ui.players.actions": "Player actions",
   "st.ui.players.state.Handshaking": "connecting…",
   "st.ui.players.state.WaitingForSnapshot": "waiting for the city…",
@@ -298,6 +312,7 @@ const EN = {
   "st.ui.role.cohost": "Co-host",
   "st.ui.role.builder": "Builder",
   "st.ui.role.viewer": "Viewer",
+  "st.ui.session.cohost": "You are a co-host: you can remove builders and viewers and switch them between building and watching.",
   "st.ui.settings.title": "Session settings",
   "st.ui.settings.livePassword": "New password",
   "st.ui.settings.apply": "Apply",
@@ -322,6 +337,10 @@ const EN = {
   "st.ui.recovery.attempt.title": "Reconnecting (attempt {N} of {MAX})",
   "st.ui.recovery.ended.title": "The session has ended",
   "st.ui.recovery.ended.text": "You can return to the main menu, or keep playing an offline copy of the host's city.",
+  "st.ui.recovery.kicked.title": "You were removed from the session",
+  "st.ui.recovery.kicked.text": "The host removed you. You can return to the main menu, or keep playing an offline copy of the host's city.",
+  "st.ui.recovery.banned.title": "You were removed and banned",
+  "st.ui.recovery.banned.text": "The host removed you and banned you from this session. You can return to the main menu, or keep playing an offline copy of the host's city.",
   "st.ui.recovery.failed.title": "Not connected",
   "st.ui.recovery.failed.text": "Reconnecting did not work. You can try again, return to the main menu, or keep an offline copy.",
   "st.ui.recovery.reconnectNow": "Reconnect now",
@@ -330,6 +349,10 @@ const EN = {
   "st.ui.recovery.mainMenu": "Return to main menu",
   "st.ui.recovery.stayOffline": "Stay offline (keep a copy)",
   "st.ui.recovery.badge": "Disconnected",
+  "st.ui.resync.title": "Your city differs from the host's",
+  "st.ui.resync.text": "Object repairs could not keep up. Rejoin with a fresh copy of the host's city? It takes about as long as joining.",
+  "st.ui.resync.now": "Resync now",
+  "st.ui.resync.later": "Not now",
   "st.ui.selftest.details": "Details",
   // solo testing (record/replay verdict)
   "st.ui.test.title": "Solo test (no second PC needed)",
@@ -355,6 +378,7 @@ const EN = {
   "st.ui.test.copyPath": "Copy path",
   "st.ui.test.folder": "Recordings folder: {FOLDER}",
   "st.ui.blocked": "Hosting and joining are unavailable: {REASON}",
+  "st.ui.footer.build": "Build {BUILD}",
 };
 
 // The game's translate(), refreshed by every root on render (useLocalization is a hook).
@@ -1201,13 +1225,17 @@ function PlayerRow(p) {
   const pl = p.player;
   const s = p.state;
   const confirm = useConfirm();
+  const confirmBan = useConfirm();
   const [menu, setMenu] = React.useState(false);
   const [hover, hv] = useHover();
   const doing = p.activity;
   const color = pl.color || (doing && doing.color) || T.accent;
   const joining = pl.state !== "Live";
   const hosting = s.mode === "Hosting";
-  const canManage = hosting && !pl.host;
+  // w8/security: a co-host may remove builders and viewers and switch them (the host checks every request)
+  const coHostHere = s.mode === "Client" && s.localRole === "cohost" && !pl.host && !pl.you && (pl.role === "builder" || pl.role === "viewer");
+  const canManage = (hosting && !pl.host) || coHostHere;
+  const actionGap = { marginLeft: "6rem", marginTop: "4rem" };
   return h(
     "div",
     { style: { borderRadius: T.radiusInner, backgroundColor: menu ? "rgba(0, 0, 0, 0.18)" : hover ? T.hover : "rgba(0, 0, 0, 0)" } },
@@ -1239,11 +1267,17 @@ function PlayerRow(p) {
     canManage && menu
       ? h(
           "div",
-          { style: merge(S.row, { justifyContent: "flex-end", padding: "0 6rem 8rem 6rem" }) },
-          !joining // gameplay branch: viewers watch, builders build
-            ? h(Btn, { kind: "flat", style: { marginRight: "6rem" }, onClick: function () { send("toggleRole", pl.id); } }, pl.role === "viewer" ? t("st.ui.players.makeBuilder") : t("st.ui.players.makeViewer"))
+          { style: merge(S.row, { justifyContent: "flex-end", flexWrap: "wrap", padding: "0 6rem 8rem 6rem" }) },
+          !joining && pl.role !== "cohost" // gameplay branch: viewers watch, builders build
+            ? h(Btn, { kind: "flat", style: actionGap, onClick: function () { send("toggleRole", pl.id); } }, pl.role === "viewer" ? t("st.ui.players.makeBuilder") : t("st.ui.players.makeViewer"))
             : null,
-          h(Btn, { kind: confirm.armed ? "danger" : "flat", onClick: function () { confirm.run(function () { send("kick", pl.id); }); } }, confirm.armed ? t("st.ui.players.kickConfirm") : t("st.ui.players.kick"))
+          hosting && !joining // w8/security: co-hosts help moderate
+            ? h(Btn, { kind: "flat", style: actionGap, onClick: function () { send("toggleCoHost", pl.id); } }, pl.role === "cohost" ? t("st.ui.players.removeCoHost") : t("st.ui.players.makeCoHost"))
+            : null,
+          h(Btn, { kind: confirm.armed ? "danger" : "flat", style: actionGap, onClick: function () { confirm.run(function () { send("kick", pl.id); }); } }, confirm.armed ? t("st.ui.players.kickConfirm") : t("st.ui.players.kick")),
+          hosting
+            ? h(Btn, { kind: confirmBan.armed ? "danger" : "flat", style: actionGap, onClick: function () { confirmBan.run(function () { send("ban", pl.id); }); } }, confirmBan.armed ? t("st.ui.players.banConfirm") : t("st.ui.players.ban"))
+            : null
         )
       : null
   );
@@ -1283,6 +1317,7 @@ function SessionHeader(p) {
       h(Chip, { color: T.good }, t("st.ui.session.live"))
     ),
     !hosting ? h(Hint, { style: { padding: "0 6rem 6rem 6rem" } }, t("st.ui.session.speed", { SPEED: speedText(s) })) : null,
+    !hosting && s.localRole === "cohost" ? h(Hint, { style: { padding: "0 6rem 6rem 6rem" } }, t("st.ui.session.cohost")) : null,
     s.hold ? h(Notice, null, s.status || t("st.ui.session.holding")) : null,
     h(
       "div",
@@ -1499,8 +1534,10 @@ function RecoveryView(p) {
     text = STAGES.indexOf(r.attemptStage) >= 0 ? t("st.ui.join.stage." + r.attemptStage) : "";
     buttons = [h(Btn, { key: "cancel", style: full, onClick: function () { send("cancelReconnect"); } }, t("st.ui.recovery.cancel"))];
   } else {
-    title = r.hostEnded ? t("st.ui.recovery.ended.title") : t("st.ui.recovery.failed.title");
-    text = r.hostEnded ? t("st.ui.recovery.ended.text") : t("st.ui.recovery.failed.text");
+    // w8/security: removed (or banned) after loading the city says so; it used to read "the session has ended"
+    const why = r.banned ? "banned" : r.kicked ? "kicked" : r.hostEnded ? "ended" : "failed";
+    title = t("st.ui.recovery." + why + ".title");
+    text = t("st.ui.recovery." + why + ".text");
     if (r.canReconnect) buttons.push(h(Btn, { key: "again", kind: "primary", style: full, onClick: function () { send("reconnect"); } }, t("st.ui.recovery.reconnect")));
     buttons.push(h(Btn, { key: "menu", kind: r.canReconnect ? "flat" : "primary", style: full, onClick: function () { send("mainMenu"); } }, t("st.ui.recovery.mainMenu")));
     buttons.push(h(Btn, { key: "stay", style: full, onClick: function () { send("stayOffline"); } }, t("st.ui.recovery.stayOffline")));
@@ -1522,6 +1559,29 @@ function RecoveryView(p) {
   );
 }
 
+// w8/security: the integrity check found more divergence than object repairs fix: offer a rejoin with a fresh snapshot
+function ResyncOffer(p) {
+  const s = p.state;
+  if (!s.resync) return null;
+  return h(
+    Section,
+    null,
+    h(
+      Notice,
+      { color: T.warn },
+      h("div", { style: { fontWeight: "bold", marginBottom: "3rem" } }, t("st.ui.resync.title")),
+      t("st.ui.resync.text"),
+      h("div", { style: { marginTop: "4rem", color: T.textDimmer, fontSize: FS.xs } }, s.resync)
+    ),
+    h(
+      "div",
+      { style: merge(S.row, { padding: "2rem 6rem 6rem 6rem" }) },
+      h(Btn, { kind: "primary", style: { flex: 1, marginRight: "6rem" }, onClick: function () { send("resync"); } }, t("st.ui.resync.now")),
+      h(Btn, { kind: "flat", style: { flex: 1 }, onClick: function () { send("dismissResync"); } }, t("st.ui.resync.later"))
+    )
+  );
+}
+
 function SessionView(p) {
   const s = p.state;
   const hosting = s.mode === "Hosting";
@@ -1529,11 +1589,19 @@ function SessionView(p) {
     "div",
     null,
     h(SessionHeader, { state: s }),
+    !hosting ? h(ResyncOffer, { state: s }) : null,
     hosting ? h(RecordControls, null) : h(ReplayBanner, null),
     h(Players, { state: s }),
     hosting ? h(LiveSettings, { state: s }) : null,
     h(Diagnostics, { state: s })
   );
+}
+
+// w8/security: the build id, exactly as the installer prints it (players compare it when a join is refused)
+function BuildLine(p) {
+  const s = p.state;
+  if (!s.build) return null;
+  return h("div", { style: merge({ color: p.menu ? T.menuText2 : T.textFaint, fontSize: FS.xs, marginTop: p.menu ? "6rem" : "6rem", textAlign: p.menu ? "left" : "center" }, p.style) }, t("st.ui.footer.build", { BUILD: s.build }));
 }
 
 function LeaveButton(p) {
@@ -1734,18 +1802,53 @@ function useHostOptions(s) {
   };
 }
 
+// w8/security: the host's ban list with an unban button per entry (stored with the host's settings)
+function BanList(p) {
+  const bans = list(p.state.bans);
+  if (bans.length === 0) return null;
+  const menu = !!p.menu;
+  return h(
+    "div",
+    { style: { padding: menu ? "4rem 16rem 8rem 16rem" : "4rem 6rem" } },
+    h(menu ? "div" : Label, { style: menu ? { fontSize: FS.l, color: T.menuText, marginBottom: "4rem" } : null }, t("st.ui.host.bans")),
+    h(menu ? "div" : Hint, { style: menu ? { fontSize: FS.m, color: T.menuText2, marginBottom: "6rem" } : { fontSize: FS.xs, marginBottom: "4rem" } }, t("st.ui.host.bansHint")),
+    bans.map(function (b) {
+      return h(
+        "div",
+        { key: b.key, style: merge(S.row, { padding: "4rem 0", minHeight: "32rem" }, border("1rem", menu ? T.menuBorder : T.divider, ["Top"])) },
+        h(
+          "div",
+          { style: { flex: 1, minWidth: 0 } },
+          h("div", { style: merge(S.ellipsis, { color: menu ? T.menuText : T.text, fontSize: menu ? FS.m : FS.s }) }, b.name || b.id),
+          h("div", { style: merge(S.ellipsis, { color: menu ? T.menuText2 : T.textDimmer, fontSize: FS.xs }) }, b.kind === "ip" ? t("st.ui.host.banAddress", { ADDRESS: b.id }) : b.id)
+        ),
+        h(Btn, { kind: menu ? "menuSecondary" : "flat", style: { marginLeft: "8rem" }, onClick: function () { send("unban", b.key); } }, t("st.ui.host.unban"))
+      );
+    })
+  );
+}
+
 function HostOptions(p) {
   const s = p.state;
   const o = useHostOptions(s);
+  const [friendsOnly, setFriendsOnly] = React.useState(!!s.friendsOnly);
+  // w8/security: direct connections need a password (Steam does not check those players)
+  const directOk = !!s.hasPassword;
   return h(
     "div",
     null,
     h(GameRow, { label: t("st.ui.host.maxPlayers"), hint: t("st.ui.host.maxPlayersHint") }, h(Stepper, { value: o.maxPlayers, min: 2, max: 16, onChange: o.setMax })),
     h(GameRow, { label: t("st.ui.host.requireMods"), hint: t("st.ui.host.requireModsHint") }, h(Check, { checked: o.requireMods, onChange: o.setMods })),
-    h(GameRow, { label: t("st.ui.host.allowDirect"), hint: t("st.ui.host.allowDirectHint") + (p.live ? " " + t("st.ui.host.allowDirectNextTime") : "") }, h(Check, { checked: o.allowDirect, onChange: o.setDirect })),
-    o.allowDirect
+    h(GameRow, { label: t("st.ui.host.friendsOnly"), hint: t("st.ui.host.friendsOnlyHint") }, h(Check, { checked: friendsOnly, onChange: function (v) { setFriendsOnly(v); send("setFriendsOnly", !!v); } })),
+    h(
+      GameRow,
+      { label: t("st.ui.host.allowDirect"), hint: directOk ? t("st.ui.host.allowDirectHint") + (p.live ? " " + t("st.ui.host.allowDirectNextTime") : "") : t("st.ui.host.allowDirectNeedsPassword") },
+      h(Check, { checked: o.allowDirect && directOk, disabled: !directOk, onChange: o.setDirect })
+    ),
+    o.allowDirect && directOk
       ? h(GameRow, { label: t("st.ui.host.port") }, h(Field, { value: o.port, onChange: o.setPort, onBlur: function () { o.save({}); }, ids: true, max: 5, style: { width: "100rem", textAlign: "center" }, title: t("st.ui.host.port") }))
-      : null
+      : null,
+    h(BanList, { state: s })
   );
 }
 
@@ -2027,6 +2130,8 @@ function MenuHostPage(p) {
   const [session, setSession] = React.useState(s.sessionNameSetting || "");
   const [password, setPassword] = React.useState("");
   const [hoverInfo, setHoverInfo] = React.useState(null);
+  const [friendsOnly, setFriendsOnly] = React.useState(!!s.friendsOnly);
+  const directOk = !!s.hasPassword; // w8/security: direct connections need a password
   const o = useHostOptions(s);
   // review fix: an untouched (empty) password field keeps the stored host password instead of wiping it
   const save = function (pw) {
@@ -2068,10 +2173,18 @@ function MenuHostPage(p) {
     s.hasPassword ? h("div", { style: { padding: "0 16rem 8rem 16rem", textAlign: "right", fontSize: FS.m } }, h(LinkText, { onClick: function () { setPassword(""); save(""); } }, t("st.ui.host.removePassword"))) : null,
     h(MenuRow, { label: t("st.ui.host.maxPlayers"), info: t("st.ui.host.maxPlayersHint"), onInfo: setHoverInfo }, h(Stepper, { menu: true, value: o.maxPlayers, min: 2, max: 16, onChange: o.setMax })),
     h(MenuRow, { label: t("st.ui.host.requireMods"), info: t("st.ui.host.requireModsHint"), onInfo: setHoverInfo, onClick: function () { o.setMods(!o.requireMods); } }, h(Check, { menu: true, checked: o.requireMods, onChange: o.setMods })),
-    h(MenuRow, { label: t("st.ui.host.allowDirect"), info: t("st.ui.host.allowDirectHint"), onInfo: setHoverInfo, onClick: function () { o.setDirect(!o.allowDirect); } }, h(Check, { menu: true, checked: o.allowDirect, onChange: o.setDirect })),
-    o.allowDirect
+    h(MenuRow, { label: t("st.ui.host.friendsOnly"), info: t("st.ui.host.friendsOnlyHint"), onInfo: setHoverInfo, onClick: function () { setFriendsOnly(!friendsOnly); send("setFriendsOnly", !friendsOnly); } },
+      h(Check, { menu: true, checked: friendsOnly, onChange: function (v) { setFriendsOnly(v); send("setFriendsOnly", !!v); } })),
+    h(
+      MenuRow,
+      { label: t("st.ui.host.allowDirect"), info: directOk ? t("st.ui.host.allowDirectHint") : t("st.ui.host.allowDirectNeedsPassword"), onInfo: setHoverInfo, onClick: directOk ? function () { o.setDirect(!o.allowDirect); } : undefined },
+      h(Check, { menu: true, checked: o.allowDirect && directOk, disabled: !directOk, onChange: o.setDirect })
+    ),
+    !directOk ? h("div", { style: { padding: "0 16rem 8rem 16rem", color: T.menuText2, fontSize: FS.m } }, t("st.ui.host.allowDirectNeedsPassword")) : null,
+    o.allowDirect && directOk
       ? h(MenuRow, { label: t("st.ui.host.port"), info: t("st.ui.host.portHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: o.port, onChange: o.setPort, onBlur: function () { o.save({}); }, ids: true, max: 5, title: t("st.ui.host.port"), style: { flex: "0 1 140rem", textAlign: "center" } }))
-      : null
+      : null,
+    h(BanList, { state: s, menu: true })
   );
 }
 
@@ -2142,7 +2255,8 @@ function MenuNav(p) {
         s.steam === false ? t("st.ui.steam.missing.title") : t("st.ui.steam.ok")
       ),
       s.blocked ? h("div", { style: { color: T.bad, fontSize: FS.xs, lineHeight: 1.35, marginBottom: "6rem" } }, t("st.ui.blocked", { REASON: s.blocked })) : null,
-      h(SelfTest, { state: s, menu: true })
+      h(SelfTest, { state: s, menu: true }),
+      h(BuildLine, { state: s, menu: true })
     )
   );
 }
@@ -2323,7 +2437,8 @@ function endCopy(e) {
     if (r === "Mismatch") return e.reportKind === "game" ? "game" : e.reportKind === "build" ? "build" : "mods";
     if (r === "ProtocolVersion") return "build";
     if (r === "Full") return "full";
-    if (r === "Banned" || r === "NotInvited") return "notAllowed";
+    if (r === "Banned") return "banned";
+    if (r === "NotInvited") return "notAllowed";
     if (r === "HostPreparing") return "notReady";
     if (r === "HostShuttingDown") return "closing";
     return "failed";
@@ -2331,6 +2446,7 @@ function endCopy(e) {
   if (e.kind === "timeout") return "timeout";
   if (e.kind === "connectionLost") return "lost";
   if (e.kind === "kicked") return "kicked";
+  if (e.kind === "banned") return "banned";
   if (e.kind === "sessionEnded") return "ended";
   return "failed";
 }
@@ -2374,7 +2490,7 @@ function EndOverlay(p) {
   const copy = endCopy(e);
   const title = t("st.ui.end.title." + copy);
   const needsPassword = copy === "badPassword" || copy === "passwordRequired";
-  const canRetry = copy !== "kicked" && copy !== "ended" && copy !== "mods" && copy !== "game" && copy !== "build";
+  const canRetry = copy !== "kicked" && copy !== "banned" && copy !== "notAllowed" && copy !== "ended" && copy !== "mods" && copy !== "game" && copy !== "build";
   const dismiss = function () {
     setStore({ dismissedEnd: e.seq });
     send("dismissEnd");
@@ -2401,6 +2517,7 @@ function EndOverlay(p) {
       : null,
     copy === "game" && e.hostGame ? h("div", { style: merge(S.ids, { marginBottom: "14rem", fontSize: "15rem", color: OV.text }) }, t("st.ui.end.versions", { HOST: e.hostGame, YOU: e.yourGame || "?" })) : null,
     copy === "build" && e.hostProto ? h("div", { style: merge(S.ids, { marginBottom: "14rem", fontSize: "15rem", color: OV.text }) }, t("st.ui.end.versions", { HOST: e.hostProto, YOU: e.yourProto || "?" })) : null,
+    copy === "build" && e.hostBuild ? h("div", { style: merge(S.ids, { marginBottom: "14rem", fontSize: "15rem", color: OV.text }) }, t("st.ui.end.builds", { HOST: e.hostBuild, YOU: e.yourBuild || "?" })) : null,
     needsPassword
       ? h(
           "div",
@@ -2752,7 +2869,11 @@ function GameRoot() {
       ? h(
           "div",
           { style: S.gamePanelPos },
-          h(PanelShell, { title: panelTitle(s), status: statusColor(mode), onClose: close, width: "420rem", maxHeight: "78vh", footer: live ? h(LeaveButton, { state: s }) : null }, s.steam === false && mode === "None" ? h(SteamMissing, { style: { margin: "8rem" } }) : h(PanelContent, { state: s })),
+          h(
+            PanelShell,
+            { title: panelTitle(s), status: statusColor(mode), onClose: close, width: "420rem", maxHeight: "78vh", footer: h("div", null, live ? h(LeaveButton, { state: s }) : null, h(BuildLine, { state: s, style: live ? null : { marginTop: 0 } })) },
+            s.steam === false && mode === "None" ? h(SteamMissing, { style: { margin: "8rem" } }) : h(PanelContent, { state: s })
+          ),
           showInvites ? h(InvitePopover, null) : null
         )
       : null,

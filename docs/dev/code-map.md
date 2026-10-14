@@ -34,7 +34,7 @@ target design, and the code implements a playable subset of it (see its "As buil
 | `Replay` | Solo test: recording format, recorder peer, playback transport, `ReplayChecker`, `ReplayVerdict` |
 | `Replication` | Policy table and value shadows |
 | `Scheduling` | Bandwidth budgets, token buckets, attention and agent planners |
-| `Session` | `SessionHost`, `SessionClient`, `PeerChannel`, `RejoinController`, presence, mod compatibility, `SessionCrypto` |
+| `Session` | `SessionHost`, `SessionClient`, `PeerChannel`, `RejoinController`, presence, mod compatibility, `SessionCrypto`, `JoinSecurity` (bans, join policy, password lockout, co-host rules), `BuildId` |
 | `Sync` | `SyncBatch` records, proposal guards (rate limit, conflicts), id allocation, global channels, terrain/water/mover/integrity records |
 | `Testing` | Fakes for tests and tools (`ManualClock`, `DeterministicRandom`, `ListLog`) |
 | `Transport` | Loopback, network simulator, composite transport, outbox, blob transfer, send rate control |

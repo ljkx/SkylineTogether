@@ -30,6 +30,9 @@ namespace SkylineTogether.Core.Session
         public string ClientGameVersion;
         public string HostProtocol;
         public string ClientProtocol;
+        /// <summary>w8/security: the build ids (<see cref="BuildId"/>, 12 hex digits) of a "build" mismatch.</summary>
+        public string HostBuild;
+        public string ClientBuild;
         /// <summary>Mods the host runs and the joiner lacks (the joiner enables or subscribes to them).</summary>
         public readonly List<ModEntry> Missing = new List<ModEntry>();
         /// <summary>Mods the joiner runs and the host does not (the joiner disables them).</summary>
@@ -100,6 +103,7 @@ namespace SkylineTogether.Core.Session
             Line(sb, "kind", r.Kind);
             if (r.HostGameVersion != null || r.ClientGameVersion != null) Line(sb, "game", r.HostGameVersion, r.ClientGameVersion);
             if (r.HostProtocol != null || r.ClientProtocol != null) Line(sb, "protocol", r.HostProtocol, r.ClientProtocol);
+            if (r.HostBuild != null || r.ClientBuild != null) Line(sb, "build", r.HostBuild, r.ClientBuild);
             foreach (ModEntry m in r.Missing) Line(sb, "missing", m.Name, m.Version, m.PlatformId);
             foreach (ModEntry m in r.Extra) Line(sb, "extra", m.Name, m.Version, m.PlatformId);
             foreach (ModVersionDifference v in r.Versions) Line(sb, "version", v.Name, v.HostVersion, v.ClientVersion, v.PlatformId);
@@ -131,6 +135,7 @@ namespace SkylineTogether.Core.Session
                     case "kind": r.Kind = Field(f, 1) ?? "mods"; break;
                     case "game": r.HostGameVersion = Field(f, 1); r.ClientGameVersion = Field(f, 2); break;
                     case "protocol": r.HostProtocol = Field(f, 1); r.ClientProtocol = Field(f, 2); break;
+                    case "build": r.HostBuild = Field(f, 1); r.ClientBuild = Field(f, 2); break;
                     case "missing": r.Missing.Add(new ModEntry { Name = Field(f, 1), Version = Field(f, 2), PlatformId = Field(f, 3) }); break;
                     case "extra": r.Extra.Add(new ModEntry { Name = Field(f, 1), Version = Field(f, 2), PlatformId = Field(f, 3) }); break;
                     case "version": r.Versions.Add(new ModVersionDifference { Name = Field(f, 1), HostVersion = Field(f, 2), ClientVersion = Field(f, 3), PlatformId = Field(f, 4) }); break;

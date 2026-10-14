@@ -3,8 +3,10 @@ using SkylineTogether.Core.Buffers;
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// The payload of <see cref="ControlKind.PasswordChallenge"/> (host → client on a direct-IP connection, ARCH §14.2):
-    /// the host's 16-byte nonce, the session salt for PBKDF2 and the session id the response MAC covers.
+    /// The payload of <see cref="ControlKind.PasswordChallenge"/> (host → client, ARCH §14.2), sent right after the hello
+    /// whenever the session has a password (always for a direct-IP or unauthenticated connection, which is refused when
+    /// the host set none): the host's fresh 16-byte nonce, the session salt for PBKDF2 and the session id the response
+    /// MAC covers. No compatibility detail is sent before the answer was right.
     /// <code>
     /// bytes hostNonce (≤ 64) | bytes salt (≤ 64) | u32 sessionId
     /// </code>

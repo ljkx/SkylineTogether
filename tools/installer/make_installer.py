@@ -14,6 +14,9 @@ release = os.path.join(dist, zips[-1])
 version = re.match(r'SkylineTogether-(.*)\.zip$', zips[-1]).group(1)
 payload = open(release, 'rb').read()
 with zipfile.ZipFile(io.BytesIO(payload)) as z:
+    # the build id: the first 12 hex digits of the SHA-256 of the shipped SkylineTogether.dll. The game computes the same
+    # value from the loaded DLL (Core Session/BuildId.cs, GameInfoProvider.Build) and the installer script from the
+    # installed file, so all three print the same id.
     build = hashlib.sha256(z.read('SkylineTogether/SkylineTogether.dll')).hexdigest()[:12]
 b64 = base64.b64encode(payload).decode('ascii')
 lines = '\n'.join(b64[i:i + 120] for i in range(0, len(b64), 120))

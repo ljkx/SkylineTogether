@@ -54,6 +54,13 @@ namespace SkylineTogether.Core.Session
         public Permission BuilderPermissions = Permission.All;
     }
 
+    /// <summary>w8/security: what a <see cref="ControlKind.PlayerAction"/> request asks for.</summary>
+    public enum PlayerActionKind : byte
+    {
+        Kick,
+        SetRole
+    }
+
     /// <summary>Codecs of the small session payloads carried in <see cref="ControlMessage"/>s.</summary>
     public static class SessionPayloads
     {
@@ -138,6 +145,22 @@ namespace SkylineTogether.Core.Session
             float value = r.ReadSingle();
             fraction = float.IsNaN(value) ? 0f : Math.Max(0f, Math.Min(1f, value));
             return r.ReadByte() == (byte)JoinPhase.Downloading ? JoinPhase.Downloading : JoinPhase.Loading;
+        }
+
+        /// <summary><see cref="ControlKind.PlayerAction"/>: u8 action | u8 target peer | u8 role (ignored for a kick).</summary>
+        public static void WritePlayerAction(ByteWriter w, PlayerActionKind action, PeerId target, SessionRole role)
+        {
+            w.WriteByte((byte)action);
+            w.WriteByte(target.Value);
+            w.WriteByte((byte)role);
+        }
+
+        public static PlayerActionKind ReadPlayerAction(ByteReader r, out PeerId target, out SessionRole role)
+        {
+            var action = (PlayerActionKind)r.ReadByte();
+            target = new PeerId(r.ReadByte());
+            role = (SessionRole)r.ReadByte();
+            return action;
         }
 
         public static void WriteText(ByteWriter w, string text) => MessageFields.WriteText(w, text, 1024);

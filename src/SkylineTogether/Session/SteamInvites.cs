@@ -312,6 +312,41 @@ namespace SkylineTogether.Session
             }
         }
 
+        /// <summary>
+        /// w8/security: the "friends and invited only" join policy (<c>HostOptions.IsFriendOrInvited</c>): true for the
+        /// host's Steam friends (the same immediate-friends list the panel shows) and for players this host invited from
+        /// the panel during this session. Friends are read from Steam at most every 10 s.
+        /// </summary>
+        public bool IsFriendOrInvited(ulong steamId)
+        {
+            if (steamId == 0) return false;
+            if (_invitedAt.ContainsKey(steamId)) return true;
+            double now = _sessions.Clock.Seconds;
+            if (now - _friendsReadAt > FriendsCacheSeconds || now < _friendsReadAt)
+            {
+                _friendsReadAt = now;
+                _friendIds.Clear();
+                try
+                {
+                    int count = SteamFriends.GetFriendCount(EFriendFlags.k_EFriendFlagImmediate);
+                    for (int i = 0; i < count; i++)
+                    {
+                        CSteamID id = SteamFriends.GetFriendByIndex(i, EFriendFlags.k_EFriendFlagImmediate);
+                        if (id.IsValid()) _friendIds.Add(id.m_SteamID);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn(LogCategory.Net, "reading the Steam friends list failed", ex);
+                }
+            }
+            return _friendIds.Contains(steamId);
+        }
+
+        private const double FriendsCacheSeconds = 10;
+        private readonly HashSet<ulong> _friendIds = new HashSet<ulong>();
+        private double _friendsReadAt = double.NegativeInfinity;
+
         // ---------------------------------------------------------------------------------------------- per frame
 
         /// <summary>Once per frame: rich presence, the lobby, invites being read, the overlay check and a pending join.</summary>

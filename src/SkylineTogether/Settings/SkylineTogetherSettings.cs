@@ -23,7 +23,7 @@ namespace SkylineTogether.Settings
         /// <summary>Every option shown on the Options page (texts: <c>st.options.&lt;name&gt;.label/.desc</c>).</summary>
         public static readonly string[] OptionNames =
         {
-            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(AllowDirectConnections),
+            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(FriendsOnly), nameof(AllowDirectConnections),
             nameof(DirectPort), nameof(JoinTarget), nameof(JoinPassword), nameof(HostButton), nameof(JoinButton), nameof(LeaveButton), nameof(ShowNetworkHud),
             nameof(WriteDiagnosticsButton),
         };
@@ -66,8 +66,24 @@ namespace SkylineTogether.Settings
         [SettingsUISection(MainSection, HostGroup)]
         public bool RequireSameMods { get; set; }
 
+        /// <summary>w8/security: only the host's Steam friends and players invited from the panel may join (others: "not invited").</summary>
         [SettingsUISection(MainSection, HostGroup)]
+        public bool FriendsOnly { get; set; }
+
+        /// <summary>
+        /// w8/security: also accept direct connections on a UDP port. They are only opened while a host password is set
+        /// (the host refuses direct joiners without one anyway, <c>HostOptions.PasswordForUnauthenticated</c>).
+        /// </summary>
+        [SettingsUISection(MainSection, HostGroup)]
+        [SettingsUIDisableByCondition(typeof(SkylineTogetherSettings), nameof(NoHostPassword))]
         public bool AllowDirectConnections { get; set; }
+
+        /// <summary>
+        /// w8/security: the host's ban list (<c>Core.Session.BanList.Serialize</c>: one "steam|ip TAB id TAB time TAB
+        /// name" line per ban), kept with this player's settings; edited in the panel's unban list only.
+        /// </summary>
+        [SettingsUIHidden]
+        public string BannedPlayers { get; set; }
 
         [SettingsUISection(MainSection, HostGroup)]
         [SettingsUISlider(min = 1024, max = 65535, step = 1)]
@@ -130,6 +146,8 @@ namespace SkylineTogether.Settings
 
         public bool NotInSession() => Mod.Sessions == null || !Mod.Sessions.InSession;
 
+        public bool NoHostPassword() => string.IsNullOrEmpty(HostPassword);
+
         public override void SetDefaults()
         {
             PlayerName = "";
@@ -138,6 +156,8 @@ namespace SkylineTogether.Settings
             MaxPlayers = 8;
             RequireSameMods = true;
             AllowDirectConnections = false;
+            FriendsOnly = false;
+            BannedPlayers = "";
             DirectPort = 27015;
             JoinTarget = "";
             JoinPassword = "";

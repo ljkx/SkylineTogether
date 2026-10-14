@@ -66,11 +66,15 @@ Hosting always starts from inside a loaded city.
 3. Optional settings (saved as soon as you leave a field):
    - **Your name**: empty uses your Steam name.
    - **Session name**: what joining players see; empty means "&lt;your name&gt;'s city".
-   - **Password**: leave empty for no password.
+   - **Password**: leave empty for no password. Three wrong guesses in a row lock the guesser out for a while (longer
+     with every further wrong guess).
    - **Max players**: 2 to 16, including you (default 8).
    - **Require the same mods**: on by default. See [Mods](#mods).
-   - **Allow direct IP connections**: off by default. Also accepts connections on a UDP port (default 27015), which
-     needs port forwarding on your router. Steam connections work without it.
+   - **Friends and invited only**: off by default. When on, only your Steam friends and players you invite from the
+     panel can join through Steam; others are told they are not invited.
+   - **Allow direct IP connections**: off by default, and only available while a password is set (Steam does not check
+     direct joiners, so the password does). Also accepts connections on a UDP port (default 27015), which needs port
+     forwarding on your router. Steam connections work without it.
 4. Click **Host this city**.
 5. Invite your friends:
    - click **Invite friends** and then **Invite** next to a Steam friend, or
@@ -112,8 +116,14 @@ explains why; see [Troubleshooting](troubleshooting.md#join-refused).
   under Options, **Show other players' building previews**.
 - **Chat.** Press **Enter** (when no text field has focus) to open the chat dock above the toolbar; Enter sends, Esc
   closes. Messages are up to 500 characters; the last 100 lines are kept. Click the chat header to collapse it.
-- **Players list (host).** The host's panel lists all players with their role and ping. The **…** button on a player
-  offers **Make viewer** / **Make builder** and **Kick**.
+- **Players list.** The panel lists all players with their role and ping. For the host, the **…** button on a player
+  offers **Make viewer** / **Make builder**, **Make co-host** / **Remove co-host**, **Kick** and **Ban**; a co-host gets
+  **Make viewer** / **Make builder** and **Kick** for builders and viewers.
+- **Build id.** The panel's footer (and the main menu page) shows **Build &lt;12 characters&gt;**, the same id the
+  installer prints. All players must show the same one.
+- **Resync.** If your city drifts apart from the host's in many places that repairs cannot fix, the panel offers
+  **Resync now**: your game rejoins with a fresh copy of the city (as long as a join takes). **Not now** hides the offer
+  for 30 minutes.
 - **Network & diagnostics.** **Show network** adds a line with ping and traffic to the panel. **Write diagnostics**
   writes a report file for bug reports (see [Troubleshooting](troubleshooting.md#collecting-logs)).
 
@@ -121,13 +131,15 @@ explains why; see [Troubleshooting](troubleshooting.md#join-refused).
 
 | Role | Who | Can do |
 |---|---|---|
-| Host | The player who hosts | Everything, plus player management and session settings |
+| Host | The player who hosts | Everything, plus player management (kick, ban, roles, co-hosts) and session settings |
+| Co-host | Appointed by the host | Everything a builder can do, plus kick builders and viewers and switch them between builder and viewer. Not: the host or other co-hosts, bans, the host's settings |
 | Builder | Every player who joins (default) | Everything a player can do in the city: build, demolish, terraform, zone, economy, policies, progression, map tiles, game speed, mod tools, names, chat |
 | Viewer | Set by the host | Chat only. A viewer's tools are disabled, their speed requests are ignored and they cannot follow citizens |
 
-The host changes a role with **…** → **Make viewer** / **Make builder** in the player list, for players who are fully
-in. There is no ban list: a kicked player can join again (set a password if you need to keep someone out). A co-host
-role exists in the code but cannot be assigned yet.
+The host changes a role with **…** → **Make viewer** / **Make builder** / **Make co-host** in the player list, for
+players who are fully in. A kicked player can join again; a banned one cannot until the host unbans them (host options,
+**Banned players**). A player removed after loading the city sees "You were removed from the session" (or "removed and
+banned") and can return to the main menu or keep an offline copy.
 
 ## Game speed
 

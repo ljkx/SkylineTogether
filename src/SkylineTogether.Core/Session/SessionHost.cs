@@ -13,8 +13,23 @@ namespace SkylineTogether.Core.Session
         public string SessionName = "Skyline Together";
         public string HostName = "Host";
         public ulong HostSteamId;
-        /// <summary>Empty: no password.</summary>
+        /// <summary>Empty: no password. Read live: a change applies to the next challenge.</summary>
         public string Password = "";
+        /// <summary>
+        /// w8/security: a connection that arrived on the direct-IP socket or has no Steam identity must answer the
+        /// password challenge; without a password set such connections are refused (<c>NotInvited</c>), so a direct-IP
+        /// listen socket never admits anyone unauthenticated. In-process connections (<see cref="PeerIdentity.Local"/>, the
+        /// solo test recorder) are exempt; turn it off only for a host without any network part.
+        /// </summary>
+        public bool PasswordForUnauthenticated = true;
+        /// <summary>w8/security: open, or Steam friends and invited players only (read live).</summary>
+        public JoinPolicy JoinPolicy = JoinPolicy.Open;
+        /// <summary>w8/security: true when a Steam ID is the host's Steam friend or was invited (null: nobody is).</summary>
+        public Func<ulong, bool> IsFriendOrInvited;
+        /// <summary>w8/security: banned Steam IDs and addresses (read live; the game layer persists it).</summary>
+        public BanList Bans = new BanList();
+        /// <summary>w8/security: password challenges that may be open at once per Steam ID or address.</summary>
+        public int MaxPendingChallengesPerKey = 2;
         public int MaxPlayers = 8;
         /// <summary>Refuse joiners whose mod list differs from the host's.</summary>
         public bool RequireSameMods = true;
@@ -99,6 +114,20 @@ namespace SkylineTogether.Core.Session
             public HandshakeManifest Manifest;
             public bool AwaitingPassword;
             public byte[] HostNonce;
+            /// <summary>w8/security: the remote address (meaningful for direct connections only).</summary>
+            public string Address;
+            /// <summary>w8/security: the connection arrived on the direct-IP socket.</summary>
+            public bool Direct;
+            /// <summary>w8/security: an in-process connection (the test recorder): no Steam identity needed, no join policy.</summary>
+            public bool Local;
+            /// <summary>w8/security: Steam authenticated <see cref="SteamId"/> (the hello's claim is never trusted).</summary>
+            public bool SteamAuthenticated;
+            /// <summary>w8/security: the password was right, or none was needed; nothing compatibility-related is sent before.</summary>
+            public bool Authenticated;
+            /// <summary>w8/security: the keys of the password attempt limiter (Steam ID and/or address).</summary>
+            public string[] AuthKeys;
+            /// <summary>w8/security: the chat line when this player is removed (" was removed", " was banned"); null: " left".</summary>
+            public string LeaveText;
             public double Since;
             public BlobSender Sender;
             public FileStream SenderStream;
@@ -173,6 +202,10 @@ namespace SkylineTogether.Core.Session
         private SpeedState _speed = new SpeedState { Speed = 1, Paused = true };
         private SpeedState _sentSpeed;
         private bool _disposed;
+        private bool _stopping;
+        // w8/security: the PBKDF2 key of the current password (derived once per password, not per answer)
+        private string _keyFor;
+        private byte[] _key;
         private Action<PeerId, Envelope> _appMessage;
         // w8/robust: frame stalls of the host itself (a long save, a hitch, a minimised game): the silence and age limits
         // are suspended for a while afterwards, because the peers' messages were waiting for this side
@@ -195,6 +228,12 @@ namespace SkylineTogether.Core.Session
         }
 
         public HostOptions Options => _options;
+
+        /// <summary>w8/security: wrong-password lockouts per Steam ID and address (tunable by tests).</summary>
+        public PasswordAttemptLimiter PasswordAttempts { get; } = new PasswordAttemptLimiter();
+
+        /// <summary>w8/security: the ban list changed (<see cref="Ban"/>, <see cref="Unban"/>); the game layer persists it.</summary>
+        public event Action BansChanged;
 
         /// <summary>The player list changed (join, leave, state, ping).</summary>
         public event Action PlayersChanged;
@@ -532,7 +571,8 @@ namespace SkylineTogether.Core.Session
             foreach (Peer p in _peers.Values)
             {
                 ConnectionStats c = p.Channel.Connection.GetStats();
-                lines.Add((p.Admitted ? p.Id.ToString() : "unadmitted") + " \"" + p.Name + "\" steam=" + p.SteamId + " state=" + p.State
+                lines.Add((p.Admitted ? p.Id.ToString() : "unadmitted") + " \"" + p.Name + "\" steam=" + p.SteamId + (p.SteamAuthenticated ? "" : " (unauthenticated)") + (p.Direct ? " direct" : "")
+                          + " role=" + p.Role + " auth=" + (p.Authenticated ? "ok" : p.AwaitingPassword ? "challenged" : "pending") + " state=" + p.State
                           + " progress=" + Progress(p).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
                           + " ping=" + p.PingMs + "ms steamPing=" + c.PingMs + "ms quality=" + c.Quality.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
                           + " in=" + (int)c.InBytesPerSecond + "B/s out=" + (int)c.OutBytesPerSecond + "B/s pendingReliable=" + c.PendingReliableBytes
@@ -648,18 +688,92 @@ namespace SkylineTogether.Core.Session
                 _payload.Reset();
                 SessionPayloads.WriteText(_payload, reason ?? "Kicked by the host");
                 SendControl(p, ControlKind.Kick, _payload);
+                _log.Info(LogCategory.Session, p.Name + " was removed: " + (reason ?? "kicked by the host"));
+                p.LeaveText = " was removed";
                 Remove(p, 0, "kicked", true);
             }
         }
 
-        /// <summary>Ends the session for everyone.</summary>
+        /// <summary>
+        /// w8/security: removes an admitted player and bans them: by authenticated Steam ID, or by address when the
+        /// connection had no Steam identity. The player is told (<see cref="ControlKind.Ban"/>) and refused with
+        /// <see cref="RefuseReason.Banned"/> from then on. False for the host or an unknown peer.
+        /// </summary>
+        public bool Ban(PeerId id, string reason)
+        {
+            if (id == PeerId.Host) return false;
+            Peer p = FindAdmitted(id);
+            if (p == null) return false;
+            bool added = _options.Bans.Add(p.SteamAuthenticated ? p.SteamId : 0, p.SteamAuthenticated ? null : p.Address, p.Name, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            _payload.Reset();
+            SessionPayloads.WriteText(_payload, reason ?? "Banned by the host");
+            SendControl(p, ControlKind.Ban, _payload);
+            _log.Info(LogCategory.Session, p.Name + " was banned (" + (p.SteamAuthenticated ? "Steam ID " + p.SteamId : "address " + BanList.AddressHost(p.Address)) + ")" + (added ? "" : "; already on the list"));
+            p.LeaveText = " was banned";
+            Remove(p, 0, "banned", true);
+            if (added) BansChanged?.Invoke();
+            EnforceBans();
+            return true;
+        }
+
+        /// <summary>w8/security: removes a ban by its <see cref="BanEntry.Key"/>; false when there is none.</summary>
+        public bool Unban(string key)
+        {
+            if (!_options.Bans.Remove(key)) return false;
+            _log.Info(LogCategory.Session, "ban lifted: " + key);
+            BansChanged?.Invoke();
+            return true;
+        }
+
+        /// <summary>w8/security: drops every connection the ban list matches now (after it changed from outside).</summary>
+        public void EnforceBans()
+        {
+            foreach (Peer p in new List<Peer>(_peers.Values))
+            {
+                if (!IsBanned(p)) continue;
+                if (p.Admitted)
+                {
+                    _payload.Reset();
+                    SessionPayloads.WriteText(_payload, "Banned by the host");
+                    SendControl(p, ControlKind.Ban, _payload);
+                    p.LeaveText = " was banned";
+                    Remove(p, 0, "banned", true);
+                }
+                else
+                {
+                    Refuse(p, RefuseReason.Banned, "You are banned from this session.");
+                }
+            }
+        }
+
+        private bool IsBanned(Peer p) => _options.Bans != null && _options.Bans.IsBanned(p.SteamAuthenticated ? p.SteamId : 0, p.Direct || !p.SteamAuthenticated ? p.Address : null);
+
+        private Peer FindAdmitted(PeerId id)
+        {
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Admitted && p.Id == id) return p;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Ends the session for everyone: players get <see cref="ControlKind.SessionEnd"/>, connections still in the
+        /// handshake a <see cref="RefuseReason.HostShuttingDown"/> refusal (w8/security: before, they only saw the
+        /// connection drop).
+        /// </summary>
         public void Stop(string reason)
         {
             if (_disposed) return;
+            _stopping = true;
             _payload.Reset();
             SessionPayloads.WriteText(_payload, reason ?? "The host ended the session");
             BroadcastControl(ControlKind.SessionEnd, _payload, live: false);
-            foreach (Peer p in new List<Peer>(_peers.Values)) Remove(p, 0, "session ended", true);
+            foreach (Peer p in new List<Peer>(_peers.Values))
+            {
+                if (p.Admitted) Remove(p, 0, "session ended", true);
+                else Refuse(p, RefuseReason.HostShuttingDown, reason ?? "The host ended the session.");
+            }
             Dispose();
         }
 
@@ -692,6 +806,10 @@ namespace SkylineTogether.Core.Session
                 LastHeard = _clock.Seconds,
                 Name = connection.Peer.DisplayName ?? connection.Peer.ToString(),
                 SteamId = connection.Peer.SteamId,
+                SteamAuthenticated = connection.Peer.SteamId != 0,
+                Address = connection.Peer.Address,
+                Direct = connection.Peer.Direct,
+                Local = connection.Peer.Local,
             };
             // w8/robust: until it is admitted a connection may only send small handshake messages
             peer.Channel.MaxBodyBytes = _options.UnadmittedMaxBodyBytes;
@@ -807,19 +925,41 @@ namespace SkylineTogether.Core.Session
             switch (e.Kind)
             {
                 case MessageKind.Hello:
+                {
                     if (p.Hello != null) return;
-                    if (HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount) != ProtocolVersion.Current)
+                    if (_stopping)
                     {
-                        Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Host: " + ProtocolVersion.Current + ". Update both games to the same mod version.",
-                            new MismatchReport { Kind = "protocol", HostProtocol = ProtocolVersion.Current.ToString(System.Globalization.CultureInfo.InvariantCulture), ClientProtocol = HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount).ToString(System.Globalization.CultureInfo.InvariantCulture) });
+                        Refuse(p, RefuseReason.HostShuttingDown, "The host is ending the session.");
+                        return;
+                    }
+                    var theirProtocol = HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount);
+                    if (theirProtocol != ProtocolVersion.Current)
+                    {
+                        // w8/security: a peer that still has to prove the password learns no version of the host
+                        if (NeedsPassword(p))
+                        {
+                            Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Update both games to the same mod version.");
+                        }
+                        else
+                        {
+                            Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Host: " + ProtocolVersion.Current + ". Update both games to the same mod version.",
+                                new MismatchReport { Kind = "protocol", HostProtocol = ProtocolVersion.Current.ToString(System.Globalization.CultureInfo.InvariantCulture), ClientProtocol = theirProtocol.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+                        }
                         return;
                     }
                     p.Hello = HelloMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
                     if (!string.IsNullOrEmpty(p.Hello.DisplayName)) p.Name = p.Hello.DisplayName;
-                    if (p.Hello.SteamId != 0) p.SteamId = p.Hello.SteamId;
+                    // w8/security: only the transport's authenticated Steam ID is an identity; before, the hello's claim
+                    // replaced it, so anyone could pose as (and replace the connection of) another player
+                    if (p.Hello.SteamId != 0 && p.Hello.SteamId != p.SteamId)
+                    {
+                        _log.Info(LogCategory.Session, p.Name + " claims Steam ID " + p.Hello.SteamId + (p.SteamAuthenticated ? " but Steam authenticated " + p.SteamId : " without Steam authentication") + "; the claim is ignored");
+                    }
+                    if (!Screen(p)) return;
                     if (!ResolveDuplicate(p)) return;
-                    TryAdmit(p);
+                    BeginAuthentication(p);
                     return;
+                }
                 case MessageKind.Presence:
                     if (p.State == PlayerState.Live) RelayPresence(p, e);
                     return;
@@ -885,11 +1025,11 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         private bool ResolveDuplicate(Peer p)
         {
-            if (p.SteamId == 0) return true;
+            if (!p.SteamAuthenticated || p.SteamId == 0) return true;
             Peer old = null;
             foreach (Peer o in _peers.Values)
             {
-                if (o != p && o.Admitted && o.SteamId == p.SteamId) old = o;
+                if (o != p && o.Admitted && o.SteamAuthenticated && o.SteamId == p.SteamId) old = o;
             }
             if (old == null) return true;
             bool stillJoining = old.State != PlayerState.Live && _clock.Seconds - old.LastHeard < 15;
@@ -932,26 +1072,11 @@ namespace SkylineTogether.Core.Session
                     TryAdmit(p);
                     return;
                 case ControlKind.PasswordResponse:
-                {
-                    if (!p.AwaitingPassword) return;
-                    PasswordResponseMessage r = PasswordResponseMessage.Decode(payload, 0, payload.Length);
-                    byte[] expected = SessionCrypto.PasswordMac(_options.Password, p.HostNonce, r.ClientNonce, _salt, _sessionId);
-                    if (!SessionCrypto.FixedTimeEquals(expected, r.Mac))
-                    {
-                        Refuse(p, RefuseReason.BadPassword, "Wrong password.");
-                        return;
-                    }
-                    p.AwaitingPassword = false;
-                    // w8/tests: the capacity check in TryAdmit ran before the challenge; other players may have been
-                    // admitted while this one typed its password (several pending handshakes all passed it)
-                    if (IsFull())
-                    {
-                        Refuse(p, RefuseReason.Full, "The session is full.");
-                        return;
-                    }
-                    Admit(p);
+                    OnPasswordResponse(p, payload);
                     return;
-                }
+                case ControlKind.PlayerAction:
+                    OnPlayerAction(p, payload);
+                    return;
                 case ControlKind.ReadyForSnapshot:
                     // the client created its receiver; nothing else to do, the sender is already pumping
                     return;
@@ -1031,14 +1156,183 @@ namespace SkylineTogether.Core.Session
             }
         }
 
+        // ---------------------------------------------------------------- w8/security: screening, password, moderation
+
+        /// <summary>Bans and the join policy, judged on the transport's identity before anything else is sent.</summary>
+        private bool Screen(Peer p)
+        {
+            if (IsBanned(p))
+            {
+                Refuse(p, RefuseReason.Banned, "You are banned from this session.");
+                return false;
+            }
+            if (_options.JoinPolicy == JoinPolicy.FriendsAndInvited && p.SteamAuthenticated && !p.Local && !FriendOrInvited(p.SteamId))
+            {
+                Refuse(p, RefuseReason.NotInvited, "This session is open to the host's Steam friends and invited players only.");
+                return false;
+            }
+            return true;
+        }
+
+        private bool FriendOrInvited(ulong steamId)
+        {
+            Func<ulong, bool> check = _options.IsFriendOrInvited;
+            if (check == null) return false;
+            try
+            {
+                return check(steamId);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Session, "the friends check failed; treating " + steamId + " as not invited", ex);
+                return false;
+            }
+        }
+
+        /// <summary>A password is set, or the connection is direct or has no Steam identity (those always need one).</summary>
+        private bool NeedsPassword(Peer p)
+        {
+            return !string.IsNullOrEmpty(_options.Password) || (_options.PasswordForUnauthenticated && !p.Local && (p.Direct || !p.SteamAuthenticated));
+        }
+
+        /// <summary>The password attempt limiter's keys of a connection: its Steam ID, and its address when that means something.</summary>
+        private static string[] AuthKeysOf(Peer p)
+        {
+            var keys = new List<string>(2);
+            if (p.SteamAuthenticated) keys.Add("steam:" + p.SteamId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            string host = p.Direct || !p.SteamAuthenticated ? BanList.AddressHost(p.Address) : null;
+            if (host != null) keys.Add("ip:" + host);
+            if (keys.Count == 0) keys.Add("unknown"); // no identity at all: all such connections share one budget
+            return keys.ToArray();
+        }
+
+        /// <summary>After the hello: the password challenge when one is needed, else straight to the compatibility checks.</summary>
+        private void BeginAuthentication(Peer p)
+        {
+            if (!NeedsPassword(p))
+            {
+                p.Authenticated = true;
+                TryAdmit(p);
+                return;
+            }
+            if (string.IsNullOrEmpty(_options.Password))
+            {
+                Refuse(p, RefuseReason.NotInvited, "This host accepts direct connections only with a session password. Join through Steam instead.");
+                return;
+            }
+            p.AuthKeys = AuthKeysOf(p);
+            double now = _clock.Seconds;
+            if (PasswordAttempts.IsLocked(p.AuthKeys, now, out double wait))
+            {
+                Refuse(p, RefuseReason.BadPassword, LockoutText(wait));
+                return;
+            }
+            if (PendingChallenges(p.AuthKeys) >= Math.Max(1, _options.MaxPendingChallengesPerKey))
+            {
+                Refuse(p, RefuseReason.BadPassword, "Too many join attempts at once. Try again in a few seconds.");
+                return;
+            }
+            p.AwaitingPassword = true;
+            p.HostNonce = SessionCrypto.RandomBytes(16);
+            _payload.Reset();
+            PasswordChallengeMessage.Write(_payload, new PasswordChallengeMessage { HostNonce = p.HostNonce, Salt = _salt, SessionId = _sessionId });
+            SendControl(p, ControlKind.PasswordChallenge, _payload);
+        }
+
+        private int PendingChallenges(string[] keys)
+        {
+            int n = 0;
+            foreach (Peer o in _peers.Values)
+            {
+                if (!o.AwaitingPassword || o.AuthKeys == null) continue;
+                foreach (string k in o.AuthKeys)
+                {
+                    if (Array.IndexOf(keys, k) < 0) continue;
+                    n++;
+                    break;
+                }
+            }
+            return n;
+        }
+
+        private static string LockoutText(double seconds)
+        {
+            return "Too many wrong passwords. Try again in " + Math.Max(1, (int)Math.Ceiling(seconds)).ToString(System.Globalization.CultureInfo.InvariantCulture) + " s.";
+        }
+
+        private byte[] PasswordKey()
+        {
+            string password = _options.Password ?? "";
+            if (_key == null || !string.Equals(_keyFor, password, StringComparison.Ordinal))
+            {
+                _key = SessionCrypto.DeriveKey(password, _salt);
+                _keyFor = password;
+            }
+            return _key;
+        }
+
+        private void OnPasswordResponse(Peer p, byte[] payload)
+        {
+            if (!p.AwaitingPassword) return;
+            p.AwaitingPassword = false; // one answer per challenge: the nonce is spent
+            PasswordResponseMessage r = PasswordResponseMessage.Decode(payload, 0, payload.Length);
+            double now = _clock.Seconds;
+            // another connection of the same player or address may have locked it out meanwhile
+            if (PasswordAttempts.IsLocked(p.AuthKeys, now, out double wait))
+            {
+                Refuse(p, RefuseReason.BadPassword, LockoutText(wait));
+                return;
+            }
+            bool right = !string.IsNullOrEmpty(_options.Password) && r.ClientNonce != null && r.ClientNonce.Length >= SessionCrypto.MinNonceBytes
+                         && SessionCrypto.FixedTimeEquals(SessionCrypto.PasswordMac(PasswordKey(), p.HostNonce, r.ClientNonce, _sessionId), r.Mac);
+            if (!right)
+            {
+                double lockout = PasswordAttempts.OnFailure(p.AuthKeys, now);
+                _log.Warn(LogCategory.Session, p.Name + ": wrong password (" + string.Join(", ", p.AuthKeys ?? new string[0]) + ")" + (lockout > 0 ? "; locked out for " + (int)Math.Ceiling(lockout) + " s" : ""));
+                Refuse(p, RefuseReason.BadPassword, lockout > 0 ? "Wrong password. " + LockoutText(lockout) : "Wrong password.");
+                return;
+            }
+            PasswordAttempts.OnSuccess(p.AuthKeys);
+            p.Authenticated = true;
+            TryAdmit(p);
+        }
+
+        /// <summary>A co-host's kick or role change, checked against the sender's role (<see cref="Moderation"/>).</summary>
+        private void OnPlayerAction(Peer p, byte[] payload)
+        {
+            if (!p.Admitted || p.State != PlayerState.Live) return;
+            _reader.Reset(payload, 0, payload.Length);
+            PlayerActionKind action = SessionPayloads.ReadPlayerAction(_reader, out PeerId target, out SessionRole role);
+            Peer t = FindAdmitted(target);
+            SessionRole targetRole = target == PeerId.Host ? SessionRole.Host : t != null ? t.Role : SessionRole.Viewer;
+            bool allowed = t != null && t != p && (action == PlayerActionKind.Kick ? Moderation.CanKick(p.Role, targetRole)
+                : action == PlayerActionKind.SetRole && Moderation.CanSetRole(p.Role, targetRole, role));
+            if (!allowed)
+            {
+                _log.Info(LogCategory.Session, p.Name + " (" + p.Role + ") may not " + action + " " + target + " (" + targetRole + "); ignored");
+                return;
+            }
+            if (action == PlayerActionKind.Kick)
+            {
+                _log.Info(LogCategory.Session, p.Name + " (co-host) removes " + t.Name);
+                Kick(target, "Removed by " + p.Name);
+            }
+            else
+            {
+                SetRole(target, role);
+            }
+        }
+
         private void TryAdmit(Peer p)
         {
-            if (p.Hello == null || p.Manifest == null || p.Admitted || p.AwaitingPassword) return;
+            if (p.Hello == null || p.Manifest == null || p.Admitted || p.AwaitingPassword || !p.Authenticated) return;
             HandshakeDigests mine = _info.GetDigests();
             HandshakeDigests theirs = p.Hello.Digests;
             if (theirs.ModBuild != mine.ModBuild)
             {
-                Refuse(p, RefuseReason.Mismatch, "Skyline Together builds differ. Both players need exactly the same mod version.", new MismatchReport { Kind = "build" });
+                string hostBuild = BuildId.Format(mine.ModBuild), clientBuild = BuildId.Format(theirs.ModBuild);
+                Refuse(p, RefuseReason.Mismatch, "Skyline Together builds differ (host build " + hostBuild + ", yours " + clientBuild + "). Both players need exactly the same mod version.",
+                    new MismatchReport { Kind = "build", HostBuild = hostBuild, ClientBuild = clientBuild });
                 return;
             }
             if (!string.Equals(theirs.GameVersion, mine.GameVersion, StringComparison.Ordinal))
@@ -1057,18 +1351,10 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
             }
+            // w8/tests: several handshakes may pass the password at once; each is checked here, after its own answer
             if (IsFull())
             {
                 Refuse(p, RefuseReason.Full, "The session is full.");
-                return;
-            }
-            if (!string.IsNullOrEmpty(_options.Password))
-            {
-                p.AwaitingPassword = true;
-                p.HostNonce = SessionCrypto.RandomBytes(16);
-                _payload.Reset();
-                PasswordChallengeMessage.Write(_payload, new PasswordChallengeMessage { HostNonce = p.HostNonce, Salt = _salt, SessionId = _sessionId });
-                SendControl(p, ControlKind.PasswordChallenge, _payload);
                 return;
             }
             Admit(p);
@@ -1423,7 +1709,7 @@ namespace SkylineTogether.Core.Session
             if (p.Admitted)
             {
                 _playersDirty = true;
-                if (p.State == PlayerState.Live) SystemMessage(p.Name + " left");
+                if (p.State == PlayerState.Live || p.LeaveText != null) SystemMessage(p.Name + (p.LeaveText ?? " left"));
                 PeerLeft?.Invoke(p.Id);
             }
         }

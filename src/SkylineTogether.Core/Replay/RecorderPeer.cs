@@ -83,7 +83,7 @@ namespace SkylineTogether.Core.Replay
             _log = log ?? throw new ArgumentNullException(nameof(log));
             _options = options ?? new RecorderPeerOptions();
             if (info == null) throw new ArgumentNullException(nameof(info));
-            var (hostEnd, clientEnd) = LoopbackTransport.CreatePair(new PeerIdentity(0, "recorder-host", "Host"), new PeerIdentity(0, "recorder", _options.Name));
+            var (hostEnd, clientEnd) = LoopbackTransport.CreatePair(new PeerIdentity(0, "recorder-host", "Host"), new PeerIdentity(0, "recorder", _options.Name, false, local: true));
             _hostEnd = hostEnd;
             _hostEnd.Listen(new ListenOptions { MaxConnections = 1 });
             _hostEnd.ReportedSendRateBytesPerSecond = Math.Max(0, _options.LinkBytesPerSecond);

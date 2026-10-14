@@ -30,6 +30,14 @@ namespace SkylineTogether.Sync
     /// confirms, repairs and tolerates (see there for the storm guards). A tolerated entity is logged once with the
     /// components that differ (from the host's explanation).
     /// </para>
+    /// <para>
+    /// <b>Escalation</b> (w8/security, <see cref="RepairEscalation"/>): a bucket that keeps differing after its object
+    /// repairs, or differs in more objects than repairs are meant for, is rebaselined (every object of it re-sent through
+    /// the same re-send request; once per bucket per 10 minutes, a few a minute at most). Massive divergence (many buckets
+    /// mismatching cycle after cycle, many rebaselines, many objects given up) offers the player a resync: a rejoin with
+    /// a fresh snapshot (<see cref="ResyncOffer"/>, accepted through <see cref="SessionManager.Resync"/>), never forced and
+    /// rate-limited across rejoins.
+    /// </para>
     /// Entry points are called by <see cref="SyncController"/>; everything runs on the main thread.
     /// </summary>
     public sealed class IntegritySync
@@ -95,6 +103,10 @@ namespace SkylineTogether.Sync
 
         // ---------------------------------------------------------------- client state
         private readonly DivergenceTracker _tracker = new DivergenceTracker();
+        // w8/security: rebaselines and the resync offer above the object repairs
+        private readonly RepairEscalation _escalation = new RepairEscalation();
+        private int _cycleCompared;
+        private string _announcedOffer;
         private readonly DetailScheduler _scheduler = new DetailScheduler();
         private readonly DivergenceTracker.Outcome _outcome = new DivergenceTracker.Outcome();
         private readonly RateGate _detailGate = new RateGate(8, 16);
@@ -221,6 +233,10 @@ namespace SkylineTogether.Sync
             _verifiedThisCycle = 0;
             _verifiedLastCycle = -1;
             _lastDigestBucket = 0;
+            _cycleCompared = 0;
+            _bucketMismatches = 0;
+            _escalation.Reset(); // keeps the resync offer history (guards hold across the rejoin of a resync)
+            _announcedOffer = null;
             _hasher?.Clear();
             Icons.Reset();
             Lines.Reset();
@@ -249,6 +265,7 @@ namespace SkylineTogether.Sync
                     int tolerated = _tracker.ToleratedCount(_sessions.Clock.Seconds);
                     if (tolerated > 0) sb.Append(", ").Append(N(tolerated)).Append(" unresolved");
                     if (_tracker.GivenUpCount > 0) sb.Append(" (").Append(N(_tracker.GivenUpCount)).Append(" given up)");
+                    if (_escalation.Rebaselines > 0) sb.Append(", ").Append(N(_escalation.Rebaselines)).Append(_escalation.Rebaselines == 1 ? " area re-sent" : " areas re-sent");
                 }
                 else
                 {
@@ -746,20 +763,53 @@ namespace SkylineTogether.Sync
             {
                 _verifiedLastCycle = _verifiedThisCycle;
                 _verifiedThisCycle = 0;
-                if (_bucketMismatches > 0) _log.Debug(LogCategory.Integrity, "verification cycle: " + _bucketMismatches + " buckets mismatched");
+                if (_bucketMismatches > 0) _log.Debug(LogCategory.Integrity, "verification cycle: " + _bucketMismatches + " of " + _cycleCompared + " buckets mismatched");
+                // w8/security: massive divergence across a whole cycle may offer a resync
+                _escalation.OnCycle(_cycleCompared, (int)_bucketMismatches, _tracker.GivenUpCount, _verifiedLastCycle, now);
+                AnnounceOffer();
                 _bucketMismatches = 0;
+                _cycleCompared = 0;
             }
             _lastDigestBucket = bucket;
+            _cycleCompared++;
             EntityDigest.Accumulator local = ClientBucket(bucket, now, true);
             if (local.Matches(count, sum))
             {
                 _verifiedThisCycle += count;
                 _tracker.OnBucketMatched(bucket, now);
+                _escalation.OnBucketMatched(bucket);
                 _scheduler.Cancel(bucket);
                 return;
             }
             _bucketMismatches++;
             _scheduler.Request(bucket, now, now);
+        }
+
+        /// <summary>w8/security: a resync the integrity check offers the player (the reason), or null.</summary>
+        public string ResyncOffer => _sessions.Client != null ? _escalation.PendingOffer : null;
+
+        /// <summary>w8/security: the player declined the resync offer (not repeated for 30 minutes).</summary>
+        public void DeclineResync()
+        {
+            if (_escalation.PendingOffer == null) return;
+            _log.Info(LogCategory.Integrity, "the player declined the resync");
+            _escalation.Decline(_sessions.Clock.Seconds);
+        }
+
+        /// <summary>w8/security: the player accepted the resync; the caller rejoins (<see cref="SessionManager.Resync"/>).</summary>
+        public void AcceptResync()
+        {
+            _log.Info(LogCategory.Integrity, "the player accepted the resync");
+            _escalation.Accept(_sessions.Clock.Seconds);
+        }
+
+        private void AnnounceOffer()
+        {
+            string offer = _escalation.PendingOffer;
+            if (offer == null || ReferenceEquals(offer, _announcedOffer)) return;
+            _announcedOffer = offer;
+            _log.Warn(LogCategory.Integrity, "the city differs from the host's in too many places for object repairs (" + offer + "); offering a resync");
+            SessionManager.Notify(Settings.LocaleSource.Resolve("st.toast.resyncOffered"), Colossal.PSI.Common.ProgressState.Warning, "SkylineTogether.resync", 15f);
         }
 
         /// <summary>The client's digest of a bucket; with overrides, tolerated entities count with the host's last hash.</summary>
@@ -827,6 +877,37 @@ namespace SkylineTogether.Sync
             }
             if (_outcome.NewlyTolerated.Count > 0) LogTolerated(_outcome.NewlyTolerated, now);
             if (_outcome.Recheck) _scheduler.Request(bucket, now + _outcome.RecheckAfter, now);
+            // w8/security: a bucket whose repairs do not converge (or too different for them) is re-sent as a whole
+            if (_escalation.OnDetail(bucket, _outcome.Mismatching, _outcome.Repair.Count, now) == RepairEscalation.Step.RebaselineBucket) RebaselineBucket(bucket, host);
+            AnnounceOffer();
+        }
+
+        /// <summary>
+        /// w8/security: asks the host to re-send every object of a bucket it has (as spawns, which create or reconcile)
+        /// and to answer every id only this game has (the host sends a despawn): the same request as object repairs,
+        /// for the whole bucket at once (at most 128 ids, through the same rate gate).
+        /// </summary>
+        private void RebaselineBucket(uint bucket, List<EntityHash> host)
+        {
+            int queued = 0;
+            foreach (EntityHash h in host)
+            {
+                if (_pendingRepairs.Count < MaxPendingRepairs && _pendingRepairSet.Add(h.NetId))
+                {
+                    _pendingRepairs.Add(h.NetId);
+                    queued++;
+                }
+            }
+            foreach (EntityHash c in _clientList)
+            {
+                if (_pendingRepairs.Count < MaxPendingRepairs && _pendingRepairSet.Add(c.NetId))
+                {
+                    _pendingRepairs.Add(c.NetId);
+                    queued++;
+                }
+            }
+            _log.Info(LogCategory.Integrity, "bucket " + bucket + " still differs from the host after object repairs; re-sending all of it (" + queued + " objects; "
+                                             + _escalation.Rebaselines + " bucket(s) re-sent so far)");
         }
 
         private string Describe(uint id, List<EntityHash> host)

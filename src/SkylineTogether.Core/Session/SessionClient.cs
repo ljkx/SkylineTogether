@@ -79,7 +79,16 @@ namespace SkylineTogether.Core.Session
         ProtocolError,
         /// <summary>This game hit an error that may have left the replica different from the host's city; a rejoin with
         /// a fresh snapshot repairs it (offered, not automatic: a deterministic fault would loop).</summary>
-        LocalFault
+        LocalFault,
+
+        /// <summary>w8/security: the host removed the player and banned them (they cannot join again).</summary>
+        Banned,
+
+        /// <summary>
+        /// w8/security: this game left on purpose to rejoin with a fresh snapshot, because its city differs from the
+        /// host's in too many places for object repairs (the player accepted the resync). Retryable.
+        /// </summary>
+        Resync
     }
 
     /// <summary>
@@ -170,7 +179,8 @@ namespace SkylineTogether.Core.Session
         /// <summary>True for end kinds an automatic rejoin can fix.</summary>
         public static bool IsRetryable(ClientEndKind kind)
         {
-            return kind == ClientEndKind.Unreachable || kind == ClientEndKind.ConnectionLost || kind == ClientEndKind.Timeout || kind == ClientEndKind.JoinFailed || kind == ClientEndKind.RefusedTemporarily;
+            return kind == ClientEndKind.Unreachable || kind == ClientEndKind.ConnectionLost || kind == ClientEndKind.Timeout || kind == ClientEndKind.JoinFailed || kind == ClientEndKind.RefusedTemporarily
+                   || kind == ClientEndKind.Resync;
         }
 
         public PeerId LocalPeer { get; private set; }
@@ -365,6 +375,38 @@ namespace SkylineTogether.Core.Session
             _payload.Reset();
             SessionPayloads.WriteSpeed(_payload, wanted);
             SendControl(ControlKind.SpeedRequest, _payload);
+        }
+
+        /// <summary>
+        /// w8/security: asks the host to remove a player (co-hosts only; the host checks the role and ignores what this
+        /// player may not do). False when not live.
+        /// </summary>
+        public bool RequestKick(PeerId target) => SendPlayerAction(PlayerActionKind.Kick, target, SessionRole.Viewer);
+
+        /// <summary>w8/security: asks the host to give a player another role (co-hosts: builder ↔ viewer only).</summary>
+        public bool RequestRole(PeerId target, SessionRole role) => SendPlayerAction(PlayerActionKind.SetRole, target, role);
+
+        private bool SendPlayerAction(PlayerActionKind action, PeerId target, SessionRole role)
+        {
+            if (State != ClientState.Live || _channel == null) return false;
+            _payload.Reset();
+            SessionPayloads.WritePlayerAction(_payload, action, target, role);
+            SendControl(ControlKind.PlayerAction, _payload);
+            return true;
+        }
+
+        /// <summary>
+        /// w8/security: leaves to rejoin with a fresh snapshot (<see cref="ClientEndKind.Resync"/>): tells the host it is
+        /// leaving, like <see cref="Leave"/>; the game layer's recovery reconnects at once.
+        /// </summary>
+        public void LeaveForResync(string reason)
+        {
+            if (_channel != null && State != ClientState.Ended)
+            {
+                _payload.Reset();
+                SendControl(ControlKind.Disconnecting, _payload);
+            }
+            End(reason ?? "Rejoining for a fresh copy of the city.", ClientEndKind.Resync);
         }
 
         /// <summary>Sends a replication message (an intent) to the host.</summary>
@@ -604,6 +646,9 @@ namespace SkylineTogether.Core.Session
                     return;
                 case ControlKind.Kick:
                     End("The host removed you from the session: " + SessionPayloads.ReadText(_reader), ClientEndKind.Kicked);
+                    return;
+                case ControlKind.Ban:
+                    End("The host removed you from the session and banned you: " + SessionPayloads.ReadText(_reader), ClientEndKind.Banned);
                     return;
                 case ControlKind.SessionEnd:
                     End(SessionPayloads.ReadText(_reader), ClientEndKind.SessionEnded);

@@ -69,7 +69,7 @@ namespace SkylineTogether.Diagnostics
             {
                 var info = new GameInfoProvider();
                 HandshakeDigests d = info.GetDigests();
-                Line(sb, "mod build: " + d.ModBuild.ToString("x16", CultureInfo.InvariantCulture));
+                Line(sb, "build: " + GameInfoProvider.BuildText + " (SHA-256 of SkylineTogether.dll, as the installer prints it)");
                 Line(sb, "game: " + d.GameVersion + " (" + d.GameFullVersion + "), locale " + d.Locale);
             });
             Line(sb, "unity: " + UnityEngine.Application.unityVersion + ", os: " + Environment.OSVersion);
@@ -104,7 +104,9 @@ namespace SkylineTogether.Diagnostics
                 {
                     SessionHost h = s.Host;
                     Line(sb, "hosting \"" + h.Options.SessionName + "\", max " + h.Options.MaxPlayers + " players, password " + (string.IsNullOrEmpty(h.Options.Password) ? "no" : "yes")
-                             + ", same mods required " + h.Options.RequireSameMods + ", direct port " + (h.Options.Listen.AllowIp ? h.Options.Listen.IpPort.ToString(CultureInfo.InvariantCulture) : "off"));
+                             + ", same mods required " + h.Options.RequireSameMods + ", direct port " + (h.Options.Listen.AllowIp ? h.Options.Listen.IpPort.ToString(CultureInfo.InvariantCulture) : "off")
+                             + ", join policy " + h.Options.JoinPolicy + ", bans " + (h.Options.Bans?.Count ?? 0) + ", password lockouts tracked " + h.PasswordAttempts.Tracked
+                             + " (wrong answers " + h.PasswordAttempts.TotalFailures + ")");
                     Line(sb, "speed: " + h.Speed + ", holding the simulation: " + h.HoldSimulation + ", live peers: " + h.LivePeerCount);
                     NetLine(sb, h.GetNetStats());
                     Line(sb, "connections:");
