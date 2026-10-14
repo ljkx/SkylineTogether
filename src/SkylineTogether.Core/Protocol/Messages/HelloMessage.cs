@@ -10,8 +10,8 @@ namespace SkylineTogether.Core.Protocol
     /// <code>
     /// digests (see below; starts with varint protocolVersion) | u64 steamId | text displayName (≤ 64 chars) | bytes clientNonce (≤ 64)
     /// | u8 compressionMask (bits of CompressionNegotiation.DefinedBits)
-    /// digests = varint protocolVersion | u64 modBuild | string gameVersion | string gameFullVersion | u64 formatTags | u64 catalog
-    ///         | u64 prefabs | u64 mods | u64 content | u64 modSettings | u64 dataFiles | string locale
+    /// digests = varint protocolVersion | u64 modBuild | string gameVersion | string gameFullVersion | u64 mods | u64 content
+    ///         | u64 assetPacks | u64 modSettings | string locale
     /// </code>
     /// A host first reads the version with <see cref="PeekProtocolVersion"/> and refuses a different one with
     /// <see cref="RefuseReason.ProtocolVersion"/> before parsing the rest, whose layout may differ between versions.

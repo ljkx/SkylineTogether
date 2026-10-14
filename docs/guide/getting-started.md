@@ -70,6 +70,8 @@ Hosting always starts from inside a loaded city.
      with every further wrong guess).
    - **Max players**: 2 to 16, including you (default 8).
    - **Require the same mods**: on by default. See [Mods](#mods).
+   - **Require the same asset packs**: off by default. When on, players whose asset packs (Paradox Mods packages
+     that add objects) differ from yours are refused with a list; when off, they join and are told which packs differ.
    - **Friends and invited only**: off by default. When on, only your Steam friends and players you invite from the
      panel can join through Steam; others are told they are not invited.
    - **Allow direct IP connections**: off by default, and only available while a password is set (Steam does not check
@@ -189,6 +191,7 @@ Options → **Skyline Together**, tab **Multiplayer**:
 | Hosting | Session name, Password | empty |
 | Hosting | Max players (2-16, including you) | 8 |
 | Hosting | Require the same mods | on |
+| Hosting | Require the same asset packs | off |
 | Hosting | Allow direct IP connections | off |
 | Hosting | Direct connection port (1024-65535) | 27015 |
 | Joining | Host's Steam ID or IP:port, Password | empty |
@@ -211,5 +214,10 @@ every mod.
 Gameplay mods such as Traffic, Move It or Anarchy must be enabled on every PC in the same version. Turning **Require
 the same mods** off lets players with different mods join, but the city can then look or behave differently for them.
 See [docs/design/MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md) for the per-mod details.
+
+DLC, asset packs and the mod settings the host pushes are checked when a player joins as well: a player without one of
+the host's DLC or content packs is refused; different asset packs and mod settings are told to the joining player (the
+host's mod settings apply for the session); see
+[Troubleshooting](troubleshooting.md#different-dlc-asset-packs-or-mod-settings).
 
 The UI is available in English and German.

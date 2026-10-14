@@ -169,6 +169,55 @@ namespace SkylineTogether.Compat
             return missing;
         }
 
+        // ------------------------------------------------------------------------------------------------ handshake
+
+        /// <summary>
+        /// The asset packs of the handshake manifest (ARCHITECTURE.md#handshake-and-admission): one entry per Paradox Mods id
+        /// among the loaded prefabs (asset packs, and the assets of code mods), with the package's name and version, the
+        /// number of prefabs and the digest of their sorted <c>PrefabID</c>s. Local assets are not listed (a joiner cannot
+        /// get them; the join snapshot's per-city check names the ones the city uses). Sorted by id.
+        /// </summary>
+        public static List<ContentEntry> Packages(PrefabSystem prefabs)
+        {
+            var byId = new Dictionary<string, (string Name, string Version, List<string> Ids)>(StringComparer.Ordinal);
+            foreach (PrefabBase p in AllPrefabs(prefabs))
+            {
+                try
+                {
+                    if (p == null || p.isBuiltin) continue;
+                    PrefabAsset asset = p.asset;
+                    if (asset == null) continue;
+                    SourceMeta meta = asset.GetMeta();
+                    string id = meta.platformID;
+                    if (string.IsNullOrEmpty(id)) continue;
+                    if (!byId.TryGetValue(id, out var pack))
+                    {
+                        pack = (meta.packageName, meta.platformVersion, new List<string>());
+                        byId[id] = pack;
+                    }
+                    pack.Ids.Add(p.GetPrefabID().ToString());
+                }
+                catch (Exception)
+                {
+                    // a prefab whose asset cannot describe itself is not listed
+                }
+            }
+            var list = new List<ContentEntry>(byId.Count);
+            foreach (KeyValuePair<string, (string Name, string Version, List<string> Ids)> pack in byId)
+            {
+                list.Add(new ContentEntry
+                {
+                    Id = Clip(pack.Key, ManifestDetailMessage.MaxEntryIdBytes),
+                    Name = Clip(pack.Value.Name, ManifestDetailMessage.MaxEntryNameBytes),
+                    Version = Clip(pack.Value.Version, ManifestDetailMessage.MaxEntryVersionBytes),
+                    Digest = Core.Session.CompatibilityDigests.OfPrefabIds(pack.Value.Ids),
+                    Prefabs = pack.Value.Ids.Count,
+                });
+            }
+            list.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
+            return list;
+        }
+
         // ------------------------------------------------------------------------------------------------ name fallback
 
         /// <summary>

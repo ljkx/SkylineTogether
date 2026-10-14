@@ -57,6 +57,22 @@ namespace SkylineTogether.Compat
             _lastPoll = now;
             bool all = _resendAll;
             _resendAll = false;
+            List<SettingEntry> current = CurrentValues(WarnOnce);
+            List<SettingEntry> changed = _host.Diff(current, all);
+            for (int start = 0; start < changed.Count; start += SyncBatch.MaxModSettings)
+            {
+                w.ModSettings(changed.GetRange(start, Math.Min(SyncBatch.MaxModSettings, changed.Count - start)));
+            }
+        }
+
+        /// <summary>
+        /// The current values of every setting the active adapters list (<see cref="ModAdapter.SyncedSettings"/>): what the
+        /// host pushes, and the settings list of the handshake manifest (ARCHITECTURE.md#handshake-and-admission), whose
+        /// differences the joiner is told about. <paramref name="warn"/> (key, text, exception) reports read failures; null
+        /// ignores them. Main thread.
+        /// </summary>
+        public static List<SettingEntry> CurrentValues(Action<string, string, Exception> warn = null)
+        {
             var current = new List<SettingEntry>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (ModAdapter a in ModCompat.ActiveAdapters)
@@ -64,7 +80,7 @@ namespace SkylineTogether.Compat
                 foreach (string key in a.SyncedSettings)
                 {
                     if (!seen.Add(a.AssemblyName + "\n" + key)) continue; // a built-in and a declared rule may name the same setting
-                    object settings = FindSettings(a, a.SettingsTypeFor(key));
+                    object settings = FindSettings(a, a.SettingsTypeFor(key), warn);
                     if (settings == null) continue;
                     PropertyInfo p = Property(settings, key);
                     if (p == null || !p.CanRead) continue;
@@ -74,15 +90,11 @@ namespace SkylineTogether.Compat
                     }
                     catch (Exception ex)
                     {
-                        WarnOnce(a.ModName + "." + key, "reading " + a.ModName + " setting " + key + " failed", ex);
+                        warn?.Invoke(a.ModName + "." + key, "reading " + a.ModName + " setting " + key + " failed", ex);
                     }
                 }
             }
-            List<SettingEntry> changed = _host.Diff(current, all);
-            for (int start = 0; start < changed.Count; start += SyncBatch.MaxModSettings)
-            {
-                w.ModSettings(changed.GetRange(start, Math.Min(SyncBatch.MaxModSettings, changed.Count - start)));
-            }
+            return current;
         }
 
         // -------------------------------------------------------------------------------------------------- client
@@ -96,7 +108,7 @@ namespace SkylineTogether.Compat
             {
                 ModAdapter a = ModCompat.FindWithSetting(s.Mod, s.Key);
                 if (a == null) continue; // only declared settings of loaded mods
-                object settings = FindSettings(a, a.SettingsTypeFor(s.Key));
+                object settings = FindSettings(a, a.SettingsTypeFor(s.Key), WarnOnce);
                 PropertyInfo p = settings == null ? null : Property(settings, s.Key);
                 if (p == null || !p.CanRead || !p.CanWrite) continue;
                 try
@@ -131,7 +143,7 @@ namespace SkylineTogether.Compat
                 try
                 {
                     ModAdapter a = ModCompat.FindWithSetting(s.Mod, s.Key);
-                    object settings = a == null ? null : FindSettings(a, a.SettingsTypeFor(s.Key));
+                    object settings = a == null ? null : FindSettings(a, a.SettingsTypeFor(s.Key), WarnOnce);
                     PropertyInfo p = settings == null ? null : Property(settings, s.Key);
                     if (p == null || !p.CanWrite || !SettingValueText.TryParse(s.Value, p.PropertyType, out object value)) continue;
                     p.SetValue(settings, value);
@@ -154,7 +166,7 @@ namespace SkylineTogether.Compat
         /// type is <paramref name="typeName"/> (or any <c>ModSetting</c>). The static registry of <c>ModSetting</c> is not
         /// used: mods create a second "defaults" instance that replaces the live one there.
         /// </summary>
-        private object FindSettings(ModAdapter a, string typeName)
+        private static object FindSettings(ModAdapter a, string typeName, Action<string, string, Exception> warn)
         {
             try
             {
@@ -179,7 +191,7 @@ namespace SkylineTogether.Compat
             }
             catch (Exception ex)
             {
-                WarnOnce(a.ModName + ".settings", "finding the settings of " + a.ModName + " failed", ex);
+                warn?.Invoke(a.ModName + ".settings", "finding the settings of " + a.ModName + " failed", ex);
             }
             return null;
         }

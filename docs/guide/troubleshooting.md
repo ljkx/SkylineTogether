@@ -3,6 +3,7 @@
 - [Join refused](#join-refused)
 - [Join fails or times out](#join-fails-or-times-out)
 - [Different builds, game versions or mods](#different-builds-game-versions-or-mods)
+- [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings)
 - [Connection: Steam relay, direct IP and firewalls](#connection-steam-relay-direct-ip-and-firewalls)
 - [Hosting and joining are unavailable](#hosting-and-joining-are-unavailable)
 - [Something looks different for another player (desync)](#something-looks-different-for-another-player-desync)
@@ -18,13 +19,16 @@ reasons, a box **Details** with the host's own text. **Copy details** copies eve
 
 The host checks, in this order: bans, **Friends and invited only**, protocol version, a second connection of the same
 player, password (always for direct IP joiners), and only then build, game version, mods (only with **Require the same
-mods** on) and the player limit. A player who has not passed the password learns nothing about versions or mods.
+mods** on), DLC and content packs, asset packs (only with **Require the same asset packs** on) and the player limit. A
+player who has not passed the password learns nothing about versions, mods, DLC or assets.
 
 | Screen title | Cause | What to do |
 |---|---|---|
 | **Skyline Together versions differ** | The protocol versions differ, or the two DLLs are different builds. Every compile is a different build, even with the same version number. The screen shows "Host build … · Your build …". | Install the same `SkylineTogether-Setup.zip` on every PC and compare the build id the installer prints (also in the panel's footer). |
 | **Game versions differ** | The game versions differ (shown as "Host: … · You: …"). | Update the game on both PCs (Steam may hold back an update until the game restarts). |
 | **Your mods don't match the host's** | The host requires the same code mods and yours differ. The screen lists what to **Enable or subscribe**, **Disable** and **Update to the host's version**. | Change the mods as listed, restart the game, join again. See [Different builds, game versions or mods](#different-builds-game-versions-or-mods). |
+| **You're missing DLC or content packs the host has** | The host owns DLC or content packs that you don't; the host's city can contain objects from them, which your game can't load. The screen lists them under **Get these** (and, for information, what only you have). | Get the listed DLC (Steam or the Paradox launcher), restart the game and join again. See [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings). |
+| **Your asset packs don't match the host's** | The host turned on **Require the same asset packs** and yours differ. The screen lists what to **Subscribe**, **Disable (the host doesn't have them)** and **Update to the host's version**, each with its Paradox Mods id. "The asset packs differ (too many to list)" in the details means one side has too many packs to compare one by one. | Change the asset packs as listed, restart the game, join again; or ask the host to turn the option off. |
 | **The session is full** | The session already has as many players as **Max players** (which counts the host). | Ask the host to raise the limit, or wait until someone leaves. |
 | **Wrong password** | The password does not match, or there were too many wrong passwords ("Try again in N s": three wrong guesses are free, then each one locks you out longer, up to 10 minutes). | Enter the right password in the field on the screen and click **Join with this password** (after the wait). |
 | **This session needs a password** | No password was entered (for example after accepting a Steam invite, which does not carry the password). | Ask the host for it and enter it on the screen. |
@@ -56,11 +60,42 @@ responding while joining."
   diagnostics show it, and a refusal shows both players' ids; compare it before you play. Building the
   mod yourself from the same commit does not guarantee an identical DLL on another PC; share one setup zip instead.
 - **Game version.** Compared exactly. Update both games.
-- **Mods.** Only code mods count (assets don't). Mods are matched by name and compared by version. Mods that only
+- **Mods.** Only code mods count here (DLC and asset packs have their own check, see
+  [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings)). Mods are matched by name
+  and compared by version. Mods that only
   affect a player's own screen never block a join; see [Mods](getting-started.md#mods). If a mod is reported that you
   believe is local-only, report it with its name so it can be classified.
 - For the first test, the simplest setup is an empty playset on both PCs.
 - Disable any other multiplayer mod; the installer warns about a known conflicting one.
+
+## Different DLC, asset packs or mod settings
+
+After the password, the host compares a digest per category with the joining player's and, where one differs, the
+lists behind it:
+
+- **DLC and content packs** (those that add buildings or other objects; radio-only packs don't count). A player who
+  lacks one the host has is refused ("You're missing DLC or content packs the host has"), because the host's city can
+  contain objects from it. DLC only the joining player has does not block; they are told "You have DLC or content packs
+  the host doesn't have: … Building with them is undone in this session."
+- **Asset packs** (Paradox Mods packages that add objects, also the assets of code mods), compared by Paradox Mods id
+  and by their contents, so another version of a pack counts as different. By default a difference does not block. The
+  joining player is told, as a notification and a chat line:
+  - "The host has asset packs you don't have: … Objects from them are left out in your game. Subscribe to them and join
+    again to see everything."
+  - "These asset packs have another version than the host's: … Some objects may be missing or look different; update
+    them to match."
+  - "You have asset packs the host doesn't have: … The host can't place their objects, so building with them is undone."
+  - "Your asset packs differ from the host's (too many to list). …" when one side has too many packs to send the list.
+
+  The host sees "&lt;name&gt; doesn't have N of your asset packs …" and the log names them. With **Require the same
+  asset packs** on (host options; off by default) any difference refuses the join instead. Assets you made yourself
+  (not published) are not compared here; see [Missing assets](#missing-assets).
+- **Mod settings** that affect the simulation (those the host pushes to everyone, see
+  [mod compatibility](../design/MOD-COMPATIBILITY.md)): never a refusal. The host's values apply for the session and the
+  joining player is told "While you play together, the host's values apply to these mod settings: … Yours come back when
+  you leave."
+- **Code mods** when the host turned **Require the same mods** off: "Your code mods differ from the host's (the host
+  allows it): … Parts of the city may look or behave differently for you."
 
 ## Connection: Steam relay, direct IP and firewalls
 
@@ -127,7 +162,9 @@ All of these are bugs. Please report them with the diagnostics file and logs.
 ## Missing assets
 
 When the host uses an asset (a building, prop or other prefab) that a player's game does not have, objects of that
-asset are not created on that player's game. Before the city loads, the joining player gets a notification naming the
+asset are not created on that player's game. Right after joining, the player is told which of the host's asset packs
+they lack ([Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings)). Before the city
+loads, the joining player gets a notification naming the
 missing asset packs (with their Paradox Mods ids) and mods whose generated prefabs are missing, and what to do; the
 sync status line, one notification during the session and the diagnostics file list every missing asset with where it
 comes from. Assets the host made locally (not published) cannot be downloaded: the host has to publish them or stop

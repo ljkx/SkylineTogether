@@ -64,8 +64,10 @@ Mods that only change a player's own screen (translations, tooltips, icon librar
 popular gameplay mods (for example Traffic, Move It, Anarchy, Better Bulldozer, Line Tool) have dedicated compatibility
 code, and every other mod is analysed automatically (its saved data replicates, its simulation runs on the host); see
 [MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md) for the list and the known limits. Asset mods (buildings, props)
-must be the same on every PC, or objects using a missing asset are not created on the PC that lacks it; the joining
-player is told which asset pack is missing.
+should be the same on every PC, or objects using a missing asset are not created on the PC that lacks it; right after
+joining, the player is told which of the host's asset packs are missing (the host can require the same asset packs
+instead). A player without one of the host's DLC or content packs cannot join; see
+[Troubleshooting](troubleshooting.md#different-dlc-asset-packs-or-mod-settings).
 
 ### Can I use it together with another multiplayer mod?
 

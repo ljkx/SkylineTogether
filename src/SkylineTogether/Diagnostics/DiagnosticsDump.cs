@@ -104,7 +104,7 @@ namespace SkylineTogether.Diagnostics
                 {
                     SessionHost h = s.Host;
                     Line(sb, "hosting \"" + h.Options.SessionName + "\", max " + h.Options.MaxPlayers + " players, password " + (string.IsNullOrEmpty(h.Options.Password) ? "no" : "yes")
-                             + ", same mods required " + h.Options.RequireSameMods + ", direct port " + (h.Options.Listen.AllowIp ? h.Options.Listen.IpPort.ToString(CultureInfo.InvariantCulture) : "off")
+                             + ", same mods required " + h.Options.RequireSameMods + ", same assets required " + h.Options.RequireSameAssets + ", direct port " + (h.Options.Listen.AllowIp ? h.Options.Listen.IpPort.ToString(CultureInfo.InvariantCulture) : "off")
                              + ", join policy " + h.Options.JoinPolicy + ", bans " + (h.Options.Bans?.Count ?? 0) + ", password lockouts tracked " + h.PasswordAttempts.Tracked
                              + " (wrong answers " + h.PasswordAttempts.TotalFailures + ")");
                     Line(sb, "speed: " + h.Speed + ", holding the simulation: " + h.HoldSimulation + ", live peers: " + h.LivePeerCount);
@@ -190,7 +190,7 @@ namespace SkylineTogether.Diagnostics
             {
                 var st = Mod.Settings;
                 if (st == null) return;
-                Line(sb, "player name: \"" + st.PlayerName + "\", session name: \"" + st.SessionName + "\", max players " + st.MaxPlayers + ", same mods " + st.RequireSameMods);
+                Line(sb, "player name: \"" + st.PlayerName + "\", session name: \"" + st.SessionName + "\", max players " + st.MaxPlayers + ", same mods " + st.RequireSameMods + ", same assets " + st.RequireSameAssets);
                 Line(sb, "direct connections: " + st.AllowDirectConnections + " on port " + st.DirectPort + ", join target set: " + !string.IsNullOrWhiteSpace(st.JoinTarget)
                          + ", network HUD: " + st.ShowNetworkHud);
             });

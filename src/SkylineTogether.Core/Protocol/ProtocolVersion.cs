@@ -18,8 +18,10 @@ namespace SkylineTogether.Core.Protocol
     {
         /// <summary>
         /// The version this build speaks. 1 was the first layout; 2 covers everything added since under one increment (among
-        /// others the id ceiling record, the cell-map messages and the mod channel message kind).
+        /// others the id ceiling record, the cell-map messages and the mod channel message kind); 3: the handshake digests
+        /// and <c>ManifestDetail</c> of the compatibility check (DLC, asset pack and mod setting lists instead of the
+        /// never-filled format-tag, type-catalog and data-file fields) and <see cref="ControlKind.JoinNotice"/>.
         /// </summary>
-        public const int Current = 2;
+        public const int Current = 3;
     }
 }

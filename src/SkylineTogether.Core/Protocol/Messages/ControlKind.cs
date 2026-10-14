@@ -66,6 +66,12 @@ namespace SkylineTogether.Core.Protocol
         /// Client → host: a moderation request of a co-host (payload: u8 action 0 = kick, 1 = set role |
         /// u8 target peer | u8 role); the host checks the sender's role (<c>Session.Moderation</c>) and ignores the rest.
         /// </summary>
-        PlayerAction
+        PlayerAction,
+        /// <summary>
+        /// Host → client, right after the welcome: what differs between the host and the admitted joiner without blocking
+        /// the join (asset packs, extra DLC, mods the host allows, mod settings the host's values replace); payload: a
+        /// <c>Session.MismatchReport</c> of kind "notice" (ARCHITECTURE.md#handshake-and-admission).
+        /// </summary>
+        JoinNotice
     }
 }

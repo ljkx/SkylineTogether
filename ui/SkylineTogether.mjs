@@ -190,6 +190,8 @@ const EN = {
   "st.ui.host.maxPlayersHint": "Including you.",
   "st.ui.host.requireMods": "Require the same mods",
   "st.ui.host.requireModsHint": "Refuse players whose code mods differ from yours. They get a list of what to enable, disable or update.",
+  "st.ui.host.requireAssets": "Require the same asset packs",
+  "st.ui.host.requireAssetsHint": "Refuse players whose asset packs differ from yours. When off, they join, are told which packs differ, and objects from packs they don't have are left out in their game.",
   "st.ui.host.allowDirect": "Allow direct IP connections",
   "st.ui.host.allowDirectHint": "Also accept connections on a UDP port (needs port forwarding and a host password). Steam connections always work.",
   "st.ui.host.allowDirectNextTime": "Applies the next time you host.",
@@ -276,6 +278,16 @@ const EN = {
   "st.ui.end.title.build": "Skyline Together versions differ",
   "st.ui.end.text.build": "You both need exactly the same Skyline Together build. Install the same release on both PCs (the build id is at the bottom of the panel), then join again.",
   "st.ui.end.builds": "Host build {HOST} · Your build {YOU}",
+  "st.ui.end.title.content": "You're missing DLC or content packs the host has",
+  "st.ui.end.text.content": "The host owns these DLC or content packs, and their city can contain objects from them that your game can't load. Get them (Steam or the Paradox launcher), restart the game and join again.",
+  "st.ui.end.content.missing": "Get these",
+  "st.ui.end.content.extra": "Only you have these",
+  "st.ui.end.title.assets": "Your asset packs don't match the host's",
+  "st.ui.end.text.assets": "The host requires the same asset packs. Subscribe to the missing ones, disable the ones the host doesn't have, update the others, restart the game and join again.",
+  "st.ui.end.assets.missing": "Subscribe",
+  "st.ui.end.assets.extra": "Disable (the host doesn't have them)",
+  "st.ui.end.assets.versions": "Update to the host's version",
+  "st.ui.end.paradoxId": "Paradox Mods {ID}",
   "st.ui.end.title.full": "The session is full",
   "st.ui.end.text.full": "Ask the host to raise the player limit, or try again when someone leaves.",
   "st.ui.end.title.notAllowed": "You can't join this session",
@@ -1963,6 +1975,7 @@ function useHostOptions(s) {
   const [maxPlayers, setMaxPlayers] = React.useState(Math.max(2, Math.min(16, Math.round(num(s.maxPlayers, 8)))));
   const [allowDirect, setAllowDirect] = React.useState(!!s.allowDirect);
   const [requireMods, setRequireMods] = React.useState(s.requireSameMods !== false);
+  const [requireAssets, setRequireAssets] = React.useState(s.requireSameAssets === true);
   const [port, setPortText] = React.useState(String(Math.round(num(s.portSetting, 27015))));
   const save = function (next) {
     const v = merge({ maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, port: port }, next);
@@ -1970,13 +1983,14 @@ function useHostOptions(s) {
     send("saveHostOptions", v.maxPlayers, !!v.allowDirect, !!v.requireMods, portOf(v.port));
   };
   return {
-    maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, port: port, save: save,
+    maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, requireAssets: requireAssets, port: port, save: save,
     portInvalid: portOf(port) === 0,
     // digits only (a pasted "27015 " or "port 27015" keeps its number)
     setPort: function (v) { setPortText(str(v).replace(/[^0-9]/g, "").slice(0, 5)); },
     setMax: function (v) { setMaxPlayers(v); save({ maxPlayers: v }); },
     setDirect: function (v) { setAllowDirect(v); save({ allowDirect: v }); },
     setMods: function (v) { setRequireMods(v); save({ requireMods: v }); },
+    setAssets: function (v) { setRequireAssets(!!v); send("setRequireSameAssets", !!v); },
   };
 }
 
@@ -2017,6 +2031,7 @@ function HostOptions(p) {
     null,
     h(GameRow, { label: t("st.ui.host.maxPlayers"), hint: t("st.ui.host.maxPlayersHint") }, h(Stepper, { value: o.maxPlayers, min: 2, max: 16, onChange: o.setMax })),
     h(GameRow, { label: t("st.ui.host.requireMods"), hint: t("st.ui.host.requireModsHint") }, h(Check, { checked: o.requireMods, onChange: o.setMods })),
+    h(GameRow, { label: t("st.ui.host.requireAssets"), hint: t("st.ui.host.requireAssetsHint") }, h(Check, { checked: o.requireAssets, onChange: o.setAssets })),
     h(GameRow, { label: t("st.ui.host.friendsOnly"), hint: t("st.ui.host.friendsOnlyHint") }, h(Check, { checked: friendsOnly, onChange: function (v) { setFriendsOnly(v); send("setFriendsOnly", !!v); } })),
     h(
       GameRow,
@@ -2434,6 +2449,7 @@ function MenuHostPage(p) {
     s.hasPassword ? h("div", { style: { padding: "0 16rem 8rem 16rem", textAlign: "right", fontSize: FS.m } }, h(LinkText, { onClick: function () { setPassword(""); save(""); } }, t("st.ui.host.removePassword"))) : null,
     h(MenuRow, { label: t("st.ui.host.maxPlayers"), info: t("st.ui.host.maxPlayersHint"), onInfo: setHoverInfo }, h(Stepper, { menu: true, value: o.maxPlayers, min: 2, max: 16, onChange: o.setMax })),
     h(MenuRow, { label: t("st.ui.host.requireMods"), info: t("st.ui.host.requireModsHint"), onInfo: setHoverInfo, onClick: function () { o.setMods(!o.requireMods); } }, h(Check, { menu: true, checked: o.requireMods, onChange: o.setMods })),
+    h(MenuRow, { label: t("st.ui.host.requireAssets"), info: t("st.ui.host.requireAssetsHint"), onInfo: setHoverInfo, onClick: function () { o.setAssets(!o.requireAssets); } }, h(Check, { menu: true, checked: o.requireAssets, onChange: o.setAssets })),
     h(MenuRow, { label: t("st.ui.host.friendsOnly"), info: t("st.ui.host.friendsOnlyHint"), onInfo: setHoverInfo, onClick: function () { setFriendsOnly(!friendsOnly); send("setFriendsOnly", !friendsOnly); } },
       h(Check, { menu: true, checked: friendsOnly, onChange: function (v) { setFriendsOnly(v); send("setFriendsOnly", !!v); } })),
     h(
@@ -2720,7 +2736,14 @@ function endCopy(e) {
   if (e.kind === "passwordRequired") return "passwordRequired";
   if (e.kind === "refused") {
     if (r === "BadPassword") return "badPassword";
-    if (r === "Mismatch") return e.reportKind === "game" ? "game" : e.reportKind === "build" || e.reportKind === "protocol" ? "build" : "mods";
+    if (r === "Mismatch") {
+      if (e.reportKind === "game") return "game";
+      if (e.reportKind === "build" || e.reportKind === "protocol") return "build";
+      // DLC the joiner lacks, asset packs when the host requires the same (the lists are the report's)
+      if (e.reportKind === "content") return "content";
+      if (e.reportKind === "assets") return "assets";
+      return "mods";
+    }
     if (r === "ProtocolVersion") return "build";
     if (r === "Full") return "full";
     if (r === "Banned") return "banned";
@@ -2740,7 +2763,23 @@ function endCopy(e) {
 }
 
 // the ends a new attempt cannot fix: the player has to change something first (or cannot join at all)
-const NO_RETRY = { kicked: 1, banned: 1, notAllowed: 1, ended: 1, mods: 1, game: 1, build: 1 };
+const NO_RETRY = { kicked: 1, banned: 1, notAllowed: 1, ended: 1, mods: 1, game: 1, build: 1, content: 1, assets: 1 };
+
+// the list titles of the screens with lists: code mods, DLC and content packs, asset packs
+const END_LISTS = {
+  mods: { missing: "st.ui.end.mods.missing", extra: "st.ui.end.mods.extra", versions: "st.ui.end.mods.versions" },
+  content: { missing: "st.ui.end.content.missing", extra: "st.ui.end.content.extra", versions: "" },
+  assets: { missing: "st.ui.end.assets.missing", extra: "st.ui.end.assets.extra", versions: "st.ui.end.assets.versions", ids: true },
+};
+
+// a list entry's second column: the version (or host and joiner versions), with the Paradox Mods id where the list shows ids
+function entryDetail(p, m) {
+  const parts = [];
+  if (p.versions) parts.push(t("st.ui.end.mods.versionLine", { HOST: str(m.host) || "?", YOU: str(m.you) || "?" }));
+  else if (str(m.version)) parts.push(str(m.version));
+  if (p.ids && str(m.id)) parts.push(t("st.ui.end.paradoxId", { ID: str(m.id) }));
+  return parts.join(" · ");
+}
 
 function ModList(p) {
   if (p.items.length === 0) return null;
@@ -2761,7 +2800,7 @@ function ModList(p) {
           "div",
           { key: i, style: merge({ display: "flex", flexDirection: "row", padding: "5rem 0", fontSize: "14rem" }, i === 0 ? null : border("1rem", OV.divider, ["Top"])) },
           h("div", { style: merge(S.ellipsis, { flex: 1, minWidth: 0, color: OV.text }) }, str(m.name) || str(m.id) || "?"),
-          h("div", { style: { color: OV.dim, marginLeft: "10rem", flexShrink: 0 } }, p.versions ? t("st.ui.end.mods.versionLine", { HOST: str(m.host) || "?", YOU: str(m.you) || "?" }) : str(m.version))
+          h("div", { style: { color: OV.dim, marginLeft: "10rem", flexShrink: 0 } }, entryDetail(p, m))
         );
       })
     )
@@ -2811,7 +2850,8 @@ function EndOverlay(p) {
   const missing = objs(e.missing);
   const extra = objs(e.extra);
   const versions = objs(e.versions);
-  const isMods = copy === "mods" && missing.length + extra.length + versions.length > 0;
+  const lists = END_LISTS[copy] || null;
+  const isMods = !!lists && missing.length + extra.length + versions.length > 0;
   const icon = h("div", { style: merge(S.center, { width: "26rem", height: "26rem", borderRadius: "13rem", backgroundColor: needsPassword ? OV.warn : OV.bad, marginRight: "12rem", flexShrink: 0 }) }, h(Glyph, { src: needsPassword ? G.lock : G.warning, size: 14, color: "#ffffff" }));
   return h(
     OverlayCard,
@@ -2821,9 +2861,9 @@ function EndOverlay(p) {
       ? h(
           "div",
           null,
-          h(ModList, { title: t("st.ui.end.mods.missing"), color: OV.good, icon: G.plus, items: missing }),
-          h(ModList, { title: t("st.ui.end.mods.extra"), color: OV.badText, icon: G.close, items: extra }),
-          h(ModList, { title: t("st.ui.end.mods.versions"), color: OV.warn, icon: G.refresh, items: versions, versions: true })
+          h(ModList, { title: t(lists.missing), color: OV.good, icon: G.plus, items: missing, ids: lists.ids }),
+          h(ModList, { title: t(lists.extra), color: OV.badText, icon: G.close, items: extra, ids: lists.ids }),
+          lists.versions ? h(ModList, { title: t(lists.versions), color: OV.warn, icon: G.refresh, items: versions, versions: true, ids: lists.ids }) : null
         )
       : null,
     copy === "game" && str(e.hostGame) ? h(VersionLine, null, t("st.ui.end.versions", { HOST: str(e.hostGame), YOU: str(e.yourGame) || "?" })) : null,

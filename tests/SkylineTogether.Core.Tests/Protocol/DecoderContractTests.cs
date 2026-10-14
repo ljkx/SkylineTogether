@@ -298,9 +298,9 @@ namespace SkylineTogether.Core.Tests.Protocol
             {
                 Digests = digests,
                 Mods = new List<ModEntry> { new ModEntry { Name = "Traffic", Version = "1", PlatformId = "9", DllHash = "ff", IsUiModule = true } },
-                Content = new List<string> { "DLC" }, FormatTagNames = new List<string> { "tag" }, PrefabIds = new List<string> { "Prefab:A", "Prefab:B" },
-                Settings = new List<SettingEntry> { new SettingEntry { Mod = "m", Key = "k", Value = "v", Pushable = true } },
-                DataFiles = new List<DataFileDigestEntry> { new DataFileDigestEntry { File = "gates.json", Digest = 5 } }
+                Content = new List<ContentEntry> { new ContentEntry { Id = "1", Name = "DLC" } },
+                AssetPacks = new List<ContentEntry> { new ContentEntry { Id = "75426", Name = "Pack", Version = "1.2", Digest = 5, Prefabs = 3 } },
+                Settings = new List<SettingEntry> { new SettingEntry { Mod = "m", Key = "k", Value = "v", Pushable = true } }
             };
             var table = new List<(string Name, byte[][] Seeds, Action<byte[]> Decode)>
             {

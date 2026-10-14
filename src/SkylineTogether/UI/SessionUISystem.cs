@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using Colossal.PSI.Common;
@@ -128,6 +129,15 @@ namespace SkylineTogether.UI
             AddBinding(new TriggerBinding<int>(Group, "toggleCoHost", peer => Trigger("toggleCoHost", () => Mod.Sessions?.ToggleCoHost((byte)Math.Max(0, Math.Min(255, peer))))));
             AddBinding(new TriggerBinding<string>(Group, "unban", key => Trigger("unban", () => Mod.Sessions?.Unban(key))));
             AddBinding(new TriggerBinding<bool>(Group, "setFriendsOnly", on => Trigger("setFriendsOnly", () => Mod.Sessions?.SetFriendsOnly(on))));
+            // the host's "require the same asset packs" (read live by a running host, like "require the same mods")
+            AddBinding(new TriggerBinding<bool>(Group, "setRequireSameAssets", on => Trigger("setRequireSameAssets", () =>
+            {
+                if (Mod.Settings == null) return;
+                Mod.Settings.RequireSameAssets = on;
+                SessionHost host = Mod.Sessions?.Host;
+                if (host != null) host.Options.RequireSameAssets = on;
+                Mod.Settings.ApplyAndSave();
+            })));
             AddBinding(new TriggerBinding(Group, "resync", () => Trigger("resync", () =>
             {
                 Mod.Sync?.Integrity.AcceptResync();
@@ -529,6 +539,7 @@ namespace SkylineTogether.UI
             Prop(sb, "maxPlayers", settings?.MaxPlayers ?? 8).Append(',');
             Prop(sb, "allowDirect", settings != null && settings.AllowDirectConnections).Append(',');
             Prop(sb, "requireSameMods", settings == null || settings.RequireSameMods).Append(',');
+            Prop(sb, "requireSameAssets", settings != null && settings.RequireSameAssets).Append(',');
             Prop(sb, "portSetting", settings?.DirectPort ?? SessionManager.DefaultDirectPort).Append(',');
             // the build id (as the installer prints it), the join policy, this player's role, the ban list
             Prop(sb, "build", GameInfoProvider.BuildText).Append(',');
@@ -673,7 +684,8 @@ namespace SkylineTogether.UI
 
         /// <summary>
         /// The error screen's model: <c>{seq, kind, refuse, text, target, reportKind, missing, extra, versions, hostGame,
-        /// yourGame, hostProto, yourProto, hostBuild, yourBuild}</c>, or null.
+        /// yourGame, hostProto, yourProto, hostBuild, yourBuild}</c>, or null. The three lists are the report kind's: code mods,
+        /// DLC ("content": missing and extra) or asset packs ("assets"), each entry with name, version and Paradox Mods id.
         /// </summary>
         private static void WriteEnd(StringBuilder sb, SessionEndInfo end)
         {
@@ -697,42 +709,30 @@ namespace SkylineTogether.UI
             Prop(sb, "yourProto", r?.ClientProtocol ?? "").Append(',');
             Prop(sb, "hostBuild", r?.HostBuild ?? "").Append(',');
             Prop(sb, "yourBuild", r?.ClientBuild ?? "").Append(',');
+            // the lists the screen shows depend on the report: DLC (content), asset packs (assets) or code mods
+            List<ModEntry> missing = null, extra = null;
+            List<ModVersionDifference> versions = null;
+            if (r != null)
+            {
+                missing = r.Kind == "content" ? r.ContentMissing : r.Kind == "assets" ? r.AssetsMissing : r.Missing;
+                extra = r.Kind == "content" ? r.ContentExtra : r.Kind == "assets" ? r.AssetsExtra : r.Extra;
+                versions = r.Kind == "content" ? new List<ModVersionDifference>() : r.Kind == "assets" ? r.AssetVersions : r.Versions;
+            }
             sb.Append("\"missing\":[");
-            if (r != null)
-            {
-                for (int i = 0; i < r.Missing.Count && i < MaxListed; i++)
-                {
-                    if (i > 0) sb.Append(',');
-                    sb.Append('{');
-                    Prop(sb, "name", r.Missing[i].Name ?? "").Append(',');
-                    Prop(sb, "version", r.Missing[i].Version ?? "").Append(',');
-                    Prop(sb, "id", r.Missing[i].PlatformId ?? "");
-                    sb.Append('}');
-                }
-            }
+            WriteEntries(sb, missing);
             sb.Append("],\"extra\":[");
-            if (r != null)
-            {
-                for (int i = 0; i < r.Extra.Count && i < MaxListed; i++)
-                {
-                    if (i > 0) sb.Append(',');
-                    sb.Append('{');
-                    Prop(sb, "name", r.Extra[i].Name ?? "").Append(',');
-                    Prop(sb, "version", r.Extra[i].Version ?? "").Append(',');
-                    Prop(sb, "id", r.Extra[i].PlatformId ?? "");
-                    sb.Append('}');
-                }
-            }
+            WriteEntries(sb, extra);
             sb.Append("],\"versions\":[");
-            if (r != null)
+            if (versions != null)
             {
-                for (int i = 0; i < r.Versions.Count && i < MaxListed; i++)
+                for (int i = 0; i < versions.Count && i < MaxListed; i++)
                 {
                     if (i > 0) sb.Append(',');
                     sb.Append('{');
-                    Prop(sb, "name", r.Versions[i].Name ?? "").Append(',');
-                    Prop(sb, "host", r.Versions[i].HostVersion ?? "").Append(',');
-                    Prop(sb, "you", r.Versions[i].ClientVersion ?? "");
+                    Prop(sb, "name", versions[i].Name ?? "").Append(',');
+                    Prop(sb, "id", versions[i].PlatformId ?? "").Append(',');
+                    Prop(sb, "host", versions[i].HostVersion ?? "").Append(',');
+                    Prop(sb, "you", versions[i].ClientVersion ?? "");
                     sb.Append('}');
                 }
             }
@@ -740,6 +740,20 @@ namespace SkylineTogether.UI
         }
 
         private const int MaxListed = 200;
+
+        private static void WriteEntries(StringBuilder sb, List<ModEntry> entries)
+        {
+            if (entries == null) return;
+            for (int i = 0; i < entries.Count && i < MaxListed; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append('{');
+                Prop(sb, "name", entries[i].Name ?? "").Append(',');
+                Prop(sb, "version", entries[i].Version ?? "").Append(',');
+                Prop(sb, "id", entries[i].PlatformId ?? "");
+                sb.Append('}');
+            }
+        }
 
         private static string KindOf(ClientEndKind kind)
         {

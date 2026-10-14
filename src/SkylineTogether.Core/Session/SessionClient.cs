@@ -162,6 +162,12 @@ namespace SkylineTogether.Core.Session
         /// <summary>The structured compatibility report of a refusal (mods to enable, disable, update), or null.</summary>
         public MismatchReport EndReport { get; private set; }
 
+        /// <summary>
+        /// What differs from the host without blocking the join (asset packs, extra DLC, mods the host allows, mod settings
+        /// the host's values replace), from the host's <see cref="ControlKind.JoinNotice"/>; null when nothing differs.
+        /// </summary>
+        public MismatchReport JoinNotice { get; private set; }
+
         /// <summary>Bytes of the city snapshot received so far (while downloading).</summary>
         public long DownloadedBytes => _receiver != null ? _receiver.BytesReceived : 0;
 
@@ -235,6 +241,9 @@ namespace SkylineTogether.Core.Session
         public event Action PlayersChanged;
         public event Action<ChatEntry> ChatReceived;
         public event Action<string> ToastReceived;
+
+        /// <summary>The host's join notice arrived (<see cref="JoinNotice"/>), right after the welcome.</summary>
+        public event Action<MismatchReport> JoinNoticeReceived;
         public event Action<SpeedState> SpeedChanged;
 
         /// <summary>Replication-layer messages from the host, in order, only while live (earlier ones are buffered).</summary>
@@ -459,7 +468,9 @@ namespace SkylineTogether.Core.Session
             _connection = connection;
             _channel = new PeerChannel(connection, PeerId.Host, _clock, _log);
             SetState(ClientState.Handshaking);
-            HandshakeDigests digests = _info.GetDigests();
+            // one manifest for both messages: the hello's digests are those of the lists that follow
+            HandshakeManifest manifest = _info.BuildManifest() ?? new HandshakeManifest { Digests = _info.GetDigests() };
+            HandshakeDigests digests = manifest.Digests;
             _body.Reset();
             HelloMessage.Write(_body, new HelloMessage
             {
@@ -470,12 +481,22 @@ namespace SkylineTogether.Core.Session
                 CompressionMask = CompressionNegotiation.AlwaysSupported,
             });
             _channel.Send(MessageKind.Hello, _body);
-            HandshakeManifest manifest = _info.BuildManifest(false);
             _payload.Reset();
-            ManifestDetailMessage.Write(_payload, new ManifestDetailMessage { Manifest = manifest });
+            try
+            {
+                ManifestDetailMessage.Write(_payload, new ManifestDetailMessage { Manifest = manifest });
+            }
+            catch (ArgumentException ex)
+            {
+                // far too many mods to list: the digests alone still let the host compare (it reports what it cannot name)
+                _log.Warn(LogCategory.Session, "the manifest does not fit the handshake (" + ex.Message + "); sending the digests only");
+                manifest = new HandshakeManifest { Digests = digests, Mods = null, Content = null, AssetPacks = null, Settings = null };
+                ManifestDetailMessage.Write(_payload, new ManifestDetailMessage { Manifest = manifest });
+            }
             SendControl(ControlKind.ManifestDetail, _payload);
             _channel.Pump();
-            _log.Info(LogCategory.Session, "connected; sent hello (" + manifest.Mods.Count + " mods)");
+            _log.Info(LogCategory.Session, "connected; sent hello (" + (manifest.Mods?.Count ?? 0) + " mods, " + (manifest.Content?.Count ?? 0) + " DLC, "
+                                           + (manifest.AssetPacks != null ? manifest.AssetPacks.Count.ToString(CultureInfo.InvariantCulture) : "too many") + " asset packs)");
         }
 
         void ITransportEventSink.OnDisconnected(IConnection connection, int reason, string text)
@@ -645,6 +666,16 @@ namespace SkylineTogether.Core.Session
                 case ControlKind.Toast:
                     ToastReceived?.Invoke(SessionPayloads.ReadText(_reader));
                     return;
+                case ControlKind.JoinNotice:
+                {
+                    // a report that cannot be read is no reason to leave: the join goes on without it
+                    MismatchReport notice = MismatchReport.Decode(payload);
+                    if (notice == null || JoinNotice != null) return;
+                    JoinNotice = notice;
+                    _log.Info(LogCategory.Join, "the host reports differences: " + notice.Describe());
+                    JoinNoticeReceived?.Invoke(notice);
+                    return;
+                }
                 case ControlKind.SnapshotManifest:
                     BeginDownload(SnapshotManifestCodec.Decode(payload, 0, payload.Length));
                     return;

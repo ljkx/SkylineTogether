@@ -31,8 +31,13 @@ namespace SkylineTogether.Core.Session
         /// <summary>Password challenges that may be open at once per Steam ID or address.</summary>
         public int MaxPendingChallengesPerKey = 2;
         public int MaxPlayers = 8;
-        /// <summary>Refuse joiners whose mod list differs from the host's.</summary>
+        /// <summary>Refuse joiners whose mod list differs from the host's (read live; otherwise they are told what differs).</summary>
         public bool RequireSameMods = true;
+        /// <summary>
+        /// Refuse joiners whose asset packs differ from the host's (read live). Off: they join, are told which packs differ,
+        /// and objects of packs they lack are left out on their side.
+        /// </summary>
+        public bool RequireSameAssets;
         public ListenOptions Listen = new ListenOptions();
         public double HandshakeTimeoutSeconds = 30;
         /// <summary>
@@ -270,6 +275,12 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>A peer was admitted and will receive a snapshot; the replication layer starts queueing for it.</summary>
         public event Action<PeerId> PeerJoining;
+
+        /// <summary>
+        /// A joiner was admitted with differences that do not block the join (the same report it receives as
+        /// <see cref="ControlKind.JoinNotice"/>): the player's id and name, and the report.
+        /// </summary>
+        public event Action<PeerId, string, MismatchReport> JoinerDiffers;
 
         /// <summary>
         /// A live peer's presence (cursor, tool) arrived; <see cref="PresenceMessage.From"/> is set by the host. It has
@@ -1356,7 +1367,8 @@ namespace SkylineTogether.Core.Session
         private void TryAdmit(Peer p)
         {
             if (p.Hello == null || p.Manifest == null || p.Admitted || p.AwaitingPassword || !p.Authenticated) return;
-            HandshakeDigests mine = _info.GetDigests();
+            HandshakeManifest mineManifest = _info.BuildManifest() ?? new HandshakeManifest();
+            HandshakeDigests mine = mineManifest.Digests;
             HandshakeDigests theirs = p.Hello.Digests;
             if (theirs.ModBuild != mine.ModBuild)
             {
@@ -1371,15 +1383,17 @@ namespace SkylineTogether.Core.Session
                     new MismatchReport { Kind = "game", HostGameVersion = mine.GameVersion, ClientGameVersion = theirs.GameVersion });
                 return;
             }
-            if (_options.RequireSameMods)
+            // mods, DLC and content packs, asset packs and mod settings, each compared item by item only when its
+            // digests differ (the hello's digests are the ones the client computed from these lists)
+            HandshakeManifest theirsManifest = p.Manifest;
+            theirsManifest.Digests = theirs;
+            CompatibilityResult compat = CompatibilityCheck.Compare(mineManifest, theirsManifest,
+                new CompatibilityOptions { RequireSameMods = _options.RequireSameMods, RequireSameAssets = _options.RequireSameAssets });
+            if (compat.Refusal != null)
             {
-                MismatchReport diff = MismatchReport.CompareMods(_info.BuildManifest(false).Mods, p.Manifest.Mods);
-                if (diff != null)
-                {
-                    // the detail text is cut at 1024 characters; the report carries the complete lists for the UI
-                    Refuse(p, RefuseReason.Mismatch, "Your mods differ from the host's. " + diff.Describe(), diff);
-                    return;
-                }
+                // the detail text is cut at 1024 characters; the report carries the complete lists for the UI
+                Refuse(p, RefuseReason.Mismatch, compat.RefusalDetail, compat.Refusal);
+                return;
             }
             // several handshakes may pass the password at once; each is checked here, after its own answer
             if (IsFull())
@@ -1387,7 +1401,31 @@ namespace SkylineTogether.Core.Session
                 Refuse(p, RefuseReason.Full, "The session is full.");
                 return;
             }
-            Admit(p);
+            Admit(p, compat.Notice);
+        }
+
+        /// <summary>
+        /// Tells an admitted joiner what differs without blocking the join (<see cref="ControlKind.JoinNotice"/>), logs it
+        /// and raises <see cref="JoinerDiffers"/>.
+        /// </summary>
+        private void SendJoinNotice(Peer p, MismatchReport notice)
+        {
+            _log.Info(LogCategory.Join, p.Name + " joins with differences: " + notice.Describe());
+            byte[] encoded = MismatchReport.Encode(notice);
+            if (encoded != null && encoded.Length <= ControlMessage.MaxPayloadBytes)
+            {
+                _payload.Reset();
+                _payload.WriteBytes(encoded, 0, encoded.Length);
+                SendControl(p, ControlKind.JoinNotice, _payload);
+            }
+            try
+            {
+                JoinerDiffers?.Invoke(p.Id, p.Name, notice);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(LogCategory.Session, "a join-notice listener failed", ex);
+            }
         }
 
         /// <summary>True when no further player fits (<see cref="HostOptions.MaxPlayers"/> counts the host).</summary>
@@ -1398,7 +1436,7 @@ namespace SkylineTogether.Core.Session
             return admitted + 1 >= _options.MaxPlayers;
         }
 
-        private void Admit(Peer p)
+        private void Admit(Peer p, MismatchReport notice)
         {
             p.Id = AllocatePeerId();
             if (p.Id == PeerId.Host)
@@ -1433,6 +1471,7 @@ namespace SkylineTogether.Core.Session
             p.Channel.Send(MessageKind.Welcome, _body);
             _playersDirty = true;
             _log.Info(LogCategory.Session, "admitted " + p.Name + " as " + p.Id);
+            if (notice != null) SendJoinNotice(p, notice);
             SystemMessage(p.Name + " is joining…");
             PeerJoining?.Invoke(p.Id);
             // nothing changed since the last request (no broadcast, simulation held or paused throughout):

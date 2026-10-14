@@ -23,7 +23,7 @@ namespace SkylineTogether.Settings
         /// <summary>Every option shown on the Options page (texts: <c>st.options.&lt;name&gt;.label/.desc</c>).</summary>
         public static readonly string[] OptionNames =
         {
-            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(FriendsOnly), nameof(EnforcePlacementChecks), nameof(AllowDirectConnections),
+            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(RequireSameAssets), nameof(FriendsOnly), nameof(EnforcePlacementChecks), nameof(AllowDirectConnections),
             nameof(DirectPort), nameof(JoinTarget), nameof(JoinPassword), nameof(HostButton), nameof(JoinButton), nameof(LeaveButton), nameof(ShowNetworkHud),
             nameof(WriteDiagnosticsButton),
         };
@@ -65,6 +65,13 @@ namespace SkylineTogether.Settings
 
         [SettingsUISection(MainSection, HostGroup)]
         public bool RequireSameMods { get; set; }
+
+        /// <summary>
+        /// Refuse joiners whose asset packs differ (ARCHITECTURE.md#handshake-and-admission). Off (the default): they join,
+        /// are told which packs differ, and objects of packs they lack are left out on their side.
+        /// </summary>
+        [SettingsUISection(MainSection, HostGroup)]
+        public bool RequireSameAssets { get; set; }
 
         /// <summary>Only the host's Steam friends and players invited from the panel may join (others: "not invited").</summary>
         [SettingsUISection(MainSection, HostGroup)]
@@ -162,6 +169,7 @@ namespace SkylineTogether.Settings
             HostPassword = "";
             MaxPlayers = 8;
             RequireSameMods = true;
+            RequireSameAssets = false;
             AllowDirectConnections = false;
             FriendsOnly = false;
             EnforcePlacementChecks = false;

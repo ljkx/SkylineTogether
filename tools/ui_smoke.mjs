@@ -197,7 +197,7 @@ function runHandlers(label) {
 // ----------------------------------------------------------------------------------------------- cases
 const base = { steam: true, steamId: "76561190000000000", players: [], chat: [], canHost: true, canJoin: true, keepPassword: "\u0001keep",
   playerName: "Me", sessionNameSetting: "", hasPassword: false, joinTarget: "", lastEnd: "", status: "", sync: "", speed: "", sessionName: "", progress: 0, directPort: 0,
-  inGame: true, maxPlayers: 8, allowDirect: false, requireSameMods: true, portSetting: 27015, canInvite: false, inviteSteamId: "", hold: false, stage: "",
+  inGame: true, maxPlayers: 8, allowDirect: false, requireSameMods: true, requireSameAssets: false, portSetting: 27015, canInvite: false, inviteSteamId: "", hold: false, stage: "",
   speedValue: 1, speedPaused: false, speedHeld: false, end: null, build: "2f076aad4234", friendsOnly: false, localRole: "", resync: "", bans: [] };
 // bans, co-hosts, removal after loading, resync offers
 const bans = [{ key: "steam:76561190000000007", name: "Griefer", kind: "steam", id: "76561190000000007" }, { key: "ip:203.0.113.9", name: "", kind: "ip", id: "203.0.113.9" }];
@@ -243,6 +243,11 @@ const cases = {
     sync: "12,345 objects in sync, terrain: 4 tiles applied; verified 9,000 objects, 0 repairs; icons match; movers +10 -2, 140 in motion; clock follows the host",
     players: [{ id: 0, name: "Host", host: true, you: false, state: "Live", ping: 40, progress: 1, color: "#f2b84b", role: "host" }, { id: 1, name: "Me", host: false, you: true, state: "Live", ping: 0, progress: 1, color: "#3fb6e8", role: "builder" }], chat }, net, presence: tags },
   endMods: { state: { ...base, mode: "None", end: mods } },
+  // the compatibility check: DLC the joiner lacks, asset packs the host requires (lists with Paradox Mods ids)
+  endContent: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "content", missing: [{ name: "Beach Properties", version: "", id: "" }], extra: [{ name: "Modern Architecture", version: "", id: "" }] }) } },
+  endAssets: { state: { ...base, mode: "None", requireSameAssets: true, end: end("refused", "Mismatch", { reportKind: "assets", missing: [{ name: "Bus Stops", version: "1.0", id: "75426" }],
+    extra: [{ name: "Fences", version: "", id: "90001" }], versions: [{ name: "Trees", id: "80010", host: "2.1", you: "2.2" }] }) } },
+  endAssetsUnknown: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "assets", text: "The host requires the same asset packs. The asset packs differ (too many to list)." }) } },
   endPassword: { state: { ...base, mode: "None", end: end("refused", "BadPassword") } },
   endPasswordRequired: { state: { ...base, mode: "None", end: end("passwordRequired") } },
   endGame: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "game", hostGame: "1.2.3", yourGame: "1.2.2" }) } },

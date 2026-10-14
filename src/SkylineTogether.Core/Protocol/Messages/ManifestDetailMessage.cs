@@ -1,67 +1,55 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
 using SkylineTogether.Core.Buffers;
 
 namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
-    /// The payload of <see cref="ControlKind.ManifestDetail"/>: the full <see cref="HandshakeManifest"/> behind the
-    /// handshake digests, exchanged for mismatching categories (ARCHITECTURE.md#handshake-and-admission). Every list is <c>varint (count + 1)</c>
-    /// with 0 = null, so "not provided" (for example <see cref="HandshakeManifest.PrefabIds"/>, filled only on a prefab
-    /// mismatch) survives the round trip.
+    /// The payload of <see cref="ControlKind.ManifestDetail"/>: the <see cref="HandshakeManifest"/> behind the handshake
+    /// digests, sent by the client right after its hello and compared by the host after the password
+    /// (ARCHITECTURE.md#handshake-and-admission). Every list is <c>varint (count + 1)</c> with 0 = null ("not provided").
     /// <code>
     /// digests (as in Hello)
-    /// | list mods      (≤ 4096):   string name (≤ 512 B) | string version (≤ 128 B) | string platformId (≤ 128 B) | string dllHash (≤ 256 B)
+    /// | list mods       (≤ 4096):  string name (≤ 512 B) | string version (≤ 128 B) | string platformId (≤ 128 B) | string dllHash (≤ 256 B)
     ///                              | u8 flags {bit 0 IsUiModule, bit 1 RegistersTypesOrSystemsOrPrefabs, bit 2 ClientLocalHint}
-    /// | list content   (≤ 16384):  string (≤ 512 B)
-    /// | list formatTagNames (≤ 4096): string (≤ 256 B)
-    /// | list prefabIds (≤ 262144): string (≤ 1024 B)
-    /// | list settings  (≤ 65536):  string mod (≤ 512 B) | string key (≤ 512 B) | string value (≤ 16 KiB) | u8 flags {bit 0 SimulationRelevant, bit 1 Pushable}
-    /// | list dataFiles (≤ 256):    string file (≤ 256 B) | u64 digest | u8 flags {bit 0 Overridden}
+    /// | list content    (≤ 1024):  entry
+    /// | list assetPacks (≤ 16384): entry
+    /// | list settings   (≤ 4096):  string mod (≤ 512 B) | string key (≤ 512 B) | string value (≤ 4 KiB) | u8 flags {bit 0 SimulationRelevant, bit 1 Pushable}
+    /// entry = string id (≤ 128 B) | string name (≤ 256 B) | string version (≤ 128 B) | u64 digest | varint prefabs
     /// </code>
-    /// Identifiers are returned verbatim (they are compared exactly; the UI escapes them). The prefab list is the only
-    /// part that is large in practice (one id per prefab): when its encoding would exceed <see cref="MaxPrefabListBytes"/>,
-    /// or the whole payload <see cref="MaxEncodedBytes"/>, the writer sends null instead, so the compatibility report says
-    /// the list was unavailable rather than listing a misleading partial difference. A payload that is still above
-    /// <see cref="MaxEncodedBytes"/> without the prefab list is refused with <see cref="ArgumentException"/> (nothing is
-    /// left in the writer then). The static codec methods are thread-safe.
+    /// Identifiers are returned verbatim (they are compared exactly; the UI escapes them). The message arrives before the
+    /// joiner is admitted, when the host accepts bodies of at most 1 MiB (<c>HostOptions.UnadmittedMaxBodyBytes</c>), so
+    /// the writer keeps it within <see cref="MaxEncodedBytes"/>: when the whole payload is larger it sends the asset
+    /// pack list as null, then the settings list too (the host then reports the category as not comparable rather than
+    /// a misleading partial difference). A payload still above the limit is refused with
+    /// <see cref="ArgumentException"/> (nothing is left in the writer then). The static codec methods are thread-safe.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
     public sealed class ManifestDetailMessage
     {
-        /// <summary>Largest encoded payload: it travels as the payload of one control message.</summary>
-        public const int MaxEncodedBytes = ControlMessage.MaxPayloadBytes;
+        /// <summary>Largest encoded payload: below the host's 1 MiB limit for messages before admission, with room for the envelope.</summary>
+        public const int MaxEncodedBytes = 1024 * 1024 - 4 * 1024;
 
         public const int MaxMods = 4096;
-        public const int MaxContent = 16384;
-        public const int MaxFormatTags = 4096;
-        public const int MaxPrefabIds = 262144;
-        public const int MaxSettings = 65536;
-        public const int MaxDataFiles = 256;
+        public const int MaxContent = 1024;
+        public const int MaxAssetPacks = 16384;
+        public const int MaxSettings = 4096;
         public const int MaxModNameBytes = 512;
         public const int MaxVersionBytes = 128;
         public const int MaxPlatformIdBytes = 128;
         public const int MaxDllHashBytes = 256;
-        public const int MaxContentBytes = 512;
-        public const int MaxFormatTagBytes = 256;
-        public const int MaxPrefabIdBytes = 1024;
+        public const int MaxEntryIdBytes = 128;
+        public const int MaxEntryNameBytes = 256;
+        public const int MaxEntryVersionBytes = 128;
         public const int MaxSettingKeyBytes = 512;
-        public const int MaxSettingValueBytes = 16 * 1024;
-        public const int MaxFileNameBytes = 256;
-
-        /// <summary>Encoded size above which the prefab list is sent as null (6 MiB).</summary>
-        public const int MaxPrefabListBytes = 6 * 1024 * 1024;
+        public const int MaxSettingValueBytes = 4 * 1024;
 
         private const byte ModUiModule = 1;
         private const byte ModRegisters = 2;
         private const byte ModClientLocal = 4;
         private const byte SettingSimulationRelevant = 1;
         private const byte SettingPushable = 2;
-        private const byte DataFileOverridden = 1;
-
-        private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, false);
 
         public HandshakeManifest Manifest;
 
@@ -70,18 +58,24 @@ namespace SkylineTogether.Core.Protocol
             MessageFields.CheckMessage(w, nameof(w));
             MessageFields.CheckMessage(m, nameof(m));
             HandshakeManifest manifest = m.Manifest ?? throw new ArgumentException("Manifest is null", nameof(m));
-            List<string> prefabs = manifest.PrefabIds;
-            if (prefabs != null && (prefabs.Count > MaxPrefabIds || EncodedSize(prefabs) > MaxPrefabListBytes)) prefabs = null;
-
             int start = w.Length;
             try
             {
-                WriteManifest(w, manifest, prefabs);
+                List<ContentEntry> packs = manifest.AssetPacks;
+                List<SettingEntry> settings = manifest.Settings;
+                WriteManifest(w, manifest, packs, settings);
                 if (w.Length - start <= MaxEncodedBytes) return;
-                if (prefabs != null)
+                if (packs != null)
                 {
                     w.Truncate(start);
-                    WriteManifest(w, manifest, null);
+                    packs = null;
+                    WriteManifest(w, manifest, null, settings);
+                    if (w.Length - start <= MaxEncodedBytes) return;
+                }
+                if (settings != null)
+                {
+                    w.Truncate(start);
+                    WriteManifest(w, manifest, packs, null);
                     if (w.Length - start <= MaxEncodedBytes) return;
                 }
             }
@@ -93,11 +87,11 @@ namespace SkylineTogether.Core.Protocol
             int size = w.Length - start;
             w.Truncate(start);
             throw new ArgumentException("the manifest needs " + size.ToString(CultureInfo.InvariantCulture)
-                                        + " bytes without its prefab list, more than the control payload limit of "
+                                        + " bytes without its asset pack and setting lists, more than the limit of "
                                         + MaxEncodedBytes.ToString(CultureInfo.InvariantCulture), nameof(m));
         }
 
-        private static void WriteManifest(ByteWriter w, HandshakeManifest manifest, List<string> prefabs)
+        private static void WriteManifest(ByteWriter w, HandshakeManifest manifest, List<ContentEntry> packs, List<SettingEntry> settings)
         {
             HandshakeCodec.WriteDigests(w, manifest.Digests);
 
@@ -116,11 +110,9 @@ namespace SkylineTogether.Core.Protocol
                 }
             }
 
-            MessageFields.WriteStringList(w, manifest.Content, MaxContent, MaxContentBytes, "Content");
-            MessageFields.WriteStringList(w, manifest.FormatTagNames, MaxFormatTags, MaxFormatTagBytes, "FormatTagNames");
-            MessageFields.WriteStringList(w, prefabs, MaxPrefabIds, MaxPrefabIdBytes, "PrefabIds");
+            WriteEntries(w, manifest.Content, MaxContent, "Content");
+            WriteEntries(w, packs, MaxAssetPacks, "AssetPacks");
 
-            List<SettingEntry> settings = manifest.Settings;
             MessageFields.WriteNullableCount(w, settings?.Count ?? 0, settings == null, MaxSettings, "Settings");
             if (settings != null)
             {
@@ -133,18 +125,21 @@ namespace SkylineTogether.Core.Protocol
                     w.WriteByte((byte)((setting.SimulationRelevant ? SettingSimulationRelevant : 0) | (setting.Pushable ? SettingPushable : 0)));
                 }
             }
+        }
 
-            List<DataFileDigestEntry> files = manifest.DataFiles;
-            MessageFields.WriteNullableCount(w, files?.Count ?? 0, files == null, MaxDataFiles, "DataFiles");
-            if (files != null)
+        private static void WriteEntries(ByteWriter w, List<ContentEntry> entries, int max, string field)
+        {
+            MessageFields.WriteNullableCount(w, entries?.Count ?? 0, entries == null, max, field);
+            if (entries == null) return;
+            foreach (ContentEntry e in entries)
             {
-                foreach (DataFileDigestEntry file in files)
-                {
-                    if (file == null) throw new ArgumentException("DataFiles contains null", nameof(manifest));
-                    MessageFields.WriteString(w, file.File, MaxFileNameBytes, "DataFileDigestEntry.File");
-                    w.WriteUInt64(file.Digest);
-                    w.WriteByte(file.Overridden ? DataFileOverridden : (byte)0);
-                }
+                if (e == null) throw new ArgumentException(field + " contains null", nameof(entries));
+                if (e.Prefabs < 0) throw new ArgumentException(field + ": negative prefab count", nameof(entries));
+                MessageFields.WriteString(w, e.Id, MaxEntryIdBytes, field + ".Id");
+                MessageFields.WriteString(w, e.Name, MaxEntryNameBytes, field + ".Name");
+                MessageFields.WriteString(w, e.Version, MaxEntryVersionBytes, field + ".Version");
+                w.WriteUInt64(e.Digest);
+                w.WriteVarUInt32((uint)e.Prefabs);
             }
         }
 
@@ -171,9 +166,8 @@ namespace SkylineTogether.Core.Protocol
                 manifest.Mods.Add(mod);
             }
 
-            manifest.Content = MessageFields.ReadStringList(r, MaxContent, MaxContentBytes, "Manifest.Content");
-            manifest.FormatTagNames = MessageFields.ReadStringList(r, MaxFormatTags, MaxFormatTagBytes, "Manifest.FormatTagNames");
-            manifest.PrefabIds = MessageFields.ReadStringList(r, MaxPrefabIds, MaxPrefabIdBytes, "Manifest.PrefabIds");
+            manifest.Content = ReadEntries(r, MaxContent, "Manifest.Content");
+            manifest.AssetPacks = ReadEntries(r, MaxAssetPacks, "Manifest.AssetPacks");
 
             int settingCount = MessageFields.ReadNullableCount(r, MaxSettings, 4, "Manifest.Settings");
             manifest.Settings = settingCount < 0 ? null : new List<SettingEntry>(settingCount);
@@ -190,20 +184,30 @@ namespace SkylineTogether.Core.Protocol
                 setting.Pushable = (flags & SettingPushable) != 0;
                 manifest.Settings.Add(setting);
             }
+            return new ManifestDetailMessage { Manifest = manifest };
+        }
 
-            int fileCount = MessageFields.ReadNullableCount(r, MaxDataFiles, 10, "Manifest.DataFiles");
-            manifest.DataFiles = fileCount < 0 ? null : new List<DataFileDigestEntry>(fileCount);
-            for (int i = 0; i < fileCount; i++)
+        // an entry is at least 3 empty strings + 8 digest bytes + 1 count byte
+        private static List<ContentEntry> ReadEntries(ByteReader r, int max, string field)
+        {
+            int count = MessageFields.ReadNullableCount(r, max, 12, field);
+            if (count < 0) return null;
+            var list = new List<ContentEntry>(count);
+            for (int i = 0; i < count; i++)
             {
-                var file = new DataFileDigestEntry
+                var e = new ContentEntry
                 {
-                    File = MessageFields.ReadString(r, MaxFileNameBytes, "DataFileDigestEntry.File"),
+                    Id = MessageFields.ReadString(r, MaxEntryIdBytes, field + ".Id"),
+                    Name = MessageFields.ReadString(r, MaxEntryNameBytes, field + ".Name"),
+                    Version = MessageFields.ReadString(r, MaxEntryVersionBytes, field + ".Version"),
                     Digest = r.ReadUInt64()
                 };
-                file.Overridden = (MessageFields.ReadFlags(r, DataFileOverridden, "DataFileDigestEntry flags") & DataFileOverridden) != 0;
-                manifest.DataFiles.Add(file);
+                uint prefabs = r.ReadVarUInt32();
+                if (prefabs > int.MaxValue) throw new DecodeException(field + ": prefab count " + prefabs.ToString(CultureInfo.InvariantCulture) + " exceeds int.MaxValue");
+                e.Prefabs = (int)prefabs;
+                list.Add(e);
             }
-            return new ManifestDetailMessage { Manifest = manifest };
+            return list;
         }
 
         /// <summary>Reads a whole payload: <see cref="Read"/> plus a check that nothing follows.</summary>
@@ -213,17 +217,6 @@ namespace SkylineTogether.Core.Protocol
             ManifestDetailMessage m = Read(r);
             MessageFields.EnsureEnd(r, "ManifestDetail");
             return m;
-        }
-
-        private static long EncodedSize(List<string> list)
-        {
-            long size = 0;
-            foreach (string s in list)
-            {
-                int bytes = string.IsNullOrEmpty(s) ? 0 : Utf8.GetByteCount(s);
-                size += WireFormat.VarUInt32Size((uint)bytes) + bytes;
-            }
-            return size;
         }
     }
 }

@@ -14,10 +14,28 @@ namespace SkylineTogether.Core.Tests.Session
         public ulong ModBuild = 42;
         public string GameVersion = "1.2.3";
         public List<ModEntry> Mods = new List<ModEntry> { new ModEntry { Name = "Move It", Version = "1.0", PlatformId = "100" } };
+        public List<ContentEntry> Content = new List<ContentEntry> { new ContentEntry { Id = "2427731", Name = "San Francisco Set" } };
+        public List<ContentEntry> AssetPacks = new List<ContentEntry> { new ContentEntry { Id = "75426", Name = "Bus Stops", Version = "1.0", Digest = 0xB05, Prefabs = 12 } };
+        public List<SettingEntry> Settings = new List<SettingEntry> { new SettingEntry { Mod = "Traffic", Key = "AllowUTurns", Value = "True", SimulationRelevant = true, Pushable = true } };
+        /// <summary>Send no asset pack list (as when it is too long), digest still filled.</summary>
+        public bool WithholdAssetPacks;
 
-        public HandshakeDigests GetDigests() => new HandshakeDigests { ProtocolVersion = ProtocolVersion.Current, ModBuild = ModBuild, GameVersion = GameVersion, GameFullVersion = GameVersion, Locale = "en-US" };
+        public HandshakeDigests GetDigests() => BuildManifest().Digests;
 
-        public HandshakeManifest BuildManifest(bool includePrefabList) => new HandshakeManifest { Digests = GetDigests(), Mods = new List<ModEntry>(Mods) };
+        public HandshakeManifest BuildManifest()
+        {
+            var m = new HandshakeManifest
+            {
+                Digests = new HandshakeDigests { ProtocolVersion = ProtocolVersion.Current, ModBuild = ModBuild, GameVersion = GameVersion, GameFullVersion = GameVersion, Locale = "en-US" },
+                Mods = new List<ModEntry>(Mods),
+                Content = new List<ContentEntry>(Content),
+                AssetPacks = new List<ContentEntry>(AssetPacks),
+                Settings = new List<SettingEntry>(Settings),
+            };
+            CompatibilityDigests.Fill(m);
+            if (WithholdAssetPacks) m.AssetPacks = null;
+            return m;
+        }
     }
 
     internal sealed class FakeSnapshots : ISnapshotProvider

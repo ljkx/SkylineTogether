@@ -304,6 +304,7 @@ namespace SkylineTogether.Session
                     Password = _settings.HostPassword ?? "",
                     MaxPlayers = Math.Max(2, Math.Min(16, _settings.MaxPlayers)),
                     RequireSameMods = _settings.RequireSameMods,
+                    RequireSameAssets = _settings.RequireSameAssets,
                     Listen = new ListenOptions { VirtualPort = VirtualPort, AllowIp = direct, IpPort = _settings.DirectPort, MaxConnections = Math.Max(2, _settings.MaxPlayers) },
                     // snapshot chunks are pumped between frames too (Steam connections are thread-safe)
                     BackgroundPump = true,
@@ -319,6 +320,12 @@ namespace SkylineTogether.Session
                 host.ChatReceived += AddChat;
                 host.PlayersChanged += () => _playersVersion++;
                 host.BansChanged += () => SaveBans(host);
+                // a joiner admitted with other asset packs, DLC, mods or mod settings (the details are in the log)
+                host.JoinerDiffers += (peer, who, report) =>
+                {
+                    string line = JoinNoticeText.ForHost(who, report);
+                    if (line != null) Notify(line, ProgressState.Warning, null, 10f);
+                };
                 host.SpeedRequested += (peer, speed) =>
                 {
                     _speedRequest = speed;
@@ -552,6 +559,7 @@ namespace SkylineTogether.Session
                 client.ChatReceived += AddChat;
                 client.PlayersChanged += () => _playersVersion++;
                 client.ToastReceived += text => Notify(text);
+                client.JoinNoticeReceived += OnJoinNotice;
                 client.StateChanged += () => OnClientStateChanged(client);
                 Client = client;
                 LastEndReason = null;
@@ -1216,6 +1224,19 @@ namespace SkylineTogether.Session
             _chat.Clear();
             _chatSeq.Clear();
             _chatVersion++;
+        }
+
+        /// <summary>
+        /// The host told this joiner what differs without blocking the join (asset packs, extra DLC, allowed mods, mod
+        /// settings): one toast and one system chat line per category, so it can be read again in the chat.
+        /// </summary>
+        private void OnJoinNotice(MismatchReport report)
+        {
+            foreach (string line in JoinNoticeText.ForJoiner(report))
+            {
+                Notify(line, ProgressState.Warning, null, 12f);
+                AddChat(new ChatEntry { IsSystem = true, Text = line });
+            }
         }
 
         /// <summary>

@@ -10,7 +10,7 @@ namespace SkylineTogether.Core.Protocol
     /// it (<see cref="HelloMessage.PeekProtocolVersion"/>):
     /// <code>
     /// varint protocolVersion | u64 modBuild | string gameVersion (≤ 128 B) | string gameFullVersion (≤ 256 B)
-    /// | u64 formatTags | u64 catalog | u64 prefabs | u64 mods | u64 content | u64 modSettings | u64 dataFiles | string locale (≤ 64 B)
+    /// | u64 mods | u64 content | u64 assetPacks | u64 modSettings | string locale (≤ 64 B)
     /// </code>
     /// </summary>
     internal static class HandshakeCodec
@@ -26,13 +26,10 @@ namespace SkylineTogether.Core.Protocol
             w.WriteUInt64(d.ModBuild);
             MessageFields.WriteString(w, d.GameVersion, MaxGameVersionBytes, "GameVersion");
             MessageFields.WriteString(w, d.GameFullVersion, MaxGameFullVersionBytes, "GameFullVersion");
-            w.WriteUInt64(d.FormatTags);
-            w.WriteUInt64(d.Catalog);
-            w.WriteUInt64(d.Prefabs);
             w.WriteUInt64(d.Mods);
             w.WriteUInt64(d.Content);
+            w.WriteUInt64(d.AssetPacks);
             w.WriteUInt64(d.ModSettings);
-            w.WriteUInt64(d.DataFiles);
             MessageFields.WriteString(w, d.Locale, MaxLocaleBytes, "Locale");
         }
 
@@ -46,13 +43,10 @@ namespace SkylineTogether.Core.Protocol
                 ModBuild = r.ReadUInt64(),
                 GameVersion = MessageFields.ReadString(r, MaxGameVersionBytes, "GameVersion"),
                 GameFullVersion = MessageFields.ReadString(r, MaxGameFullVersionBytes, "GameFullVersion"),
-                FormatTags = r.ReadUInt64(),
-                Catalog = r.ReadUInt64(),
-                Prefabs = r.ReadUInt64(),
                 Mods = r.ReadUInt64(),
                 Content = r.ReadUInt64(),
+                AssetPacks = r.ReadUInt64(),
                 ModSettings = r.ReadUInt64(),
-                DataFiles = r.ReadUInt64(),
                 Locale = MessageFields.ReadString(r, MaxLocaleBytes, "Locale")
             };
         }

@@ -187,7 +187,8 @@ Rules the code follows (enforced by review and, where possible, by tests):
   (`tests/.../Protocol/ProtocolFuzzTests.cs`).
 - Every wire layout change increments [`ProtocolVersion.Current`](../src/SkylineTogether.Core/Protocol/ProtocolVersion.cs)
   (policy: [releasing](dev/releasing.md#protocol-version-policy)); golden byte vectors in the tests pin the layouts.
-  Enum values that travel on the wire never change.
+  Enum values that travel on the wire never change; values without a sender stay reserved
+  ([reserved wire values](#reserved-wire-values)).
 - Logging goes through `ILog` with a `LogCategory`; player-facing texts are locale keys, and a test checks that every
   key the game layer uses exists.
 - Hot paths reuse buffers and delegates (no allocation per message or per frame where it can be avoided).
@@ -227,7 +228,8 @@ Core's [`SessionHost`](../src/SkylineTogether.Core/Session/SessionHost.cs) and
 
 `SessionManager.StartHosting` (only in a loaded city, with Steam logged in) creates a `SteamSocketsTransport` wrapped
 in a `CompositeTransport` (the solo-test recorder attaches there) and a `SessionHost` with `HostOptions` from the
-settings: session name, password, max players (2-16, counting the host), "require the same mods", join policy
+settings: session name, password, max players (2-16, counting the host), "require the same mods", "require the same
+asset packs" (off by default), join policy
 (open, or Steam friends and invited players only), the persisted ban list, and the optional direct-IP socket, which
 opens only while a host password is set. A friends-only Steam lobby and rich presence carry the invitation
 ([`SteamInvites`](../src/SkylineTogether/Session/SteamInvites.cs)); the session itself always runs over a P2P
@@ -247,15 +249,16 @@ sequenceDiagram
   participant C as Client
   participant H as Host
   C->>H: Hello (protocol version, build id, game version, name)
-  C->>H: Control ManifestDetail (mod list)
+  C->>H: Control ManifestDetail (mods, DLC, asset packs, mod settings)
   Note over H: protocol version differs: Refuse (no host version<br/>while a password is still owed)
   Note over H: Screen: ban list, join policy (transport identity)<br/>Duplicate Steam ID: replace or refuse
   opt password needed
     H->>C: Control PasswordChallenge (host nonce, salt, session id)
     C->>H: Control PasswordResponse (client nonce, HMAC)
   end
-  Note over H: TryAdmit: build id, game version,<br/>mod list (if required), session full
+  Note over H: TryAdmit: build id, game version, mods (if required),<br/>DLC, asset packs (if required), session full
   H->>C: Welcome (peer id, role, permissions, session info)
+  H->>C: Control JoinNotice (differences that do not block, if any)
   H->>C: Epoch batch: prefab table, id range, ledger epoch
   Note over H: snapshot taken (or reused)
   H->>C: Control SnapshotManifest, then BlobChunk stream
@@ -266,8 +269,8 @@ sequenceDiagram
 
 Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.cs)):
 
-- The client sends `Hello` and its mod manifest at once on connect. Only the Steam ID that Steam authenticated on the
-  transport is an identity; a Steam ID claimed in `Hello` is logged and ignored.
+- The client sends `Hello` and its manifest (`Control ManifestDetail`) at once on connect. Only the Steam ID that Steam
+  authenticated on the transport is an identity; a Steam ID claimed in `Hello` is logged and ignored.
 - A protocol mismatch is refused at once; while the peer still owes a password the refusal names no host version
   (`HelloMessage.PeekProtocolVersion` reads the version before parsing the rest).
 - `Screen` checks the ban list (Steam ID, or address for connections without Steam identity) and the join policy.
@@ -281,10 +284,27 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   and address: three free, then a lockout of 5 s doubling up to 10 minutes, forgotten after 15 minutes; at most two
   open challenges per key.
 - `TryAdmit` then compares the build id (first 48 bits of the SHA-256 of the loaded DLL,
-  [`BuildId`](../src/SkylineTogether.Core/Session/BuildId.cs)), the game version and, with "require the same mods",
-  the mod lists ([`MismatchReport.CompareMods`](../src/SkylineTogether.Core/Session/MismatchReport.cs); mods that are
-  client-local on both sides never block). A refusal carries a `MismatchReport` the joiner's error screen shows.
-  The other `HandshakeDigests` fields are not filled or compared ([known gaps](#known-gaps)).
+  [`BuildId`](../src/SkylineTogether.Core/Session/BuildId.cs)) and the game version, and hands the rest to
+  [`CompatibilityCheck`](../src/SkylineTogether.Core/Session/CompatibilityCheck.cs). The hello carries one digest per
+  category ([`CompatibilityDigests`](../src/SkylineTogether.Core/Session/CompatibilityDigests.cs): XXH64 of the sorted
+  list); only a category whose digests differ has its lists from the manifest compared item by item. The lists come
+  from [`GameInfoProvider`](../src/SkylineTogether/Session/GameInfoProvider.cs):
+
+  | Category | Listed | On a difference |
+  |---|---|---|
+  | Code mods | name, version (`ModManager`) | refused with "require the same mods" ([`MismatchReport.CompareMods`](../src/SkylineTogether.Core/Session/MismatchReport.cs); client-local mods never count), otherwise told |
+  | DLC and content packs | DLC id and name of every available `ContentPrefab` with a `DlcRequirement` (or a Paradox login requirement) | refused when the joiner lacks one the host has (the host's city can contain its objects); content only the joiner has is told |
+  | Asset packs | every Paradox Mods id among the loaded prefabs with package name, version, prefab count and the digest of its prefab ids ([`AssetSources.Packages`](../src/SkylineTogether/Compat/AssetSources.cs)) | told (objects of packs the joiner lacks are left out on its side, as before); refused with "require the same asset packs" |
+  | Mod settings | current values of the settings the host pushes ([`ModSettingsSync.CurrentValues`](../src/SkylineTogether/Compat/ModSettingsSync.cs)) | told; the host's values apply for the session |
+
+  A refusal carries a `MismatchReport` (kind `mods`, `content` or `assets`) whose lists the joiner's error screen
+  shows. Differences that do not block go to the admitted joiner right after `Welcome` as `Control JoinNotice` (a
+  report of kind `notice`): one notification and one chat line per category
+  ([`JoinNoticeText`](../src/SkylineTogether/Session/JoinNoticeText.cs)); the host gets a notification and a log line
+  (`SessionHost.JoinerDiffers`). The manifest must fit the 1 MiB body limit before admission: a client with too many
+  asset packs sends that list as null, and the host reports "the asset packs differ" without names. Local assets
+  (unpublished) and runtime prefabs of mods are not compared here; the snapshot's per-city check names the ones the
+  city uses ([missing assets](#mod-compatibility)).
 - Refuse reasons: `Mismatch`, `Full`, `Banned`, `BadPassword`, `NotInvited`, `HostShuttingDown`, `ProtocolVersion`,
   `HostPreparing`. Before admission a connection may send bodies of at most 1 MiB, and the handshake must finish within
   30 s.
@@ -410,7 +430,7 @@ peers.
 | Kind (value) | Direction | Content |
 |---|---|---|
 | `Hello` (1), `Welcome` (2), `Refuse` (3) | handshake | see [handshake](#handshake-and-admission) |
-| `Control` (4) | both | `ControlKind` + payload: password, manifest, players, speed, snapshot manifest, load progress, live, kick, ban, session end, moderation, toast |
+| `Control` (4) | both | `ControlKind` + payload: password, manifest, join notice, players, speed, snapshot manifest, load progress, live, kick, ban, session end, moderation, toast |
 | `Epoch` (5) | host → client | a `SyncBatch`: structure, values, channels ([batch encoding](#batch-encoding)) |
 | `Ack` (6), `Motion` (8), `MotionControl` (9), `View` (11) | both | mover motion and its acknowledgements, client view reports |
 | `Proposal` (7) | client → host | a `SyncBatch` of the client's edits and requests |
@@ -424,8 +444,9 @@ peers.
 | `FlowStatus` (100) | host → client | electricity and water flow values |
 | `ModChannel` (110) | both | other mods' messages |
 
-`Clock` (10), `HashDetail` (13), `RepairRequest` (14) and `BlobManifest` (15) have limits but no sender in the game
-layer ([known gaps](#known-gaps)). Unknown kinds decode and are ignored by every listener.
+`Clock` (10), `HashDetail` (13), `RepairRequest` (14) and `BlobManifest` (15) are reserved: they have limits but no
+sender ([reserved wire values](#reserved-wire-values)). Unknown and reserved kinds decode, and the session layer drops
+them before any listener sees them (`Limits.IsDeliverable`); a client does not buffer them while it loads.
 
 ### Fragmentation and compression
 
@@ -1036,8 +1057,9 @@ computed with the UI's own functions; clients compare their own rows and re-send
 - **Edit hold** for direct-write tools ([client apply](#client-apply)).
 - **Mod settings.** [`ModSettingsSync`](../src/SkylineTogether/Compat/ModSettingsSync.cs) applies the host's values of
   listed settings on clients for the session and restores the player's own values afterwards.
-- **Join check.** The mod lists are compared at admission ([handshake](#handshake-and-admission)); client-local mods
-  never block.
+- **Join check.** Mods, DLC, asset packs and mod settings are compared at admission
+  ([handshake](#handshake-and-admission)); client-local mods never block, asset packs and settings are told rather than
+  refused unless the host requires the same asset packs.
 - **Missing assets.** Records whose prefab a client lacks are never applied; the player is told which package or mod
   is missing ([`AssetSources`](../src/SkylineTogether/Compat/AssetSources.cs)). The host refuses proposals naming
   prefabs it lacks.
@@ -1155,7 +1177,7 @@ the most ids alive at once plus the quarantine and are released at session end.
   rules, and owned entities, direct-write mod tools and mods that relax them are not checked
   ([placement checks](#placement-checks), [known gaps](#known-gaps)). Within those limits the host still trusts the
   client's vanilla tool.
-- The mod list a client reports is a compatibility check, not a security barrier.
+- The mod, DLC, asset pack and setting lists a client reports are a compatibility check, not a security barrier.
 - Passwords are stored in plain text in each player's settings file.
 
 ## Known limitations
@@ -1170,7 +1192,8 @@ the most ids alive at once plus the quarantine and are released at session end.
   without net ids; the player is warned.
 - **Rejoin is the catch-up path** for a client that falls behind, stalls or loses its connection; changes made while
   disconnected are lost.
-- **Assets must match.** Objects of assets a client lacks are not created on that client.
+- **Assets should match.** Objects of assets a client lacks are not created on that client; the joiner is told which of
+  the host's asset packs it lacks, and the host may require the same asset packs.
 - See [design/SYNC-COVERAGE.md](design/SYNC-COVERAGE.md#remaining-justified-exclusions) for state that is deliberately
   not synced.
 
@@ -1180,10 +1203,11 @@ Open design gaps and inconsistencies found while writing this document.
 
 ### Open design gaps
 
-- **Handshake digests.** `HandshakeDigests` has fields for format tags, type catalog, prefab set, content, mod settings
-  and data files, but [`GameInfoProvider.GetDigests`](../src/SkylineTogether/Session/GameInfoProvider.cs) fills only
-  protocol version, build id, game versions and locale, and the host compares only build id, game version and mods.
-  Prefab or DLC differences show up later as missing assets.
+- **Assets outside packages.** The join check compares Paradox Mods packages only. Local assets and prefabs mods
+  create at runtime are found after the snapshot (per city) and per record; a runtime prefab whose name differs between
+  peers is reported as missing, not refused.
+- **Mod settings outside the pushed list.** Only settings an adapter or a mod's declaration lists are compared and
+  pushed; other settings of world-affecting mods may differ unnoticed.
 - **Placement checks are partial** ([placement checks](#placement-checks)): the game's validation is not re-run
   (it judges only the local tool's `Temp` entities), so collisions, slopes, water, clearance, curvature and whole
   footprints are not checked. Owned spawns are exempt, and the owner a spawn names is not verified, so a forged owner
@@ -1216,4 +1240,6 @@ the beacon-based repair ladder, the bandwidth controllers `HostUploadBudget`, `L
 `MessageKind.Clock`, `HashDetail`, `RepairRequest` and `BlobManifest`, and `ControlKind.ManifestRequest`,
 `SessionSettings`, `Roles`, `HostBusy`, `HostReady`, `SessionReset`, `ResyncRequest`, `ResyncStart`, `ResumeRequest`,
 `ResumeResult`, `ProposalReceived`, `RepairThrottled`, `LineRowsRequest` and `LineRows` are defined but never sent.
-Keep their values reserved.
+They are marked "reserved" in the code (`Limits.IsReservedKind`, `ControlMessage.IsReservedKind`); both session ends
+drop them like unknown values, without disconnecting the sender (`ReservedKindTests`). Keep their values reserved; new
+kinds are appended (the last control kind is `JoinNotice`, 31).

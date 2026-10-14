@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Protocol;
+using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Testing;
 using SkylineTogether.Core.Tests.Framework;
 using static SkylineTogether.Core.Tests.Protocol.ProtocolTestUtil;
@@ -78,9 +80,9 @@ namespace SkylineTogether.Core.Tests.Protocol
                     Digests = new HandshakeDigests
                     {
                         ProtocolVersion = random.Next(0, int.MaxValue), ModBuild = random.NextULong(), GameVersion = RandomText(random, 30),
-                        GameFullVersion = RandomText(random, 60), FormatTags = random.NextULong(), Catalog = random.NextULong(),
-                        Prefabs = random.NextULong(), Mods = random.NextULong(), Content = random.NextULong(), ModSettings = random.NextULong(),
-                        DataFiles = random.NextULong(), Locale = RandomText(random, 10)
+                        GameFullVersion = RandomText(random, 60),
+                        Mods = random.NextULong(), Content = random.NextULong(), AssetPacks = random.NextULong(), ModSettings = random.NextULong(),
+                        Locale = RandomText(random, 10)
                     },
                     SteamId = random.NextULong(), DisplayName = RandomText(random, 64), ClientNonce = RandomBytes(random, 64),
                     CompressionMask = (byte)random.Next(16)
@@ -233,23 +235,39 @@ namespace SkylineTogether.Core.Tests.Protocol
                     IsUiModule = random.NextBool(), RegistersTypesOrSystemsOrPrefabs = random.NextBool()
                 });
             }
-            m.Content = random.Next(5) == 0 ? null : new List<string>();
-            for (int i = 0, n = random.Next(10); m.Content != null && i < n; i++) m.Content.Add(RandomText(random, 30));
-            m.FormatTagNames = random.Next(5) == 0 ? null : new List<string>();
-            for (int i = 0, n = random.Next(10); m.FormatTagNames != null && i < n; i++) m.FormatTagNames.Add(RandomText(random, 30));
-            m.PrefabIds = random.Next(2) == 0 ? null : new List<string>();
-            for (int i = 0, n = random.Next(50); m.PrefabIds != null && i < n; i++) m.PrefabIds.Add(RandomText(random, 80));
+            m.Content = RandomEntries(random, 10);
+            m.AssetPacks = RandomEntries(random, 40);
             m.Settings = random.Next(5) == 0 ? null : new List<SettingEntry>();
             for (int i = 0, n = random.Next(10); m.Settings != null && i < n; i++)
             {
                 m.Settings.Add(new SettingEntry { Mod = RandomText(random, 20), Key = RandomText(random, 20), Value = RandomText(random, 100), SimulationRelevant = random.NextBool(), Pushable = random.NextBool() });
             }
-            m.DataFiles = random.Next(3) == 0 ? null : new List<DataFileDigestEntry>();
-            for (int i = 0, n = random.Next(6); m.DataFiles != null && i < n; i++)
-            {
-                m.DataFiles.Add(new DataFileDigestEntry { File = RandomText(random, 20), Digest = random.NextULong(), Overridden = random.NextBool() });
-            }
             return m;
+        }
+
+        private static List<ContentEntry> RandomEntries(DeterministicRandom random, int max)
+        {
+            if (random.Next(5) == 0) return null;
+            var list = new List<ContentEntry>();
+            for (int i = 0, n = random.Next(max); i < n; i++)
+            {
+                list.Add(new ContentEntry { Id = RandomText(random, 12), Name = RandomText(random, 40), Version = RandomText(random, 8), Digest = random.NextULong(), Prefabs = random.Next(0, int.MaxValue) });
+            }
+            return list;
+        }
+
+        private static void AssertEntries(List<ContentEntry> expected, List<ContentEntry> actual, string what)
+        {
+            Assert.Equal(expected == null, actual == null, what + " null-ness");
+            for (int i = 0; expected != null && i < expected.Count; i++)
+            {
+                Assert.Equal(expected[i].Id ?? "", actual[i].Id, what);
+                Assert.Equal(expected[i].Name ?? "", actual[i].Name, what);
+                Assert.Equal(expected[i].Version ?? "", actual[i].Version, what);
+                Assert.Equal(expected[i].Digest, actual[i].Digest, what);
+                Assert.Equal(expected[i].Prefabs, actual[i].Prefabs, what);
+            }
+            if (expected != null) Assert.Equal(expected.Count, actual.Count, what + " count");
         }
 
         private static void AssertManifests(HandshakeManifest expected, HandshakeManifest actual)
@@ -265,12 +283,8 @@ namespace SkylineTogether.Core.Tests.Protocol
                 Assert.Equal(expected.Mods[i].IsUiModule, actual.Mods[i].IsUiModule);
                 Assert.Equal(expected.Mods[i].RegistersTypesOrSystemsOrPrefabs, actual.Mods[i].RegistersTypesOrSystemsOrPrefabs);
             }
-            Assert.Equal(expected.Content == null, actual.Content == null, "content null-ness");
-            if (expected.Content != null) Assert.SequenceEqual(expected.Content, actual.Content);
-            Assert.Equal(expected.FormatTagNames == null, actual.FormatTagNames == null, "format tags null-ness");
-            if (expected.FormatTagNames != null) Assert.SequenceEqual(expected.FormatTagNames, actual.FormatTagNames);
-            Assert.Equal(expected.PrefabIds == null, actual.PrefabIds == null, "prefab ids null-ness");
-            if (expected.PrefabIds != null) Assert.SequenceEqual(expected.PrefabIds, actual.PrefabIds);
+            AssertEntries(expected.Content, actual.Content, "content");
+            AssertEntries(expected.AssetPacks, actual.AssetPacks, "asset packs");
             Assert.Equal(expected.Settings == null, actual.Settings == null, "settings null-ness");
             for (int i = 0; expected.Settings != null && i < expected.Settings.Count; i++)
             {
@@ -279,13 +293,6 @@ namespace SkylineTogether.Core.Tests.Protocol
                 Assert.Equal(expected.Settings[i].Value, actual.Settings[i].Value);
                 Assert.Equal(expected.Settings[i].SimulationRelevant, actual.Settings[i].SimulationRelevant);
                 Assert.Equal(expected.Settings[i].Pushable, actual.Settings[i].Pushable);
-            }
-            Assert.Equal(expected.DataFiles == null, actual.DataFiles == null, "data files null-ness");
-            for (int i = 0; expected.DataFiles != null && i < expected.DataFiles.Count; i++)
-            {
-                Assert.Equal(expected.DataFiles[i].File, actual.DataFiles[i].File);
-                Assert.Equal(expected.DataFiles[i].Digest, actual.DataFiles[i].Digest);
-                Assert.Equal(expected.DataFiles[i].Overridden, actual.DataFiles[i].Overridden);
             }
         }
 
@@ -305,31 +312,38 @@ namespace SkylineTogether.Core.Tests.Protocol
                 }
             }
 
-            // a prefab list above its byte budget is sent as null (the report then says "list unavailable")
-            var big = new HandshakeManifest { Digests = MessageGoldenTests.SampleDigests(), PrefabIds = new List<string>() };
-            string id = new string('p', 1000);
-            for (int i = 0; i < 7000; i++) big.PrefabIds.Add(id);                    // ~7 MB > 6 MiB
+            // the manifest arrives before admission (1 MiB body limit): the asset pack list goes first when it is too long
+            var big = new HandshakeManifest { Digests = MessageGoldenTests.SampleDigests() };
+            string name = new string('p', ManifestDetailMessage.MaxEntryNameBytes);
+            for (int i = 0; i < 6000; i++) big.AssetPacks.Add(new ContentEntry { Id = i.ToString(CultureInfo.InvariantCulture), Name = name, Prefabs = 1 });   // ~1.6 MB
+            big.Settings.Add(new SettingEntry { Mod = "m", Key = "k", Value = "v" });
             byte[] encoded = Encode<ManifestDetailMessage>(ManifestDetailMessage.Write, new ManifestDetailMessage { Manifest = big });
-            Assert.Null(ManifestDetailMessage.Decode(encoded, 0, encoded.Length).Manifest.PrefabIds);
-
-            // a payload above the control limit without its prefab list is refused, and nothing is left in the writer
-            var huge = new HandshakeManifest { Digests = MessageGoldenTests.SampleDigests(), Settings = new List<SettingEntry>(), PrefabIds = new List<string> { "kept?" } };
-            string value = new string('v', ManifestDetailMessage.MaxSettingValueBytes);
-            for (int i = 0; i < 600; i++) huge.Settings.Add(new SettingEntry { Mod = "m", Key = "k" + i, Value = value });   // ~9.8 MB
-            var w = new ByteWriter();
-            w.WriteByte(0x42);
-            Assert.Throws<ArgumentException>(() => ManifestDetailMessage.Write(w, new ManifestDetailMessage { Manifest = huge }));
-            Assert.Equal(1, w.Length, "the writer is rolled back");
-
-            // the prefab list is dropped first when it alone pushes the payload over the limit
-            huge.Settings.RemoveRange(450, 150);                                      // ~7.4 MB of settings
-            huge.PrefabIds = new List<string>();
-            for (int i = 0; i < 1500; i++) huge.PrefabIds.Add(id);                    // ~1.5 MB: within its own budget
-            encoded = Encode<ManifestDetailMessage>(ManifestDetailMessage.Write, new ManifestDetailMessage { Manifest = huge });
             Assert.True(encoded.Length <= ManifestDetailMessage.MaxEncodedBytes);
             HandshakeManifest back = ManifestDetailMessage.Decode(encoded, 0, encoded.Length).Manifest;
-            Assert.Null(back.PrefabIds);
-            Assert.Equal(450, back.Settings.Count);
+            Assert.Null(back.AssetPacks, "too long: not provided");
+            Assert.Equal(1, back.Settings.Count, "the settings still fit");
+            Assert.True(ManifestDetailMessage.MaxEncodedBytes + 16 < new HostOptions().UnadmittedMaxBodyBytes, "the manifest fits the host's limit before admission");
+
+            // then the settings list
+            var huge = new HandshakeManifest { Digests = MessageGoldenTests.SampleDigests() };
+            string value = new string('v', ManifestDetailMessage.MaxSettingValueBytes);
+            for (int i = 0; i < 300; i++) huge.Settings.Add(new SettingEntry { Mod = "m", Key = "k" + i.ToString(CultureInfo.InvariantCulture), Value = value });   // ~1.2 MB
+            huge.AssetPacks.Add(new ContentEntry { Id = "1", Name = "Pack" });
+            encoded = Encode<ManifestDetailMessage>(ManifestDetailMessage.Write, new ManifestDetailMessage { Manifest = huge });
+            back = ManifestDetailMessage.Decode(encoded, 0, encoded.Length).Manifest;
+            Assert.Null(back.AssetPacks);
+            Assert.Null(back.Settings);
+
+            // a payload above the limit without both lists is refused, and nothing is left in the writer
+            var hopeless = new HandshakeManifest { Digests = MessageGoldenTests.SampleDigests() };
+            string modName = new string('n', ManifestDetailMessage.MaxModNameBytes);
+            string dllHash = new string('h', ManifestDetailMessage.MaxDllHashBytes);
+            for (int i = 0; i < 1300; i++) hopeless.Mods.Add(new ModEntry { Name = modName, DllHash = dllHash });   // ~1 MB
+            for (int i = 0; i < 300; i++) hopeless.Content.Add(new ContentEntry { Name = name });                     // ~0.08 MB
+            var w = new ByteWriter();
+            w.WriteByte(0x42);
+            Assert.Throws<ArgumentException>(() => ManifestDetailMessage.Write(w, new ManifestDetailMessage { Manifest = hopeless }));
+            Assert.Equal(1, w.Length, "the writer is rolled back");
 
             // argument errors leave the writer unchanged as well
             w.Reset();
@@ -349,7 +363,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             var manifest = new HandshakeManifest
             {
                 Digests = MessageGoldenTests.SampleDigests(), Mods = new List<ModEntry> { new ModEntry { Name = "a" } },
-                Content = null, FormatTagNames = null, Settings = null, DataFiles = null
+                Content = null, AssetPacks = null, Settings = null
             };
             byte[] bytes = Encode<ManifestDetailMessage>(ManifestDetailMessage.Write, new ManifestDetailMessage { Manifest = manifest });
             // the mod's flags byte sits right after its four strings: "a", "", "", ""
@@ -382,7 +396,7 @@ namespace SkylineTogether.Core.Tests.Protocol
                 byte[] k = Encode<ControlMessage>(ControlMessage.Write, control);
                 ControlMessage kr = ControlMessage.Decode(k, 0, k.Length);
                 Assert.Equal(control.Kind, kr.Kind, "unknown kinds are read for the router to drop");
-                Assert.Equal((int)control.Kind <= (int)ControlKind.PlayerAction, ControlMessage.IsKnownKind(kr.Kind));
+                Assert.Equal((int)control.Kind <= (int)ControlKind.JoinNotice, ControlMessage.IsKnownKind(kr.Kind));
                 Assert.SequenceEqual(control.Payload, kr.Payload);
                 if (round == 0)
                 {

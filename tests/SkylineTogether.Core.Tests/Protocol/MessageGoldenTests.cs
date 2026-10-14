@@ -23,14 +23,13 @@ namespace SkylineTogether.Core.Tests.Protocol
 
         internal static HandshakeDigests SampleDigests() => new HandshakeDigests
         {
-            ProtocolVersion = 1, ModBuild = 0x0102030405060708UL, GameVersion = "1.2", GameFullVersion = "1.2.3f1",
-            FormatTags = 0x11, Catalog = 0x22, Prefabs = 0x33, Mods = 0x44, Content = 0x55, ModSettings = 0x66, DataFiles = 0x77, Locale = "en-US"
+            ProtocolVersion = 3, ModBuild = 0x0102030405060708UL, GameVersion = "1.2", GameFullVersion = "1.2.3f1",
+            Mods = 0x44, Content = 0x55, AssetPacks = 0x66, ModSettings = 0x77, Locale = "en-US"
         };
 
-        // varint 1 | u64 modBuild | "1.2" | "1.2.3f1" | u64 × 7 digests | "en-US"
+        // varint 3 | u64 modBuild | "1.2" | "1.2.3f1" | u64 mods, content, assetPacks, modSettings | "en-US"
         private const string DigestsHex =
-            "01 | 0807060504030201 | 03 312e32 | 07 312e322e336631 | 1100000000000000 2200000000000000 3300000000000000 "
-            + "4400000000000000 5500000000000000 6600000000000000 7700000000000000 | 05 656e2d5553";
+            "03 | 0807060504030201 | 03 312e32 | 07 312e322e336631 | 4400000000000000 5500000000000000 6600000000000000 7700000000000000 | 05 656e2d5553";
 
         internal static void AssertDigests(HandshakeDigests expected, HandshakeDigests actual)
         {
@@ -38,13 +37,10 @@ namespace SkylineTogether.Core.Tests.Protocol
             Assert.Equal(expected.ModBuild, actual.ModBuild);
             Assert.Equal(expected.GameVersion ?? "", actual.GameVersion);
             Assert.Equal(expected.GameFullVersion ?? "", actual.GameFullVersion);
-            Assert.Equal(expected.FormatTags, actual.FormatTags);
-            Assert.Equal(expected.Catalog, actual.Catalog);
-            Assert.Equal(expected.Prefabs, actual.Prefabs);
             Assert.Equal(expected.Mods, actual.Mods);
             Assert.Equal(expected.Content, actual.Content);
+            Assert.Equal(expected.AssetPacks, actual.AssetPacks);
             Assert.Equal(expected.ModSettings, actual.ModSettings);
-            Assert.Equal(expected.DataFiles, actual.DataFiles);
             Assert.Equal(expected.Locale ?? "", actual.Locale);
         }
 
@@ -66,7 +62,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             Assert.Equal("Ann", read.DisplayName);
             Assert.SequenceEqual(m.ClientNonce, read.ClientNonce);
             Assert.Equal((byte)7, read.CompressionMask);
-            Assert.Equal(1, HelloMessage.PeekProtocolVersion(bytes, 0, bytes.Length));
+            Assert.Equal(3, HelloMessage.PeekProtocolVersion(bytes, 0, bytes.Length));
         }
 
         [Test]
@@ -116,22 +112,20 @@ namespace SkylineTogether.Core.Tests.Protocol
         public void ManifestDetail()
         {
             // digests | mods: 1 entry ("Traffic", "1.0", "123", "ab", flags RegistersTypesOrSystemsOrPrefabs)
-            // | content: ["DLC1"] | formatTagNames: null | prefabIds: null | settings: 1 entry ("M", "K", "V", flags 3)
-            // | dataFiles: 1 entry ("gates.json", u64 digest, flags Overridden)
+            // | content: 1 entry (id "1", "DLC1", version "", digest 0, prefabs 0)
+            // | assetPacks: 1 entry (id "75426", "Bus", "1.2", digest, prefabs 300) | settings: 1 entry ("M", "K", "V", flags 3)
             string hex = DigestsHex
                          + " | 02 07 54726166666963 03 312e30 03 313233 02 6162 02"
-                         + " | 02 04 444c4331 | 00 | 00"
-                         + " | 02 01 4d 01 4b 01 56 03"
-                         + " | 02 0a 67617465732e6a736f6e 0807060504030201 01";
+                         + " | 02 01 31 04 444c4331 00 0000000000000000 00"
+                         + " | 02 05 3735343236 03 427573 03 312e32 0807060504030201 ac02"
+                         + " | 02 01 4d 01 4b 01 56 03";
             var manifest = new HandshakeManifest
             {
                 Digests = SampleDigests(),
                 Mods = new List<ModEntry> { new ModEntry { Name = "Traffic", Version = "1.0", PlatformId = "123", DllHash = "ab", RegistersTypesOrSystemsOrPrefabs = true } },
-                Content = new List<string> { "DLC1" },
-                FormatTagNames = null,
-                PrefabIds = null,
+                Content = new List<ContentEntry> { new ContentEntry { Id = "1", Name = "DLC1" } },
+                AssetPacks = new List<ContentEntry> { new ContentEntry { Id = "75426", Name = "Bus", Version = "1.2", Digest = 0x0102030405060708UL, Prefabs = 300 } },
                 Settings = new List<SettingEntry> { new SettingEntry { Mod = "M", Key = "K", Value = "V", SimulationRelevant = true, Pushable = true } },
-                DataFiles = new List<DataFileDigestEntry> { new DataFileDigestEntry { File = "gates.json", Digest = 0x0102030405060708UL, Overridden = true } }
             };
             AssertBytes(hex, Write<ManifestDetailMessage>(ManifestDetailMessage.Write, new ManifestDetailMessage { Manifest = manifest }));
             byte[] bytes = Hex(hex);
@@ -144,17 +138,31 @@ namespace SkylineTogether.Core.Tests.Protocol
             Assert.Equal("ab", read.Mods[0].DllHash);
             Assert.False(read.Mods[0].IsUiModule);
             Assert.True(read.Mods[0].RegistersTypesOrSystemsOrPrefabs);
-            Assert.SequenceEqual(new[] { "DLC1" }, read.Content);
-            Assert.Null(read.FormatTagNames, "null lists survive");
-            Assert.Null(read.PrefabIds);
+            Assert.Equal("1", read.Content[0].Id);
+            Assert.Equal("DLC1", read.Content[0].Name);
+            Assert.Equal("", read.Content[0].Version);
+            Assert.Equal("75426", read.AssetPacks[0].Id);
+            Assert.Equal("Bus", read.AssetPacks[0].Name);
+            Assert.Equal("1.2", read.AssetPacks[0].Version);
+            Assert.Equal(0x0102030405060708UL, read.AssetPacks[0].Digest);
+            Assert.Equal(300, read.AssetPacks[0].Prefabs);
             Assert.Equal("M", read.Settings[0].Mod);
             Assert.Equal("K", read.Settings[0].Key);
             Assert.Equal("V", read.Settings[0].Value);
             Assert.True(read.Settings[0].SimulationRelevant);
             Assert.True(read.Settings[0].Pushable);
-            Assert.Equal("gates.json", read.DataFiles[0].File);
-            Assert.Equal(0x0102030405060708UL, read.DataFiles[0].Digest);
-            Assert.True(read.DataFiles[0].Overridden);
+
+            // null lists ("not provided") survive
+            byte[] empty = Write<ManifestDetailMessage>(ManifestDetailMessage.Write, new ManifestDetailMessage
+            {
+                Manifest = new HandshakeManifest { Digests = SampleDigests(), Mods = null, Content = null, AssetPacks = null, Settings = null }
+            });
+            AssertBytes(DigestsHex + " | 00 | 00 | 00 | 00", empty);
+            HandshakeManifest none = ManifestDetailMessage.Decode(empty, 0, empty.Length).Manifest;
+            Assert.Null(none.Mods);
+            Assert.Null(none.Content);
+            Assert.Null(none.AssetPacks);
+            Assert.Null(none.Settings);
         }
 
         [Test]

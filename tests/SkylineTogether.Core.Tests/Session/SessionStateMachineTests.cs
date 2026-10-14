@@ -59,7 +59,7 @@ namespace SkylineTogether.Core.Tests.Session
         public void Manifest(FakeInfo info)
         {
             var payload = new ByteWriter();
-            ManifestDetailMessage.Write(payload, new ManifestDetailMessage { Manifest = info.BuildManifest(false) });
+            ManifestDetailMessage.Write(payload, new ManifestDetailMessage { Manifest = info.BuildManifest() });
             Control(ControlKind.ManifestDetail, payload.ToArray());
         }
 

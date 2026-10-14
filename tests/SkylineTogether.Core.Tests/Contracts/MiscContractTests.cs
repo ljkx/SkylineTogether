@@ -59,14 +59,14 @@ namespace SkylineTogether.Core.Tests.Contracts
             var manifest = new HandshakeManifest();
             Assert.NotNull(manifest.Mods);
             Assert.NotNull(manifest.Content);
-            Assert.NotNull(manifest.FormatTagNames);
+            Assert.NotNull(manifest.AssetPacks);
             Assert.NotNull(manifest.Settings);
-            Assert.Null(manifest.PrefabIds, "filled only on a prefab digest mismatch");
-            Assert.Null(manifest.DataFiles, "filled only on a data-file digest mismatch");
             Assert.NotNull(new SnapshotManifest().FamilyCounts);
             Assert.Equal("10.0.0.2:27015", new Endpoint { Host = "10.0.0.2", Port = 27015 }.ToString());
             Assert.Equal("steam:7/3", new Endpoint { SteamId = 7, VirtualPort = 3 }.ToString());
-            Assert.Contains("policies.json", new DataFileDigestEntry { File = "policies.json", Digest = 0xABC, Overridden = true }.ToString());
+            Assert.Equal("Bus Stops (75426)", new ContentEntry { Id = "75426", Name = "Bus Stops" }.ToString());
+            Assert.Equal("id:75426", new ContentEntry { Id = "75426", Name = "Bus Stops" }.Key);
+            Assert.Equal("name:Local", new ContentEntry { Name = "Local" }.Key);
         }
 
         [Test]

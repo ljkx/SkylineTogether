@@ -25,7 +25,7 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void PlanConstantsArePinned()
         {
-            Assert.Equal(2, ProtocolVersion.Current);
+            Assert.Equal(3, ProtocolVersion.Current); // 3: the handshake of the compatibility check (ProtocolVersion history)
             Assert.Equal(512 * 1024, Limits.MaxMessageBytes);
             Assert.Equal(480 * 1024, Limits.FragmentThreshold);
             Assert.Equal(8 * 1024 * 1024, Limits.MaxUncompressedBytes);
@@ -72,8 +72,8 @@ namespace SkylineTogether.Core.Tests.Protocol
             var digests = new HandshakeDigests
             {
                 ProtocolVersion = int.MaxValue, ModBuild = ulong.MaxValue, GameVersion = new string('v', HandshakeCodec.MaxGameVersionBytes),
-                GameFullVersion = new string('f', HandshakeCodec.MaxGameFullVersionBytes), FormatTags = ulong.MaxValue, Catalog = ulong.MaxValue,
-                Prefabs = ulong.MaxValue, Mods = ulong.MaxValue, Content = ulong.MaxValue, ModSettings = ulong.MaxValue, DataFiles = ulong.MaxValue,
+                GameFullVersion = new string('f', HandshakeCodec.MaxGameFullVersionBytes),
+                Mods = ulong.MaxValue, Content = ulong.MaxValue, AssetPacks = ulong.MaxValue, ModSettings = ulong.MaxValue,
                 Locale = new string('l', HandshakeCodec.MaxLocaleBytes)
             };
             var checks = new List<(MessageKind, int, string)>

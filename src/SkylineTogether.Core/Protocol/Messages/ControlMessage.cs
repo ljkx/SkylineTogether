@@ -20,7 +20,7 @@ namespace SkylineTogether.Core.Protocol
         public byte[] Payload;
 
         /// <summary>True for the kinds of <see cref="ControlKind"/> (reserved ones included).</summary>
-        public static bool IsKnownKind(ControlKind kind) => kind <= ControlKind.PlayerAction;
+        public static bool IsKnownKind(ControlKind kind) => kind <= ControlKind.JoinNotice;
 
         /// <summary>
         /// True for the reserved kinds (ARCHITECTURE.md#reserved-wire-values): defined in the original design, never sent by

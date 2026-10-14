@@ -59,6 +59,13 @@ No version has been published yet. Everything below is the work toward the first
 
 ### Changed
 
+- Join check of DLC, asset packs and mod settings: a player without one of the host's DLC or content packs is refused
+  with the list; different asset packs (by Paradox Mods id and contents) and mod settings are told to the joining
+  player right after admission; the new host option "Require the same asset packs" refuses them instead. The handshake
+  lost its never-filled fields (protocol version 3).
+- Steam connections use one Steam lane per traffic class, so snapshot chunks no longer hold back control messages,
+  chat and presence (only after a startup self-test of the lane calls; otherwise everything shares one lane as before).
+- Reserved message and control kinds are dropped on receipt before any listener sees them.
 - `SkylineTogether.Core` builds against the .NET SDK's netstandard2.1 reference assemblies when the game is not
   installed (compile check for CI); the real build is unchanged.
 - One build id everywhere: the game compares and shows the installer's id (the start of the DLL's SHA-256) in the
