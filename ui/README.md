@@ -19,9 +19,10 @@ Game components come from `window["cs2/ui"]` (Button, Panel, Tooltip, FloatingBu
 (LabeledIconButton, menu theme, Checkbox, FOCUS_DISABLED). Everything is feature-detected; an error boundary switches
 to a built-in look (copied from the vanilla styles, using the game's CSS custom properties) when one throws.
 
-Bindings (group `skylineTogether`, all from `SessionUISystem`): `state`, `join`, `net`, `presence`. Triggers: `host`,
+Bindings (group `skylineTogether`, all from `SessionUISystem`): `state`, `join`, `net`, `presence`, `perf` (the
+performance overlay). Triggers: `host`,
 `join`, `leave`, `chat`, `kick`, `saveHostSettings`, `saveHostOptions`, `retryJoin`, `dismissEnd`, `copySteamId`,
-`copyText`, `inviteFriends`, `toggleNetHud`, `writeDiagnostics`.
+`copyText`, `inviteFriends`, `toggleNetHud`, `togglePerfHud`, `writeDiagnostics`.
 
 Texts: every string is a key (`st.ui.*`) translated through `cs2/l10n` from `src/SkylineTogether/Data/locale.<id>.json`
 (C# `LocaleSource`), with the module's `EN` table as the fallback.

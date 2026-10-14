@@ -35,6 +35,8 @@ function bind(name, fallback) {
 const stateBinding = bind("state", "{}");
 const joinBinding = bind("join", "{}");
 const netBinding = bind("net", "{}");
+// w9/perf: the performance overlay ({show, frame, features, peers, queue}; PerfOverlay.cs)
+const perfBinding = bind("perf", "{}");
 const presenceBinding = bind("presence", "{\"tags\":[]}");
 // solo testing: recording and replay state, recordings, last verdict (ReplayUISystem)
 const replayBinding = bind("replay", "{}");
@@ -327,6 +329,15 @@ const EN = {
   "st.ui.net.show": "Show network",
   "st.ui.net.hide": "Hide network",
   "st.ui.net.diagnostics": "Write diagnostics",
+  "st.ui.perf.show": "Show performance",
+  "st.ui.perf.hide": "Hide performance",
+  "st.ui.perf.title": "Performance",
+  "st.ui.perf.frame": "Frame budget {MS} of {BUDGET} ms · {OVER} frames over",
+  "st.ui.perf.feature": "{AVG} / {P95} of {CAP} ms",
+  "st.ui.perf.queue": "Apply queue: {N}",
+  "st.ui.perf.peers": "Peers",
+  "st.ui.perf.peer": "in {IN} · out {OUT} KB/s · {PING} ms",
+  "st.ui.perf.deferred": "{N} waiting",
   "st.ui.diag.title": "Network & diagnostics",
   "st.ui.leave.client": "Leave session",
   "st.ui.leave.host": "End session",
@@ -1475,6 +1486,7 @@ function LiveSettings(p) {
 
 function NetLine() {
   const n = useJson(netBinding);
+  const perf = useJson(perfBinding);
   return h(
     "div",
     { style: { padding: "2rem 6rem" } },
@@ -1483,6 +1495,8 @@ function NetLine() {
       "div",
       { style: merge(S.row, { fontSize: FS.xs }) },
       h(LinkText, { onClick: function () { send("toggleNetHud"); } }, n.show ? t("st.ui.net.hide") : t("st.ui.net.show")),
+      h("div", { style: { width: "14rem" } }),
+      h(LinkText, { onClick: function () { send("togglePerfHud"); } }, perf.show ? t("st.ui.perf.hide") : t("st.ui.perf.show")),
       h("div", { style: { width: "14rem" } }),
       h(LinkText, { onClick: function () { send("writeDiagnostics"); } }, t("st.ui.net.diagnostics"))
     )
@@ -2748,6 +2762,53 @@ function NameTags() {
   );
 }
 
+// w9/perf: the performance overlay (right edge, under the top bar): the shared frame budget per feature, bytes per
+// second per peer and the apply queue; read-only, never takes the mouse
+function PerfHud() {
+  const p = useJson(perfBinding);
+  if (!p.show) return null;
+  const frame = p.frame || {};
+  const features = list(p.features);
+  const peers = list(p.peers);
+  const num = function (v, d) {
+    const x = Number(v);
+    return isFinite(x) ? x.toFixed(d) : "0";
+  };
+  const row = { display: "flex", flexDirection: "row", alignItems: "center", marginTop: "2rem" };
+  return h(
+    "div",
+    { style: { position: "absolute", right: "10rem", top: "62rem", width: "300rem", padding: "6rem 8rem", borderRadius: "6rem", backgroundColor: "rgba(16, 22, 34, 0.82)", color: T.text, fontSize: FS.xs, lineHeight: 1.3, pointerEvents: "none" } },
+    h("div", { style: { fontWeight: "bold", marginBottom: "3rem" } }, t("st.ui.perf.title")),
+    h("div", { style: { color: T.textDim } }, t("st.ui.perf.frame", { MS: num(frame.ms, 2), BUDGET: num(frame.budget, 0), OVER: num(frame.over, 0) })),
+    features.map(function (f, i) {
+      const cap = Number(f.cap) > 0 ? Number(f.cap) : 1;
+      const share = Math.max(0, Math.min(1, Number(f.avg) / cap));
+      const hot = Number(f.p95) >= cap;
+      return h(
+        "div",
+        { key: "f" + i, style: row },
+        h("div", { style: merge(S.ellipsis, { width: "92rem", color: T.textDim }) }, f.n),
+        h(
+          "div",
+          { style: { width: "70rem", height: "6rem", marginRight: "6rem", borderRadius: "3rem", backgroundColor: T.progressTrack } },
+          h("div", { style: { width: (share * 100).toFixed(1) + "%", height: "6rem", borderRadius: "3rem", backgroundColor: hot ? OV.warn : OV.accent } })
+        ),
+        h("div", { style: { color: hot ? T.warn : T.textDim } }, t("st.ui.perf.feature", { AVG: num(f.avg, 2), P95: num(f.p95, 2), CAP: num(f.cap, 2) }))
+      );
+    }),
+    h("div", { style: { marginTop: "5rem", fontWeight: "bold" } }, t("st.ui.perf.peers")),
+    peers.map(function (q, i) {
+      return h(
+        "div",
+        { key: "p" + i, style: row },
+        h("div", { style: merge(S.ellipsis, { width: "92rem", color: T.textDim }) }, q.name),
+        h("div", { style: { color: T.textDim } }, t("st.ui.perf.peer", { IN: num(q.in, 1), OUT: num(q.out, 1), PING: num(q.ping, 0) }) + (Number(q.deferred) > 0 ? " · " + t("st.ui.perf.deferred", { N: num(q.deferred, 0) }) : ""))
+      );
+    }),
+    h("div", { style: { marginTop: "5rem", color: Number(p.queue) > 64 ? T.warn : T.textDim } }, t("st.ui.perf.queue", { N: num(p.queue, 0) }))
+  );
+}
+
 // --------------------------------------------------------------------------------------------- buttons
 
 function statusColor(mode) {
@@ -2863,6 +2924,7 @@ function GameRoot() {
     "div",
     { style: S.layer },
     live && !photo ? h(NameTags, null) : null, // presence branch: under the panel
+    live && !photo ? h(PerfHud, null) : null, // w9/perf: only while toggled on
     live && !photo && !social ? h(ChatDock, { state: s }) : null,
     !photo && (!topLeftRegistered || (noTopLeft && !st.topLeftMounted)) ? h(FallbackToggle, { state: s, onClick: function () { setStore({ open: !store.open }); } }) : null,
     st.open && !photo

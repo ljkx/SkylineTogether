@@ -21,8 +21,8 @@ const fail = (msg) => { failed++; console.log("FAIL " + msg); };
 const cs = read("src/SkylineTogether/UI/SessionUISystem.cs") + "\n" + read("src/SkylineTogether/UI/ReplayUISystem.cs") + "\n" + read("src/SkylineTogether/UI/InviteUISystem.cs");
 const csBindings = new Set([...cs.matchAll(/GetterValueBinding<[^>]+>\(Group, "([^"]+)"/g)].map((m) => m[1]));
 const csTriggers = new Set([...cs.matchAll(/TriggerBinding(?:<[^>]*>)?\(Group, "([^"]+)"/g)].map((m) => m[1]));
-for (const b of ["state", "join", "net", "presence"]) if (!csBindings.has(b)) fail("SessionUISystem lost the binding " + b);
-for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "writeDiagnostics", "toggleNetHud", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends",
+for (const b of ["state", "join", "net", "presence", "perf"]) if (!csBindings.has(b)) fail("SessionUISystem lost the binding " + b);
+for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "writeDiagnostics", "toggleNetHud", "togglePerfHud", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends",
   "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync"]) {
   if (!csTriggers.has(t)) fail("SessionUISystem lost the trigger " + t);
 }
@@ -181,13 +181,16 @@ const end = (kind, refuse, extra) => Object.assign({ seq: 7, kind, refuse: refus
 const join = (stage, extra) => Object.assign({ active: true, stage, session: "Anna's city", target: "76561190000000009", done: 0, total: 0, bps: 0, eta: -1, load: 0, progress: 0 }, extra);
 const friends = [{ id: "76561190000000001", name: "Anna", state: "ingame", inSession: true }, { id: "76561190000000002", name: "Bo", state: "online", inSession: false },
   { id: "76561190000000003", name: "Cy", state: "away", inSession: false }, { id: "76561190000000004", name: "Dee", state: "offline", inSession: false }, { id: "76561190000000005", name: "", state: "weird", inSession: false }];
+// w9/perf: the performance overlay as PerfOverlay.cs writes it
+const perf = { show: true, frame: { ms: 3.42, budget: 10, over: 2 }, features: [{ n: "apply", p: 0, avg: 1.2, p95: 4.1, cap: 6, clip: 0 }, { n: "value scan", p: 1, avg: 0.9, p95: 1.0, cap: 1, clip: 12 },
+  { n: "maps+stats", p: 3, avg: 0, p95: 0, cap: 0, clip: 0 }], peers: [{ name: "Anna", in: 1.5, out: 22.3, ping: 40, queued: 0, deferred: 120 }, { name: "", in: "x", out: null, ping: -1, queued: 0, deferred: -1 }], queue: 80 };
 const cases = {
   lobbyGame: { state: { ...base, mode: "None" } },
   lobbyMenu: { state: { ...base, mode: "None", inGame: false, canHost: false, hasPassword: true, allowDirect: true } },
   nosteam: { state: { ...base, mode: "None", steam: false, canHost: false, canJoin: false } },
   hosting: { state: { ...base, mode: "Hosting", hold: true, status: "A player is joining – the game is paused until they are in. Anna is downloading the city (40 %).", sessionName: "X", directPort: 27015,
     sync: "12,345 objects in sync; verifying 9,000 objects every 30 s, 0 repairs sent; 812 movers", speed: "paused while a player joins", speedHeld: true, canInvite: true, inviteSteamId: "76561190000000000",
-    players, chat }, net, presence: tags, friends, overlayAvailable: true },
+    players, chat }, net, presence: tags, friends, overlayAvailable: true, perf },
   hostingNoHud: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", speed: "2×", speedValue: 2, canInvite: true }, net: { show: false, text: "" }, presence: { tags: [] }, friends: [], overlayAvailable: false },
   // invites without the InviteUISystem values (older C#, or not yet sent): only the overlay button
   hostingNoFriends: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", canInvite: true, players, chat: [] } },
@@ -240,7 +243,7 @@ const cases = {
   soloHostIdle: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X" }, replay: { canRecord: true, recording: false } },
   soloReplaying: { state: { ...base, mode: "Client", status: "Connected", sessionName: "X (test)" }, replay: { replaying: true, replayStatus: "Replayed 0:40 of the recording · 1 checkpoints compared · 0 objects differ", progress: 0.3 } },
   soloReplayLoading: { state: { ...base, mode: "Joining", stage: "loading", progress: 0.7 }, join: join("loading", { load: 0.4, progress: 0.7 }), replay: { replaying: true, replayStatus: "Loading the recorded city…", progress: 0.1 } },
-  garbage: { state: "{not json", net: "", presence: "null", join: "[1,2", replay: "{oops", friends: "{bad" },
+  garbage: { state: "{not json", net: "", presence: "null", join: "[1,2", replay: "{oops", friends: "{bad", perf: "{\"show\":true,\"features\":7,\"peers\":null" },
   empty: { state: "{}" },
 };
 const passes = [

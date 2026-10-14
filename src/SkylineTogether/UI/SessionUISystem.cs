@@ -194,6 +194,9 @@ namespace SkylineTogether.UI
                 Mod.Settings.ShowNetworkHud = !Mod.Settings.ShowNetworkHud;
                 Mod.Settings.ApplyAndSave();
             })));
+            // w9/perf: the performance overlay (shared frame budget per feature, bytes per peer, apply queue)
+            AddUpdateBinding(new GetterValueBinding<string>(Group, "perf", () => Guard.GetRetrying(Features.Ui, "perf overlay", _buildPerf, "{\"show\":false}", ref _perfRetry)));
+            AddBinding(new TriggerBinding(Group, "togglePerfHud", () => Trigger("togglePerfHud", PerfOverlay.Toggle)));
         }
 
         private static void Copy(string text)
@@ -208,6 +211,9 @@ namespace SkylineTogether.UI
                 Mod.Log?.Warn(LogCategory.Ui, "copying to the clipboard failed", ex);
             }
         }
+
+        private static readonly Func<string> _buildPerf = PerfOverlay.Json; // w9/perf
+        private double _perfRetry;
 
         private const string NetIdleShown = "{\"show\":true,\"text\":\"\"}";
         private const string NetIdleHidden = "{\"show\":false,\"text\":\"\"}";
