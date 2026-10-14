@@ -46,7 +46,7 @@ namespace SkylineTogether.Sync
                 if (now - _lastToast > 5.0)
                 {
                     _lastToast = now;
-                    SessionManager.Notify("You are a viewer in this session: ask the host to make you a builder to change the city.");
+                    SessionManager.Notify(Settings.LocaleSource.Resolve("st.toast.viewerEdit"));
                 }
             }
             catch (Exception ex)

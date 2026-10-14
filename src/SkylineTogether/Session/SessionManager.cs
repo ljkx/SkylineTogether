@@ -1163,7 +1163,7 @@ namespace SkylineTogether.Session
                     _log.Info(LogCategory.Session, "another city is loading during the join (" + Client.State + ", " + purpose + ", " + mode + "); join cancelled");
                     Client.Leave();
                     EndClient();
-                    Notify("Joining was cancelled because another city is being loaded.");
+                    Notify(LocaleSource.Resolve("st.toast.join.cityLoading"));
                 }
                 if (_rejoin.Recovering || _holdingCity)
                 {

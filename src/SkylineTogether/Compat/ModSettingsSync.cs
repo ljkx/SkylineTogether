@@ -111,7 +111,7 @@ namespace SkylineTogether.Compat
                     _client.RememberOriginal(s.Mod, s.Key, SettingValueText.Format(old));
                     p.SetValue(settings, value);
                     if (!touched.Contains(settings)) touched.Add(settings);
-                    _log.Info(LogCategory.Session, "mod setting from the host: " + a.ModName + " " + s.Key + " = " + s.Value);
+                    _log.Info(LogCategory.Compat, "mod setting from the host: " + a.ModName + " " + s.Key + " = " + s.Value);
                 }
                 catch (Exception ex)
                 {
@@ -139,11 +139,11 @@ namespace SkylineTogether.Compat
                 }
                 catch (Exception ex)
                 {
-                    _log.Warn(LogCategory.Session, "restoring the mod setting " + s + " failed", ex);
+                    _log.Warn(LogCategory.Compat, "restoring the mod setting " + s + " failed", ex);
                 }
             }
             foreach (object settings in touched) CallApply(settings, true);
-            _log.Info(LogCategory.Session, "restored " + _client.Count + " mod setting(s) after the session");
+            _log.Info(LogCategory.Compat, "restored " + _client.Count + " mod setting(s) after the session");
             _client.Clear();
         }
 
@@ -231,7 +231,7 @@ namespace SkylineTogether.Compat
 
         private void WarnOnce(string key, string text, Exception ex = null)
         {
-            if (_warned.Add(key)) _log.Warn(LogCategory.Session, "mod compatibility: " + text, ex);
+            if (_warned.Add(key)) _log.Warn(LogCategory.Compat, "mod compatibility: " + text, ex);
         }
     }
 }

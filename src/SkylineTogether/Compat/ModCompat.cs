@@ -146,12 +146,12 @@ namespace SkylineTogether.Compat
                     foreach (string name in adapter.ClientSimulationSystems) ClientSimulation.Add(name);
                     foreach (string name in adapter.PipelineTools) Pipeline.Add(name);
                 }
-                if (!_detected || loaded.Count > 0) log?.Info(LogCategory.Replication, "mod compatibility: adapters active for " + (loaded.Count == 0 ? "no installed mod" : string.Join(", ", loaded)));
+                if (!_detected || loaded.Count > 0) log?.Info(LogCategory.Compat, "mod compatibility: adapters active for " + (loaded.Count == 0 ? "no installed mod" : string.Join(", ", loaded)));
                 _detected = true;
             }
             catch (Exception ex)
             {
-                log?.Warn(LogCategory.Replication, "mod compatibility: detecting mods failed", ex);
+                log?.Warn(LogCategory.Compat, "mod compatibility: detecting mods failed", ex);
             }
         }
 
@@ -196,7 +196,7 @@ namespace SkylineTogether.Compat
         {
             if (type == null)
             {
-                log?.Debug(LogCategory.Replication, "mod compatibility: " + adapter.ModName + " has no type " + name + " (mod updated?)");
+                log?.Debug(LogCategory.Compat, "mod compatibility: " + adapter.ModName + " has no type " + name + " (mod updated?)");
                 return;
             }
             try
@@ -206,7 +206,7 @@ namespace SkylineTogether.Compat
             }
             catch (Exception)
             {
-                log?.Debug(LogCategory.Replication, "mod compatibility: " + name + " is not a component type");
+                log?.Debug(LogCategory.Compat, "mod compatibility: " + name + " is not a component type");
             }
         }
 

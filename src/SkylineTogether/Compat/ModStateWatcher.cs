@@ -109,7 +109,7 @@ namespace SkylineTogether.Compat
                 entities.Dispose();
             }
             _lastVersion = em.GlobalSystemVersion;
-            _log.Info(LogCategory.Replication, "mod state watcher: " + _types.Count + " watched types, baseline of " + n + " entities");
+            _log.Info(LogCategory.Compat, "mod state watcher: " + _types.Count + " watched types, baseline of " + n + " entities");
         }
 
         public void Stop()
