@@ -99,6 +99,8 @@ namespace SkylineTogether.Sync
                 NativeArray<TCell> map = System.GetMap(true, out JobHandle deps);
                 deps.Complete();
                 NativeArray<byte> bytes = map.Reinterpret<byte>(UnsafeUtility.SizeOf<TCell>());
+                // w8/robust: the copy is not bounds-checked in a player build; the cached layout must still match the map
+                if (dst == null || dst.Length != bytes.Length) throw new InvalidOperationException("map size changed (" + bytes.Length + " bytes, expected " + (dst?.Length ?? 0) + ")");
                 NativeArray<byte>.Copy(bytes, 0, dst, 0, bytes.Length);
             }
 
@@ -107,6 +109,7 @@ namespace SkylineTogether.Sync
                 NativeArray<TCell> map = System.GetMap(false, out JobHandle deps);
                 deps.Complete();
                 NativeArray<byte> bytes = map.Reinterpret<byte>(UnsafeUtility.SizeOf<TCell>());
+                if (src == null || src.Length != bytes.Length) throw new InvalidOperationException("map size changed (" + bytes.Length + " bytes, received " + (src?.Length ?? 0) + ")"); // w8/robust
                 NativeArray<byte>.Copy(src, 0, bytes, 0, bytes.Length);
                 System.AddWriter(default(JobHandle));
             }
@@ -128,6 +131,8 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<byte, HostPeer> _peers = new Dictionary<byte, HostPeer>();
         private readonly Dictionary<byte, Dictionary<uint, ulong[]>> _joinBaselines = new Dictionary<byte, Dictionary<uint, ulong[]>>();
         private readonly Queue<(PeerId Peer, byte[] Data)> _inbox = new Queue<(PeerId, byte[])>();
+        // w8/robust (host): what one peer may have waiting in the inbox
+        private readonly InboundQuota _hostQuota = new InboundQuota(64, 16L << 20);
         private readonly ByteWriter _out = new ByteWriter(64 * 1024);
         private readonly List<PeerId> _peerScratch = new List<PeerId>();
         private World _world;
@@ -245,6 +250,12 @@ namespace SkylineTogether.Sync
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.CellMaps) return;
+                // w8/robust: a peer's waiting paint patches are bounded (clients send at most a few per second)
+                if (!_hostQuota.TryAdmit(peer, e.BodyCount))
+                {
+                    if (_hostQuota.TakeOverflow(peer)) _log.Warn(LogCategory.Fields, peer + " sends map patches faster than they are applied; further ones are dropped");
+                    return;
+                }
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 _inbox.Enqueue((peer, copy));
@@ -255,6 +266,7 @@ namespace SkylineTogether.Sync
             {
                 _peers.Remove(peer.Value);
                 _joinBaselines.Remove(peer.Value);
+                _hostQuota.Forget(peer); // w8/robust
             };
         }
 
@@ -434,6 +446,7 @@ namespace SkylineTogether.Sync
                 while (_inbox.Count > 0 && n++ < MaxInboxPerFrame)
                 {
                     (PeerId peer, byte[] data) = _inbox.Dequeue();
+                    if (_sessions.Host != null) _hostQuota.Release(peer, data.Length);
                     try
                     {
                         Receive(peer, data);

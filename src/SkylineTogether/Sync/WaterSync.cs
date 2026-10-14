@@ -402,6 +402,9 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>w8/robust: the largest sea level magnitude accepted from the host (heights span 4096 m).</summary>
+        private const float MaxSeaLevel = 10000f;
+
         private void ApplyMessage(byte[] data, double now)
         {
             var r = new ByteReader(data, 0, data.Length);
@@ -412,7 +415,8 @@ namespace SkylineTogether.Sync
                 if (_warned.Add("grid")) _log.Warn(LogCategory.Fields, "the host's water grid " + info + " differs from ours " + GridInfo + "; water tiles ignored");
                 return;
             }
-            if (math.abs(_water.SeaLevel - seaLevel) > 0.01f)
+            // w8/robust: only a sea level within the terrain's height range (the GPU simulation takes it as is)
+            if (math.abs(_water.SeaLevel - seaLevel) > 0.01f && seaLevel >= -MaxSeaLevel && seaLevel <= MaxSeaLevel)
             {
                 _log.Info(LogCategory.Fields, "sea level follows the host: " + _water.SeaLevel + " → " + seaLevel);
                 _water.SeaLevel = seaLevel;

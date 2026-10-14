@@ -68,6 +68,15 @@ namespace SkylineTogether.Sync
         private const int ResendChunkRecords = 512;
         private const int MaxRollbackRecords = 512; // crashfix: full records a rollback writes in its frame
 
+        // w8/robust (host): a peer's proposals and acks waiting to be applied are bounded; a peer that keeps sending
+        // faster than the host applies, or whose applied frame stops advancing, is dropped with a rejoin offer
+        private readonly InboundQuota _hostInboxQuota = new InboundQuota(4096, 64L << 20);
+        private readonly AckStallWatch _ackStall = new AckStallWatch(AckStallSeconds);
+        private readonly List<(PeerId Peer, string Log, string Reason)> _kicks = new List<(PeerId, string, string)>();
+        private readonly List<byte> _livePeerScratch = new List<byte>();
+        private const double AckStallSeconds = 120;
+        private double _lastAckStallCheck = double.NegativeInfinity;
+
         private struct Inbound
         {
             public PeerId Peer;
@@ -457,6 +466,17 @@ namespace SkylineTogether.Sync
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Proposal && e.Kind != MessageKind.ApplyAck) return;
+                // w8/robust: bounded per peer (the kick happens in the apply loop, not inside the transport callback)
+                if (!_hostInboxQuota.TryAdmit(peer, e.BodyCount))
+                {
+                    if (_hostInboxQuota.TakeOverflow(peer))
+                    {
+                        _kicks.Add((peer, peer + " sends changes faster than the host applies them (" + _hostInboxQuota.Pending(peer) + " waiting, "
+                                          + (_hostInboxQuota.PendingBytes(peer) >> 10) + " KiB)",
+                                    "Your game sent changes faster than the host could apply them. Join again to continue."));
+                    }
+                    return;
+                }
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 // acknowledgements share the proposals' queue: an ack is counted only after every proposal the client
@@ -578,6 +598,9 @@ namespace SkylineTogether.Sync
         /// <summary>w2/ids: forgets release frames, grants and deferred queues (session start or end).</summary>
         private void ResetHostState()
         {
+            _hostInboxQuota.Clear();
+            _ackStall.Clear();
+            _kicks.Clear();
             _acks.Clear();
             _grants.Clear();
             _out.Clear();
@@ -692,6 +715,8 @@ namespace SkylineTogether.Sync
         private void OnPeerLeft(PeerId peer)
         {
             _proposalHealth.Remove(peer.Value);
+            _hostInboxQuota.Forget(peer); // w8/robust
+            _ackStall.Forget(peer.Value);
             // gameplay branch
             _rate.Forget(peer.Value);
             _requests.Forget(peer.Value);
@@ -801,6 +826,7 @@ namespace SkylineTogether.Sync
             double now = Perf.Now;
             // w2/ids: everything the previous frame sent is out: close its release frame
             if (IsHost) _ids.Ids.Seal(_acks.SealFrame(_epochSent), now);
+            if (IsHost) KickQueued();
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
@@ -842,6 +868,7 @@ namespace SkylineTogether.Sync
                 if (n > 0 && Perf.Elapsed(start) > allowance) break;
                 n++;
                 Inbound item = _inbox.Dequeue();
+                if (IsHost) _hostInboxQuota.Release(item.Peer, item.Data.Length);
                 try
                 {
                     if (IsHost)
@@ -985,6 +1012,35 @@ namespace SkylineTogether.Sync
                 _barrier = 0;
             }
             _ids.Ids.Update(_acks.MinAckedFrame, _barrier, now);
+            // w8/robust: a live peer that stopped applying (its replication feature switched off, its apply is stuck)
+            // pins the quarantine and only falls further behind: a rejoin with a fresh snapshot is its catch-up
+            // (live peers only: a joiner acknowledges nothing while it downloads and loads the city; checked once a second)
+            if (now - _lastAckStallCheck < 1.0) return;
+            _lastAckStallCheck = now;
+            _livePeerScratch.Clear();
+            foreach (PlayerInfo player in host.GetPlayers())
+            {
+                if (player.Id != PeerId.Host && player.State == PlayerState.Live) _livePeerScratch.Add(player.Id.Value);
+            }
+            foreach (byte stalled in _ackStall.Update(_livePeerScratch, _acks.AckedFrame, _acks.CurrentFrame, now))
+            {
+                var peer = new PeerId(stalled);
+                _kicks.Add((peer, peer + " has applied nothing for " + (int)AckStallSeconds + " s (" + (_acks.CurrentFrame - _acks.AckedFrame(stalled)) + " release frames behind)",
+                            "Your game stopped applying the host's updates. Join again to get a fresh copy of the city."));
+            }
+        }
+
+        /// <summary>w8/robust (host): drops the peers queued for removal (outside the transport callbacks).</summary>
+        private void KickQueued()
+        {
+            if (_kicks.Count == 0) return;
+            SessionHost host = _sessions.Host;
+            foreach ((PeerId peer, string log, string reason) in _kicks)
+            {
+                _log.Warn(LogCategory.Replication, log + "; removing it from the session");
+                host?.Kick(peer, reason);
+            }
+            _kicks.Clear();
         }
 
         private void ApplyFromHost(byte[] data)

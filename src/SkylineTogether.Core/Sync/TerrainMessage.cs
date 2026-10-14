@@ -35,6 +35,12 @@ namespace SkylineTogether.Core.Sync
         public float Angle, Size, Strength, Opacity;
         public float DeltaTime;
 
+        /// <summary>w8/robust: the largest coordinate of a stamp's positions (the playable map is 14 km wide, its surroundings 57 km).</summary>
+        public const float MaxCoordinate = 100_000f;
+
+        /// <summary>w8/robust: the largest brush strength magnitude (tools use about 0..1, compensated by the frame time).</summary>
+        public const float MaxStrength = 1000f;
+
         /// <summary>True when every float is finite and the size is positive and plausible (validation of received stamps).</summary>
         public bool IsPlausible(float maxSize)
         {
@@ -43,7 +49,23 @@ namespace SkylineTogether.Core.Sync
                    && Finite(DeltaTime) && Size > 0f && Size <= maxSize && ToolPrefab != 0 && BrushPrefab != 0;
         }
 
+        /// <summary>
+        /// w8/robust: <see cref="IsPlausible(float)"/>, and every position within <paramref name="maxCoordinate"/>, the
+        /// opacity within 0..1, the strength within <paramref name="maxStrength"/> and the frame time within 0..1 s (huge
+        /// coordinates become undefined int casts in the brush's area computations).
+        /// </summary>
+        public bool IsPlausible(float maxSize, float maxCoordinate, float maxStrength)
+        {
+            return IsPlausible(maxSize)
+                   && Within(PositionX, maxCoordinate) && Within(PositionY, maxCoordinate) && Within(PositionZ, maxCoordinate)
+                   && Within(TargetX, maxCoordinate) && Within(TargetY, maxCoordinate) && Within(TargetZ, maxCoordinate)
+                   && Within(StartX, maxCoordinate) && Within(StartY, maxCoordinate) && Within(StartZ, maxCoordinate)
+                   && Opacity >= 0f && Opacity <= 1f && Within(Strength, maxStrength) && DeltaTime >= 0f && DeltaTime <= 1f;
+        }
+
         private static bool Finite(float v) => !float.IsNaN(v) && !float.IsInfinity(v);
+
+        private static bool Within(float v, float bound) => v >= -bound && v <= bound;
     }
 
     /// <summary>The grid a tile message refers to (texel size of the texture and tile edge length).</summary>

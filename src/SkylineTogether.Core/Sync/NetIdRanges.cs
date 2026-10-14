@@ -557,14 +557,34 @@ namespace SkylineTogether.Core.Sync
             return true;
         }
 
-        public void Add(uint start, uint count)
+        /// <summary>
+        /// Adds a range the host granted. w8/robust: a range that starts at 0, runs past <see cref="NetIdAllocator.MaxId"/>
+        /// or wraps around is refused (false): taking ids from it would bind entities to ids no table holds. A pool holds at
+        /// most <see cref="MaxQueuedRanges"/> ranges.
+        /// </summary>
+        public bool Add(uint start, uint count)
         {
-            if (count == 0) return;
+            if (count == 0) return true;
+            if (!IsValidRange(start, count) || _ranges.Count >= MaxQueuedRanges)
+            {
+                Refused++;
+                return false;
+            }
             _ranges.Enqueue((start, count));
             _requested = false;
             _retryDelay = RetryFirstSeconds;
             _retryAt = double.PositiveInfinity;
+            return true;
         }
+
+        /// <summary>w8/robust: ranges a pool keeps at most (a grant is up to 16 runs; refills arrive one grant at a time).</summary>
+        public const int MaxQueuedRanges = 1024;
+
+        /// <summary>w8/robust: ranges refused by <see cref="Add"/> (diagnostics).</summary>
+        public long Refused { get; private set; }
+
+        /// <summary>w8/robust: a usable id range: starts above 0, ends at or below <see cref="NetIdAllocator.MaxId"/>.</summary>
+        public static bool IsValidRange(uint start, uint count) => start != 0 && count != 0 && start <= NetIdAllocator.MaxId && count - 1 <= NetIdAllocator.MaxId - start;
 
         /// <summary>Owner check for the host: is <paramref name="id"/> inside one of the granted ranges?</summary>
         public static bool InRanges(IReadOnlyList<(uint Start, uint Count)> ranges, uint id)
