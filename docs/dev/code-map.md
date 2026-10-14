@@ -64,8 +64,13 @@ relay access, the startup probes (`Probes.RunStartup`), the controllers (`Sessio
 
 ## Data flow in a session
 
-All real work happens on the main thread in `Sync/SyncController.cs`; the ECS systems in `Sync/SyncSystems.cs` are thin
-wrappers that call it at the right point of the frame.
+All real work happens on the main thread in `SyncController`; the ECS systems in `Sync/SyncSystems.cs` are thin
+wrappers that call it at the right point of the frame. `SyncController` is one partial class in several files under
+`Sync/`: `SyncController.cs` (state, construction, diagnostics, sending), `.Session.cs` (session start and end, peers
+joining and leaving), `.Apply.cs` (frame start: applying batches, proposals and requests), `.Validation.cs` (host
+validation, refusals and rollback), `.Capture.cs` (tool hook, frame-end capture, value scans, deferred queues),
+`.Client.cs` (the client's proposals, route preview window), `.Zones.cs` (zone cells) and `.Mods.cs` (mod
+compatibility).
 
 ```
  host                                                           client
@@ -110,7 +115,7 @@ ARCHITECTURE.md is long (about 2500 lines). Read in this order and skip the rest
 1. The preamble's **Terms** and **Appendix I (Glossary)**.
 2. **§0.1-0.3**: the model, design principles and key decisions.
 3. **§2**: who is authoritative for which kind of state.
-4. **§4.1**: replication overview. It describes a worker-thread design; compare with `SyncController.cs`, which is what
+4. **§4.1**: replication overview. It describes a worker-thread design; compare with `SyncController`, which is what
    runs.
 5. **§5.1 and §5.4**: the client action path and host validation.
 6. **§3.1-3.2**: entity identity and family classification.
