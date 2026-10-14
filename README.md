@@ -95,3 +95,7 @@ delete the folder.
 
 Skyline Together is designed and written only from its own research reports, the decompiled game code and the
 sources of third-party mods it must be compatible with. No other co-op project was consulted.
+
+## License
+
+[MIT](LICENSE). Cities: Skylines II is a trademark of Paradox Interactive; this project is not affiliated with or endorsed by Paradox Interactive or Colossal Order. The game's assemblies are referenced at build time from your own installation and are never redistributed.
