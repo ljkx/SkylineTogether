@@ -27,6 +27,12 @@ namespace SkylineTogether.Compat
             "MinimumClearanceBelowElevatedNetworks",
         };
 
+        /// <summary>
+        /// The per-player Anarchy toggle switches off the game's placement errors (map tiles, shapes) for that player's
+        /// tools; the host cannot see the toggle, so with Anarchy loaded the host does not apply those checks either.
+        /// </summary>
+        public override Core.Sync.PlacementChecks RelaxedPlacementChecks => Core.Sync.PlacementChecks.Tiles | Core.Sync.PlacementChecks.Geometry;
+
         public override string Summary => "components replicate with the entity; validation and clearance settings from the host";
     }
 }

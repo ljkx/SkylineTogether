@@ -40,6 +40,12 @@ namespace SkylineTogether.Sync
         public List<Entity> Collect;
 
         /// <summary>
+        /// When not null, every reference is added as it was written (a net id, -1 for null, -2 - k for derived key k),
+        /// resolved or not: the host's placement checks name a new edge's nodes before they exist (<c>EntityCodec.TryPeekRefs</c>).
+        /// </summary>
+        public List<int> RawRefs;
+
+        /// <summary>
         /// Zero bytes every read buffer carries beyond its last valid byte. A primitive read checks the position
         /// before it reads (<see cref="Limit"/>); the longest read the game's reader can still make past the limit (a 4-byte
         /// UTF-8 char after a 1-byte check) stays inside the allocation.
@@ -161,6 +167,7 @@ namespace SkylineTogether.Sync
         {
             Need(4);
             _inner.Read(out int index);
+            _state.RawRefs?.Add(index);
             if (index >= 0)
             {
                 NativeArray<Entity> table = _state.Table;

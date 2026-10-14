@@ -459,7 +459,16 @@ namespace SkylineTogether.Sync
         {
             List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length, _decodePool);
             // validation (ARCHITECTURE.md#host-validation-and-commit); a refused proposal is rolled back on its originator by a resend
-            ProposalFacts facts = Facts(records, out uint seq, out uint baseEpoch);
+            ProposalFacts facts = Facts(records);
+            uint seq = facts.Seq;
+            // a proposal that waited while its sender left (or was replaced by a reconnect) changes nothing; there is
+            // nobody to roll back (a joiner's snapshot carries the host's state)
+            if (ProposalRules.CheckSender(_sessions.Host?.GetPeerOutput(peer) != null) != RejectReason.None)
+            {
+                Perf.Counters.Count("proposals of departed peers dropped");
+                _log.Debug(LogCategory.Replication, peer + ": dropped proposal " + seq + " (" + RejectReason.NotLive + ": the player is no longer live)");
+                return;
+            }
             bool isGlobal = SyncBatch.FirstRecordKind(data, 0, data.Length) == (byte)SyncRecordKind.Global;
             if ((facts.EntityCount > 0 || facts.HasCost || isGlobal) && !_rate.TryTake(peer.Value, _sessions.Clock.Seconds))
             {
@@ -469,7 +478,7 @@ namespace SkylineTogether.Sync
             }
             if (facts.EntityCount > 0 || facts.HasCost)
             {
-                RejectReason reason = Validate(peer, records, facts, baseEpoch);
+                RejectReason reason = Validate(peer, records, facts, data);
                 if (reason != RejectReason.None)
                 {
                     RejectProposal(peer, seq, reason, records);

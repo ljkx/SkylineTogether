@@ -91,6 +91,14 @@ namespace SkylineTogether.Compat
         /// </summary>
         public virtual IEnumerable<string> NeverReplicatedTypes => None;
 
+        /// <summary>
+        /// Host placement checks of client proposals (ARCHITECTURE.md#host-validation-and-commit) that this mod legitimately
+        /// bypasses while it is loaded on the host: Anarchy places anywhere (tiles, geometry), Find It and Plop the Growables
+        /// place prefabs the toolbar would not offer (unlocks). Direct-write tools (Move It) need nothing here: their
+        /// proposals are flagged and skip every placement check.
+        /// </summary>
+        public virtual Core.Sync.PlacementChecks RelaxedPlacementChecks => Core.Sync.PlacementChecks.None;
+
         /// <summary>One line for the diagnostics dump and the compatibility table.</summary>
         public abstract string Summary { get; }
 

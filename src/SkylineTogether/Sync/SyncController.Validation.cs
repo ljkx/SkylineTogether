@@ -26,12 +26,9 @@ namespace SkylineTogether.Sync
     {
         // ================================================================== host validation and rollback
 
-        private static ProposalFacts Facts(List<SyncRecord> records, out uint seq, out uint baseEpoch)
+        private static ProposalFacts Facts(List<SyncRecord> records)
         {
             var f = new ProposalFacts();
-            seq = 0;
-            // a proposal without a header (older client) skips the conflict check
-            baseEpoch = uint.MaxValue;
             foreach (SyncRecord r in records)
             {
                 switch (r.Kind)
@@ -46,8 +43,10 @@ namespace SkylineTogether.Sync
                         f.Cost += r.Amount;
                         break;
                     case SyncRecordKind.ProposalHeader:
-                        seq = r.Seq;
-                        baseEpoch = r.BaseEpoch;
+                        // a world-changing batch needs exactly one (ProposalRules.CheckHeader)
+                        f.Headers++;
+                        f.Seq = r.Seq;
+                        f.BaseEpoch = r.BaseEpoch;
                         f.Flags = r.ProposalFlags;
                         break;
                 }
@@ -56,14 +55,31 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// ARCHITECTURE.md#host-validation-and-commit over the host's world: permission of the sender's role, size, existence and
-        /// conflicts of every entity the proposal edits or deletes, id grants of its creations, and money.
+        /// ARCHITECTURE.md#host-validation-and-commit over the host's world: the header, permission of the sender's role, size, the
+        /// age of the proposal's base, existence and conflicts of every entity the proposal edits or deletes, id grants of
+        /// its creations, the placement checks (<see cref="CheckPlacement"/>) and money.
         /// </summary>
-        private RejectReason Validate(PeerId peer, List<SyncRecord> records, in ProposalFacts facts, uint baseEpoch)
+        private RejectReason Validate(PeerId peer, List<SyncRecord> records, in ProposalFacts facts, byte[] data)
         {
+            RejectReason header = ProposalRules.CheckHeader(facts);
+            if (header != RejectReason.None)
+            {
+                _log.Info(LogCategory.Replication, peer + ": proposal with " + facts.Headers + " header(s) for " + facts.EntityCount + " change(s)");
+                return header;
+            }
             if (!Allows(peer, ProposalRules.Required(facts))) return RejectReason.NoPermission;
             RejectReason size = ProposalRules.CheckSize(facts);
             if (size != RejectReason.None) return size;
+            uint baseEpoch = facts.BaseEpoch;
+            if (facts.Headers > 0)
+            {
+                RejectReason age = _ledger.CheckBase(baseEpoch);
+                if (age != RejectReason.None)
+                {
+                    _log.Info(LogCategory.Replication, peer + ": proposal " + facts.Seq + " based on epoch " + baseEpoch + ", host at " + _ledger.LastBroadcast + " (" + age + ")");
+                    return age;
+                }
+            }
             EntityManager em = _codec.EntityManager;
             var spawned = new HashSet<uint>();
             foreach (SyncRecord r in records)
@@ -84,7 +100,7 @@ namespace SkylineTogether.Sync
                     case SyncRecordKind.Spawn:
                     {
                         // events, chirps and journal entries come from the host's simulation only
-                        if (FamilyClassifier.IsHostOnly(r.Family)) return RejectReason.Invalid;
+                        if (FamilyClassifier.IsHostOnly(r.Family)) return RejectReason.HostOnly;
                         Entity existing = _ids.GetEntity(r.NetId);
                         bool bound = existing != Entity.Null && em.Exists(existing);
                         // a creation needs an unused id of the sender's own grants (released ids are never reusable by a client)
@@ -99,8 +115,8 @@ namespace SkylineTogether.Sync
                         Entity e = _ids.GetEntity(r.NetId);
                         // edited meanwhile deleted by somebody else (or never committed: a refused earlier proposal)
                         if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return RejectReason.Conflict;
+                        if (FamilyClassifier.IsHostOnly(_ids.GetFamily(r.NetId))) return RejectReason.HostOnly;
                         if (!FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId))) return RejectReason.Invalid;
-                        if (FamilyClassifier.IsHostOnly(_ids.GetFamily(r.NetId))) return RejectReason.Invalid;
                         if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
                     }
@@ -110,13 +126,16 @@ namespace SkylineTogether.Sync
                         if (e == Entity.Null || !em.Exists(e)) break; // already gone: nothing to delete
                         // mod compatibility: mod tools may delete vehicles, citizens and animals (Better Bulldozer)
                         Family despawned = _ids.GetFamily(r.NetId);
+                        if (FamilyClassifier.IsHostOnly(despawned)) return RejectReason.HostOnly;
                         if (!FamilyClassifier.IsReplicated(despawned) && !(despawned == Family.Mover && (facts.Flags & ProposalFlags.DirectTool) != 0)) return RejectReason.Invalid;
-                        if (FamilyClassifier.IsHostOnly(despawned)) return RejectReason.Invalid;
                         if (_ledger.IsConflict(r.NetId, baseEpoch, peer.Value)) return RejectReason.Conflict;
                         break;
                     }
                 }
             }
+            // placement: unlocks, owned map tiles, geometry (vanilla tools never produce what these refuse)
+            RejectReason placement = CheckPlacement(peer, records, facts, data, spawned);
+            if (placement != RejectReason.None) return placement;
             _proposalMaxRefund = RefundBound(em, records);
             Entity city = _city.City;
             if (facts.HasCost && city != Entity.Null && em.HasComponent<Game.City.PlayerMoney>(city))

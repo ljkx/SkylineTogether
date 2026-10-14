@@ -29,6 +29,9 @@ namespace SkylineTogether.Compat
 
         public override IEnumerable<string> SyncedSettings => new[] { "SpawnedZoneDespawn", "LockPloppedBuildings" };
 
+        /// <summary>Plopping places growable buildings, whose prefabs the host's progression may still list as locked.</summary>
+        public override Core.Sync.PlacementChecks RelaxedPlacementChecks => Core.Sync.PlacementChecks.Unlocks;
+
         public override string Summary => "tags and level locks replicate; zone check and plop tagging host-only; settings from the host";
     }
 }

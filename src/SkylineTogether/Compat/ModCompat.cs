@@ -313,6 +313,23 @@ namespace SkylineTogether.Compat
         /// <summary>SyncController hook: a mod tool that applies through the Temp pipeline (not a direct-write tool).</summary>
         public static bool IsPipelineTool(Type tool) => tool != null && Pipeline.Contains(tool.FullName ?? "");
 
+        /// <summary>
+        /// The host placement checks the active adapters relax (ARCHITECTURE.md#host-validation-and-commit,
+        /// <see cref="ModAdapter.RelaxedPlacementChecks"/>); <paramref name="by"/> (optional) receives "mod (checks)" lines.
+        /// </summary>
+        public static SkylineTogether.Core.Sync.PlacementChecks RelaxedPlacementChecks(List<string> by)
+        {
+            var relaxed = SkylineTogether.Core.Sync.PlacementChecks.None;
+            foreach (ModAdapter adapter in ActiveList)
+            {
+                SkylineTogether.Core.Sync.PlacementChecks r = adapter.RelaxedPlacementChecks;
+                if (r == SkylineTogether.Core.Sync.PlacementChecks.None) continue;
+                relaxed |= r;
+                by?.Add(adapter.ModName + " (" + r + ")");
+            }
+            return relaxed;
+        }
+
         /// <summary>The active adapter of a loaded mod that synchronises <paramref name="key"/>, or null.</summary>
         public static ModAdapter FindWithSetting(string assemblyName, string key)
         {

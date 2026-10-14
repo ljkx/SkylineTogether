@@ -78,6 +78,7 @@ namespace SkylineTogether.Sync
             Integrity.Reset();
             ResetGameplay();
             ResetHostState();
+            ResetPlacement();
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Proposal && e.Kind != MessageKind.ApplyAck) return;
@@ -342,6 +343,7 @@ namespace SkylineTogether.Sync
         private void OnPeerLeft(PeerId peer)
         {
             _proposalHealth.Remove(peer.Value);
+            DropQueuedProposals(peer);
             _hostInboxQuota.Forget(peer);
             _ackStall.Forget(peer.Value);
             // proposal limits
@@ -366,6 +368,25 @@ namespace SkylineTogether.Sync
                 }
             }
             if (returned > 0) _log.Debug(LogCategory.Replication, peer + " left; " + returned + " unused granted ids returned");
+        }
+
+        /// <summary>
+        /// Host: the proposals and acknowledgements a departed peer left in the inbox are dropped
+        /// (<see cref="RejectReason.NotLive"/>): a peer id may be handed to the next joiner, whose fresh snapshot they must
+        /// not change, and nobody would receive their rollbacks.
+        /// </summary>
+        private void DropQueuedProposals(PeerId peer)
+        {
+            if (_inbox.Count == 0) return;
+            int before = _inbox.Count;
+            Inbound[] items = _inbox.ToArray();
+            _inbox.Clear();
+            foreach (Inbound item in items)
+            {
+                if (item.Peer != peer) _inbox.Enqueue(item);
+            }
+            int dropped = before - _inbox.Count;
+            if (dropped > 0) _log.Info(LogCategory.Replication, peer + " left; dropped " + dropped + " queued proposal(s) and acknowledgement(s) (" + RejectReason.NotLive + ")");
         }
 
         /// <summary>Host: grants a client its next id range (runs of free ids, then fresh ones) and writes the records.</summary>

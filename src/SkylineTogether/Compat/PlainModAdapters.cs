@@ -28,6 +28,12 @@ namespace SkylineTogether.Compat
 
         public override System.Collections.Generic.IEnumerable<string> PipelineTools => new[] { "LineTool.LineToolSystem" };
 
+        /// <summary>
+        /// Its objects come from its own creation definitions; whether it honours the game's map tile and shape errors for
+        /// every object of a line is not confirmed, so the host does not apply those checks while it is loaded.
+        /// </summary>
+        public override Core.Sync.PlacementChecks RelaxedPlacementChecks => Core.Sync.PlacementChecks.Tiles | Core.Sync.PlacementChecks.Geometry;
+
         public override string Summary => "vanilla pipeline; results replicate";
     }
 
@@ -43,6 +49,9 @@ namespace SkylineTogether.Compat
         public override string AssemblyName => "FindIt";
 
         public override System.Collections.Generic.IEnumerable<string> PipelineTools => new[] { "FindIt.Systems.PickerToolSystem" };
+
+        /// <summary>Its browser offers every prefab, including ones the toolbar keeps hidden until they are unlocked.</summary>
+        public override Core.Sync.PlacementChecks RelaxedPlacementChecks => Core.Sync.PlacementChecks.Unlocks;
 
         public override string Summary => "client-local UI; generated prefabs resolved by PrefabID, missing ones reported";
     }
