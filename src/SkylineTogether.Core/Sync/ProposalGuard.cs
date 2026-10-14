@@ -107,9 +107,10 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
-    /// Host: counts rejected proposals that indicate abuse or a broken client (rate, size, malformed). Repeated
-    /// violations within a window mean the player is kicked (ARCHITECTURE.md#host-validation-and-commit, #security-model). Rejections for conflicts, money or
-    /// permissions are ordinary game events and never counted.
+    /// Host: counts rejected proposals that indicate abuse or a broken client (rate, size, malformed, host-only
+    /// families). Repeated violations within a window mean the player is kicked (ARCHITECTURE.md#host-validation-and-commit, #security-model). Rejections for
+    /// conflicts, money, permissions and the placement rules are ordinary game events (or a mod the rules do not know)
+    /// and never counted.
     /// </summary>
     public sealed class ViolationTracker
     {
@@ -137,7 +138,7 @@ namespace SkylineTogether.Core.Sync
         public void Clear() => _times.Clear();
 
         /// <summary>True for reasons that count as violations.</summary>
-        public static bool IsViolation(RejectReason reason) => reason == RejectReason.RateLimited || reason == RejectReason.Invalid;
+        public static bool IsViolation(RejectReason reason) => reason == RejectReason.RateLimited || reason == RejectReason.Invalid || reason == RejectReason.HostOnly;
     }
 
     /// <summary>
@@ -189,6 +190,20 @@ namespace SkylineTogether.Core.Sync
             return e.Epoch > baseEpoch && e.Author != peer;
         }
 
+        /// <summary>
+        /// Whether a proposal based on epoch <paramref name="baseEpoch"/> can be checked for conflicts:
+        /// <see cref="RejectReason.Invalid"/> for a base the host never broadcast (a forged header),
+        /// <see cref="RejectReason.Timeout"/> for a base so old that the ledger may have pruned the changes made since
+        /// (more than <see cref="Horizon"/> epochs: the client has applied nothing for minutes, and its edit could
+        /// silently overwrite newer ones), otherwise <see cref="RejectReason.None"/>.
+        /// </summary>
+        public RejectReason CheckBase(uint baseEpoch)
+        {
+            if (baseEpoch > LastBroadcast) return RejectReason.Invalid;
+            if (_current > Horizon && baseEpoch < _current - Horizon) return RejectReason.Timeout;
+            return RejectReason.None;
+        }
+
         /// <summary>The author of the newest change of <paramref name="id"/> (false when none is recorded).</summary>
         public bool TryGetAuthor(uint id, out byte author, out uint epoch)
         {
@@ -229,8 +244,19 @@ namespace SkylineTogether.Core.Sync
         public bool HasCost;
         public long Cost;
         public ProposalFlags Flags;
+        /// <summary>The number of <see cref="SyncRecordKind.ProposalHeader"/> records (a client writes exactly one).</summary>
+        public int Headers;
+        /// <summary>The header's base ledger epoch (meaningful when <see cref="Headers"/> is 1).</summary>
+        public uint BaseEpoch;
+        public uint Seq;
 
         public int EntityCount => Spawns + Upserts + Despawns + ZoneBlocks;
+
+        /// <summary>
+        /// True when the batch changes the world (entities, zone cells or money) and so needs a header: the conflict
+        /// check and the rollback depend on its base epoch and sequence number.
+        /// </summary>
+        public bool NeedsHeader => EntityCount > 0 || HasCost;
     }
 
     /// <summary>Pure host validation rules of ARCHITECTURE.md#host-validation-and-commit that need no world access.</summary>
@@ -290,10 +316,54 @@ namespace SkylineTogether.Core.Sync
             return bound >= int.MaxValue ? int.MaxValue : (long)bound;
         }
 
+        /// <summary>
+        /// Header rule: a batch that changes the world carries exactly one <see cref="SyncRecordKind.ProposalHeader"/>
+        /// (every client capture writes one), and no batch carries several. Without it the conflict check would have no
+        /// base epoch, so such a batch is refused as <see cref="RejectReason.Invalid"/>.
+        /// </summary>
+        public static RejectReason CheckHeader(in ProposalFacts f)
+        {
+            if (f.Headers > 1) return RejectReason.Invalid;
+            if (f.NeedsHeader && f.Headers == 0) return RejectReason.Invalid;
+            return RejectReason.None;
+        }
+
+        /// <summary>
+        /// Sender rule: only a live player's proposals are applied. One queued before the player left (or was replaced
+        /// by a reconnect) is dropped as <see cref="RejectReason.NotLive"/>; it is logged on the host but cannot be
+        /// delivered (the peer is gone, and a joiner's snapshot carries the host's state anyway).
+        /// </summary>
+        public static RejectReason CheckSender(bool live) => live ? RejectReason.None : RejectReason.NotLive;
+
         /// <summary>Size rule 1.</summary>
         public static RejectReason CheckSize(in ProposalFacts f) => f.EntityCount > MaxEntities ? RejectReason.Invalid : RejectReason.None;
 
-        /// <summary>The toast a rejected player sees (ARCHITECTURE.md#host-validation-and-commit).</summary>
+        /// <summary>
+        /// The locale key of the reason in the toast a rejected player sees (<c>st.reject.*</c> in the game layer's
+        /// locale tables, inserted into <c>st.toast.rejected</c>); unknown values fall back to <c>st.reject.other</c>.
+        /// </summary>
+        public static string LocaleKey(RejectReason reason)
+        {
+            switch (reason)
+            {
+                case RejectReason.Conflict: return "st.reject.conflict";
+                case RejectReason.NoPermission: return "st.reject.noPermission";
+                case RejectReason.NotEnoughMoney: return "st.reject.notEnoughMoney";
+                case RejectReason.Locked: return "st.reject.locked";
+                case RejectReason.OutsideTiles: return "st.reject.outsideTiles";
+                case RejectReason.Invalid: return "st.reject.invalid";
+                case RejectReason.RateLimited: return "st.reject.rateLimited";
+                case RejectReason.NotLive: return "st.reject.notLive";
+                case RejectReason.HostError: return "st.reject.hostError";
+                case RejectReason.Timeout: return "st.reject.timeout";
+                case RejectReason.HostOnly: return "st.reject.hostOnly";
+                case RejectReason.PrefabClass: return "st.reject.prefabClass";
+                case RejectReason.Geometry: return "st.reject.geometry";
+                default: return "st.reject.other";
+            }
+        }
+
+        /// <summary>The reason in English, for the host's and the client's logs (the toast uses <see cref="LocaleKey"/>).</summary>
         public static string Describe(RejectReason reason)
         {
             switch (reason)
@@ -308,10 +378,10 @@ namespace SkylineTogether.Core.Sync
                 case RejectReason.RateLimited: return "too many changes at once";
                 case RejectReason.NotLive: return "you are still joining";
                 case RejectReason.HostError: return "the host failed to apply it";
-                case RejectReason.Timeout: return "the host did not answer in time";
+                case RejectReason.Timeout: return "it was based on a state of the city that is too old";
                 case RejectReason.HostOnly: return "only the host can do this";
                 case RejectReason.PrefabClass: return "that replacement is not allowed";
-                case RejectReason.Geometry: return "the shape did not match the host's city";
+                case RejectReason.Geometry: return "its shape is not one the game allows";
                 default: return "rejected (" + (ushort)reason + ")";
             }
         }
