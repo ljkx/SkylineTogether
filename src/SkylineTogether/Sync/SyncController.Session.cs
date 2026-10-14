@@ -221,6 +221,7 @@ namespace SkylineTogether.Sync
             _out.Clear();
             _outList.Clear();
             _barrier = 0;
+            _announcedFrontier = 0;
             _applyBudget.Reset();
             _catchUpBudget.Reset();
         }
@@ -317,6 +318,7 @@ namespace SkylineTogether.Sync
             // first messages of the joiner's stream (buffered until its load finished): the prefab table and an id range
             var w = new SyncBatch.Writer();
             foreach ((uint id, Entity prefab) in _codec.BindAllPrefabs()) _codec.WritePrefab(w, id, prefab);
+            w.IdCeiling(_ids.Ids.Next); // w9/perf
             Grant(peer, w);
             // gameplay branch: the joiner's snapshot contains every ledger epoch up to now, so its proposals start from here
             w.Epoch(_ledger.LastBroadcast);

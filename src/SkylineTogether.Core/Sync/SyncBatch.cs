@@ -32,6 +32,11 @@ namespace SkylineTogether.Core.Sync
         /// Host → client: the channel's full state; client → host: the entries the client changed.
         /// </summary>
         Global = 11,
+        /// <summary>
+        /// w9/perf: host → client, the host's net id frontier (<see cref="SyncRecord.RangeStart"/>; <see cref="NetIdCeiling"/>),
+        /// so a client refuses ids far beyond it instead of growing its id tables without bound.
+        /// </summary>
+        IdCeiling = 12,
 
         // ---- integrity and icon channels (feat/integrity; values 40-49 are reserved for them by merge coordination) ----
         /// <summary>Host → client: the integrity digest of one bucket of net ids (rolling verification).</summary>
@@ -481,6 +486,14 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
+            /// <summary>w9/perf: the host's id frontier (<see cref="SyncRecordKind.IdCeiling"/>).</summary>
+            public void IdCeiling(uint frontier)
+            {
+                _w.WriteByte((byte)SyncRecordKind.IdCeiling);
+                _w.WriteVarUInt32(frontier);
+                _count++;
+            }
+
             public void Cost(long amount)
             {
                 _w.WriteByte((byte)SyncRecordKind.Cost);
@@ -864,6 +877,9 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.IdRange:
                     rec.RangeStart = r.ReadVarUInt32();
                     rec.RangeCount = r.ReadVarUInt32();
+                    return rec;
+                case SyncRecordKind.IdCeiling:
+                    rec.RangeStart = r.ReadVarUInt32();
                     return rec;
                 case SyncRecordKind.Cost:
                     rec.Amount = r.ReadVarInt64();

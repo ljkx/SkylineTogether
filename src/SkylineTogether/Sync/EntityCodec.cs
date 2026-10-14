@@ -29,6 +29,8 @@ namespace SkylineTogether.Sync
         public long Cost;
         public bool HasCost;
         public uint? Clock;
+        /// <summary>w9/perf: the host's id frontier announced by this batch (0: none).</summary>
+        public uint IdCeiling;
         public readonly List<(uint Start, uint Count)> IdRanges = new List<(uint, uint)>();
         /// <summary>Entities written or tagged by this apply (the client excludes them from its own capture).</summary>
         public readonly HashSet<Entity> Touched = new HashSet<Entity>();
@@ -44,6 +46,7 @@ namespace SkylineTogether.Sync
             Cost = 0;
             HasCost = false;
             Clock = null;
+            IdCeiling = 0;
             IdRanges.Clear();
             Touched.Clear();
             Problems.Clear();
@@ -910,6 +913,7 @@ namespace SkylineTogether.Sync
                         break;
                     case SyncRecordKind.IdRange:
                         result.IdRanges.Add((r.RangeStart, r.RangeCount));
+                        if (!proposal) _ids.Ceiling.AnnounceRange(r.RangeStart, r.RangeCount); // w9/perf: a grant lies at the host's frontier
                         break;
                     case SyncRecordKind.Cost:
                         result.Cost += r.Amount;
@@ -917,6 +921,11 @@ namespace SkylineTogether.Sync
                         break;
                     case SyncRecordKind.Clock:
                         result.Clock = r.Frame;
+                        break;
+                    case SyncRecordKind.IdCeiling:
+                        // w9/perf: before the entity steps, so this batch's new ids are within it
+                        if (!proposal) _ids.Ceiling.Announce(r.RangeStart);
+                        result.IdCeiling = r.RangeStart;
                         break;
                 }
             }
@@ -1011,6 +1020,11 @@ namespace SkylineTogether.Sync
                     if (r.Kind != SyncRecordKind.Spawn && r.Kind != SyncRecordKind.Upsert)
                     {
                         result.Skipped++;
+                        continue;
+                    }
+                    if (!_ids.MayBind(r.NetId))
+                    {
+                        result.Skipped++; // w9/perf: beyond the host's announced id range (logged by NetIdSystem)
                         continue;
                     }
                     if (mayCreate != null && !mayCreate(r.NetId, r.Family))

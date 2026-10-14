@@ -59,6 +59,9 @@ namespace SkylineTogether.Sync
 
         public NetIdAllocator Ids { get; } = new NetIdAllocator(Mod.Log);
 
+        /// <summary>w9/perf (clients): the largest id the host's announced range allows (<see cref="NetIdCeiling"/>).</summary>
+        public NetIdCeiling Ceiling { get; } = new NetIdCeiling();
+
         /// <summary>
         /// True on the host during a session: unbinding releases ids into the quarantine. False on clients and outside
         /// sessions (ids are then only mirrored).
@@ -129,6 +132,7 @@ namespace SkylineTogether.Sync
             _pendingDespawns.Clear();
             _pendingDespawnSet.Clear();
             Ids.Clear();
+            Ceiling.Reset();
             _warnedExhausted = false;
         }
 
@@ -177,10 +181,24 @@ namespace SkylineTogether.Sync
             return id;
         }
 
-        public void Bind(Entity entity, uint netId, Family family)
+        /// <summary>
+        /// w9/perf: whether <paramref name="netId"/> may be bound here: always on the host, within the host's announced
+        /// range on a client (a refusal is counted; the first one is logged).
+        /// </summary>
+        public bool MayBind(uint netId)
         {
-            if (entity == Entity.Null || netId == 0 || netId > NetIdAllocator.MaxId) return;
-            if (Authority && !Ids.IsAllocated(netId) && !Ids.Claim(netId)) return; // quarantined ids are never rebound
+            if (netId == 0 || netId > NetIdAllocator.MaxId) return false;
+            if (Authority) return true;
+            if (Ceiling.Allows(netId, out bool first)) return true;
+            if (first) Mod.Log?.Warn(LogCategory.Replication, "the host sent net id " + netId + ", beyond its announced range (" + Ceiling.Describe() + "); records with such ids are refused");
+            return false;
+        }
+
+        /// <summary>Binds the entity to the id; false when the id is refused (quarantined on the host, beyond the ceiling on a client).</summary>
+        public bool Bind(Entity entity, uint netId, Family family)
+        {
+            if (entity == Entity.Null || !MayBind(netId)) return false;
+            if (Authority && !Ids.IsAllocated(netId) && !Ids.Claim(netId)) return false; // quarantined ids are never rebound
             Entity old = GetEntity(netId);
             if (old != Entity.Null && old != entity) UnbindEntityIndex(old);
             uint previous = GetNetId(entity);
@@ -193,6 +211,7 @@ namespace SkylineTogether.Sync
             _family[(int)netId] = (byte)family;
             _writer[entity.Index] = new Entity { Index = (int)netId, Version = entity.Version };
             AddToIndexes(netId, family);
+            return true;
         }
 
         /// <summary>
@@ -271,7 +290,7 @@ namespace SkylineTogether.Sync
         private void EnsureReader(int index)
         {
             if (index < _reader.Length) return;
-            int size = Math.Max(index + 1, Math.Min(_reader.Length * 2, (int)NetIdAllocator.MaxId + 1));
+            int size = NetIdCeiling.GrowTo(_reader.Length, index, (int)NetIdAllocator.MaxId + 1); // geometric; ids are bounded by MayBind
             int old = _reader.Length;
             _reader.Resize(size, NativeArrayOptions.ClearMemory);
             _family.Resize(size, NativeArrayOptions.ClearMemory);
@@ -438,6 +457,7 @@ namespace SkylineTogether.Sync
             reader.Read(out uint next);
             reader.Read(out int count);
             if (count < 0) return;
+            Ceiling.Announce(next); // w9/perf: the host's frontier at the snapshot bounds the loaded ids
             // only a client joining the host's session uses the host's ids; any other load reads them and drops them
             bool keep = Mod.Sessions?.Client != null;
             var generations = new List<KeyValuePair<uint, byte>>(keep ? Math.Max(0, Math.Min(count, 1 << 20)) : 0);

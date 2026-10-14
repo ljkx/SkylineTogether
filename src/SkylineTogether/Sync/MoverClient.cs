@@ -585,6 +585,7 @@ namespace SkylineTogether.Sync
 
         private Entity Create(EntityManager em, uint netId, MoverRecord rec)
         {
+            if (!_ids.MayBind(netId)) return Entity.Null; // w9/perf: beyond the host's announced id range
             Entity prefab = _ids.GetEntity(rec.PrefabNetId);
             if (prefab == Entity.Null || !em.Exists(prefab)) return Entity.Null;
             Archetypes types = TypesOf(em, prefab, rec.TrainController);

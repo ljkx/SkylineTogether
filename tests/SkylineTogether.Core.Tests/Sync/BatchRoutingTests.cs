@@ -76,7 +76,7 @@ namespace SkylineTogether.Core.Tests.Sync
             };
             SyncRecordKind[] hostOnly =
             {
-                SyncRecordKind.Prefab, SyncRecordKind.IdRange, SyncRecordKind.Clock, SyncRecordKind.BucketDigest, SyncRecordKind.EntityHashes,
+                SyncRecordKind.Prefab, SyncRecordKind.IdRange, SyncRecordKind.IdCeiling, SyncRecordKind.Clock, SyncRecordKind.BucketDigest, SyncRecordKind.EntityHashes,
                 SyncRecordKind.EntityExplain, SyncRecordKind.IconSet, SyncRecordKind.IconControl, SyncRecordKind.LineRows,
                 SyncRecordKind.MoverSpawn, SyncRecordKind.MoverState, SyncRecordKind.MoverDespawn, SyncRecordKind.Epoch, SyncRecordKind.ProposalResult,
                 SyncRecordKind.ModSettings, // mod compatibility: the host's mod settings

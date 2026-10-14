@@ -344,6 +344,12 @@ namespace SkylineTogether.Sync
             {
                 _lastClock = now;
                 _batch.Clock(_simulation.frameIndex);
+                // w9/perf: the id frontier moved: clients accept ids up to it (plus slack), nothing far beyond
+                if (_ids.Ids.Next != _announcedFrontier)
+                {
+                    _announcedFrontier = _ids.Ids.Next;
+                    _batch.IdCeiling(_announcedFrontier);
+                }
             }
             long integrity = Perf.Start();
             _digestBatch.Reset();
