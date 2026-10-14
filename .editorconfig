@@ -1,0 +1,49 @@
+# Editor settings matching the existing code. Line endings are not set here except where .gitattributes forces
+# them: the repository stores LF and checkouts use the platform's line endings (see .gitattributes).
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.sh]
+end_of_line = lf
+indent_size = 2
+
+[*.{ps1,cmd,bat}]
+end_of_line = crlf
+
+[*.{sln}]
+end_of_line = crlf
+indent_style = tab
+
+[*.{mjs,js,json,yml,yaml,csproj,props,targets,xml}]
+indent_size = 2
+
+[*.md]
+# trailing double spaces are hard line breaks in Markdown
+trim_trailing_whitespace = false
+
+[*.cs]
+# Lines up to about 120 characters; Allman braces; block-scoped namespaces; private fields _camelCase.
+max_line_length = 120
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_style_namespace_declarations = block_scoped:suggestion
+csharp_style_var_for_built_in_types = true:none
+csharp_style_var_when_type_is_apparent = true:none
+csharp_style_var_elsewhere = true:none
+csharp_prefer_braces = when_multiline:none
+dotnet_sort_system_directives_first = true
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+

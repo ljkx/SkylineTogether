@@ -1,4 +1,3 @@
-// Assembly-level metadata of the game layer (solution scaffold). The IMod entry point and every module live in
-// their own folders (Bootstrap/, UI/, Ecs/, ...; IMPLEMENTATION-PLAN §1). This file also guarantees that the project
-// always has at least one source file, so a build never reports CS2008 while modules are still empty.
+// Assembly-level metadata of the game layer. The IMod entry point is Mod.cs; the modules live in their own folders
+// (Session/, Sync/, Presence/, ...; see docs/dev/code-map.md).
 [assembly: System.Reflection.AssemblyMetadata("SkylineTogether.Layer", "Game")]

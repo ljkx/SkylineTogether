@@ -15,6 +15,7 @@ namespace SkylineTogether.Core.Session
         NeedsChoice,
     }
 
+    /// <summary>Backoff and attempt limit of the automatic reconnects of a <see cref="RejoinController"/>.</summary>
     public sealed class RejoinOptions
     {
         /// <summary>Delay before attempt n (1-based) is <c>BackoffSeconds[min(n, length) - 1]</c>.</summary>

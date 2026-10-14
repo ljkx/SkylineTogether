@@ -1,0 +1,66 @@
+name: Bug report
+description: Something went wrong in a session (crash, desync, join problem, wrong behaviour).
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing. Please check the [troubleshooting guide](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md) first.
+        Logs from **both** players make most bugs fixable: in the multiplayer panel click **Write diagnostics**, then run
+        `Collect-Logs.cmd` from the installer folder and attach the zip it puts on your Desktop.
+        Do not paste passwords. The logs contain player names and Steam IDs; if you do not want them public, say so and
+        we will arrange another way to send them.
+  - type: input
+    id: build
+    attributes:
+      label: Build id
+      description: Printed by Install.cmd ("Build id") and in the first line of HOW-TO-TEST.txt. Give every player's build id.
+      placeholder: "host: 1a2b3c4d5e6f, friend: 1a2b3c4d5e6f"
+    validations:
+      required: true
+  - type: input
+    id: game-version
+    attributes:
+      label: Game version
+      description: Cities: Skylines II version from the main menu (bottom corner).
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Who saw the problem?
+      options:
+        - Host
+        - Joining player
+        - Both
+        - Solo test (record / replay)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what each player saw. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: If you were following docs/guide/testing.md, name the checklist step.
+      placeholder: |
+        1. Host loads a city and hosts
+        2. Friend joins
+        3. ...
+  - type: textarea
+    id: mods
+    attributes:
+      label: Other mods
+      description: Enabled code mods on each PC (names and versions), or "none / empty playset".
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Attach the Collect-Logs zip of each player (drag the files into this box).
