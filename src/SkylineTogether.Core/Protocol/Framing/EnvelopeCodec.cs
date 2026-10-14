@@ -30,6 +30,9 @@ namespace SkylineTogether.Core.Protocol
         private const EnvelopeFlags KnownFlags = EnvelopeFlags.Compressed | EnvelopeFlags.Fragment | EnvelopeFlags.HasUncompressedSize;
         private const EnvelopeFlags CompressedFlags = EnvelopeFlags.Compressed | EnvelopeFlags.HasUncompressedSize;
 
+        /// <summary>Output bytes an LZ4 block yields per input byte at most (255, plus a small constant per block).</summary>
+        private const ulong Lz4MaxExpansion = 255;
+
         private static readonly ManagedLz4Compressor BuiltInLz4 = new ManagedLz4Compressor();
 
         private readonly ICompressor _compressor;
@@ -138,6 +141,14 @@ namespace SkylineTogether.Core.Protocol
             int sourceCount = end - position;
             if (sourceCount <= 0) throw new DecodeException(kind + ": compressed body without data");
             ICompressor decompressor = SelectDecompressor(kind, codec);
+            if ((codec == CompressionKind.Lz4 || codec == CompressionKind.ManagedLz4) && declared > (ulong)sourceCount * Lz4MaxExpansion + 1024)
+            {
+                // w8/tests: an LZ4 block expands at most ~255:1 (a match grows by 255 bytes per extra length byte), so a
+                // larger declared size is corrupt; rejecting it here keeps a 20-byte message from making the receiver
+                // allocate (and keep, in its reused scratch buffer) up to 8 MiB before decompression fails
+                throw new DecodeException(kind + ": declared size " + WireFormat.Format(declared) + " is more than LZ4 can produce from "
+                                          + sourceCount.ToString(CultureInfo.InvariantCulture) + " bytes");
+            }
 
             int size = (int)declared;
             scratch.Reset();
