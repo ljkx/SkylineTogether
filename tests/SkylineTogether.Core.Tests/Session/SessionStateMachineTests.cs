@@ -136,6 +136,62 @@ namespace SkylineTogether.Core.Tests.Session
     }
 
     /// <summary>
+    /// A client transport that can hold back everything that arrives on the reliable lane while other lanes flow, as
+    /// when a lost packet of the reliable lane is retransmitted (Steam orders each lane on its own).
+    /// </summary>
+    internal sealed class LaneHoldTransport : ITransport, ITransportEventSink
+    {
+        private readonly ITransport _inner;
+        private readonly List<(IConnection C, byte[] Data)> _held = new List<(IConnection, byte[])>();
+        private ITransportEventSink _sink;
+
+        public LaneHoldTransport(ITransport inner)
+        {
+            _inner = inner;
+        }
+
+        public bool HoldReliable;
+
+        public int Held => _held.Count;
+
+        public TransportKind Kind => _inner.Kind;
+
+        public void Listen(ListenOptions options) => _inner.Listen(options);
+
+        public IConnection Connect(Endpoint endpoint) => _inner.Connect(endpoint);
+
+        public void Poll(ITransportEventSink sink)
+        {
+            _sink = sink;
+            if (!HoldReliable && _held.Count > 0)
+            {
+                var release = new List<(IConnection C, byte[] Data)>(_held);
+                _held.Clear();
+                foreach ((IConnection c, byte[] data) in release) sink.OnMessage(c, Lane.Reliable, data, 0, data.Length);
+            }
+            _inner.Poll(this);
+        }
+
+        public void Dispose() => _inner.Dispose();
+
+        void ITransportEventSink.OnConnected(IConnection connection) => _sink.OnConnected(connection);
+
+        void ITransportEventSink.OnDisconnected(IConnection connection, int reason, string text) => _sink.OnDisconnected(connection, reason, text);
+
+        void ITransportEventSink.OnMessage(IConnection connection, Lane lane, byte[] buffer, int offset, int count)
+        {
+            if (HoldReliable && lane == Lane.Reliable)
+            {
+                var copy = new byte[count];
+                Buffer.BlockCopy(buffer, offset, copy, 0, count);
+                _held.Add((connection, copy));
+                return;
+            }
+            _sink.OnMessage(connection, lane, buffer, offset, count);
+        }
+    }
+
+    /// <summary>
     /// The host's session state machine against scripted peers and real clients: handshake orderings, early and
     /// duplicate messages, refusals, passwords, capacity, roles and permissions, kicks and rejoins, timeouts.
     /// </summary>
@@ -518,6 +574,34 @@ namespace SkylineTogether.Core.Tests.Session
             rig.Run(400);
             Assert.Equal(clients[1].LocalPeer, late1.LocalPeer);
             Assert.Equal(clients[3].LocalPeer, late2.LocalPeer);
+        }
+
+        [Test]
+        public void SnapshotChunksThatOvertakeTheManifestAreNotLost()
+        {
+            // the snapshot fits into one chunk (bulk lane); the manifest (reliable lane) is held back until the chunk
+            // has arrived. Before w8/tests the client dropped the chunk (no receiver yet) and, since no later chunk
+            // revealed the gap, waited for the 120 s download watchdog.
+            var rig = new SessionRig(snapshotBytes: 100_000);
+            rig.Snapshots.Hold = true;
+            var info = new FakeInfo();
+            var loader = new FakeLoader();
+            var lanes = new LaneHoldTransport(rig.HostTransport.CreateClient(new PeerIdentity(4242, "loop:slow", "Slow")));
+            var client = new SessionClient(lanes, info, loader, new ClientOptions { PlayerName = "Slow", SteamId = 4242 }, rig.Clock, rig.Log);
+            client.Connect(new Endpoint());
+            rig.Clients.Add((client, loader, info));
+            rig.Run(30);
+            Assert.Equal(ClientState.WaitingForSnapshot, client.State, client.EndReason);
+
+            lanes.HoldReliable = true;
+            rig.Snapshots.DeliverPending();
+            rig.Run(30);
+            Assert.True(lanes.Held > 0, "the manifest is held back");
+            Assert.Equal(ClientState.WaitingForSnapshot, client.State, "no manifest yet");
+            lanes.HoldReliable = false;
+            rig.Run(60);
+            Assert.Equal(ClientState.Live, client.State, "joined within a second, not after the watchdog: " + client.EndReason);
+            Assert.SequenceEqual(rig.Snapshots.Data, loader.Target.ToArray(), "the early chunk is the city");
         }
 
         [Test]

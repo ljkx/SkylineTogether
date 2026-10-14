@@ -92,7 +92,7 @@ namespace SkylineTogether.Core.Tests.Framework
 
         public T Pick<T>(params T[] items) => items[Random.Next(items.Length)];
 
-        public T Pick<T>(IReadOnlyList<T> items) => items[Random.Next(items.Count)];
+        public T Element<T>(IReadOnlyList<T> items) => items[Random.Next(items.Count)];
 
         /// <summary>A defined value of an enum.</summary>
         public T Enum<T>() where T : struct, Enum
