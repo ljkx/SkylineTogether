@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// w9/perf (trust): the host's own price and checks for a client's map tile purchase
+    /// The host's own price and checks for a client's map tile purchase
     /// (<see cref="ActionKind.PurchaseMapTiles"/>). The client's observed cost is never charged: the host prices the
     /// still unowned tiles from its own world, the way the game's purchase panel does (studied in
     /// <c>MapTilePurchaseSystem</c>; reimplemented here, not copied):

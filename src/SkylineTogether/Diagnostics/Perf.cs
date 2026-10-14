@@ -55,7 +55,7 @@ namespace SkylineTogether.Diagnostics
 
         public static PerfCounters Counters { get; } = CreateCounters();
 
-        // ---- w9/perf: the shared per-frame budget (FrameBudgetService); features draw from it in priority order ----
+        // ---- the shared per-frame budget (FrameBudgetService); features draw from it in priority order ----
 
         /// <summary>
         /// The shared budget of one frame. The features' own caps add up to about this, so a normal frame clips nothing;
@@ -83,10 +83,10 @@ namespace SkylineTogether.Diagnostics
         public static readonly FrameBudgetService.Feature BudgetMaps = Budget.Register("maps+stats", BudgetPriority.Statistics, 2.0, 1.0);
         public static readonly FrameBudgetService.Feature BudgetPrefabTable = Budget.Register("prefab table", BudgetPriority.Statistics, 1.0, 0.25);
 
-        /// <summary>w9/perf: the allowance of <paramref name="feature"/> for this call (its own cap <paramref name="capMs"/>, clipped when the frame is full).</summary>
+        /// <summary>The allowance of <paramref name="feature"/> for this call (its own cap <paramref name="capMs"/>, clipped when the frame is full).</summary>
         public static double Allowance(FrameBudgetService.Feature feature, double capMs) => Budget.Begin(feature, capMs);
 
-        /// <summary>w9/perf: records the milliseconds since <paramref name="start"/> as spent by <paramref name="feature"/>; returns them.</summary>
+        /// <summary>Records the milliseconds since <paramref name="start"/> as spent by <paramref name="feature"/>; returns them.</summary>
         public static double Spent(FrameBudgetService.Feature feature, long start)
         {
             double ms = Elapsed(start);

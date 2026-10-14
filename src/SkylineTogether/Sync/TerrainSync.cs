@@ -68,7 +68,7 @@ namespace SkylineTogether.Sync
         private readonly InboundQuota _hostQuota = new InboundQuota(128, 16L << 20);
         private const int MaxStampsPerPeerFrame = 512;
         private readonly Dictionary<byte, (int Frame, int Count)> _stampBudget = new Dictionary<byte, (int, int)>();
-        // w9/perf (trust): and per second (a brush stamps once per frame; the per-frame cap alone let a peer send
+        // and per second (a brush stamps once per frame; the per-frame cap alone let a peer send
         // ~30 000 GPU brush passes per second, each re-broadcast to everyone)
         private const double StampsPerSecond = 600, StampBurst = 1200;
         private readonly Core.Sync.ProposalRateLimiter _stampRate = new Core.Sync.ProposalRateLimiter(StampsPerSecond, StampBurst);
@@ -191,7 +191,7 @@ namespace SkylineTogether.Sync
                 _requests.Remove(peer.Value);
                 _requestBudget.Remove(peer.Value);
                 _hostQuota.Forget(peer);
-                _stampRate.Forget(peer.Value); // w9/perf
+                _stampRate.Forget(peer.Value);
                 _stampBudget.Remove(peer.Value);
             };
         }

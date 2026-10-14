@@ -186,7 +186,7 @@ namespace SkylineTogether.Core.Sync
                 case ActionKind.DevTreePurchase:
                     return a.Target != 0 ? RejectReason.None : RejectReason.Invalid;
                 case ActionKind.PurchaseMapTiles:
-                    return a.Ids.Length > 0 && a.Ids.Length <= MapTilePricing.MaxTilesPerPurchase && a.Amount >= 0 && a.Amount <= int.MaxValue ? RejectReason.None : RejectReason.Invalid; // w9/perf: the amount is only logged (the host prices the tiles)
+                    return a.Ids.Length > 0 && a.Ids.Length <= MapTilePricing.MaxTilesPerPurchase && a.Amount >= 0 && a.Amount <= int.MaxValue ? RejectReason.None : RejectReason.Invalid; // the amount is only logged (the host prices the tiles)
                 case ActionKind.SetHistorical:
                     return a.Target != 0 && (a.Amount == 0 || a.Amount == 1) ? RejectReason.None : RejectReason.Invalid;
                 case ActionKind.SetVehicleModels:

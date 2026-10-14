@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w9/perf (trust): the host's own map tile price and purchase checks.</summary>
+    /// <summary>The host's own map tile price and purchase checks.</summary>
     public sealed class MapTilePricingTests
     {
         [Test]

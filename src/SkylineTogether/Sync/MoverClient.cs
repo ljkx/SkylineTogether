@@ -282,7 +282,7 @@ namespace SkylineTogether.Sync
             {
                 double applied = Perf.Stop(Perf.MoverApply, start);
                 _applyBudget.EndFrame(applied);
-                Perf.Budget.End(Perf.BudgetMoverApply, applied); // w9/perf: shared budget telemetry (apply priority)
+                Perf.Budget.End(Perf.BudgetMoverApply, applied); // shared budget telemetry (apply priority)
             }
             if (_pendingLinks.Count > 0) RetryLinks(em);
         }
@@ -590,7 +590,7 @@ namespace SkylineTogether.Sync
 
         private Entity Create(EntityManager em, uint netId, MoverRecord rec)
         {
-            if (!_ids.MayBind(netId)) return Entity.Null; // w9/perf: beyond the host's announced id range
+            if (!_ids.MayBind(netId)) return Entity.Null; // beyond the host's announced id range
             Entity prefab = _ids.GetEntity(rec.PrefabNetId);
             if (prefab == Entity.Null || !em.Exists(prefab)) return Entity.Null;
             Archetypes types = TypesOf(em, prefab, rec.TrainController);

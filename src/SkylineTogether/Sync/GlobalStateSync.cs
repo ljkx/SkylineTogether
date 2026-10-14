@@ -63,7 +63,7 @@ namespace SkylineTogether.Sync
         private CitySystem _city;
         private EntityQuery _budgetQuery;
         private EntityQuery _modifyQuery;
-        private EntityQuery _feeParameters; // w9/perf (trust): fee maxima and adjustability
+        private EntityQuery _feeParameters; // fee maxima and adjustability
         private EntityArchetype _modifyArchetype;
         private FieldInfo _namesField;
         private double _lastHost = double.NegativeInfinity;
@@ -451,7 +451,7 @@ namespace SkylineTogether.Sync
                 {
                     if (e.Key < (uint)rates.Length) rates[(int)e.Key] = GlobalProposalRules.ClampTax(e.Value);
                 }
-                // w9/perf (trust): the game's own clamp cascade (total, area, job level and resource limits of
+                // the game's own clamp cascade (total, area, job level and resource limits of
                 // TaxParameterData), as its tax panel setters apply it; the raw offsets alone could exceed every limit
                 TaxParameterData limits = _tax.GetTaxParameterData(); // loads the limits the setters clamp with
                 if (limits.m_TotalTaxLimits.x < limits.m_TotalTaxLimits.y) _tax.TaxRate = _tax.TaxRate;
@@ -470,7 +470,7 @@ namespace SkylineTogether.Sync
                     {
                         Entity service = _ids.GetEntity(e.Key);
                         if (service == Entity.Null || !lem.Exists(service) || !lem.HasComponent<ServiceData>(service)) continue;
-                        // w9/perf (trust): only budgets the game's panel lets players adjust
+                        // only budgets the game's panel lets players adjust
                         if (!GlobalProposalRules.TryBudget(e.Value, lem.GetComponentData<ServiceData>(service).m_BudgetAdjustable, out int percentage)) continue;
                         _budgets.SetServiceBudget(service, percentage);
                     }
@@ -490,7 +490,7 @@ namespace SkylineTogether.Sync
                 {
                     var resource = (PlayerResource)(int)e.Key;
                     if (resource == PlayerResource.Parking || e.Key > 64) continue;
-                    // w9/perf (trust): the game's fee maximum, and only fees its panel lets players adjust
+                    // the game's fee maximum, and only fees its panel lets players adjust
                     FeeParameters limits = haveParameters ? parameters.GetFeeParameters(resource) : new FeeParameters { m_Adjustable = true, m_Max = GlobalProposalRules.MaxFee };
                     if (!GlobalProposalRules.TryFee(e.Value, limits.m_Adjustable, limits.m_Max, out float fee)) continue;
                     // ServiceBudgetUISystem.SetServiceFee does exactly this (ServiceBudgetUISystem.cs:257-264)
@@ -500,7 +500,7 @@ namespace SkylineTogether.Sync
             else if (channel == GlobalChannel.Loan)
             {
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
-                // LoanSystem clamps against the host's money and creditworthiness and applies in Modification1; w9/perf: one
+                // LoanSystem clamps against the host's money and creditworthiness and applies in Modification1; one
                 // loan exists, so only the last entry counts (was one ChangeLoan per entry, up to 65536)
                 if (_intList.Count > 0) _loan.ChangeLoan(GlobalProposalRules.ClampLoan(_intList[_intList.Count - 1].Value));
             }
@@ -520,7 +520,7 @@ namespace SkylineTogether.Sync
                 if (!ReadDelta(GlobalPayload.ReadStrings(payload, 0, payload.Length, Cleared(_stringList)), peer, channel)) return;
                 if (!WithinLimit(_stringList.Count, channel)) return;
                 var names = new List<KeyValuePair<uint, string>>(_stringList.Count);
-                foreach (KeyValuePair<uint, string> e in _stringList) names.Add(new KeyValuePair<uint, string>(e.Key, GlobalProposalRules.CleanName(e.Value))); // w9/perf (trust)
+                foreach (KeyValuePair<uint, string> e in _stringList) names.Add(new KeyValuePair<uint, string>(e.Key, GlobalProposalRules.CleanName(e.Value)));
                 // gameplay branch: NameSystem.SetCustomName uses EndFrameBarrier (NameSystem.cs:214-241): late phase
                 _late.Add(() =>
                 {
@@ -543,7 +543,7 @@ namespace SkylineTogether.Sync
                 if (!ReadDelta(GlobalPayload.ReadStrings(payload, 0, payload.Length, Cleared(_stringList)), peer, channel)) return;
                 foreach (KeyValuePair<uint, string> e in _stringList)
                 {
-                    if (GlobalProposalRules.TryCityName(e.Value, out string cityName)) _config.cityName = cityName; // w9/perf (trust): sanitised
+                    if (GlobalProposalRules.TryCityName(e.Value, out string cityName)) _config.cityName = cityName; // sanitised
                 }
                 _send.MarkDirty(channel);
             }
@@ -555,7 +555,7 @@ namespace SkylineTogether.Sync
 
         private PeerId _proposalPeer;
 
-        /// <summary>w9/perf (trust): a proposal with more entries than a panel edit can produce is dropped whole.</summary>
+        /// <summary>A proposal with more entries than a panel edit can produce is dropped whole.</summary>
         private bool WithinLimit(int count, uint channel)
         {
             if (GlobalProposalRules.WithinEntryLimit(count)) return true;
@@ -594,7 +594,7 @@ namespace SkylineTogether.Sync
             if (policy == Entity.Null || !em.Exists(policy)) return true;
             if (!em.HasComponent<PolicyData>(policy)) return true;
             if (!em.HasBuffer<Policy>(target) && !em.HasComponent<Game.Buildings.Extension>(target)) return true;
-            // w9/perf (trust): a policy that is still locked cannot be enacted; a slider value stays within its range
+            // a policy that is still locked cannot be enacted; a slider value stays within its range
             if (em.HasComponent<Locked>(policy) && em.IsComponentEnabled<Locked>(policy)) return true;
             bool hasRange = em.HasComponent<PolicySliderData>(policy);
             Colossal.Mathematics.Bounds1 range = hasRange ? em.GetComponentData<PolicySliderData>(policy).m_Range : default;

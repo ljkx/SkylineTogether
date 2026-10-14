@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace SkylineTogether.Core.Fields
 {
-    /// <summary>w9/perf (trust): the valid range of one 16-bit little-endian field of a cell (<see cref="CellMapMessage.ClampFields"/>).</summary>
+    /// <summary>The valid range of one 16-bit little-endian field of a cell (<see cref="CellMapMessage.ClampFields"/>).</summary>
     public struct CellFieldClamp
     {
         public int Offset;
@@ -21,7 +21,7 @@ namespace SkylineTogether.Core.Fields
     }
 
     /// <summary>
-    /// w9/perf: paces cell-map resync requests (<see cref="CellMapMessage.TypeResync"/>). Host side: one served request
+    /// Paces cell-map resync requests (<see cref="CellMapMessage.TypeResync"/>). Host side: one served request
     /// per peer and map per <see cref="HostInterval"/>. Client side: after a request, the next one for the same map waits
     /// an interval that doubles while the map keeps differing (up to <see cref="MaxClientInterval"/>) and starts over
     /// once it matches. Not thread-safe.

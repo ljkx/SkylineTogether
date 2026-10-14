@@ -33,7 +33,7 @@ namespace SkylineTogether.Core.Sync
         /// </summary>
         Global = 11,
         /// <summary>
-        /// w9/perf: host → client, the host's net id frontier (<see cref="SyncRecord.RangeStart"/>; <see cref="NetIdCeiling"/>),
+        /// Host → client, the host's net id frontier (<see cref="SyncRecord.RangeStart"/>; <see cref="NetIdCeiling"/>),
         /// so a client refuses ids far beyond it instead of growing its id tables without bound.
         /// </summary>
         IdCeiling = 12,
@@ -429,7 +429,7 @@ namespace SkylineTogether.Core.Sync
             }
 
             /// <summary>
-            /// w9/perf: appends every record of <paramref name="other"/> (byte for byte; for example a cached prefab table),
+            /// Appends every record of <paramref name="other"/> (byte for byte; for example a cached prefab table),
             /// as if they had been written here.
             /// </summary>
             public void Append(Writer other)
@@ -499,7 +499,7 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
-            /// <summary>w9/perf: the host's id frontier (<see cref="SyncRecordKind.IdCeiling"/>).</summary>
+            /// <summary>The host's id frontier (<see cref="SyncRecordKind.IdCeiling"/>).</summary>
             public void IdCeiling(uint frontier)
             {
                 _w.WriteByte((byte)SyncRecordKind.IdCeiling);

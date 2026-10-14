@@ -59,7 +59,7 @@ namespace SkylineTogether.Sync
 
         public NetIdAllocator Ids { get; } = new NetIdAllocator(Mod.Log);
 
-        /// <summary>w9/perf (clients): the largest id the host's announced range allows (<see cref="NetIdCeiling"/>).</summary>
+        /// <summary>The largest id the host's announced range allows (<see cref="NetIdCeiling"/>).</summary>
         public NetIdCeiling Ceiling { get; } = new NetIdCeiling();
 
         /// <summary>
@@ -182,7 +182,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w9/perf: whether <paramref name="netId"/> may be bound here: always on the host, within the host's announced
+        /// Whether <paramref name="netId"/> may be bound here: always on the host, within the host's announced
         /// range on a client (a refusal is counted; the first one is logged).
         /// </summary>
         public bool MayBind(uint netId)
@@ -457,7 +457,7 @@ namespace SkylineTogether.Sync
             reader.Read(out uint next);
             reader.Read(out int count);
             if (count < 0) return;
-            Ceiling.Announce(next); // w9/perf: the host's frontier at the snapshot bounds the loaded ids
+            Ceiling.Announce(next); // the host's frontier at the snapshot bounds the loaded ids
             // only a client joining the host's session uses the host's ids; any other load reads them and drops them
             bool keep = Mod.Sessions?.Client != null;
             var generations = new List<KeyValuePair<uint, byte>>(keep ? Math.Max(0, Math.Min(count, 1 << 20)) : 0);

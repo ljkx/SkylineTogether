@@ -225,7 +225,7 @@ namespace SkylineTogether.Sync
                     {
                         double due = now + delay;
                         // a source that is tagged every frame must not flood the schedule: one entry per tile and delay
-                        if (HasHot(index, due)) continue; // w9/perf: a loop, not a closure per tile and delay
+                        if (HasHot(index, due)) continue; // a loop, not a closure per tile and delay
                         _hot.Add((due, index));
                     }
                 }
@@ -292,7 +292,7 @@ namespace SkylineTogether.Sync
             if (best >= 0)
             {
                 int tile = _hot[best].Tile;
-                for (int i = _hot.Count - 1; i >= 0; i--) // w9/perf: no closure per sample
+                for (int i = _hot.Count - 1; i >= 0; i--) // no closure per sample
                 {
                     if (_hot[i].Tile == tile && _hot[i].Due <= now) _hot.RemoveAt(i);
                 }

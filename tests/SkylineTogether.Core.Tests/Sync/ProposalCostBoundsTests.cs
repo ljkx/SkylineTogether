@@ -3,7 +3,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w9/perf (trust): the host's bounds on what a client's proposal costs.</summary>
+    /// <summary>The host's bounds on what a client's proposal costs.</summary>
     public sealed class ProposalCostBoundsTests
     {
         [Test]

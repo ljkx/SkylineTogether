@@ -181,7 +181,7 @@ const end = (kind, refuse, extra) => Object.assign({ seq: 7, kind, refuse: refus
 const join = (stage, extra) => Object.assign({ active: true, stage, session: "Anna's city", target: "76561190000000009", done: 0, total: 0, bps: 0, eta: -1, load: 0, progress: 0 }, extra);
 const friends = [{ id: "76561190000000001", name: "Anna", state: "ingame", inSession: true }, { id: "76561190000000002", name: "Bo", state: "online", inSession: false },
   { id: "76561190000000003", name: "Cy", state: "away", inSession: false }, { id: "76561190000000004", name: "Dee", state: "offline", inSession: false }, { id: "76561190000000005", name: "", state: "weird", inSession: false }];
-// w9/perf: the performance overlay as PerfOverlay.cs writes it
+// the performance overlay as PerfOverlay.cs writes it
 const perf = { show: true, frame: { ms: 3.42, budget: 10, over: 2 }, features: [{ n: "apply", p: 0, avg: 1.2, p95: 4.1, cap: 6, clip: 0 }, { n: "value scan", p: 1, avg: 0.9, p95: 1.0, cap: 1, clip: 12 },
   { n: "maps+stats", p: 3, avg: 0, p95: 0, cap: 0, clip: 0 }], peers: [{ name: "Anna", in: 1.5, out: 22.3, ping: 40, queued: 0, deferred: 120 }, { name: "", in: "x", out: null, ping: -1, queued: 0, deferred: -1 }], queue: 80 };
 const cases = {

@@ -70,7 +70,7 @@ namespace SkylineTogether.Sync
 
         private void OnHostStarted(SessionHost host)
         {
-            Perf.Budget.Reset(); // w9/perf: per-session budget statistics
+            Perf.Budget.Reset(); // per-session budget statistics
             if (!EnsureWorld()) return;
             host.PeerJoining += OnPeerJoining;
             host.PeerLeft += OnPeerLeft;
@@ -110,7 +110,7 @@ namespace SkylineTogether.Sync
 
         private void OnClientStarted(SessionClient client)
         {
-            Perf.Budget.Reset(); // w9/perf: per-session budget statistics
+            Perf.Budget.Reset(); // per-session budget statistics
             if (!EnsureWorld()) return;
             _clientLive = false;
             _pool.Clear();
@@ -264,7 +264,7 @@ namespace SkylineTogether.Sync
             int renumbered = _ids.Compact(); // also rebuilds the allocator (nothing quarantined)
             _ids.Authority = true;
             List<(uint Id, Entity Prefab)> allPrefabs = _codec.BindAllPrefabs();
-            _prefabTable.Start(allPrefabs); // w9/perf: encoded over the next frames, not in a joiner's frame
+            _prefabTable.Start(allPrefabs); // encoded over the next frames, not in a joiner's frame
             int prefabs = allPrefabs.Count;
             int bound = 0;
             NativeArray<Entity> entities = _tracked.ToEntityArray(Allocator.Temp);
@@ -323,9 +323,9 @@ namespace SkylineTogether.Sync
             // first messages of the joiner's stream (buffered until its load finished): the prefab table and an id range
             var w = new SyncBatch.Writer();
             long tableStart = Perf.Start();
-            _prefabTable.WriteTo(_codec, _codec.BindAllPrefabs(), w); // w9/perf: cached, only new bindings are encoded now
+            _prefabTable.WriteTo(_codec, _codec.BindAllPrefabs(), w); // cached, only new bindings are encoded now
             double tableMs = Perf.Elapsed(tableStart);
-            w.IdCeiling(_ids.Ids.Next); // w9/perf
+            w.IdCeiling(_ids.Ids.Next);
             Grant(peer, w);
             // gameplay branch: the joiner's snapshot contains every ledger epoch up to now, so its proposals start from here
             w.Epoch(_ledger.LastBroadcast);

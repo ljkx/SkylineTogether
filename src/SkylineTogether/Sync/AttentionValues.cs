@@ -281,7 +281,7 @@ namespace SkylineTogether.Sync
             if (_hotDirty) RebuildHot();
             _watch.Restart();
             // alone, the host only keeps baselines current (a joiner then needs only what changed after its snapshot)
-            double budget = Diagnostics.Perf.Allowance(Diagnostics.Perf.BudgetSimValues, _planner.PeerCount > 0 ? ScanBudgetMs : ScanBudgetMs * 0.35); // w9/perf: shared budget
+            double budget = Diagnostics.Perf.Allowance(Diagnostics.Perf.BudgetSimValues, _planner.PeerCount > 0 ? ScanBudgetMs : ScanBudgetMs * 0.35); // shared budget
             double hotBudget = _peers.Count > 0 ? budget * HotShare : 0;
             int hotLeft = _hotIds.Count;
             while (hotLeft-- > 0 && _watch.Elapsed.TotalMilliseconds < hotBudget)
@@ -683,7 +683,7 @@ namespace SkylineTogether.Sync
                     {
                         if (data.Length > 1 && data[0] == SimValueMessage.Version && data[1] == SimValueMessage.TypeSample)
                         {
-                            SimValueMessage.ReadSampleHeader(data, 0, data.Length, out uint tick, out uint entities); // w9/perf: decoded once, when applied
+                            SimValueMessage.ReadSampleHeader(data, 0, data.Length, out uint tick, out uint entities); // decoded once, when applied
                             if (entities > 0) _samples.Enqueue(tick, Now, data);
                             continue;
                         }
@@ -733,7 +733,7 @@ namespace SkylineTogether.Sync
         {
             List<SyncRecord> records = SimValueMessage.Read(data, 0, data.Length, out byte type, out _, out uint selected);
             isSample = type == SimValueMessage.TypeSample;
-            ApplyResult result = _applyResult; // w9/perf: reused (was a result with four collections per message)
+            ApplyResult result = _applyResult; // reused (was a result with four collections per message)
             result.Reset();
             _codec.ApplySimValues(data, 0, data.Length, records, result);
             if (result.Problems.Count > 0) _log.Debug(LogCategory.Replication, "simulation values: " + string.Join("; ", result.Problems));

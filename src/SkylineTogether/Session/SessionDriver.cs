@@ -43,7 +43,7 @@ namespace SkylineTogether.Session
             Guard.Run(Features.Mods, "mod integration", ModTick); // binds other mods once they are loaded
         }
 
-        private static readonly Action ModTick = Compat.ModIntegration.Tick; // w9/perf: cached (was a delegate per frame)
+        private static readonly Action ModTick = Compat.ModIntegration.Tick; // cached (was a delegate per frame)
 
         private void OnApplicationQuit()
         {

@@ -48,7 +48,7 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Terrain, "terrain apply", ex);
                 }
-                Perf.Budget.End(Perf.BudgetApply, Perf.Stop(Perf.Terrain, terrain)); // w9/perf: applying what arrived
+                Perf.Budget.End(Perf.BudgetApply, Perf.Stop(Perf.Terrain, terrain)); // applying what arrived
             }
             if (Features.Water.IsAvailable)
             {
@@ -121,7 +121,7 @@ namespace SkylineTogether.Sync
             bool catchingUp = joining != null && joining.Timeline.Has(JoinStage.Live) && !joining.Timeline.Has(JoinStage.CaughtUp);
             FrameBudget budget = catchingUp ? _catchUpBudget : _applyBudget;
             int maxBatches = catchingUp ? CatchUpMaxBatchesPerFrame : MaxBatchesPerFrame;
-            // w9/perf: apply is the shared budget's first priority (never clipped; measured for the others' reservations)
+            // apply is the shared budget's first priority (never clipped; measured for the others' reservations)
             double allowance = Perf.Allowance(Perf.BudgetApply, budget.BeginFrame());
             int n = 0;
             while (_inbox.Count > 0 && n < maxBatches)
@@ -453,7 +453,7 @@ namespace SkylineTogether.Sync
                 _grants.TryConsume(peer.Value, rec.NetId);
             }
             string summary = peer + ": " + r;
-            // w9/perf (trust): the client's cost within the host's bounds (construction costs of what was created, refunds
+            // the client's cost within the host's bounds (construction costs of what was created, refunds
             // of what was removed); a vanilla client's sum is never changed
             long minCharge = (facts.Flags & ProposalFlags.DirectTool) != 0 ? 0 : MinimumCharge(r.SpawnedEntities);
             long cost = ProposalRules.EffectiveCost(r.HasCost ? r.Cost : 0, minCharge, _proposalMaxRefund);

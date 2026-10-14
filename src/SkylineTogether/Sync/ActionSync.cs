@@ -58,7 +58,7 @@ namespace SkylineTogether.Sync
         private EntityQuery _colorEvents;
         private EntityQuery _unlockEvents;
         private EntityQuery _tilesUpdated;
-        private EntityQuery _ownedTiles; // w9/perf (trust): the host prices purchases itself
+        private EntityQuery _ownedTiles; // the host prices purchases itself
         private readonly List<float> _tileValues = new List<float>();
         private readonly List<float> _featureAmounts = new List<float>();
         private readonly List<float> _featureCosts = new List<float>();
@@ -105,7 +105,7 @@ namespace SkylineTogether.Sync
         private readonly Found _foundSelection;
         private readonly Action<Entity, ActionIntent> _foundWrite;
         private readonly Action _watchSelectionCall, _watchMeshCall, _watchRoutesCall;
-        private Action _detectDevTree, _detectMapTiles, _milestonesCall; // w9/perf
+        private Action _detectDevTree, _detectMapTiles, _milestonesCall;
         private HashSet<Entity> _watchWrote; // the entities not to report this pass (host: proposals; client: host data)
         private bool _watchForHost;
 
@@ -224,7 +224,7 @@ namespace SkylineTogether.Sync
         {
             if (!Attached) return;
             _injectedUnlocks.Clear();
-            Guard("dev tree", _detectDevTree ?? (_detectDevTree = DetectDevTree)); // w9/perf: cached delegates
+            Guard("dev tree", _detectDevTree ?? (_detectDevTree = DetectDevTree)); // cached delegates
             Guard("map tiles", _detectMapTiles ?? (_detectMapTiles = DetectMapTiles));
         }
 
@@ -747,7 +747,7 @@ namespace SkylineTogether.Sync
             Entity city = _city.City;
             if (city == Entity.Null || !em.HasComponent<PlayerMoney>(city)) return RejectReason.HostError;
             PlayerMoney money = em.GetComponentData<PlayerMoney>(city);
-            // w9/perf (trust): the host prices the tiles from its own world; the client's observed cost is only logged
+            // the host prices the tiles from its own world; the client's observed cost is only logged
             int cost = PriceTiles(em, tiles);
             // permits as the host's own purchase computes them (milestones, mods patching it)
             RejectReason verdict = MapTilePricing.Validate(tiles.Count, _mapTiles.GetAvailableTiles(), cost, money.money, money.m_Unlimited);
@@ -765,7 +765,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w9/perf (trust): the price of buying <paramref name="tiles"/> (all still unowned) with the host's current owned
+        /// The price of buying <paramref name="tiles"/> (all still unowned) with the host's current owned
         /// count, feature amounts and prefab costs (<see cref="MapTilePricing"/>).
         /// </summary>
         private int PriceTiles(EntityManager em, List<Entity> tiles)

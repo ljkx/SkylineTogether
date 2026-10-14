@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Diagnostics
 {
-    /// <summary>w9/perf: the shared per-frame budget: priorities, reservations, floors, carry-over and telemetry.</summary>
+    /// <summary>The shared per-frame budget: priorities, reservations, floors, carry-over and telemetry.</summary>
     public sealed class FrameBudgetServiceTests
     {
         [Test]

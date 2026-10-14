@@ -536,7 +536,7 @@ namespace SkylineTogether.Sync
         private void Scan()
         {
             EntityManager em = _codec.EntityManager;
-            double budget = Perf.Allowance(Perf.BudgetAgents, _planner.PeerCount > 0 ? ScanBudgetMs : ScanBudgetAloneMs); // w9/perf: shared budget
+            double budget = Perf.Allowance(Perf.BudgetAgents, _planner.PeerCount > 0 ? ScanBudgetMs : ScanBudgetAloneMs); // shared budget
             _watch.Restart();
             int n = 0;
             while (true)

@@ -3,7 +3,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w9/perf (trust): range and shape checks of clients' global-state proposals.</summary>
+    /// <summary>Range and shape checks of clients' global-state proposals.</summary>
     public sealed class GlobalProposalRulesTests
     {
         [Test]

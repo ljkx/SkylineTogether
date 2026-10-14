@@ -5,7 +5,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w9/perf: appending a cached batch (the join's prefab table) to another writer.</summary>
+    /// <summary>Appending a cached batch (the join's prefab table) to another writer.</summary>
     public sealed class SyncBatchAppendTests
     {
         [Test]

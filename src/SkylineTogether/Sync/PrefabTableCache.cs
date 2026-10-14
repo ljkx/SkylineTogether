@@ -7,7 +7,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// w9/perf (host): the join's prefab table, encoded once per session and in slices across frames instead of in the
+    /// The join's prefab table, encoded once per session and in slices across frames instead of in the
     /// frame a peer joins (encoding every prefab's <c>PrefabID</c> took about 160 ms in one frame per joiner). The host's
     /// session start hands over the bound prefabs (<see cref="Start"/>); <see cref="Advance"/> encodes them within the
     /// shared frame budget; a join (<see cref="WriteTo"/>) only encodes what was bound since (mods create prefabs at

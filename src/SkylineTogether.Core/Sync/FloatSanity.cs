@@ -127,7 +127,7 @@ namespace SkylineTogether.Core.Sync
         /// <summary>The largest coordinate a position may have, in metres (vanilla maps are 14 km wide).</summary>
         public const float PositionBound = 1_000_000f;
 
-        /// <summary>w9/perf: the largest radius, height, multiplier or pollution a water source may have (finite and sane).</summary>
+        /// <summary>The largest radius, height, multiplier or pollution a water source may have (finite and sane).</summary>
         public const float WaterSourceBound = 1_000_000f;
 
         private static readonly Dictionary<string, float> Checked = new Dictionary<string, float>(StringComparer.Ordinal)
@@ -144,7 +144,7 @@ namespace SkylineTogether.Core.Sync
             { "Game.Objects.Attached", float.MaxValue },
             { "Game.Net.EdgeLane", float.MaxValue },
             { "Game.Events.WeatherPhenomenon", float.MaxValue },
-            { "Game.Simulation.WaterSourceData", WaterSourceBound }, // w9/perf (trust): radius, height, flow of a proposed water source
+            { "Game.Simulation.WaterSourceData", WaterSourceBound }, // radius, height, flow of a proposed water source
         };
 
         /// <summary>The checked type names (probed at startup).</summary>

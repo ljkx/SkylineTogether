@@ -102,7 +102,7 @@ namespace SkylineTogether.Sync
             public Dictionary<FlowKey, Entity> ScanIndex = new Dictionary<FlowKey, Entity>(), Index = new Dictionary<FlowKey, Entity>();
             public Stage Stage;
             public int Cursor;
-            public int StallFrames; // w9/perf: frames the pass waited for the flow jobs instead of completing them
+            public int StallFrames; // frames the pass waited for the flow jobs instead of completing them
             public double NextPass;
             public Entity Source, Sink;
             public int Passes;
@@ -232,7 +232,7 @@ namespace SkylineTogether.Sync
             Reset();
             client.AppMessage += e =>
             {
-                if (e.Kind == MessageKind.FlowStatus) Receive(e); // w9/perf: no closure for the other kinds
+                if (e.Kind == MessageKind.FlowStatus) Receive(e); // no closure for the other kinds
             };
         }
 
@@ -299,7 +299,7 @@ namespace SkylineTogether.Sync
             if (!needElectricity && !needWater) return;
             long start = Perf.Start();
             _watch.Restart();
-            double allowance = Perf.Allowance(Perf.BudgetFlow, ScanBudgetMs); // w9/perf: shared budget
+            double allowance = Perf.Allowance(Perf.BudgetFlow, ScanBudgetMs); // shared budget
             if (needElectricity) Advance(_electricity, now, allowance, true);
             if (needWater) Advance(_water, now, allowance, true);
             Perf.Budget.End(Perf.BudgetFlow, Perf.Stop(Perf.FlowScan, start));
@@ -411,7 +411,7 @@ namespace SkylineTogether.Sync
             while (g.Stage != Stage.Idle && _watch.Elapsed.TotalMilliseconds < budgetMs)
             {
                 EntityQuery query = QueryOf(g);
-                // w9/perf: the pass resumes next frame rather than stalling the main thread on running flow jobs (at
+                // the pass resumes next frame rather than stalling the main thread on running flow jobs (at
                 // most a few frames, then it completes them as before)
                 if (!query.GetDependency().IsCompleted && g.StallFrames < MaxStallFrames)
                 {
@@ -681,8 +681,8 @@ namespace SkylineTogether.Sync
             AttentionTopic topics = LocalTopics != null ? LocalTopics() : AttentionTopic.None;
             _watch.Restart();
             long start = Perf.Start();
-            double allowance = Perf.Allowance(Perf.BudgetFlow, ScanBudgetMs * 0.5); // w9/perf: shared budget
-            for (int i = 0; i < 2; i++) // w9/perf: no array per frame
+            double allowance = Perf.Allowance(Perf.BudgetFlow, ScanBudgetMs * 0.5); // shared budget
+            for (int i = 0; i < 2; i++) // no array per frame
             {
                 Graph g = i == 0 ? _electricity : _water;
                 if ((topics & g.Topic) == 0)

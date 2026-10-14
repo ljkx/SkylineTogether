@@ -280,7 +280,7 @@ namespace SkylineTogether.Sync
         /// </summary>
         public List<Entity> ApplyAgentValues(byte[] data, int offset, int count, List<SyncRecord> records, ApplyResult result, List<uint> unresolved)
         {
-            List<Entity> written = _valuesWritten; // w9/perf: reused, valid until the next call (was a list per message)
+            List<Entity> written = _valuesWritten; // reused, valid until the next call (was a list per message)
             written.Clear();
             if (records == null || records.Count == 0) return written;
             LoadBatch(data, offset, count);
@@ -317,7 +317,7 @@ namespace SkylineTogether.Sync
         /// </summary>
         public List<Entity> ApplySimValues(byte[] data, int offset, int count, List<SyncRecord> records, ApplyResult result)
         {
-            List<Entity> written = _valuesWritten; // w9/perf: reused, valid until the next call (was a list per message)
+            List<Entity> written = _valuesWritten; // reused, valid until the next call (was a list per message)
             written.Clear();
             if (records == null || records.Count == 0) return written;
             LoadBatch(data, offset, count);

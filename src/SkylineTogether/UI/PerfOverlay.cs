@@ -10,7 +10,7 @@ using SkylineTogether.Session;
 namespace SkylineTogether.UI
 {
     /// <summary>
-    /// w9/perf: the in-game performance overlay next to the network HUD (toggled from the panel's diagnostics, for this
+    /// The in-game performance overlay next to the network HUD (toggled from the panel's diagnostics, for this
     /// game session only): the shared frame budget per feature (average and 95th percentile against its cap), bytes per
     /// second per peer and the apply queue depth. JSON for the "perf" binding, rebuilt at most twice a second and only
     /// while shown:

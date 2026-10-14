@@ -4,7 +4,7 @@ using SkylineTogether.Core.Protocol;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// w9/perf (trust): the host's range and shape checks of a client's global-state proposal (tax rates, service budgets
+    /// The host's range and shape checks of a client's global-state proposal (tax rates, service budgets
     /// and fees, the loan, policy sliders, names). The game layer reads the limits from the game's own data (fee
     /// parameters, policy slider ranges, whether a service budget is adjustable) and applies what these rules return;
     /// the game's own clamps (tax limits, loan creditworthiness) run afterwards. Pure.

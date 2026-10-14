@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Fields
 {
-    /// <summary>w9/perf (trust): clamping client paint patches, map digests and the per-map resync request.</summary>
+    /// <summary>Clamping client paint patches, map digests and the per-map resync request.</summary>
     public sealed class CellMapTrustTests
     {
         private static void Put(byte[] cells, int at, int value)

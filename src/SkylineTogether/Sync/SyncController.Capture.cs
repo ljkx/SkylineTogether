@@ -56,7 +56,7 @@ namespace SkylineTogether.Sync
             if (_codec == null || (!IsLiveClient && !IsHost) || !Features.Replication.IsAvailable) return;
             EntityManager em = _codec.EntityManager;
             _toolApplied = true;
-            if (_temps == default) _temps = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Tools.Temp>()); // w9/perf: cached
+            if (_temps == default) _temps = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Tools.Temp>()); // cached
             {
                 NativeArray<Game.Tools.Temp> values = _temps.ToComponentDataArray<Game.Tools.Temp>(Allocator.Temp);
                 try
@@ -195,7 +195,7 @@ namespace SkylineTogether.Sync
                 long global = Perf.Start();
                 if (Features.GlobalState.IsAvailable) CaptureGlobal(now);
                 Perf.Stop(Perf.Global, global);
-                // w9/perf (host): the prefab table for the next joiner, a slice per frame
+                // the prefab table for the next joiner, a slice per frame
                 if (IsHost && !_prefabTable.Complete)
                 {
                     long table = Perf.Start();
@@ -215,7 +215,7 @@ namespace SkylineTogether.Sync
                 if (IsLiveClient && Features.Replication.IsAvailable) SendApplyAck(now);
             }
             Perf.Counters.EndFrame(now);
-            Perf.Budget.EndFrame(); // w9/perf: the shared budget's frame is apply (frame start) + capture (frame end)
+            Perf.Budget.EndFrame(); // the shared budget's frame is apply (frame start) + capture (frame end)
         }
 
         /// <summary>
@@ -360,7 +360,7 @@ namespace SkylineTogether.Sync
             {
                 _lastClock = now;
                 _batch.Clock(_simulation.frameIndex);
-                // w9/perf: the id frontier moved: clients accept ids up to it (plus slack), nothing far beyond
+                // the id frontier moved: clients accept ids up to it (plus slack), nothing far beyond
                 if (_ids.Ids.Next != _announcedFrontier)
                 {
                     _announcedFrontier = _ids.Ids.Next;
@@ -506,7 +506,7 @@ namespace SkylineTogether.Sync
                 if (_scanCity) _lastCity = now;
             }
             long start = Stopwatch.GetTimestamp();
-            long budget = (long)(Perf.Allowance(Perf.BudgetScan, ScanBudgetMs) * Stopwatch.Frequency / 1000.0); // w9/perf: shared budget
+            long budget = (long)(Perf.Allowance(Perf.BudgetScan, ScanBudgetMs) * Stopwatch.Frequency / 1000.0); // shared budget
             int n = 0;
             while (_scanCursor < _scanIds.Count)
             {
@@ -551,7 +551,7 @@ namespace SkylineTogether.Sync
             if (host == null || _outList.Count == 0) return;
             EntityManager em = _codec.EntityManager;
             long start = Stopwatch.GetTimestamp();
-            long cpuBudget = (long)(Perf.Allowance(Perf.BudgetDeferred, DeferredBudgetMs) * Stopwatch.Frequency / 1000.0); // w9/perf: shared budget
+            long cpuBudget = (long)(Perf.Allowance(Perf.BudgetDeferred, DeferredBudgetMs) * Stopwatch.Frequency / 1000.0); // shared budget
             for (int p = 0; p < _outList.Count; p++)
             {
                 PeerOut o = _outList[p];

@@ -592,7 +592,7 @@ namespace SkylineTogether.Sync
                     if (v.HasReport) _views.Add(v);
                 }
                 long sampleStart = System.Diagnostics.Stopwatch.GetTimestamp();
-                double sampleBudgetMs = Perf.Allowance(Perf.BudgetMotion, SampleBudgetMs); // w9/perf: shared budget
+                double sampleBudgetMs = Perf.Allowance(Perf.BudgetMotion, SampleBudgetMs); // shared budget
                 while (_lastSampled != frame)
                 {
                     if (_views.Count == 0)

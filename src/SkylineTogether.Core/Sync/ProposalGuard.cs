@@ -263,7 +263,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// w9/perf (trust): what the host charges for an applied proposal. The client's own sum of its tool's costs is
+        /// What the host charges for an applied proposal. The client's own sum of its tool's costs is
         /// kept whenever it is plausible; it is raised to the host's bounds when it is not: a proposal never costs less
         /// than the construction cost of what it created (<paramref name="minCharge"/>, computed by the host from the
         /// created objects' prefabs) minus the most it may refund (<paramref name="maxRefund"/>, from the recent
@@ -279,7 +279,7 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// w9/perf (trust): the most a removal may refund: the summed recent modification costs of the removed or changed
+        /// The most a removal may refund: the summed recent modification costs of the removed or changed
         /// entities times the largest refund percentage of the economy parameters (clamped to 0..4; 1 when unknown).
         /// </summary>
         public static long RefundBound(long recentModificationCosts, double maxRefundPercentage)

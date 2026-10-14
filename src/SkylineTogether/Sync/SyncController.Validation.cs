@@ -294,7 +294,7 @@ namespace SkylineTogether.Sync
         private EntityQuery _economyParameters;
 
         /// <summary>
-        /// w9/perf (trust): the most a proposal may refund: the recent modification costs (<c>Recent</c>, what the game's
+        /// The most a proposal may refund: the recent modification costs (<c>Recent</c>, what the game's
         /// refunds are computed from) of every entity it removes or changes and of their sub-elements, times the largest
         /// refund percentage of the economy parameters.
         /// </summary>
@@ -353,7 +353,7 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// w9/perf (trust): the least the created objects cost, as the game's object tool prices a new object (its
+        /// The least the created objects cost, as the game's object tool prices a new object (its
         /// prefab's construction cost, or the upgrade cost of a service upgrade). Trees (age-dependent price) and nets
         /// (priced by composition and length after the host composes them) are not counted.
         /// </summary>

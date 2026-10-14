@@ -35,7 +35,7 @@ function bind(name, fallback) {
 const stateBinding = bind("state", "{}");
 const joinBinding = bind("join", "{}");
 const netBinding = bind("net", "{}");
-// w9/perf: the performance overlay ({show, frame, features, peers, queue}; PerfOverlay.cs)
+// the performance overlay ({show, frame, features, peers, queue}; PerfOverlay.cs)
 const perfBinding = bind("perf", "{}");
 const presenceBinding = bind("presence", "{\"tags\":[]}");
 // solo testing: recording and replay state, recordings, last verdict (ReplayUISystem)
@@ -2762,7 +2762,7 @@ function NameTags() {
   );
 }
 
-// w9/perf: the performance overlay (right edge, under the top bar): the shared frame budget per feature, bytes per
+// the performance overlay (right edge, under the top bar): the shared frame budget per feature, bytes per
 // second per peer and the apply queue; read-only, never takes the mouse
 function PerfHud() {
   const p = useJson(perfBinding);
@@ -2924,7 +2924,7 @@ function GameRoot() {
     "div",
     { style: S.layer },
     live && !photo ? h(NameTags, null) : null, // presence branch: under the panel
-    live && !photo ? h(PerfHud, null) : null, // w9/perf: only while toggled on
+    live && !photo ? h(PerfHud, null) : null, // only while toggled on
     live && !photo && !social ? h(ChatDock, { state: s }) : null,
     !photo && (!topLeftRegistered || (noTopLeft && !st.topLeftMounted)) ? h(FallbackToggle, { state: s, onClick: function () { setStore({ open: !store.open }); } }) : null,
     st.open && !photo

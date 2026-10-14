@@ -76,7 +76,7 @@ namespace SkylineTogether.Compat
                 PeerBudgets.Clear();
                 host.AppMessage += (peer, e) =>
                 {
-                    if (e.Kind == MessageKind.ModChannel) HostReceive(peer, e); // w9/perf: no closure for the other kinds
+                    if (e.Kind == MessageKind.ModChannel) HostReceive(peer, e); // no closure for the other kinds
                 };
                 host.PeerLeft += peer => PeerBudgets.Remove(peer.Value);
                 Started(true);

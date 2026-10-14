@@ -3,7 +3,7 @@ using System;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// w9/perf (robustness): the largest net id a client accepts from its host. The client's id tables are indexed by
+    /// The largest net id a client accepts from its host. The client's id tables are indexed by
     /// net id, so a single record with a huge id (a corrupted or hostile host) would grow them to the full 24-bit range
     /// (about 150 MB). The host announces its id frontier (<see cref="NetIdAllocator.Next"/>): in the join snapshot,
     /// with every id grant (a grant lies at the frontier) and in an <see cref="SyncRecordKind.IdCeiling"/> record

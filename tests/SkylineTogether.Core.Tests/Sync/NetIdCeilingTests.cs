@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w9/perf (robustness): the client's bound on net ids from its host.</summary>
+    /// <summary>The client's bound on net ids from its host.</summary>
     public sealed class NetIdCeilingTests
     {
         [Test]

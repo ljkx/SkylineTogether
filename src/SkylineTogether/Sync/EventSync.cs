@@ -251,7 +251,7 @@ namespace SkylineTogether.Sync
                 RefillPass();
             }
             long start = Stopwatch.GetTimestamp();
-            long budget = (long)(Perf.Allowance(Perf.BudgetPresenceWatch, RollingBudgetMs) * Stopwatch.Frequency / 1000.0); // w9/perf: shared budget
+            long budget = (long)(Perf.Allowance(Perf.BudgetPresenceWatch, RollingBudgetMs) * Stopwatch.Frequency / 1000.0); // shared budget
             int n = 0;
             while (_pass.Next(out uint id))
             {

@@ -234,7 +234,7 @@ namespace SkylineTogether.Core.Fields
         public ulong SentHash(int tile) => _sent[tile];
 
         /// <summary>
-        /// w9/perf: the digest of what was sent (<see cref="CellMapMessage.Digest"/>); false while some tile was never sent
+        /// The digest of what was sent (<see cref="CellMapMessage.Digest"/>); false while some tile was never sent
         /// or <paramref name="current"/> still has tiles to send (a digest is only comparable once the peer is up to date).
         /// </summary>
         public bool TryDigest(ulong[] current, out ulong digest)

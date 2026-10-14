@@ -10,8 +10,8 @@ namespace SkylineTogether.Core.Fields
     /// header = u8 version | u8 type | u32 mapId | u16 width | u16 height | u8 cellBytes | u8 tileCells
     /// type 1 (tiles, host → client):  varuint n | n × (varuint tile | body)
     /// type 2 (patch, client → host):  u16 x0 | u16 y0 | u16 w | u16 h | body
-    /// type 3 (digest, host → client): u64 digest of the tiles the host sent this peer (w9/perf, see Digest)
-    /// type 4 (resync, client → host): nothing more, "send me this whole map again" (w9/perf)
+    /// type 3 (digest, host → client): u64 digest of the tiles the host sent this peer (see Digest)
+    /// type 4 (resync, client → host): nothing more, "send me this whole map again"
     /// body   = the shared tile body framing (zero-run coded raw cells, optionally block-compressed; the message
     ///          envelope compresses again), exactly w × h × cellBytes raw bytes
     /// </code>
@@ -27,10 +27,10 @@ namespace SkylineTogether.Core.Fields
         public const byte TypeTiles = 1;
         public const byte TypePatch = 2;
 
-        /// <summary>w9/perf: host → client, the digest of the tiles sent to that peer (<see cref="WriteDigest"/>).</summary>
+        /// <summary>Host → client, the digest of the tiles sent to that peer (<see cref="WriteDigest"/>).</summary>
         public const byte TypeDigest = 3;
 
-        /// <summary>w9/perf: client → host, a request to send one whole map again (its digest differed).</summary>
+        /// <summary>Client → host, a request to send one whole map again (its digest differed).</summary>
         public const byte TypeResync = 4;
 
         /// <summary>Largest patch edge in cells (a 1000 m brush covers about 20 cells of a 256² map).</summary>
@@ -154,7 +154,7 @@ namespace SkylineTogether.Core.Fields
             return (int)tile;
         }
 
-        // ------------------------------------------------------------------ digests and resync requests (w9/perf)
+        // ------------------------------------------------------------------ digests and resync requests
 
         /// <summary>
         /// The digest of a whole map from its tile hashes (<see cref="CellMapLayout.HashTiles"/>, or the hashes a host sent
@@ -223,7 +223,7 @@ namespace SkylineTogether.Core.Fields
         }
 
         /// <summary>
-        /// w9/perf (trust): clamps the 16-bit little-endian fields of every cell of a client's patch to their valid range
+        /// Clamps the 16-bit little-endian fields of every cell of a client's patch to their valid range
         /// before the host merges it (<see cref="MergeMasked"/>), so a painted resource or groundwater value outside what
         /// the game's brushes can produce never reaches the host's map. Returns the number of values changed.
         /// </summary>
@@ -248,7 +248,7 @@ namespace SkylineTogether.Core.Fields
         }
 
         /// <summary>
-        /// w9/perf (trust): <see cref="ClampFields"/> for a patch about to be merged into <paramref name="map"/>, limited
+        /// <see cref="ClampFields"/> for a patch about to be merged into <paramref name="map"/>, limited
         /// to the fields the patch changes: a cell of the patch rectangle the player did not paint carries the host's own
         /// value back, which stays as it is even when it lies outside the brush range (map-generated values).
         /// </summary>

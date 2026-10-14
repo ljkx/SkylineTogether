@@ -4,7 +4,7 @@ using SkylineTogether.Core.Tests.Framework;
 
 namespace SkylineTogether.Core.Tests.Sync
 {
-    /// <summary>w9/perf: the inspection sample's header is read without decoding its entities.</summary>
+    /// <summary>The inspection sample's header is read without decoding its entities.</summary>
     public sealed class SimValueSampleHeaderTests
     {
         private static byte[] Sample(uint tick, int entities)

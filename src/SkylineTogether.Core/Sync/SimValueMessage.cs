@@ -110,7 +110,7 @@ namespace SkylineTogether.Core.Sync
         /// <see cref="DecodeException"/> on malformed input.
         /// </summary>
         /// <summary>
-        /// w9/perf: the header of an inspection sample (its tick and entity count) without decoding the entities (the
+        /// The header of an inspection sample (its tick and entity count) without decoding the entities (the
         /// sample is queued until its tick and decoded once, when applied). Throws <see cref="DecodeException"/> for a
         /// malformed header or another message type.
         /// </summary>
