@@ -30,7 +30,15 @@ namespace SkylineTogether.Net
     {
         private const int AppCloseReason = 1000; // k_ESteamNetConnectionEnd_App_Generic
         private const int MaxMessagesPerPoll = 256;
-        private const double ListenLingerSeconds = 3.0;
+        // w8/robust: long enough for a SessionEnd or Kick queued behind several MB of snapshot chunks to get out
+        private const double ListenLingerSeconds = 10.0;
+
+        /// <summary>
+        /// w8/robust: messages delivered per poll at most, and the time spent delivering them; the rest stays queued in
+        /// Steam for the next frame. A flood (or a long backlog after a stall) never freezes one frame.
+        /// </summary>
+        private const int MaxMessagesPerFrame = 8192;
+        private const double MaxPollMilliseconds = 25;
 
         /// <summary>loadspeed: the send buffer per connection (the outbox's <c>OutboxConfig.SendBufferBytes</c> matches it).</summary>
         private const int SendBufferBytes = 16 << 20;
@@ -135,10 +143,14 @@ namespace SkylineTogether.Net
                     _log.Error(LogCategory.Net, "connection event handler failed", ex);
                 }
             }
+            int delivered = 0;
+            long pollStart = System.Diagnostics.Stopwatch.GetTimestamp();
             while (!_disposed)
             {
+                if (delivered >= MaxMessagesPerFrame || (System.Diagnostics.Stopwatch.GetTimestamp() - pollStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > MaxPollMilliseconds) break;
                 int n = SteamNetworkingSockets.ReceiveMessagesOnPollGroup(_pollGroup, _messages, _messages.Length);
                 if (n <= 0) break;
+                delivered += n;
                 for (int i = 0; i < n; i++)
                 {
                     IntPtr ptr = _messages[i];

@@ -279,12 +279,7 @@ namespace SkylineTogether.Sync
         {
             var written = new List<Entity>();
             if (records == null || records.Count == 0) return written;
-            if (_batch.Length < count)
-            {
-                _batch.Dispose();
-                _batch = new NativeArray<byte>(Math.Max(count, _batch.Length * 2), Allocator.Persistent);
-            }
-            NativeArray<byte>.Copy(data, offset, _batch, 0, count);
+            LoadBatch(data, offset, count);
             EntityManager em = EntityManager;
             foreach (SyncRecord r in records)
             {
@@ -320,12 +315,7 @@ namespace SkylineTogether.Sync
         {
             var written = new List<Entity>();
             if (records == null || records.Count == 0) return written;
-            if (_batch.Length < count)
-            {
-                _batch.Dispose();
-                _batch = new NativeArray<byte>(Math.Max(count, _batch.Length * 2), Allocator.Persistent);
-            }
-            NativeArray<byte>.Copy(data, offset, _batch, 0, count);
+            LoadBatch(data, offset, count);
             EntityManager em = EntityManager;
             foreach (SyncRecord r in records)
             {

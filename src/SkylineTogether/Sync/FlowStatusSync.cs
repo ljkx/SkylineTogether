@@ -107,6 +107,11 @@ namespace SkylineTogether.Sync
             // client
             public readonly Dictionary<FlowKey, FlowValue> Cache = new Dictionary<FlowKey, FlowValue>();
             public bool Completed;
+            /// <summary>
+            /// w8/robust (host): peers whose plan against the finished pass is still to be made, one per frame (a plan walks
+            /// the whole table: 100k+ edges; every peer in the frame the pass finished was a spike of tens of ms).
+            /// </summary>
+            public readonly Queue<HostPeer> PendingPlans = new Queue<HostPeer>();
         }
 
         private sealed class PeerNetwork
@@ -377,6 +382,11 @@ namespace SkylineTogether.Sync
         /// <summary>Runs the network's pass within the budget; true when a pass finished this frame.</summary>
         private bool Advance(Graph g, double now, double budgetMs, bool host)
         {
+            if (host && g.PendingPlans.Count > 0)
+            {
+                HostPeer next = g.PendingPlans.Dequeue();
+                if (_peers.TryGetValue(next.Peer.Value, out HostPeer still) && still == next) Plan(g, next); // w8/robust
+            }
             if (g.Stage == Stage.Idle)
             {
                 if (now < g.NextPass) return false;
@@ -441,7 +451,12 @@ namespace SkylineTogether.Sync
             }
             if (host)
             {
-                foreach (HostPeer p in _peers.Values) Plan(g, p);
+                // w8/robust: planned one peer per frame (Advance), not all of them in this frame
+                g.PendingPlans.Clear();
+                foreach (HostPeer p in _peers.Values)
+                {
+                    if (p.Of(g.Network).Channel.Active) g.PendingPlans.Enqueue(p);
+                }
             }
             else
             {

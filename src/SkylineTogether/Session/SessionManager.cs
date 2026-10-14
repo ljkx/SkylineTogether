@@ -1041,6 +1041,15 @@ namespace SkylineTogether.Session
                     Client.Leave();
                     EndClient();
                 }
+                else if (Client != null && (mode & GameMode.Game) != 0 && !_rejoin.Recovering && !_holdingCity)
+                {
+                    // w8/robust: the player loads another city while a join is still connecting or downloading: the join
+                    // would replace that city later without a word; it is cancelled with an explanation instead
+                    _log.Info(LogCategory.Session, "another city is loading during the join (" + Client.State + ", " + purpose + ", " + mode + "); join cancelled");
+                    Client.Leave();
+                    EndClient();
+                    Notify("Joining was cancelled because another city is being loaded.");
+                }
                 if (_rejoin.Recovering || _holdingCity)
                 {
                     // the player loads another city (or the main menu) instead of recovering: recovery is over

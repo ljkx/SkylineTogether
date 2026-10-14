@@ -76,8 +76,10 @@ namespace SkylineTogether.Core.Sync
             if (grid == null) throw new ArgumentNullException(nameof(grid));
             tile = TerrainMessage.ReadTileId(r, grid);
             grid.GetRect(tile, out _, out _, out int w, out int h);
-            int count = w * h;
-            if (rgba == null || rgba.Length < count * WaterTileCodec.ChannelsPerTexel) throw new ArgumentException("the rgba buffer is too small", nameof(rgba));
+            long texels = (long)w * h; // w8/robust: no int overflow for tiles near the edge limit
+            if (texels <= 0 || texels > int.MaxValue / WaterTileCodec.ChannelsPerTexel) throw new DecodeException("water tile of " + w + "x" + h + " texels");
+            int count = (int)texels;
+            if (rgba == null || rgba.Length < (long)count * WaterTileCodec.ChannelsPerTexel) throw new ArgumentException("the rgba buffer is too small", nameof(rgba));
             WaterTileCodec.Decode(r, rgba, count, null);
             return count;
         }

@@ -24,6 +24,8 @@ namespace SkylineTogether.Sync
         public int UnresolvedComponents;
         /// <summary>crashfix: entities left untagged or sanitized because their net or owner references are broken.</summary>
         public int UnsafeSkipped;
+        /// <summary>w8/robust (client): references to despawned entities removed by <see cref="DeletionCascade"/>.</summary>
+        public int Cascaded;
         public long Cost;
         public bool HasCost;
         public uint? Clock;
@@ -38,7 +40,7 @@ namespace SkylineTogether.Sync
         public void Reset()
         {
             Spawned = Upserted = Values = Despawned = Skipped = ZoneBlocks = 0;
-            UnresolvedSpawns = UnresolvedComponents = UnsafeSkipped = 0;
+            UnresolvedSpawns = UnresolvedComponents = UnsafeSkipped = Cascaded = 0;
             Cost = 0;
             HasCost = false;
             Clock = null;
@@ -49,7 +51,7 @@ namespace SkylineTogether.Sync
         }
 
         public override string ToString() => "+" + Spawned + " ~" + Upserted + " v" + Values + " -" + Despawned + (Skipped > 0 ? " skipped " + Skipped : "") + (ZoneBlocks > 0 ? " zones " + ZoneBlocks : "")
-                                             + (UnresolvedSpawns > 0 ? " unresolved spawns " + UnresolvedSpawns : "") + (UnsafeSkipped > 0 ? " unsafe " + UnsafeSkipped : "");
+                                             + (UnresolvedSpawns > 0 ? " unresolved spawns " + UnresolvedSpawns : "") + (UnsafeSkipped > 0 ? " unsafe " + UnsafeSkipped : "") + (Cascaded > 0 ? " cascaded " + Cascaded : "");
     }
 
     /// <summary>
@@ -199,6 +201,24 @@ namespace SkylineTogether.Sync
             if (_scratch.IsCreated) _scratch.Dispose();
             if (_batch.IsCreated) _batch.Dispose();
             if (_position.IsCreated) _position.Dispose();
+        }
+
+        /// <summary>
+        /// w8/robust: copies a received batch into the native read buffer, followed by <see cref="NetReaderState.Padding"/>
+        /// zero bytes (the game's reader may read a few bytes past a payload before the bounds check of
+        /// <see cref="NetReader"/> stops it; they must stay inside the allocation).
+        /// </summary>
+        private void LoadBatch(byte[] data, int offset, int count)
+        {
+            if (count < 0 || offset < 0 || data == null || offset > data.Length - count) throw new DecodeException("batch slice out of range");
+            int needed = count + NetReaderState.Padding;
+            if (_batch.Length < needed)
+            {
+                _batch.Dispose();
+                _batch = new NativeArray<byte>(Math.Max(needed, _batch.Length * 2), Allocator.Persistent);
+            }
+            NativeArray<byte>.Copy(data, offset, _batch, 0, count);
+            for (int i = count; i < needed; i++) _batch[i] = 0;
         }
 
         /// <summary>A serialization context with every format tag enabled, as for a save of this game version (R01 §0).</summary>
@@ -696,15 +716,20 @@ namespace SkylineTogether.Sync
         private bool TryBindPrefab(uint netId, byte[] data, out string pidText)
         {
             pidText = "";
-            var native = new NativeArray<byte>(Math.Max(1, data.Length), Allocator.Temp);
+            var native = new NativeArray<byte>(data.Length + NetReaderState.Padding, Allocator.Temp, NativeArrayOptions.ClearMemory);
             try
             {
                 NativeArray<byte>.Copy(data, native, data.Length);
                 _position.Value = 0;
                 var reader = default(BinaryReader);
                 reader.Initialize(_readContext, native, _position, _ids.ReaderTable);
+                // w8/robust: a prefab id holds strings whose lengths come from the wire; the bounded reader refuses them
+                // before the game's reader allocates or reads past the record
+                _rs.Bound(_position, data.Length);
+                _rs.Keys.Clear();
+                _rs.Table = _ids.ReaderTable;
                 PrefabID pid = default;
-                pid.Deserialize(reader);
+                pid.Deserialize(new NetReader(reader, _rs));
                 pidText = pid.ToString();
                 if (!_prefabs.TryGetPrefab(pid, out PrefabBase prefab))
                 {
@@ -761,6 +786,7 @@ namespace SkylineTogether.Sync
                     var keys = new ByteReader(c.Data, c.Offset, c.Count);
                     if (keys.ReadVarUInt32() != 0) return null;
                     _position.Value = c.Offset - batchOffset + keys.Position;
+                    if (_position.Value < 0 || _position.Value + 4 > c.Offset - batchOffset + c.Count) return null; // w8/robust: malformed, the normal read reports it
                     var inner = default(BinaryReader);
                     inner.Initialize(_readContext, _batch, _position, _ids.ReaderTable);
                     inner.Read(out int index);
@@ -849,12 +875,7 @@ namespace SkylineTogether.Sync
             ResolveHandlers();
             ApplyResult result = _result;
             result.Reset();
-            if (_batch.Length < count)
-            {
-                _batch.Dispose();
-                _batch = new NativeArray<byte>(Math.Max(count, _batch.Length * 2), Allocator.Persistent);
-            }
-            NativeArray<byte>.Copy(data, offset, _batch, 0, count);
+            LoadBatch(data, offset, count);
             EntityManager em = EntityManager;
             // review fix (direction check): mayCreate is given exactly when the host applies a client's proposal. Host →
             // client records (prefab bindings above all) and writes to host-owned bindings (movers, prefabs, the city
@@ -896,6 +917,54 @@ namespace SkylineTogether.Sync
                 }
             }
 
+            // 0b (w8/robust): despawns of this batch. Their entities are dead to every reference read below (an upsert or a
+            // new entity that names one would otherwise keep a reference to an entity deleted a moment later); a record of
+            // an id the same batch despawns afterwards is not applied (it goes away anyway); a despawn that comes before
+            // a spawn of the same id (an id reused within one batch) is applied first.
+            _despawnAt.Clear();
+            _rs.Dying.Clear();
+            for (int i = 0; i < records.Count; i++)
+            {
+                SyncRecord r = records[i];
+                if (r.Kind != SyncRecordKind.Despawn || _despawnAt.ContainsKey(r.NetId)) continue;
+                _despawnAt[r.NetId] = i;
+                Entity dying = _ids.GetEntity(r.NetId);
+                if (dying != Entity.Null) _rs.Dying.Add(dying);
+            }
+            if (_despawnAt.Count > 0)
+            {
+                for (int i = 0; i < records.Count; i++)
+                {
+                    SyncRecord r = records[i];
+                    if (r.Kind != SyncRecordKind.Spawn || !_despawnAt.TryGetValue(r.NetId, out int at) || at > i) continue;
+                    skip?.Invoke(records[at]); // despawns are never skipped; the callback forgets holds of the id
+                    Despawn(records[at], proposal, result);
+                    _despawnAt.Remove(r.NetId);
+                    _earlyDespawns.Add(at);
+                }
+            }
+
+            try
+            {
+                ApplySteps(records, offset, data, proposal, mayCreate, skip, result);
+            }
+            finally
+            {
+                _rs.Dying.Clear();
+                _earlyDespawns.Clear();
+            }
+            return result;
+        }
+
+        /// <summary>w8/robust: ids despawned by the batch being applied, with the index of their first despawn record.</summary>
+        private readonly Dictionary<uint, int> _despawnAt = new Dictionary<uint, int>();
+
+        /// <summary>w8/robust: despawn records already applied before the entity steps (id reuse within one batch).</summary>
+        private readonly HashSet<int> _earlyDespawns = new HashSet<int>();
+
+        private void ApplySteps(List<SyncRecord> records, int offset, byte[] data, bool proposal, Func<uint, Family, bool> mayCreate, Func<SyncRecord, bool> skip, ApplyResult result)
+        {
+            EntityManager em = EntityManager;
             // 1: create the entities of spawns (all first, so references inside the batch resolve)
             for (int i = 0; i < records.Count; i++)
             {
@@ -904,6 +973,11 @@ namespace SkylineTogether.Sync
                 if (skip != null && skip(r))
                 {
                     result.Skipped++;
+                    continue;
+                }
+                if (_despawnAt.TryGetValue(r.NetId, out int despawnAt) && despawnAt > i)
+                {
+                    result.Skipped++; // w8/robust: despawned later in this batch
                     continue;
                 }
                 // mod compatibility: never apply a record whose asset is missing here (or was unnamed on the sender)
@@ -1058,34 +1132,8 @@ namespace SkylineTogether.Sync
             for (int i = 0; i < records.Count; i++)
             {
                 SyncRecord r = records[i];
-                if (r.Kind != SyncRecordKind.Despawn || (skip != null && skip(r))) continue;
-                // mod compatibility: a client may delete vehicles, citizens and animals with a mod tool (Better Bulldozer)
-                if (proposal && _ids.GetEntity(r.NetId) != Entity.Null && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)) && _ids.GetFamily(r.NetId) != Family.Mover)
-                {
-                    result.Problems.Add("refused to delete #" + r.NetId + " (" + _ids.GetFamily(r.NetId) + ")");
-                    continue;
-                }
-                Entity e = _ids.GetEntity(r.NetId);
-                // w2/ids: the host keeps the binding of a proposed deletion; its capture sees the Deleted tag, broadcasts
-                // the despawn to every peer and only then releases the id (unbinding here hid the despawn from the
-                // other clients)
-                if (!proposal) _ids.Unbind(r.NetId);
-                if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                try
-                {
-                    Family family = _families.Classify(em, e);
-                    if (family == Family.NetEdge || family == Family.NetNode) Closure(e, _touch);
-                    // crashfix: the game's reference systems process a Deleted entity's owner and edge nodes unchecked
-                    if (SanitizeForDelete(em, e)) result.UnsafeSkipped++;
-                    em.AddComponent<Game.Common.Deleted>(e);
-                    _touch.Remove(e);
-                    result.Touched.Add(e);
-                    result.Despawned++;
-                }
-                catch (Exception ex)
-                {
-                    result.Problems.Add("despawn of #" + r.NetId + ": " + ex.Message);
-                }
+                if (r.Kind != SyncRecordKind.Despawn || (skip != null && skip(r)) || _earlyDespawns.Contains(i)) continue;
+                Despawn(r, proposal, result);
             }
 
             foreach (Entity e in _touch)
@@ -1104,7 +1152,52 @@ namespace SkylineTogether.Sync
             }
             if (result.UnresolvedSpawns > 0 || result.UnsafeSkipped > 0) NoteUnsafe(result);
             for (int i = 0; i < _pathUpdated.Count; i++) SynthesizePathUpdated(_pathUpdated[i]);
-            return result;
+        }
+
+        /// <summary>Applies one despawn record (step 5, or before the entity steps when the batch reuses the id).</summary>
+        private void Despawn(SyncRecord r, bool proposal, ApplyResult result)
+        {
+            EntityManager em = EntityManager;
+            // mod compatibility: a client may delete vehicles, citizens and animals with a mod tool (Better Bulldozer)
+            if (proposal && _ids.GetEntity(r.NetId) != Entity.Null && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)) && _ids.GetFamily(r.NetId) != Family.Mover)
+            {
+                result.Problems.Add("refused to delete #" + r.NetId + " (" + _ids.GetFamily(r.NetId) + ")");
+                return;
+            }
+            Entity e = _ids.GetEntity(r.NetId);
+            // w2/ids: the host keeps the binding of a proposed deletion; its capture sees the Deleted tag, broadcasts
+            // the despawn to every peer and only then releases the id (unbinding here hid the despawn from the
+            // other clients)
+            if (!proposal) _ids.Unbind(r.NetId);
+            if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return;
+            try
+            {
+                Family family = _families.Classify(em, e);
+                if (family == Family.NetEdge || family == Family.NetNode) Closure(e, _touch);
+                // crashfix: the game's reference systems process a Deleted entity's owner and edge nodes unchecked
+                if (SanitizeForDelete(em, e)) result.UnsafeSkipped++;
+                // w8/robust (client): what the gated removal systems would do to the entity's renters, workers, pupils and
+                // reverse lists, so nothing on this client keeps pointing at it while the host's own records travel
+                if (!proposal)
+                {
+                    try
+                    {
+                        result.Cascaded += DeletionCascade.Apply(em, e, result.Touched);
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Problems.Add("removal clean-up of #" + r.NetId + ": " + ex.Message);
+                    }
+                }
+                em.AddComponent<Game.Common.Deleted>(e);
+                _touch.Remove(e);
+                result.Touched.Add(e);
+                result.Despawned++;
+            }
+            catch (Exception ex)
+            {
+                result.Problems.Add("despawn of #" + r.NetId + ": " + ex.Message);
+            }
         }
 
         private void Reconcile(SyncRecord r, Entity e, bool proposal)
@@ -1149,7 +1242,8 @@ namespace SkylineTogether.Sync
                     SyncComponent comp = r.Components[c];
                     if (comp.Kind == SyncComponentKind.Presence) continue;
                     TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
-                    if (h == null || h.Kind == SyncComponentKind.Presence || !em.HasComponent(e, h.Type)) continue;
+                    // w8/robust: a payload of another kind than this game's type (data vs buffer) would be misread
+                    if (h == null || h.Kind == SyncComponentKind.Presence || h.Kind != comp.Kind || !em.HasComponent(e, h.Type)) continue;
                     if (keepHostOwned && HostOwnedTypes.Contains(h.Name)) continue;
                     // gameplay branch: state vanilla keeps beside some values (mesh colour enable bit, line colour events)
                     Type fixup = FixupType(h);
@@ -1182,6 +1276,15 @@ namespace SkylineTogether.Sync
         private readonly HashSet<Entity> _badSpawns = new HashSet<Entity>();
         private long _unresolvedSpawnsTotal, _unsafeTotal;
         private double _lastUnsafeLog = double.NegativeInfinity;
+
+        private string _probeFailure;
+        private long _malformedTotal;
+
+        /// <summary>w8/robust: component values refused as malformed (overruns, NaN or out-of-range geometry), session total.</summary>
+        public long MalformedTotal => _malformedTotal;
+
+        /// <summary>w8/robust: reads the bounded reader refused because they ran past their payload (session total).</summary>
+        public long OverrunsTotal => _rs.Overruns;
 
         /// <summary>crashfix: spawns skipped because a structural reference did not resolve (session total).</summary>
         public long UnresolvedSpawnsTotal => _unresolvedSpawnsTotal;
@@ -1232,9 +1335,13 @@ namespace SkylineTogether.Sync
                     for (int c = 0; c < r.Components.Count; c++)
                     {
                         SyncComponent comp = r.Components[c];
-                        if (comp.Kind != SyncComponentKind.Data) continue;
+                        if (comp.Kind == SyncComponentKind.Presence) continue;
                         TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
-                        if (h == null || Array.IndexOf(hard, h) < 0) continue;
+                        if (h == null || h.Kind != comp.Kind || !h.CanProbe) continue;
+                        // w8/robust: geometry is checked too: a new entity at a NaN position is never created
+                        bool structural = comp.Kind == SyncComponentKind.Data && Array.IndexOf(hard, h) >= 0;
+                        if (!structural && !h.ChecksFloats) continue;
+                        _probeFailure = null;
                         _rs.Collect = refs;
                         bool unresolved;
                         try
@@ -1245,10 +1352,12 @@ namespace SkylineTogether.Sync
                         {
                             _rs.Collect = null;
                         }
-                        if (unresolved)
+                        if (unresolved && (structural || _probeFailure != null))
                         {
                             _badSpawns.Add(e);
-                            result.Problems.Add("#" + r.NetId + " (" + r.Family + ") not created: its " + h.Name + " references something missing here");
+                            result.Problems.Add("#" + r.NetId + " (" + r.Family + ") not created: its " + h.Name
+                                                + (_probeFailure != null ? " is malformed (" + _probeFailure + ")" : " references something missing here"));
+                            if (_probeFailure != null) _malformedTotal++;
                         }
                     }
                 }
@@ -1500,7 +1609,9 @@ namespace SkylineTogether.Sync
                 }
                 int start = c.Offset - batchOffset + keys.Position;
                 int end = c.Offset - batchOffset + c.Count;
+                if (start < 0 || end < start || end > _batch.Length - NetReaderState.Padding) throw new DecodeException(h.Name + ": payload outside the batch");
                 _position.Value = start;
+                _rs.Bound(_position, end); // w8/robust: no read past the component's payload
                 _rs.Table = _ids.ReaderTable;
                 var inner = default(BinaryReader);
                 inner.Initialize(_readContext, _batch, _position, _rs.Table);
@@ -1520,6 +1631,10 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 result.Problems.Add(h.Name + ": " + ex.Message);
+                if (probe) _probeFailure = ex.Message;
+                // w8/robust: malformed or refused values (NaN geometry, overruns) are counted; the integrity check asks
+                // the host for the entity again, and the session-wide count shows in the diagnostics
+                if (ex is DecodeException) _malformedTotal++;
                 if (_failedTypes.Add(h.Hash ^ 0xA5A5A5A5UL)) _log.Warn(LogCategory.Replication, (probe ? "checking " : "applying ") + h.Name + " failed", ex);
                 return true;
             }
@@ -1567,12 +1682,20 @@ namespace SkylineTogether.Sync
                 keys.Reset(c.Data, c.Offset, c.Count);
                 if (keys.ReadVarUInt32() != 0) return Entity.Null;
                 _position.Value = c.Offset - batchOffset + keys.Position;
+                _rs.Bound(_position, c.Offset - batchOffset + c.Count); // w8/robust
                 _rs.Keys.Clear();
                 _rs.Table = _ids.ReaderTable;
                 var inner = default(BinaryReader);
                 inner.Initialize(_readContext, _batch, _position, _rs.Table);
                 PrefabRef value = default;
-                value.Deserialize(new NetReader(inner, _rs));
+                try
+                {
+                    value.Deserialize(new NetReader(inner, _rs));
+                }
+                catch (DecodeException)
+                {
+                    return Entity.Null;
+                }
                 return value.m_Prefab;
             }
             return Entity.Null;
@@ -1708,11 +1831,13 @@ namespace SkylineTogether.Sync
         /// </summary>
         public bool ReadBlob(byte[] data, int offset, int count, Action<NetReader> read)
         {
-            var native = new NativeArray<byte>(Math.Max(1, count), Allocator.Temp);
+            if (data == null || count < 0 || offset < 0 || offset > data.Length - count) throw new DecodeException("blob slice out of range");
+            var native = new NativeArray<byte>(count + NetReaderState.Padding, Allocator.Temp, NativeArrayOptions.ClearMemory);
             try
             {
                 if (count > 0) NativeArray<byte>.Copy(data, offset, native, 0, count);
                 _position.Value = 0;
+                _rs.Bound(_position, count); // w8/robust: no read past the blob
                 _rs.Keys.Clear();
                 _rs.Unresolved = false;
                 _rs.Table = _ids.ReaderTable;

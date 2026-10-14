@@ -337,12 +337,14 @@ namespace SkylineTogether.Core.Sync
                 byte roles = r.ReadByte();
                 var key = new FlowKey(new FlowNodeKey(startOwner, (FlowNodeRole)(roles >> 4)), new FlowNodeKey(endOwner, (FlowNodeRole)(roles & 15)));
                 if (!key.IsValid) throw new DecodeException("invalid flow key " + key);
-                var value = new FlowValue { Flow = r.ReadVarInt32(), Capacity = r.ReadVarInt32(), Flags = r.ReadByte() };
+                var value = new FlowValue { Flow = r.ReadVarInt32(), Capacity = Math.Max(0, r.ReadVarInt32()), Flags = r.ReadByte() };
                 if (water)
                 {
                     value.SewageFlow = r.ReadVarInt32();
-                    value.SewageCapacity = r.ReadVarInt32();
-                    value.Pollution = r.ReadSingle();
+                    value.SewageCapacity = Math.Max(0, r.ReadVarInt32());
+                    float pollution = r.ReadSingle();
+                    // w8/robust: capacities are never negative and the pollution share is finite and not negative
+                    value.Pollution = float.IsNaN(pollution) || float.IsInfinity(pollution) ? 0f : Math.Max(0f, pollution);
                 }
                 output.Add(new KeyValuePair<FlowKey, FlowValue>(key, value));
             }

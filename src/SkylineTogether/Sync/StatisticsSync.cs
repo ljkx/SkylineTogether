@@ -69,6 +69,9 @@ namespace SkylineTogether.Sync
                 client.AppMessage += e =>
                 {
                     if (e.Kind != MessageKind.Statistics) return;
+                    // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                    // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
+                    if (!Diagnostics.Features.SimValues.IsAvailable) return;
                     var copy = new byte[e.BodyCount];
                     Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                     _inbox.Enqueue(copy);
@@ -236,11 +239,14 @@ namespace SkylineTogether.Sync
                     if (e == Entity.Null || !em.Exists(e) || !em.HasBuffer<CityStatistic>(e)) continue;
                     DynamicBuffer<CityStatistic> buffer = em.GetBuffer<CityStatistic>(e, true);
                     int n = Math.Min(buffer.Length, StatisticsMessage.MaxSamples);
+                    // w8/robust: the newest samples (the buffers grow without end; the charts read from the end and pad
+                    // the front when a buffer is shorter than the sample count, StatisticsUISystem.EnsureDataSize)
+                    int start = buffer.Length - n;
                     var s = new StatisticSeries { Type = (int)pairs.Keys[i].type, Parameter = pairs.Keys[i].parameter, Values = new double[n], Totals = new double[n] };
                     for (int k = 0; k < n; k++)
                     {
-                        s.Values[k] = buffer[k].m_Value;
-                        s.Totals[k] = buffer[k].m_TotalValue;
+                        s.Values[k] = buffer[start + k].m_Value;
+                        s.Totals[k] = buffer[start + k].m_TotalValue;
                     }
                     list.Add(s);
                 }
@@ -306,9 +312,11 @@ namespace SkylineTogether.Sync
                 DynamicBuffer<CityStatistic> buffer = em.GetBuffer<CityStatistic>(e);
                 int n = Math.Min(s.Values.Length, s.Totals.Length);
                 buffer.ResizeUninitialized(n);
-                for (int k = 0; k < n; k++) buffer[k] = new CityStatistic { m_Value = s.Values[k], m_TotalValue = s.Totals[k] };
+                for (int k = 0; k < n; k++) buffer[k] = new CityStatistic { m_Value = Finite(s.Values[k]), m_TotalValue = Finite(s.Totals[k]) }; // w8/robust
                 written++;
             }
+            // w8/robust: the charts allocate this many samples (EnsureDataSize); a wild value is clamped
+            sampleCount = Math.Max(0, Math.Min(MaxSampleCount, sampleCount));
             try
             {
                 _sampleCount?.SetValue(_stats, sampleCount);
@@ -322,5 +330,10 @@ namespace SkylineTogether.Sync
             _applied++;
             if (written > 0) _stats.eventStatisticsUpdated?.Invoke();
         }
+
+        /// <summary>w8/robust: the largest sample count accepted from the host (32 samples a game day).</summary>
+        private const int MaxSampleCount = 1 << 20;
+
+        private static double Finite(double v) => double.IsNaN(v) || double.IsInfinity(v) ? 0 : v;
     }
 }

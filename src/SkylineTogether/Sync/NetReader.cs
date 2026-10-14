@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Colossal.Mathematics;
+using SkylineTogether.Core;
 using Colossal.Serialization.Entities;
 using Unity.Collections;
 using Unity.Entities;
@@ -38,10 +39,73 @@ namespace SkylineTogether.Sync
         /// <summary>crashfix: when not null, every resolved reference is added (spawn validation follows references).</summary>
         public List<Entity> Collect;
 
+        /// <summary>
+        /// w8/robust: zero bytes every read buffer carries beyond its last valid byte. A primitive read checks the position
+        /// before it reads (<see cref="Limit"/>); the longest read the game's reader can still make past the limit (a 4-byte
+        /// UTF-8 char after a 1-byte check) stays inside the allocation.
+        /// </summary>
+        public const int Padding = 16;
+
+        /// <summary>
+        /// w8/robust: the read position (shared with the game's reader) and the end of the bytes this read may consume
+        /// (the component's payload, the blob). The game's <c>BinaryReader</c> indexes its <c>NativeArray</c> without a
+        /// bounds check in a player build and copies array reads with an unchecked <c>MemCpy</c>, so a truncated or
+        /// hostile payload read past its end reads (or, through a wire count, allocates) arbitrary memory. Every read of
+        /// <see cref="NetReader"/> checks against this limit first and throws a <see cref="DecodeException"/> instead.
+        /// A negative limit turns the check off.
+        /// </summary>
+        public NativeReference<int> Position;
+
+        /// <summary>w8/robust: see <see cref="Position"/>.</summary>
+        public int Limit = -1;
+
+        /// <summary>w8/robust: reads refused because they would have run past the payload (diagnostics).</summary>
+        public long Overruns;
+
+        /// <summary>w8/robust: binds the bounds check to a read of the bytes before <paramref name="limit"/>.</summary>
+        public void Bound(NativeReference<int> position, int limit)
+        {
+            Position = position;
+            Limit = limit;
+        }
+
+        /// <summary>w8/robust: the bytes left before <see cref="Limit"/> (int.MaxValue when unbounded).</summary>
+        public int Remaining => Limit < 0 || !Position.IsCreated ? int.MaxValue : Limit - Position.Value;
+
+        /// <summary>w8/robust: throws unless <paramref name="bytes"/> more bytes may be read.</summary>
+        public void Need(long bytes)
+        {
+            if (Limit < 0 || !Position.IsCreated) return;
+            int p = Position.Value;
+            if (p < 0 || bytes < 0 || p > Limit || bytes > Limit - p)
+            {
+                Overruns++;
+                throw new DecodeException("read of " + bytes + " byte(s) at " + p + " runs past the payload end " + Limit);
+            }
+        }
+
+        /// <summary>w8/robust: throws when a variable-length read ran past the limit (it stayed inside the padding).</summary>
+        public void CheckAfter()
+        {
+            if (Limit < 0 || !Position.IsCreated) return;
+            if (Position.Value > Limit)
+            {
+                Overruns++;
+                throw new DecodeException("read ran past the payload end " + Limit);
+            }
+        }
+
+        /// <summary>
+        /// w8/robust: entities the batch being applied despawns. They still exist while its records are read, but a
+        /// reference to one would dangle a moment later, so it resolves to nothing like a deleted entity.
+        /// </summary>
+        public readonly HashSet<Entity> Dying = new HashSet<Entity>();
+
         /// <summary>crashfix: true when the entity may be referenced (exists and is not being deleted).</summary>
         public bool IsLive(Entity e)
         {
             if (!CheckLiveness || e == Entity.Null) return true;
+            if (Dying.Count > 0 && Dying.Contains(e)) return false;
             return EntityManager.Exists(e) && !EntityManager.HasComponent<Game.Common.Deleted>(e);
         }
     }
@@ -65,14 +129,37 @@ namespace SkylineTogether.Sync
 
         public void Initialize(Context context, NativeArray<byte> buffer, NativeReference<int> position, NativeArray<Entity> entityTable) => _inner.Initialize(context, buffer, position, entityTable);
 
-        public ReaderBlock Begin() => _inner.Begin();
+        public ReaderBlock Begin()
+        {
+            return Begin(out _);
+        }
 
-        public ReaderBlock Begin(out int size) => _inner.Begin(out size);
+        public ReaderBlock Begin(out int size)
+        {
+            Need(4);
+            ReaderBlock block = _inner.Begin(out size);
+            // w8/robust: a block that ends outside the payload is malformed (End would move the position there)
+            if (size < 0 || size > Remaining) Fail("block of " + size + " byte(s)");
+            return block;
+        }
 
         public bool End(ReaderBlock block) => _inner.End(block);
 
+        /// <summary>w8/robust: the bounds check (see <see cref="NetReaderState.Position"/>); a no-op without state.</summary>
+        private void Need(long bytes) => _state?.Need(bytes);
+
+        /// <summary>w8/robust: the bytes this read may still consume (int.MaxValue when unbounded).</summary>
+        public int Remaining => _state?.Remaining ?? int.MaxValue;
+
+        private void Fail(string what)
+        {
+            if (_state != null) _state.Overruns++;
+            throw new DecodeException(what + " overruns the payload");
+        }
+
         public void Read(out Entity value)
         {
+            Need(4);
             _inner.Read(out int index);
             if (index >= 0)
             {
@@ -138,7 +225,10 @@ namespace SkylineTogether.Sync
 
         public void Read(NativeList<Entity> value)
         {
+            Need(4);
             _inner.Read(out int count);
+            // w8/robust: the count comes from the wire; each reference is 4 bytes
+            if (count < 0 || count > Remaining / 4) Fail("list of " + count + " references");
             if (value.Length != count) value.ResizeUninitialized(count);
             for (int i = 0; i < count; i++)
             {
@@ -164,42 +254,242 @@ namespace SkylineTogether.Sync
 
         public void Read<TSerializable>(TSerializable value) where TSerializable : class, ISerializable => value.Deserialize(this);
 
-        public void Read(NativeArray<int> value) => _inner.Read(value);
-        public void Read(NativeArray<int2> value) => _inner.Read(value);
-        public void Read(NativeArray<ushort> value) => _inner.Read(value);
-        public void Read(NativeArray<byte> value) => _inner.Read(value);
-        public void Read(NativeArray<float4> value) => _inner.Read(value);
-        public void Read(NativeArray<float2> value) => _inner.Read(value);
-        public void Read(NativeArray<byte> value, int stride) => _inner.Read(value, stride);
-        public void Read(NativeList<int> value) => _inner.Read(value);
-        public void Read(out Bezier4x3 curve) => _inner.Read(out curve);
-        public void Read(out string value) => _inner.Read(out value);
-        public void Read(out Color value) => _inner.Read(out value);
-        public void Read(out Color32 value) => _inner.Read(out value);
-        public void Read(out quaternion value) => _inner.Read(out value);
-        public void Read(out float4 value) => _inner.Read(out value);
-        public void Read(out float3 value) => _inner.Read(out value);
-        public void Read(out float2 value) => _inner.Read(out value);
-        public void Read(out int4 value) => _inner.Read(out value);
-        public void Read(out int3 value) => _inner.Read(out value);
-        public void Read(out int2 value) => _inner.Read(out value);
-        public void Read(out bool4 value) => _inner.Read(out value);
-        public void Read(out bool3 value) => _inner.Read(out value);
-        public void Read(out bool2 value) => _inner.Read(out value);
-        public void Read(out uint4 value) => _inner.Read(out value);
-        public void Read(out Hash128 value) => _inner.Read(out value);
-        public void Read(out char value) => _inner.Read(out value);
-        public void Read(out float value) => _inner.Read(out value);
-        public void Read(out double value) => _inner.Read(out value);
-        public void Read(out int value) => _inner.Read(out value);
-        public void Read(out uint value) => _inner.Read(out value);
-        public void Read(out short value) => _inner.Read(out value);
-        public void Read(out ushort value) => _inner.Read(out value);
-        public void Read(out sbyte value) => _inner.Read(out value);
-        public void Read(out byte value) => _inner.Read(out value);
-        public void Read(out long value) => _inner.Read(out value);
-        public void Read(out ulong value) => _inner.Read(out value);
-        public void Read(out bool value) => _inner.Read(out value);
+        // w8/robust: array reads are unchecked MemCpy calls in the game's reader: their size is checked first
+        public void Read(NativeArray<int> value)
+        {
+            Need((long)value.Length * 4);
+            _inner.Read(value);
+        }
+
+        public void Read(NativeArray<int2> value)
+        {
+            Need((long)value.Length * 8);
+            _inner.Read(value);
+        }
+
+        public void Read(NativeArray<ushort> value)
+        {
+            Need((long)value.Length * 2);
+            _inner.Read(value);
+        }
+
+        public void Read(NativeArray<byte> value)
+        {
+            Need(value.Length);
+            _inner.Read(value);
+        }
+
+        public void Read(NativeArray<float4> value)
+        {
+            Need((long)value.Length * 16);
+            _inner.Read(value);
+        }
+
+        public void Read(NativeArray<float2> value)
+        {
+            Need((long)value.Length * 8);
+            _inner.Read(value);
+        }
+
+        public void Read(NativeArray<byte> value, int stride)
+        {
+            Need(value.Length);
+            if (stride <= 0) Fail("stride " + stride);
+            _inner.Read(value, stride);
+        }
+
+        public void Read(NativeList<int> value)
+        {
+            Need(4);
+            _inner.Read(out int count);
+            if (count < 0 || count > Remaining / 4) Fail("list of " + count + " ints");
+            if (value.Length != count) value.ResizeUninitialized(count);
+            for (int i = 0; i < count; i++)
+            {
+                _inner.Read(out int v);
+                value[i] = v;
+            }
+        }
+
+        public void Read(out string value)
+        {
+            Need(4);
+            _inner.Read(out int count);
+            // w8/robust: a char is 1 to 4 UTF-8 bytes; the game's reader allocates the wire count unchecked
+            if (count < 0 || count > Remaining) Fail("string of " + count + " chars");
+            var chars = new char[count];
+            for (int i = 0; i < count; i++)
+            {
+                Need(1);
+                _inner.Read(out chars[i]);
+            }
+            _state?.CheckAfter();
+            value = new string(chars);
+        }
+
+        public void Read(out char value)
+        {
+            Need(1);
+            _inner.Read(out value);
+            _state?.CheckAfter();
+        }
+
+        public void Read(out Bezier4x3 curve)
+        {
+            Need(48);
+            _inner.Read(out curve);
+        }
+
+        public void Read(out Color value)
+        {
+            Need(16);
+            _inner.Read(out value);
+        }
+
+        public void Read(out Color32 value)
+        {
+            Need(4);
+            _inner.Read(out value);
+        }
+
+        public void Read(out quaternion value)
+        {
+            Need(16);
+            _inner.Read(out value);
+        }
+
+        public void Read(out float4 value)
+        {
+            Need(16);
+            _inner.Read(out value);
+        }
+
+        public void Read(out float3 value)
+        {
+            Need(12);
+            _inner.Read(out value);
+        }
+
+        public void Read(out float2 value)
+        {
+            Need(8);
+            _inner.Read(out value);
+        }
+
+        public void Read(out int4 value)
+        {
+            Need(16);
+            _inner.Read(out value);
+        }
+
+        public void Read(out int3 value)
+        {
+            Need(12);
+            _inner.Read(out value);
+        }
+
+        public void Read(out int2 value)
+        {
+            Need(8);
+            _inner.Read(out value);
+        }
+
+        public void Read(out bool4 value)
+        {
+            Need(1);
+            _inner.Read(out value);
+        }
+
+        public void Read(out bool3 value)
+        {
+            Need(1);
+            _inner.Read(out value);
+        }
+
+        public void Read(out bool2 value)
+        {
+            Need(1);
+            _inner.Read(out value);
+        }
+
+        public void Read(out uint4 value)
+        {
+            Need(16);
+            _inner.Read(out value);
+        }
+
+        public void Read(out Hash128 value)
+        {
+            Need(16);
+            _inner.Read(out value);
+        }
+
+        public void Read(out float value)
+        {
+            Need(4);
+            _inner.Read(out value);
+        }
+
+        public void Read(out double value)
+        {
+            Need(8);
+            _inner.Read(out value);
+        }
+
+        public void Read(out int value)
+        {
+            Need(4);
+            _inner.Read(out value);
+        }
+
+        public void Read(out uint value)
+        {
+            Need(4);
+            _inner.Read(out value);
+        }
+
+        public void Read(out short value)
+        {
+            Need(2);
+            _inner.Read(out value);
+        }
+
+        public void Read(out ushort value)
+        {
+            Need(2);
+            _inner.Read(out value);
+        }
+
+        public void Read(out sbyte value)
+        {
+            Need(1);
+            _inner.Read(out value);
+        }
+
+        public void Read(out byte value)
+        {
+            Need(1);
+            _inner.Read(out value);
+        }
+
+        public void Read(out long value)
+        {
+            Need(8);
+            _inner.Read(out value);
+        }
+
+        public void Read(out ulong value)
+        {
+            Need(8);
+            _inner.Read(out value);
+        }
+
+        public void Read(out bool value)
+        {
+            Need(1);
+            _inner.Read(out value);
+        }
+
         public void Skip(int size) => _inner.Skip(size);
     }
 }

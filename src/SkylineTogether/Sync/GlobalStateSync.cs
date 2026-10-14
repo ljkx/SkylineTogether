@@ -119,6 +119,13 @@ namespace SkylineTogether.Sync
             /// <summary>w3/audit: minimum seconds between two offers (0: every 1 Hz pass); dirty channels are always due.</summary>
             public double Interval;
             public bool Disabled;
+            /// <summary>
+            /// w8/robust (client): the byte length of this game's own encoding of the state, for channels written by the
+            /// system's own <c>Deserialize</c> (0: not known yet, -1: not checkable). Those methods write into fixed-size
+            /// native arrays with counts read from the payload (the happiness factors: 16 per count into 416 entries) and
+            /// no bounds check in a player build, so a payload of another size is never handed to them.
+            /// </summary>
+            public int ExpectedLength;
         }
 
         /// <summary>
@@ -284,7 +291,7 @@ namespace SkylineTogether.Sync
         /// w3/audit: a channel with its own serializer pair (state that is not a whole system blob: a getter's arrays, a
         /// private cache, prefab components). The reader must consume exactly what the writer wrote.
         /// </summary>
-        private void AddCustom(string name, double interval, Action<NetWriter> write, Action<NetReader> read, Action clientBefore = null)
+        private void AddCustom(string name, double interval, Action<NetWriter> write, Action<NetReader> read, Action clientBefore = null, Func<JobHandle> hostWriters = null)
         {
             _blobs.Add(new BlobChannel
             {
@@ -293,6 +300,7 @@ namespace SkylineTogether.Sync
                 Write = write,
                 Read = read,
                 ClientBefore = clientBefore,
+                HostWriters = hostWriters, // w8/robust: the jobs that write what Write reads
                 ClientHandles = Array.Empty<FieldInfo>(),
                 Interval = interval,
             });
@@ -617,13 +625,31 @@ namespace SkylineTogether.Sync
                 Entity budget = _budgetQuery.GetSingletonEntity();
                 // GetBuffer (read-write) completes the jobs that read the budgets (CityServiceBudgetSystem)
                 DynamicBuffer<ServiceBudgetData> buffer = em.GetBuffer<ServiceBudgetData>(budget);
-                buffer.Clear();
+                // w8/robust: only live services (as the host checks), budgets clamped, one entry per service; a service the
+                // host names that is not bound here yet keeps its current entry instead of vanishing from the list
+                var wanted = new Dictionary<Entity, int>();
+                var unresolved = 0;
                 foreach (KeyValuePair<uint, int> e in _intList)
                 {
                     Entity service = _ids.GetEntity(e.Key);
-                    if (service == Entity.Null) continue;
-                    buffer.Add(new ServiceBudgetData { m_Service = service, m_Budget = e.Value });
+                    if (service == Entity.Null || !em.Exists(service) || !em.HasComponent<ServiceData>(service))
+                    {
+                        unresolved++;
+                        continue;
+                    }
+                    wanted[service] = Math.Max(0, Math.Min(MaxBudget, e.Value));
                 }
+                buffer = em.GetBuffer<ServiceBudgetData>(budget);
+                var kept = new List<ServiceBudgetData>();
+                for (int i = 0; i < buffer.Length; i++)
+                {
+                    ServiceBudgetData old = buffer[i];
+                    if (unresolved > 0 && !wanted.ContainsKey(old.m_Service) && old.m_Service != Entity.Null && em.Exists(old.m_Service)) kept.Add(old);
+                }
+                buffer = em.GetBuffer<ServiceBudgetData>(budget);
+                buffer.Clear();
+                foreach (ServiceBudgetData k in kept) buffer.Add(k);
+                foreach (KeyValuePair<Entity, int> w in wanted) buffer.Add(new ServiceBudgetData { m_Service = w.Key, m_Budget = w.Value });
             }
             else if (channel == GlobalChannel.Name)
             {
@@ -683,14 +709,51 @@ namespace SkylineTogether.Sync
         private void ApplyBlob(BlobChannel b, byte[] payload)
         {
             if (b.Disabled) return;
+            // w8/robust: a vanilla Deserialize only ever gets a payload of exactly this game's own size for the state
+            if (b.Read == null && b.State != null)
+            {
+                if (b.ExpectedLength == 0)
+                {
+                    byte[] local = null;
+                    try
+                    {
+                        local = BuildBlob(b);
+                    }
+                    catch (Exception)
+                    {
+                        // not checkable: refused below
+                    }
+                    b.ExpectedLength = local != null ? local.Length : -1;
+                }
+                // (a state this game cannot measure, because it references unsynced entities, keeps the bounded reader only)
+                if (b.ExpectedLength > 0 && b.ExpectedLength != payload.Length)
+                {
+                    b.Disabled = true;
+                    _log.Warn(LogCategory.Replication, "global state: " + b.Name + " from the host has " + payload.Length + " bytes, this game's state has "
+                                                       + b.ExpectedLength + "; channel disabled for this session (game versions differ?)");
+                    return;
+                }
+            }
             foreach (FieldInfo f in b.ClientHandles) ((JobHandle)f.GetValue(b.Owner)).Complete();
             b.HostWriters?.Invoke().Complete();
             b.ClientBefore?.Invoke();
-            if (_codec.ReadBlob(payload, 0, payload.Length, reader =>
+            bool exact;
+            try
             {
-                if (b.Read != null) b.Read(reader);
-                else b.State.Deserialize(reader);
-            })) return;
+                exact = _codec.ReadBlob(payload, 0, payload.Length, reader =>
+                {
+                    if (b.Read != null) b.Read(reader);
+                    else b.State.Deserialize(reader);
+                });
+            }
+            catch (Exception ex)
+            {
+                // w8/robust: a malformed payload (overrun, bad length) disables the channel instead of escaping half-applied
+                b.Disabled = true;
+                _log.Warn(LogCategory.Replication, "global state: " + b.Name + " could not be applied (" + ex.GetType().Name + ": " + ex.Message + "); channel disabled for this session");
+                return;
+            }
+            if (exact) return;
             b.Disabled = true;
             _log.Warn(LogCategory.Replication, "global state: " + b.Name + " did not decode exactly (format differs?); channel disabled for this session");
         }

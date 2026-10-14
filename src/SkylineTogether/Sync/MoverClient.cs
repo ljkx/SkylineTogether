@@ -119,6 +119,11 @@ namespace SkylineTogether.Sync
         private double _lastReport;
         private long _spawned, _despawned;
 
+        /// <summary>w8/robust: motion datagrams held at most (about 4 s of a busy view at 60 fps); newer ones are dropped.</summary>
+        private const int MaxQueuedMotion = 256;
+        private long _motionDropped, _recordFailures, _familyMismatches, _ridersReleased;
+        private double _lastFailureLog = double.NegativeInfinity;
+
         public MoverClient(SessionManager sessions, ILog log)
         {
             _sessions = sessions;
@@ -188,6 +193,14 @@ namespace SkylineTogether.Sync
                     break;
                 case MessageKind.Motion:
                 case MessageKind.MotionControl:
+                    // w8/robust: nothing drains the queue once the movers feature is off, and a run of slow frames must
+                    // not let it grow without end (motion is lossy by design: newer samples supersede old ones)
+                    if (!Diagnostics.Features.Movers.IsAvailable) break;
+                    if (_motion.Count >= MaxQueuedMotion && e.Kind == MessageKind.Motion)
+                    {
+                        _motionDropped++;
+                        break;
+                    }
                     _motion.Enqueue((e.Kind, Copy(e)));
                     break;
             }
@@ -196,6 +209,7 @@ namespace SkylineTogether.Sync
         /// <summary>The movers feature switched itself off: releases the held batches so the apply acks move on.</summary>
         public void DropHeld()
         {
+            _motion.Clear(); // w8/robust: the feature is off, nothing will drain it
             if (_batches.Count == 0) return;
             SessionClient client = _sessions.Client;
             while (_batches.Count > 0)
@@ -377,6 +391,14 @@ namespace SkylineTogether.Sync
                         case SyncRecordKind.MoverState:
                         {
                             Entity e = _ids.GetEntity(r.NetId);
+                            // w8/robust: an id bound to something that is not a mover here (ids out of step) is never
+                            // turned into one: that would swap a building's or a road's components
+                            if (e != Entity.Null && em.Exists(e) && !em.HasComponent<Deleted>(e) && _ids.GetFamily(r.NetId) != Family.Mover)
+                            {
+                                _familyMismatches++;
+                                NoteFailure("mover record #" + r.NetId + " names a " + _ids.GetFamily(r.NetId) + " here; skipped");
+                                break;
+                            }
                             if (e != Entity.Null && (!em.Exists(e) || em.HasComponent<Deleted>(e)))
                             {
                                 _ids.Unbind(r.NetId);
@@ -397,10 +419,21 @@ namespace SkylineTogether.Sync
                         case SyncRecordKind.MoverDespawn:
                         {
                             Entity e = _ids.GetEntity(r.NetId);
+                            // w8/robust: a mover despawn never deletes a building or a road whose id it names
+                            if (e != Entity.Null && em.Exists(e) && _ids.GetFamily(r.NetId) != Family.Mover)
+                            {
+                                _familyMismatches++;
+                                NoteFailure("mover despawn #" + r.NetId + " names a " + _ids.GetFamily(r.NetId) + " here; skipped");
+                                break;
+                            }
                             _ids.Unbind(r.NetId);
                             _force.Remove(r.NetId);
                             _pendingLinks.Remove(r.NetId); // w3/agents
                             if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) break;
+                            // w8/robust: riders of a vehicle (ObjectEmergeSystem's job on the host, gated here) must not
+                            // keep a Relative/CurrentVehicle pointing at it once it is destroyed (RelativeObjectSystem
+                            // indexes the parent's bone history unchecked)
+                            ReleaseRiders(em, e);
                             em.AddComponent<Deleted>(e);
                             _despawned++;
                             break;
@@ -409,7 +442,7 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
-                    _log.Debug(LogCategory.Replication, "mover record #" + r.NetId + " failed: " + ex.Message);
+                    NoteFailure("mover record #" + r.NetId + " failed: " + ex.Message);
                 }
             }
             // states and references after every entity of the batch exists (layouts, riders)
@@ -418,12 +451,13 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    if (em.Exists(e)) ApplyState(em, e, rec, isNew);
+                    // w8/robust: a mover the same batch despawned stays deleted (no components, no passenger entry)
+                    if (em.Exists(e) && !em.HasComponent<Deleted>(e)) ApplyState(em, e, rec, isNew);
                     if (isNew) (created ?? (created = new HashSet<Entity>())).Add(e);
                 }
                 catch (Exception ex)
                 {
-                    _log.Debug(LogCategory.Replication, "mover state failed: " + ex.Message);
+                    NoteFailure("mover state failed: " + ex.Message);
                 }
             }
             // w3/agents: the agents of the movers (vanilla reference systems pick them up for movers created this frame)
@@ -439,7 +473,7 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
-                    _log.Debug(LogCategory.Replication, "mover agent links failed: " + ex.Message);
+                    NoteFailure("mover agent links failed: " + ex.Message);
                 }
             }
         }
@@ -611,6 +645,79 @@ namespace SkylineTogether.Sync
             return set;
         }
 
+        /// <summary>
+        /// w8/robust: a failure of one mover record, state, link or motion message: counted (diagnostics), logged as a
+        /// warning at most every 10 s. The integrity check asks the host again for movers that stay wrong.
+        /// </summary>
+        private void NoteFailure(string what)
+        {
+            _recordFailures++;
+            double now = UnityEngine.Time.realtimeSinceStartupAsDouble;
+            if (now - _lastFailureLog < 10)
+            {
+                _log.Debug(LogCategory.Replication, what);
+                return;
+            }
+            _lastFailureLog = now;
+            _log.Warn(LogCategory.Replication, what + " (" + _recordFailures + " mover failure(s) this session, " + _familyMismatches + " family mismatch(es))");
+        }
+
+        /// <summary>
+        /// w8/robust: the riders of a vehicle about to be deleted (its own and its trailers' passenger lists) leave it: no
+        /// Relative or CurrentVehicle pointing at a destroyed entity; they are hidden (Unspawned) until the host's next
+        /// state for them arrives (usually in the same batch).
+        /// </summary>
+        private void ReleaseRiders(EntityManager em, Entity vehicle)
+        {
+            ReleasePassengers(em, vehicle);
+            if (!em.HasBuffer<LayoutElement>(vehicle)) return;
+            DynamicBuffer<LayoutElement> layout = em.GetBuffer<LayoutElement>(vehicle, true);
+            var members = new Entity[layout.Length];
+            for (int i = 0; i < layout.Length; i++) members[i] = layout[i].m_Vehicle;
+            foreach (Entity member in members)
+            {
+                if (member != vehicle && member != Entity.Null && em.Exists(member)) ReleasePassengers(em, member);
+            }
+        }
+
+        private void ReleasePassengers(EntityManager em, Entity vehicle)
+        {
+            if (!em.HasBuffer<Passenger>(vehicle)) return;
+            DynamicBuffer<Passenger> list = em.GetBuffer<Passenger>(vehicle, true);
+            var riders = new Entity[list.Length];
+            for (int i = 0; i < list.Length; i++) riders[i] = list[i].m_Passenger;
+            foreach (Entity rider in riders)
+            {
+                if (rider == Entity.Null || !em.Exists(rider) || em.HasComponent<Deleted>(rider)) continue;
+                if (em.HasComponent<CurrentVehicle>(rider) && em.GetComponentData<CurrentVehicle>(rider).m_Vehicle != vehicle) continue;
+                if (em.HasComponent<Relative>(rider)) em.RemoveComponent<Relative>(rider);
+                if (em.HasComponent<CurrentVehicle>(rider)) em.RemoveComponent<CurrentVehicle>(rider);
+                if (!em.HasComponent<Unspawned>(rider))
+                {
+                    em.AddComponent<Unspawned>(rider);
+                    if (!em.HasComponent<BatchesUpdated>(rider)) em.AddComponent<BatchesUpdated>(rider);
+                }
+                _ridersReleased++;
+            }
+        }
+
+        /// <summary>
+        /// w8/robust: the bone indices of a rider, checked against the vehicle (RelativeObjectSystem reads
+        /// <c>boneHistory[parent]</c> when y &gt;= 0 and the prefab's <c>SubMesh[z]</c> unchecked); an index the vehicle does
+        /// not have becomes -1 (the rider is placed relative to the vehicle itself).
+        /// </summary>
+        private static int3 SafeBones(EntityManager em, Entity vehicle, MoverRecord rec)
+        {
+            int y = rec.BoneY, z = rec.BoneZ;
+            if (y >= 0 && (!em.HasBuffer<BoneHistory>(vehicle) || y >= em.GetBuffer<BoneHistory>(vehicle, true).Length)) y = -1;
+            if (z >= 0)
+            {
+                Entity prefab = em.HasComponent<PrefabRef>(vehicle) ? em.GetComponentData<PrefabRef>(vehicle).m_Prefab : Entity.Null;
+                if (y < 0 || prefab == Entity.Null || !em.HasBuffer<SubMesh>(prefab) || z >= em.GetBuffer<SubMesh>(prefab, true).Length) z = -1;
+            }
+            return new int3(rec.BoneX, y, z);
+        }
+
         /// <summary>Mirrors the host's discrete state on an existing (or just created) mover.</summary>
         private void ApplyState(EntityManager em, Entity e, MoverRecord rec, bool isNew)
         {
@@ -620,6 +727,8 @@ namespace SkylineTogether.Sync
             bool structural = false;
             Entity vehicle = rec.Vehicle != 0 ? _ids.GetEntity(rec.Vehicle) : Entity.Null;
             if (vehicle != Entity.Null && (!em.Exists(vehicle) || em.HasComponent<Deleted>(vehicle))) vehicle = Entity.Null; // crashfix: never a deleted vehicle
+            // w8/robust: and never something that is not a vehicle (the id may name any family)
+            if (vehicle != Entity.Null && (_ids.GetFamily(rec.Vehicle) != Family.Mover || !em.HasComponent<Vehicle>(vehicle))) vehicle = Entity.Null;
             bool riding = rec.Kind == MoverKind.Riding && vehicle != Entity.Null;
             bool inVehicle = rec.Kind == MoverKind.Inside || rec.Kind == MoverKind.Riding;
             bool wantStopped = rec.Kind == MoverKind.Stopped;
@@ -670,7 +779,7 @@ namespace SkylineTogether.Sync
                         {
                             m_Position = new float3(rec.RX, rec.RY, rec.RZ),
                             m_Rotation = new quaternion(rec.RQX, rec.RQY, rec.RQZ, rec.RQW),
-                            m_BoneIndex = new int3(rec.BoneX, rec.BoneY, rec.BoneZ),
+                            m_BoneIndex = SafeBones(em, vehicle, rec),
                         });
                     }
                 }
@@ -710,7 +819,7 @@ namespace SkylineTogether.Sync
             if (rec.Route != 0)
             {
                 Entity route = _ids.GetEntity(rec.Route);
-                if (route != Entity.Null && em.Exists(route))
+                if (route != Entity.Null && em.Exists(route) && !em.HasComponent<Deleted>(route))
                 {
                     if (!em.HasComponent<CurrentRoute>(e)) em.AddComponent<CurrentRoute>(e);
                     em.SetComponentData(e, new CurrentRoute(route));
@@ -855,8 +964,25 @@ namespace SkylineTogether.Sync
                     if (kind == MessageKind.MotionControl)
                     {
                         _pins.Clear();
-                        _stager.ApplyControl(body, 0, body.Length, _pins);
-                        foreach (MotionPin pin in _pins) ApplyPin(em, pin);
+                        try
+                        {
+                            _stager.ApplyControl(body, 0, body.Length, _pins);
+                        }
+                        finally
+                        {
+                            // w8/robust: ops before a malformed one stay applied; their released movers are pinned anyway
+                            foreach (MotionPin pin in _pins)
+                            {
+                                try
+                                {
+                                    ApplyPin(em, pin);
+                                }
+                                catch (Exception ex)
+                                {
+                                    NoteFailure("motion pin failed: " + ex.Message);
+                                }
+                            }
+                        }
                     }
                     else
                     {
@@ -867,6 +993,10 @@ namespace SkylineTogether.Sync
                 catch (DecodeException ex)
                 {
                     _log.Debug(LogCategory.Motion, "malformed " + kind + " dropped: " + ex.Message);
+                }
+                catch (Exception ex)
+                {
+                    NoteFailure(kind + " failed: " + ex.Message); // w8/robust: one bad message never loses the frame's slot writes
                 }
             }
         }
@@ -1002,6 +1132,8 @@ namespace SkylineTogether.Sync
         private static float Finite(float v) => float.IsNaN(v) || float.IsInfinity(v) ? 0f : v;
 
         /// <summary>One line for diagnostics.</summary>
-        public string Status => _active ? "movers +" + _spawned + " -" + _despawned + ", " + _stager.AssignedCount + " in motion" + (_linksApplied > 0 ? ", " + _linksApplied + " agent links" : "") : "";
+        public string Status => _active ? "movers +" + _spawned + " -" + _despawned + ", " + _stager.AssignedCount + " in motion" + (_linksApplied > 0 ? ", " + _linksApplied + " agent links" : "")
+                                          + (_recordFailures + _motionDropped + _ridersReleased > 0 ? ", " + _recordFailures + " failures, " + _familyMismatches + " family mismatches, "
+                                             + _motionDropped + " motion dropped, " + _ridersReleased + " riders released" : "") : "";
     }
 }

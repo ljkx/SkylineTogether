@@ -124,6 +124,7 @@ namespace SkylineTogether.Sync
         private double _lastRevalidate;
         private double _lastFallbackSweep;
         private long _commandsIssued;
+        private long _invalidIcons; // w8/robust: icons with a non-finite location left out
 
         // filter
         private IconCommandSystem _iconSystem;
@@ -708,6 +709,13 @@ namespace SkylineTogether.Sync
                     if (targetLost) flags = (byte)(flags & ~FlagTargetLocation);
                     bool custom = (flags & FlagCustomLocation) != 0 || targetLost;
                     var location = new float3(d.X, d.Y, d.Z);
+                    // w8/robust: an icon placed at a NaN or infinite location would reach Icon.m_Location and the cluster
+                    // system's centres and distances; such an icon is left out (the host's next icon set brings it back)
+                    if (custom && !math.all(math.isfinite(location)))
+                    {
+                        _invalidIcons++;
+                        continue;
+                    }
                     int match = -1;
                     for (int i = 0; i < _live.Count; i++)
                     {

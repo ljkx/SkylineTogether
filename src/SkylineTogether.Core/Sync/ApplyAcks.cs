@@ -110,6 +110,57 @@ namespace SkylineTogether.Core.Sync
     }
 
     /// <summary>
+    /// w8/robust (host): peers whose applied release frame stopped advancing while the host kept sealing frames. Such a
+    /// peer pins the id quarantine (released ids wait for every peer's acknowledgement) and is falling behind for good:
+    /// its replication feature switched off, or its apply is stuck, while its connection still answers pings. After
+    /// <see cref="LimitSeconds"/> it is reported (once), and the host drops it with a rejoin offer: a rejoin with a fresh
+    /// snapshot is the catch-up path. Main thread.
+    /// </summary>
+    public sealed class AckStallWatch
+    {
+        private readonly Dictionary<byte, (uint Frame, double Since, bool Reported)> _peers = new Dictionary<byte, (uint, double, bool)>();
+        private readonly List<byte> _stalled = new List<byte>();
+
+        public AckStallWatch(double limitSeconds)
+        {
+            if (!(limitSeconds > 0)) throw new ArgumentOutOfRangeException(nameof(limitSeconds));
+            LimitSeconds = limitSeconds;
+        }
+
+        public double LimitSeconds { get; }
+
+        /// <summary>
+        /// Records each peer's applied frame (<paramref name="ackedFrame"/>) against the host's current frame and returns the
+        /// peers that have been behind without any progress for longer than the limit (each peer once, until it advances
+        /// again). A peer that is fully caught up never counts as stalled, however long nothing new is sent.
+        /// </summary>
+        public IReadOnlyList<byte> Update(IEnumerable<byte> peers, Func<byte, uint> ackedFrame, uint currentFrame, double now)
+        {
+            _stalled.Clear();
+            foreach (byte peer in peers)
+            {
+                uint acked = ackedFrame(peer);
+                if (!_peers.TryGetValue(peer, out (uint Frame, double Since, bool Reported) s) || acked != s.Frame || acked >= currentFrame)
+                {
+                    _peers[peer] = (acked, now, false);
+                    continue;
+                }
+                if (s.Reported || now - s.Since <= LimitSeconds) continue;
+                _peers[peer] = (s.Frame, s.Since, true);
+                _stalled.Add(peer);
+            }
+            return _stalled;
+        }
+
+        /// <summary>Seconds <paramref name="peer"/> has gone without progress while behind (0 when caught up or unknown).</summary>
+        public double StalledFor(byte peer, double now) => _peers.TryGetValue(peer, out (uint Frame, double Since, bool Reported) s) ? now - s.Since : 0;
+
+        public void Forget(byte peer) => _peers.Remove(peer);
+
+        public void Clear() => _peers.Clear();
+    }
+
+    /// <summary>
     /// Client: which of the host's <c>Epoch</c> messages have been applied. Each received message gets the next sequence
     /// number (<see cref="OnReceived"/>); a consumer that applies it later holds it (<see cref="Hold"/>) and releases it
     /// once applied (<see cref="Release"/>). <see cref="AppliedThrough"/> is the highest sequence number below which

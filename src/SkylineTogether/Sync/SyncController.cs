@@ -68,6 +68,16 @@ namespace SkylineTogether.Sync
         private const int ResendChunkRecords = 512;
         private const int MaxRollbackRecords = 512; // crashfix: full records a rollback writes in its frame
 
+        // w8/robust (host): a peer's proposals and acks waiting to be applied are bounded; a peer that keeps sending
+        // faster than the host applies, or whose applied frame stops advancing, is dropped with a rejoin offer
+        private readonly InboundQuota _hostInboxQuota = new InboundQuota(4096, 64L << 20);
+        private ReferenceAudit _audit;
+        private readonly AckStallWatch _ackStall = new AckStallWatch(AckStallSeconds);
+        private readonly List<(PeerId Peer, string Log, string Reason)> _kicks = new List<(PeerId, string, string)>();
+        private readonly List<byte> _livePeerScratch = new List<byte>();
+        private const double AckStallSeconds = 120;
+        private double _lastAckStallCheck = double.NegativeInfinity;
+
         private struct Inbound
         {
             public PeerId Peer;
@@ -85,7 +95,13 @@ namespace SkylineTogether.Sync
             public readonly CoalescingQueue Queue = new CoalescingQueue();
             public long SentRecords;
             public double LastFlush;
+            /// <summary>w8/robust: a full re-send in progress: the next id to mark (0: none) and the ids marked so far.</summary>
+            public int ResendCursor;
+            public int ResendMarked;
         }
+
+        /// <summary>w8/robust: ids a full re-send walks per frame (the whole table in one frame cost 30-60 ms in a big city).</summary>
+        private const int ResendIdsPerFrame = 20000;
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
@@ -220,6 +236,7 @@ namespace SkylineTogether.Sync
             _sessions = sessions;
             _log = log;
             _gate = new ClientGate(log);
+            _audit = new ReferenceAudit(log); // w8/robust
             _global = new GlobalStateSync(log);
             _events = new EventSync(log); // w3/audit
             _signals = new SignalFollower(log);
@@ -395,6 +412,10 @@ namespace SkylineTogether.Sync
                 lines.Add("reference safety: " + _codec.UnresolvedSpawnsTotal + " new objects not created (owner/node/parent missing), " + _codec.UnsafeTotal
                           + " untagged or sanitized for broken net references, " + _codec.DeadReferencesTotal + " references to destroyed/deleted entities dropped; "
                           + _localDeletes.Count + " local deletions awaiting the host, " + _localDeleteSkips + " stale host records skipped, " + _cascadeUnbinds + " cascade unbinds");
+                // w8/robust: decode-boundary validation and the client's removal clean-up
+                lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal
+                          + " reads past a payload stopped; removal clean-up: " + DeletionCascade.Removed + " references to despawned entities removed");
+                if (!IsHost) lines.Add(_audit.Describe());
             }
             _agents.Describe(lines); // w3/agents
             Perf.Counters.Describe(Perf.Now, lines);
@@ -457,6 +478,17 @@ namespace SkylineTogether.Sync
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Proposal && e.Kind != MessageKind.ApplyAck) return;
+                // w8/robust: bounded per peer (the kick happens in the apply loop, not inside the transport callback)
+                if (!_hostInboxQuota.TryAdmit(peer, e.BodyCount))
+                {
+                    if (_hostInboxQuota.TakeOverflow(peer))
+                    {
+                        _kicks.Add((peer, peer + " sends changes faster than the host applies them (" + _hostInboxQuota.Pending(peer) + " waiting, "
+                                          + (_hostInboxQuota.PendingBytes(peer) >> 10) + " KiB)",
+                                    "Your game sent changes faster than the host could apply them. Join again to continue."));
+                    }
+                    return;
+                }
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 // acknowledgements share the proposals' queue: an ack is counted only after every proposal the client
@@ -517,6 +549,7 @@ namespace SkylineTogether.Sync
             if (_wasClient) SafeCall("restoring mod settings", _modSettings.RestoreClient);
             SafeCall("mod gates", () => Compat.ModCompat.OnSessionEnded(_log));
             _watcher?.Stop();
+            _audit.Reset(); // w8/robust
             _modSettings.Reset();
             _holds.Clear();
             _localDeletes.Clear(); // crashfix
@@ -578,6 +611,9 @@ namespace SkylineTogether.Sync
         /// <summary>w2/ids: forgets release frames, grants and deferred queues (session start or end).</summary>
         private void ResetHostState()
         {
+            _hostInboxQuota.Clear();
+            _ackStall.Clear();
+            _kicks.Clear();
             _acks.Clear();
             _grants.Clear();
             _out.Clear();
@@ -692,6 +728,8 @@ namespace SkylineTogether.Sync
         private void OnPeerLeft(PeerId peer)
         {
             _proposalHealth.Remove(peer.Value);
+            _hostInboxQuota.Forget(peer); // w8/robust
+            _ackStall.Forget(peer.Value);
             // gameplay branch
             _rate.Forget(peer.Value);
             _requests.Forget(peer.Value);
@@ -801,6 +839,7 @@ namespace SkylineTogether.Sync
             double now = Perf.Now;
             // w2/ids: everything the previous frame sent is out: close its release frame
             if (IsHost) _ids.Ids.Seal(_acks.SealFrame(_epochSent), now);
+            if (IsHost) KickQueued();
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
@@ -842,6 +881,7 @@ namespace SkylineTogether.Sync
                 if (n > 0 && Perf.Elapsed(start) > allowance) break;
                 n++;
                 Inbound item = _inbox.Dequeue();
+                if (IsHost) _hostInboxQuota.Release(item.Peer, item.Data.Length);
                 try
                 {
                     if (IsHost)
@@ -926,6 +966,8 @@ namespace SkylineTogether.Sync
                 SafeCall("milestones", _milestonesCall); // gameplay branch
             }
             if (IsHost) UpdateQuarantine(now);
+            // w8/robust (client): the rolling audit of references the game follows unchecked (diagnostics only)
+            if (!IsHost && Features.Integrity.IsAvailable) _audit.Update(now);
             budget.EndFrame(Perf.Stop(Perf.Apply, start));
         }
 
@@ -985,6 +1027,35 @@ namespace SkylineTogether.Sync
                 _barrier = 0;
             }
             _ids.Ids.Update(_acks.MinAckedFrame, _barrier, now);
+            // w8/robust: a live peer that stopped applying (its replication feature switched off, its apply is stuck)
+            // pins the quarantine and only falls further behind: a rejoin with a fresh snapshot is its catch-up
+            // (live peers only: a joiner acknowledges nothing while it downloads and loads the city; checked once a second)
+            if (now - _lastAckStallCheck < 1.0) return;
+            _lastAckStallCheck = now;
+            _livePeerScratch.Clear();
+            foreach (PlayerInfo player in host.GetPlayers())
+            {
+                if (player.Id != PeerId.Host && player.State == PlayerState.Live) _livePeerScratch.Add(player.Id.Value);
+            }
+            foreach (byte stalled in _ackStall.Update(_livePeerScratch, _acks.AckedFrame, _acks.CurrentFrame, now))
+            {
+                var peer = new PeerId(stalled);
+                _kicks.Add((peer, peer + " has applied nothing for " + (int)AckStallSeconds + " s (" + (_acks.CurrentFrame - _acks.AckedFrame(stalled)) + " release frames behind)",
+                            "Your game stopped applying the host's updates. Join again to get a fresh copy of the city."));
+            }
+        }
+
+        /// <summary>w8/robust (host): drops the peers queued for removal (outside the transport callbacks).</summary>
+        private void KickQueued()
+        {
+            if (_kicks.Count == 0) return;
+            SessionHost host = _sessions.Host;
+            foreach ((PeerId peer, string log, string reason) in _kicks)
+            {
+                _log.Warn(LogCategory.Replication, log + "; removing it from the session");
+                host?.Kick(peer, reason);
+            }
+            _kicks.Clear();
         }
 
         private void ApplyFromHost(byte[] data)
@@ -2015,6 +2086,7 @@ namespace SkylineTogether.Sync
                 if (!host.TryGetLink(o.Peer, out PeerSendState link) || !link.Live) continue;
                 // polish: a re-send the request limit deferred is served once its bucket refilled
                 if (_requests.HasDeferred(o.Peer.Value) && _requests.TakeDeferred(o.Peer.Value, _sessions.Clock.Seconds, out bool routesOnly)) Resend(o.Peer, routesOnly);
+                if (o.ResendCursor > 0) AdvanceResend(o, now); // w8/robust
                 if (o.Queue.Count > 0 && Stopwatch.GetTimestamp() - start <= cpuBudget)
                 {
                     int bytes = LinkBudget.DeferredBytes(link.QueuedReliableBytes, link.PendingReliableBytes, link.SendRateBytesPerSecond, dt, _linkConfig);
@@ -2078,18 +2150,29 @@ namespace SkylineTogether.Sync
                 _log.Info(LogCategory.Replication, peer + ": re-sending " + n + " line entities (paced by its link)");
                 return;
             }
-            for (int id = 1; id < table.Length; id++)
+            // w8/robust: the whole table is walked over several frames (AdvanceResend), not in this one
+            if (o.ResendCursor == 0) _log.Info(LogCategory.Replication, peer + ": re-sending every entity (marked over the next frames, paced by its link)");
+            o.ResendCursor = 1;
+            o.ResendMarked = 0;
+        }
+
+        /// <summary>w8/robust: marks the next slice of a full re-send for <paramref name="o"/>.</summary>
+        private void AdvanceResend(PeerOut o, double now)
+        {
+            EntityManager em = _codec.EntityManager;
+            NativeArray<Entity> table = _ids.ReaderTable;
+            int end = Math.Min(table.Length, o.ResendCursor + ResendIdsPerFrame);
+            for (int id = o.ResendCursor; id < end; id++)
             {
                 Entity e = table[id];
                 if (e == Entity.Null) continue;
                 Family f = _ids.GetFamily((uint)id);
-                if (f == Family.Prefab) continue;
-                if (routesOnly ? !(f == Family.Route || f == Family.Waypoint || f == Family.Segment) : !FamilyClassifier.IsHostReplicated(f)) continue;
-                if (!em.Exists(e)) continue;
+                if (f == Family.Prefab || !FamilyClassifier.IsHostReplicated(f) || !em.Exists(e)) continue;
                 o.Queue.Mark((uint)id, DeferredClass.Upsert, now);
-                n++;
+                o.ResendMarked++;
             }
-            _log.Info(LogCategory.Replication, peer + ": re-sending " + n + (routesOnly ? " line entities" : " entities") + " (paced by its link)");
+            o.ResendCursor = end >= table.Length ? 0 : end;
+            if (o.ResendCursor == 0) _log.Info(LogCategory.Replication, o.Peer + ": full re-send marked " + o.ResendMarked + " entities");
         }
 
         /// <summary>

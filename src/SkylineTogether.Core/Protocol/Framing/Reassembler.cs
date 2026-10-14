@@ -10,7 +10,9 @@ namespace SkylineTogether.Core.Protocol
     /// duplicate, an inconsistent header or a size above the kind's limit is a protocol violation
     /// (<see cref="DecodeException"/>), after which the partial message is dropped. Fragments of up to
     /// <see cref="Limits.MaxPartialMessagesPerPeer"/> messages may interleave (messages sent from different threads);
-    /// a further concurrent message is rejected. Memory per peer is therefore bounded by four messages.
+    /// a further concurrent message is rejected. Memory per peer is therefore bounded by four messages; w8/robust: and by
+    /// the bytes actually received (a buffer grows with the fragments instead of being allocated at the declared total,
+    /// so a fragment that merely declares 8 MB costs nothing).
     /// <para>Not thread-safe: used on the network thread of its connection.</para>
     /// </summary>
     [ThreadAffinity(ThreadKind.Network)]
@@ -43,7 +45,8 @@ namespace SkylineTogether.Core.Protocol
         /// <see cref="EnvelopeCodec.Decode"/>. Throws <see cref="ArgumentException"/> for an envelope that is not a
         /// fragment and <see cref="DecodeException"/> for a malformed or out-of-order fragment.
         /// </summary>
-        public bool Accept(Envelope fragment, out byte[] message, out int length)
+        /// <remarks>w8/robust: <c>maxTotal</c> is a lower limit on the message's total length than the kind's own.</remarks>
+        public bool Accept(Envelope fragment, out byte[] message, out int length, int maxTotal = int.MaxValue)
         {
             message = null;
             length = 0;
@@ -65,7 +68,7 @@ namespace SkylineTogether.Core.Protocol
                                           + Limits.MaxFragmentsPerMessage.ToString(CultureInfo.InvariantCulture));
             }
             if (index >= count) throw new DecodeException(what + ": index " + WireFormat.Format(index) + " of " + WireFormat.Format(count));
-            long max = (long)Limits.MaxBodyBytes(fragment.Kind) + Limits.EnvelopeOverheadBytes;
+            long max = Math.Min((long)Limits.MaxBodyBytes(fragment.Kind), Math.Max(0L, maxTotal)) + Limits.EnvelopeOverheadBytes;
             if (total <= Limits.FragmentThreshold || total > max)
             {
                 throw new DecodeException(what + ": total length " + WireFormat.Format(total) + " outside "

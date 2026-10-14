@@ -45,6 +45,15 @@ namespace SkylineTogether.Sync
         public virtual bool CanProbe => false;
 
         /// <summary>
+        /// w8/robust: true when decoded values are checked for NaN, infinite and out-of-range floats before they are
+        /// written (<see cref="FloatSanity"/>); a value that fails throws a <see cref="DecodeException"/> and is not written.
+        /// </summary>
+        public virtual bool ChecksFloats => false;
+
+        /// <summary>w8/robust: the field offsets of a value type as Unity lays it out (for <see cref="FloatLayout"/>).</summary>
+        internal static int FieldOffset(System.Reflection.FieldInfo f) => Unity.Collections.LowLevel.Unsafe.UnsafeUtility.GetFieldOffset(f);
+
+        /// <summary>
         /// w3/agents: an order-insensitive hash of a reference list (reverse buffers, ARCH §4.2.4); false for every other
         /// type and when an element cannot be named on the other peer.
         /// </summary>
@@ -63,6 +72,15 @@ namespace SkylineTogether.Sync
 
     internal sealed class DataHandler<T> : TypeHandler where T : unmanaged, IComponentData, ISerializable
     {
+        // w8/robust: geometry values are checked before they are written (null: the type is not checked)
+        private static readonly FloatLayout Floats = FloatSanity.LayoutOf(typeof(T), FieldOffset);
+
+        public override bool ChecksFloats => Floats != null;
+
+        private void Check(in T value)
+        {
+            if (Floats != null && !Floats.IsSane(value)) throw new DecodeException(Name + ": NaN, infinite or out-of-range value refused");
+        }
         public override void Write(EntityManager em, Entity e, NetWriter w)
         {
             T value = em.GetComponentData<T>(e);
@@ -74,6 +92,7 @@ namespace SkylineTogether.Sync
             // deserialize over the current value: fields the save format does not carry keep their local value
             T value = em.GetComponentData<T>(e);
             value.Deserialize(r);
+            Check(value);
             // crashfix: a reference that did not resolve (unknown, destroyed or deleted here) would be written as a null
             // over a valid local reference; an existing entity keeps its value until a record that resolves arrives
             if (r.Unresolved && r.KeepOnUnresolved) return;
@@ -84,6 +103,7 @@ namespace SkylineTogether.Sync
         {
             T value = default(T);
             value.Deserialize(r);
+            Check(value);
         }
 
         public override bool CanProbe => true;
@@ -92,6 +112,12 @@ namespace SkylineTogether.Sync
     internal sealed class BufferHandler<T> : TypeHandler where T : unmanaged, IBufferElementData, ISerializable
     {
         private const int MaxElements = 1 << 20;
+
+        // w8/robust: area polygons are checked element by element; one bad element refuses the whole buffer (dropping a
+        // node would change the shape)
+        private static readonly FloatLayout Floats = FloatSanity.LayoutOf(typeof(T), FieldOffset);
+
+        public override bool ChecksFloats => Floats != null;
 
         public override void Write(EntityManager em, Entity e, NetWriter w)
         {
@@ -108,6 +134,8 @@ namespace SkylineTogether.Sync
         {
             r.Read(out int count);
             if (count < 0 || count > MaxElements) throw new DecodeException(Name + ": buffer of " + count + " elements");
+            // w8/robust: elements are at least one byte unless their format writes nothing (few, short buffers)
+            if (count > 4096 && count > r.Remaining) throw new DecodeException(Name + ": buffer of " + count + " elements in " + r.Remaining + " bytes");
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e);
             int old = buffer.Length;
             var elements = new T[count];
@@ -117,6 +145,7 @@ namespace SkylineTogether.Sync
             {
                 T element = i < old ? buffer[i] : default(T);
                 element.Deserialize(r);
+                if (Floats != null && !Floats.IsSane(element)) throw new DecodeException(Name + ": NaN, infinite or out-of-range element refused");
                 // crashfix: an element whose reference did not resolve is left out instead of pointing at nothing
                 // (ConnectedNode, AggregateElement, LayoutElement, ...: the game's jobs index such references unchecked)
                 if (r.TakeUnresolved())
@@ -131,6 +160,21 @@ namespace SkylineTogether.Sync
             buffer.ResizeUninitialized(kept);
             for (int i = 0; i < kept; i++) buffer[i] = elements[i];
         }
+
+        /// <summary>w8/robust: decodes the elements without writing them (spawn validation of checked geometry).</summary>
+        public override void Probe(NetReader r)
+        {
+            r.Read(out int count);
+            if (count < 0 || count > MaxElements || (count > 4096 && count > r.Remaining)) throw new DecodeException(Name + ": buffer of " + count + " elements");
+            for (int i = 0; i < count; i++)
+            {
+                T element = default(T);
+                element.Deserialize(r);
+                if (Floats != null && !Floats.IsSane(element)) throw new DecodeException(Name + ": NaN, infinite or out-of-range element refused");
+            }
+        }
+
+        public override bool CanProbe => Floats != null;
     }
 
     /// <summary>
@@ -150,6 +194,7 @@ namespace SkylineTogether.Sync
         {
             r.Read(out int count);
             if (count < 0 || count > 65536) throw new DecodeException("route with " + count + " waypoints");
+            if (count > r.Remaining / 4) throw new DecodeException("route with " + count + " waypoints" + " in " + r.Remaining + " bytes"); // w8/robust: 4 bytes per reference
             var items = new Entity[count];
             for (int i = 0; i < count; i++) r.Read(out items[i]);
             // crashfix: a line keeps its waypoint list while a waypoint is unknown here (a null element made route
@@ -177,6 +222,7 @@ namespace SkylineTogether.Sync
         {
             r.Read(out int count);
             if (count < 0 || count > 65536) throw new DecodeException("route with " + count + " segments");
+            if (count > r.Remaining / 4) throw new DecodeException("route with " + count + " segments" + " in " + r.Remaining + " bytes"); // w8/robust: 4 bytes per reference
             var items = new Entity[count];
             for (int i = 0; i < count; i++) r.Read(out items[i]);
             if (r.Unresolved && r.KeepOnUnresolved) return; // crashfix: see RouteWaypointsHandler
@@ -217,6 +263,7 @@ namespace SkylineTogether.Sync
         {
             r.Read(out int count);
             if (count < 0 || count > MaxElements) throw new DecodeException(Name + ": list of " + count + " entries");
+            if (count > r.Remaining / 4) throw new DecodeException(Name + ": list of " + count + " entries" + " in " + r.Remaining + " bytes"); // w8/robust: 4 bytes per reference
             var items = new Entity[count];
             for (int i = 0; i < count; i++) r.Read(out items[i]);
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e);

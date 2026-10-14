@@ -64,6 +64,11 @@ namespace SkylineTogether.Sync
         private readonly SessionManager _sessions;
         private readonly ILog _log;
         private readonly Queue<(PeerId Peer, byte[] Data)> _inbox = new Queue<(PeerId, byte[])>();
+        // w8/robust (host): what one peer may have waiting, and how many of its brush stamps are replayed per frame
+        private readonly InboundQuota _hostQuota = new InboundQuota(128, 16L << 20);
+        private const int MaxStampsPerPeerFrame = 512;
+        private readonly Dictionary<byte, (int Frame, int Count)> _stampBudget = new Dictionary<byte, (int, int)>();
+        private long _stampsRefused;
         private readonly List<GpuReadback<ushort>> _inflight = new List<GpuReadback<ushort>>();
         private readonly List<TerrainStamp> _outStamps = new List<TerrainStamp>();
         private readonly List<TerrainStamp> _stampScratch = new List<TerrainStamp>();
@@ -164,6 +169,12 @@ namespace SkylineTogether.Sync
             host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Terrain) return;
+                // w8/robust: a peer's waiting strokes and requests are bounded
+                if (!_hostQuota.TryAdmit(peer, e.BodyCount))
+                {
+                    if (_hostQuota.TakeOverflow(peer)) _log.Warn(LogCategory.Fields, peer + " sends terrain messages faster than they are applied; further ones are dropped (the tile audit repairs its view)");
+                    return;
+                }
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 _inbox.Enqueue((peer, copy));
@@ -172,6 +183,7 @@ namespace SkylineTogether.Sync
             {
                 _requests.Remove(peer.Value);
                 _requestBudget.Remove(peer.Value);
+                _hostQuota.Forget(peer); // w8/robust
             };
         }
 
@@ -181,6 +193,9 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.Terrain) return;
+                // w8/robust: with the feature off nothing drains the inbox (it grew for the rest of the session); the
+                // host's next keyframe or a rejoin (which re-arms the feature) brings the state back
+                if (!Diagnostics.Features.Terrain.IsAvailable) return;
                 // polish: a joiner still waiting for the city skips stroke replays (the snapshot or the host's settled
                 // tiles carry their result; a replay on top of the snapshot would apply a stroke twice)
                 if (client.State != ClientState.Live && !TerrainMessage.KeepBeforeLive(e.Body, e.BodyOffset, e.BodyCount))
@@ -280,6 +295,7 @@ namespace SkylineTogether.Sync
                 while (_inbox.Count > 0 && n++ < MaxMessagesPerFrame)
                 {
                     (PeerId peer, byte[] data) = _inbox.Dequeue();
+                    if (_sessions.Host != null) _hostQuota.Release(peer, data.Length);
                     try
                     {
                         Handle(peer, data, now);
@@ -469,13 +485,24 @@ namespace SkylineTogether.Sync
             _stampScratch.Clear();
             TerrainMessage.ReadStamps(r, _stampScratch);
             _forward.Clear();
+            int frame = UnityEngine.Time.frameCount;
+            _stampBudget.TryGetValue(peer.Value, out (int Frame, int Count) budget);
+            if (budget.Frame != frame) budget = (frame, 0);
             foreach (TerrainStamp s in _stampScratch)
             {
-                if (!s.IsPlausible(MaxStampSize)) continue;
+                // w8/robust: positions inside the map, opacity a fraction, bounded strength; a budget per peer and frame
+                // (each stamp is a GPU brush pass, re-broadcast to everyone)
+                if (!s.IsPlausible(MaxStampSize, TerrainStamp.MaxCoordinate, TerrainStamp.MaxStrength) || budget.Count >= MaxStampsPerPeerFrame)
+                {
+                    _stampsRefused++;
+                    continue;
+                }
+                budget.Count++;
                 if (!Replay(s, out Bounds2 area, out bool height)) continue;
                 if (height) MarkDirty(area, now);
                 _forward.Add(s);
             }
+            _stampBudget[peer.Value] = budget;
             if (_forward.Count == 0) return;
             _small.Reset();
             TerrainMessage.WriteStamps(_small, peer, _forward);
@@ -490,7 +517,7 @@ namespace SkylineTogether.Sync
             _remoteStampAt = Now;
             foreach (TerrainStamp s in _stampScratch)
             {
-                if (s.IsPlausible(MaxStampSize)) Replay(s, out _, out _);
+                if (s.IsPlausible(MaxStampSize, TerrainStamp.MaxCoordinate, TerrainStamp.MaxStrength)) Replay(s, out _, out _); // w8/robust: the same checks as the host
             }
         }
 
@@ -569,25 +596,32 @@ namespace SkylineTogether.Sync
             bool defer = now < _localStrokeUntil;
             bool any = false;
             Bounds2 union = default(Bounds2);
-            for (int i = 0; i < n; i++)
+            try
             {
-                int count = TerrainMessage.ReadTile(r, _grid, _tileBuffer, out TileId tile, out _);
-                int index = _grid.IndexOf(tile);
-                if (defer)
+                for (int i = 0; i < n; i++)
                 {
-                    var copy = new ushort[count];
-                    Array.Copy(_tileBuffer, copy, count);
-                    _deferred[index] = copy;
-                    continue;
+                    int count = TerrainMessage.ReadTile(r, _grid, _tileBuffer, out TileId tile, out _);
+                    int index = _grid.IndexOf(tile);
+                    if (defer)
+                    {
+                        var copy = new ushort[count];
+                        Array.Copy(_tileBuffer, copy, count);
+                        _deferred[index] = copy;
+                        continue;
+                    }
+                    _deferred.Remove(index); // superseded
+                    if (!Upload(tile, _tileBuffer, count)) return;
+                    Bounds2 b = TileBounds(tile);
+                    union = any ? union | b : b;
+                    any = true;
                 }
-                _deferred.Remove(index); // superseded
-                if (!Upload(tile, _tileBuffer, count)) return;
-                Bounds2 b = TileBounds(tile);
-                union = any ? union | b : b;
-                any = true;
+                TerrainMessage.EnsureEnd(r);
             }
-            TerrainMessage.EnsureEnd(r);
-            if (any) AfterHeightWrite(union);
+            finally
+            {
+                // w8/robust: tiles uploaded before a malformed one still get their water and min/max refresh
+                if (any) AfterHeightWrite(union);
+            }
         }
 
         private void FlushDeferred(double now)

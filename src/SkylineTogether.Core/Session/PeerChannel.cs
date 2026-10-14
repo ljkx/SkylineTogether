@@ -40,6 +40,13 @@ namespace SkylineTogether.Core.Session
 
         public PeerOutbox Outbox { get; }
 
+        /// <summary>
+        /// w8/robust: the largest message body this channel accepts, below each kind's own limit (int.MaxValue: the kind's
+        /// limit). The host lowers it for connections that have not been admitted: before admission only handshake
+        /// messages are expected, and a tiny compressed message must not make it decompress megabytes.
+        /// </summary>
+        public int MaxBodyBytes { get; set; } = int.MaxValue;
+
         /// <summary>Encodes and queues one message (reliable, ordered). False once the connection is closed.</summary>
         public bool Send(MessageKind kind, byte[] body, int offset, int count, Lane lane = Lane.Reliable)
         {
@@ -84,10 +91,11 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         public bool TryDecode(byte[] buffer, int offset, int count, out Envelope envelope)
         {
-            envelope = _codec.Decode(buffer, offset, count, _decodeScratch);
+            int max = MaxBodyBytes;
+            envelope = _codec.Decode(buffer, offset, count, _decodeScratch, max);
             if ((envelope.Flags & EnvelopeFlags.Fragment) == 0) return true;
-            if (!_reassembler.Accept(envelope, out byte[] message, out int length)) return false;
-            envelope = _codec.Decode(message, 0, length, _decodeScratch2);
+            if (!_reassembler.Accept(envelope, out byte[] message, out int length, max)) return false;
+            envelope = _codec.Decode(message, 0, length, _decodeScratch2, max);
             return true;
         }
 
