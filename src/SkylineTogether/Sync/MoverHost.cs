@@ -88,6 +88,10 @@ namespace SkylineTogether.Sync
         private readonly ILog _log;
         private readonly Dictionary<uint, HostMover> _movers = new Dictionary<uint, HostMover>();
         private readonly Dictionary<byte, PeerView> _peers = new Dictionary<byte, PeerView>();
+        // w8/robust: the views sampled this frame, and the sampling time budget per frame (ms)
+        private readonly List<PeerView> _views = new List<PeerView>(8);
+        private const double SampleBudgetMs = 2.0;
+        private long _sampleCarryOvers;
         private readonly SyncBatch.Writer _batch = new SyncBatch.Writer();
         private readonly List<uint> _refresh = new List<uint>();
         private readonly MotionFrame[] _four = new MotionFrame[4];
@@ -577,8 +581,26 @@ namespace SkylineTogether.Sync
                 EntityTypeHandle entityType = em.GetEntityTypeHandle();
                 ComponentTypeHandle<Transform> transformType = em.GetComponentTypeHandle<Transform>(true);
                 BufferTypeHandle<TransformFrame> frameType = em.GetBufferTypeHandle<TransformFrame>(true);
+                // w8/robust: views with a report, once per frame (not a dictionary walk per mover), and a time budget with
+                // carry-over: a tick not sampled this frame is sampled next frame (the frame ring keeps 4 x 16 ticks)
+                _views.Clear();
+                foreach (PeerView v in _peers.Values)
+                {
+                    if (v.HasReport) _views.Add(v);
+                }
+                long sampleStart = System.Diagnostics.Stopwatch.GetTimestamp();
                 while (_lastSampled != frame)
                 {
+                    if (_views.Count == 0)
+                    {
+                        _lastSampled = frame; // nobody watches: nothing to sample
+                        break;
+                    }
+                    if ((System.Diagnostics.Stopwatch.GetTimestamp() - sampleStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > SampleBudgetMs)
+                    {
+                        _sampleCarryOvers++;
+                        break;
+                    }
                     _lastSampled = unchecked(_lastSampled + 1);
                     try
                     {
@@ -618,9 +640,9 @@ namespace SkylineTogether.Sync
                             continue;
                         }
                         float3 p = transforms[i].m_Position;
-                        foreach (PeerView v in _peers.Values)
+                        for (int vi = 0; vi < _views.Count; vi++)
                         {
-                            if (!v.HasReport) continue;
+                            PeerView v = _views[vi];
                             bool inside = v.Members.Contains(id);
                             if (!v.Region.Contains(p.x, p.z, inside))
                             {

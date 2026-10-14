@@ -66,6 +66,34 @@ namespace SkylineTogether.Sync
             "Game.Objects.UnderConstruction",
         };
 
+        /// <summary>
+        /// w8/robust: watched types that sit on thousands of buildings in a big city (properties on the market, abandoned and
+        /// condemned buildings, construction sites) and change slowly: swept every 2 s instead of every 0.25 s (the sweep
+        /// walks every entity that has one; at four times a second that was a few ms per second of host time).
+        /// </summary>
+        public static readonly string[] SlowWatchedTypeNames =
+        {
+            "Game.Buildings.PropertyOnMarket",
+            "Game.Buildings.PropertyToBeOnMarket",
+            "Game.Buildings.Abandoned",
+            "Game.Buildings.Condemned",
+            "Game.Objects.UnderConstruction",
+        };
+
+        private const double SlowWatchInterval = 2.0;
+
+        /// <summary>w8/robust: one presence watch (a query, its interval and the ids it saw at its previous sweep).</summary>
+        private sealed class Watch
+        {
+            public EntityQuery Query;
+            public double Interval;
+            public double Last = double.NegativeInfinity;
+            public HashSet<uint> Seen = new HashSet<uint>();
+            public HashSet<uint> Now = new HashSet<uint>();
+        }
+
+        private readonly List<Watch> _watches = new List<Watch>();
+
         private readonly ILog _log;
         private readonly PresenceTracker _sent = new PresenceTracker();
         private readonly RollingIdPass _pass = new RollingIdPass();
@@ -73,8 +101,6 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<EntityArchetype, bool> _trees = new Dictionary<EntityArchetype, bool>();
         private ComponentType _treeType;
         private ComponentType _buildingType;
-        private HashSet<uint> _watchedLast = new HashSet<uint>();
-        private HashSet<uint> _watchedNow = new HashSet<uint>();
         private readonly HashSet<uint> _liked = new HashSet<uint>();
         private readonly HashSet<string> _once = new HashSet<string>();
         private readonly List<uint> _scratchIds = new List<uint>();
@@ -82,12 +108,10 @@ namespace SkylineTogether.Sync
         private EntityCodec _codec;
         private NetIdSystem _ids;
         private SimulationSystem _simulation;
-        private EntityQuery _watchQuery;
         private EntityQuery _batchesQuery;
         private EntityQuery _phenomena;
         private EntityQuery _chirps;
         private bool _hasWatchQuery;
-        private double _lastWatch = double.NegativeInfinity;
         private double _lastRefill = double.NegativeInfinity;
 
         public EventSync(ILog log)
@@ -119,6 +143,8 @@ namespace SkylineTogether.Sync
                 _treeType = ComponentType.ReadOnly<Game.Objects.Tree>();
                 _buildingType = ComponentType.ReadOnly<Game.Buildings.Building>();
                 var watched = new List<ComponentType>();
+                var slow = new List<ComponentType>();
+                var slowNames = new HashSet<string>(SlowWatchedTypeNames);
                 foreach (string name in WatchedTypeNames)
                 {
                     Type t = FamilyClassifier.FindType(name);
@@ -127,14 +153,13 @@ namespace SkylineTogether.Sync
                         _log.Debug(LogCategory.Replication, "presence watch: type not found: " + name);
                         continue;
                     }
-                    watched.Add(ComponentType.ReadOnly(t));
+                    (slowNames.Contains(name) ? slow : watched).Add(ComponentType.ReadOnly(t));
                 }
                 ComponentType[] none = { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>() };
-                if (watched.Count > 0)
-                {
-                    _watchQuery = em.CreateEntityQuery(new EntityQueryDesc { Any = watched.ToArray(), None = none });
-                    _hasWatchQuery = true;
-                }
+                _watches.Clear();
+                if (watched.Count > 0) _watches.Add(new Watch { Query = em.CreateEntityQuery(new EntityQueryDesc { Any = watched.ToArray(), None = none }), Interval = WatchInterval });
+                if (slow.Count > 0) _watches.Add(new Watch { Query = em.CreateEntityQuery(new EntityQueryDesc { Any = slow.ToArray(), None = none }), Interval = SlowWatchInterval });
+                _hasWatchQuery = _watches.Count > 0;
                 _batchesQuery = em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Game.Common.BatchesUpdated>() }, None = none });
                 _phenomena = em.CreateEntityQuery(new EntityQueryDesc
                 {
@@ -156,12 +181,15 @@ namespace SkylineTogether.Sync
         {
             _sent.Clear();
             _pass.Clear();
-            _watchedLast.Clear();
-            _watchedNow.Clear();
+            foreach (Watch w in _watches)
+            {
+                w.Seen.Clear();
+                w.Now.Clear();
+                w.Last = double.NegativeInfinity;
+            }
             _liked.Clear();
             _signatures.Clear();
             _trees.Clear();
-            _lastWatch = double.NegativeInfinity;
             _lastRefill = double.NegativeInfinity;
             PresenceResends = 0;
         }
@@ -201,21 +229,22 @@ namespace SkylineTogether.Sync
             // set is unchanged changed its growth stage (TreeGrowthSystem): its values are re-sent
             if (!_batchesQuery.IsEmptyIgnoreFilter) found += Sweep(em, _batchesQuery, into, null, values);
             // 2: the watched types every 0.25 s, plus the entities that had one of them at the previous sweep
-            if (_hasWatchQuery && now - _lastWatch >= WatchInterval)
+            foreach (Watch w in _watches)
             {
-                _lastWatch = now;
-                _watchedNow.Clear();
-                if (!_watchQuery.IsEmptyIgnoreFilter) found += Sweep(em, _watchQuery, into, _watchedNow, null);
-                foreach (uint id in _watchedLast)
+                if (now - w.Last < w.Interval) continue;
+                w.Last = now;
+                w.Now.Clear();
+                if (!w.Query.IsEmptyIgnoreFilter) found += Sweep(em, w.Query, into, w.Now, null);
+                foreach (uint id in w.Seen)
                 {
-                    if (_watchedNow.Contains(id)) continue;
+                    if (w.Now.Contains(id)) continue;
                     if (Check(em, id, into)) found++;
                 }
-                // perf pass: the sets swap roles (the copy cost an add per watched entity four times a second)
-                HashSet<uint> last = _watchedLast;
-                _watchedLast = _watchedNow;
-                _watchedNow = last;
-                _watchedNow.Clear();
+                // perf pass: the sets swap roles (the copy cost an add per watched entity at every sweep)
+                HashSet<uint> last = w.Seen;
+                w.Seen = w.Now;
+                w.Now = last;
+                w.Now.Clear();
             }
             // 3: everything else on a budgeted rolling pass
             if (!_pass.InProgress && now - _lastRefill >= RollingRefillSeconds)

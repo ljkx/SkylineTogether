@@ -94,7 +94,13 @@ namespace SkylineTogether.Sync
             public readonly CoalescingQueue Queue = new CoalescingQueue();
             public long SentRecords;
             public double LastFlush;
+            /// <summary>w8/robust: a full re-send in progress: the next id to mark (0: none) and the ids marked so far.</summary>
+            public int ResendCursor;
+            public int ResendMarked;
         }
+
+        /// <summary>w8/robust: ids a full re-send walks per frame (the whole table in one frame cost 30-60 ms in a big city).</summary>
+        private const int ResendIdsPerFrame = 20000;
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
@@ -2070,6 +2076,7 @@ namespace SkylineTogether.Sync
                 if (!host.TryGetLink(o.Peer, out PeerSendState link) || !link.Live) continue;
                 // polish: a re-send the request limit deferred is served once its bucket refilled
                 if (_requests.HasDeferred(o.Peer.Value) && _requests.TakeDeferred(o.Peer.Value, _sessions.Clock.Seconds, out bool routesOnly)) Resend(o.Peer, routesOnly);
+                if (o.ResendCursor > 0) AdvanceResend(o, now); // w8/robust
                 if (o.Queue.Count > 0 && Stopwatch.GetTimestamp() - start <= cpuBudget)
                 {
                     int bytes = LinkBudget.DeferredBytes(link.QueuedReliableBytes, link.PendingReliableBytes, link.SendRateBytesPerSecond, dt, _linkConfig);
@@ -2133,18 +2140,29 @@ namespace SkylineTogether.Sync
                 _log.Info(LogCategory.Replication, peer + ": re-sending " + n + " line entities (paced by its link)");
                 return;
             }
-            for (int id = 1; id < table.Length; id++)
+            // w8/robust: the whole table is walked over several frames (AdvanceResend), not in this one
+            if (o.ResendCursor == 0) _log.Info(LogCategory.Replication, peer + ": re-sending every entity (marked over the next frames, paced by its link)");
+            o.ResendCursor = 1;
+            o.ResendMarked = 0;
+        }
+
+        /// <summary>w8/robust: marks the next slice of a full re-send for <paramref name="o"/>.</summary>
+        private void AdvanceResend(PeerOut o, double now)
+        {
+            EntityManager em = _codec.EntityManager;
+            NativeArray<Entity> table = _ids.ReaderTable;
+            int end = Math.Min(table.Length, o.ResendCursor + ResendIdsPerFrame);
+            for (int id = o.ResendCursor; id < end; id++)
             {
                 Entity e = table[id];
                 if (e == Entity.Null) continue;
                 Family f = _ids.GetFamily((uint)id);
-                if (f == Family.Prefab) continue;
-                if (routesOnly ? !(f == Family.Route || f == Family.Waypoint || f == Family.Segment) : !FamilyClassifier.IsHostReplicated(f)) continue;
-                if (!em.Exists(e)) continue;
+                if (f == Family.Prefab || !FamilyClassifier.IsHostReplicated(f) || !em.Exists(e)) continue;
                 o.Queue.Mark((uint)id, DeferredClass.Upsert, now);
-                n++;
+                o.ResendMarked++;
             }
-            _log.Info(LogCategory.Replication, peer + ": re-sending " + n + (routesOnly ? " line entities" : " entities") + " (paced by its link)");
+            o.ResendCursor = end >= table.Length ? 0 : end;
+            if (o.ResendCursor == 0) _log.Info(LogCategory.Replication, o.Peer + ": full re-send marked " + o.ResendMarked + " entities");
         }
 
         /// <summary>

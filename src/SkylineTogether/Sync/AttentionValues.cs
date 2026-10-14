@@ -49,6 +49,10 @@ namespace SkylineTogether.Sync
         private const double ScanBudgetMs = 1.0;
         private const double HotShare = 0.6;
         private const double ViewInterval = 1.0;
+        // w8/robust: a camera that did not move re-queries its view every 10 s (the 1 s refresh re-walked thousands of
+        // cells per peer each second for nothing), and a view holds at most this many entities (the radius shrinks)
+        private const double IdleViewInterval = 10.0;
+        private const int MaxViewEntities = 4000;
         private const float MinRadius = 250f, MaxRadius = 2000f, RadiusPerZoom = 1.25f, TopicRadiusFactor = 1.5f;
         private const int BytesPerSecond = 24_000, BurstBytes = 48_000;
         private const long MaxBacklogBytes = 384 * 1024;
@@ -67,6 +71,8 @@ namespace SkylineTogether.Sync
             public AttentionTopic Topics;
             public double NextView;
             public float ViewX, ViewZ, ViewRadius;
+            /// <summary>w8/robust: shrinks the view radius while views come back larger than <see cref="MaxViewEntities"/>.</summary>
+            public float ViewScale = 1f;
             public readonly PeerByteBudget Budget = new PeerByteBudget(BytesPerSecond, BurstBytes, MaxBacklogBytes);
             public readonly HashSet<uint> View = new HashSet<uint>();
         }
@@ -315,10 +321,13 @@ namespace SkylineTogether.Sync
             }
         }
 
+        private readonly HashSet<uint> _hotScratch = new HashSet<uint>();
+
         private void RebuildHot()
         {
             _hotDirty = false;
-            var set = new HashSet<uint>();
+            HashSet<uint> set = _hotScratch; // w8/robust: reused, not allocated per rebuild
+            set.Clear();
             foreach (HostPeer p in _peers.Values)
             {
                 set.UnionWith(p.View);
@@ -434,15 +443,18 @@ namespace SkylineTogether.Sync
                 float zoom = r.Zoom > 0f ? r.Zoom : MinRadius;
                 float radius = Math.Max(MinRadius, Math.Min(MaxRadius, zoom * RadiusPerZoom));
                 if (p.Topics != AttentionTopic.None) radius = Math.Min(MaxRadius * TopicRadiusFactor, radius * TopicRadiusFactor);
+                radius = Math.Max(MinRadius, radius * p.ViewScale);
                 float dx = r.PivotX - p.ViewX, dz = r.PivotZ - p.ViewZ;
                 bool moved = dx * dx + dz * dz > p.ViewRadius * p.ViewRadius * 0.25f || Math.Abs(radius - p.ViewRadius) > p.ViewRadius * 0.25f;
                 if (now < p.NextView && !moved) continue;
-                p.NextView = now + ViewInterval;
+                p.NextView = now + (moved ? ViewInterval : IdleViewInterval);
                 p.ViewX = r.PivotX;
                 p.ViewZ = r.PivotZ;
                 p.ViewRadius = radius;
                 p.View.Clear();
                 _grid.Query(r.PivotX, r.PivotZ, radius, p.View);
+                if (p.View.Count > MaxViewEntities) p.ViewScale = Math.Max(0.25f, p.ViewScale * 0.8f);
+                else if (p.View.Count < MaxViewEntities / 2 && p.ViewScale < 1f) p.ViewScale = Math.Min(1f, p.ViewScale * 1.1f);
                 _planner.SetView(p.Peer, p.View);
                 _hotDirty = true;
             }

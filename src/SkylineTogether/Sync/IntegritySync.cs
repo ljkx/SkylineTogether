@@ -89,6 +89,8 @@ namespace SkylineTogether.Sync
             public readonly RateGate Resends = new RateGate(256, 512);
             public readonly RateGate Explains = new RateGate(8, 16);
             public readonly RateGate IconSyncs = new RateGate(0.1, 2);
+            /// <summary>w8/robust: bucket details of this peer waiting to be hashed.</summary>
+            public int PendingDetails;
         }
 
         // ---------------------------------------------------------------- client state
@@ -204,6 +206,8 @@ namespace SkylineTogether.Sync
             _cycleStart = -1;
             _cycleEntities = 0;
             _gates.Clear();
+            _pendingDetails.Clear(); // w8/robust
+            _detailWriters.Clear();
             _tracker.Clear();
             _scheduler.Clear();
             _pendingRepairs.Clear();
@@ -269,6 +273,14 @@ namespace SkylineTogether.Sync
         public void HostCapture(double now, SyncBatch.Writer batch, SyncBatch.Writer digests, int livePeers)
         {
             if (_codec == null) return;
+            try
+            {
+                ServePendingDetails(); // w8/robust
+            }
+            catch (Exception ex)
+            {
+                Diagnostics.Guard.Report(Diagnostics.Features.Integrity, "bucket details", ex);
+            }
             long icons = Diagnostics.Perf.Start();
             try
             {
@@ -410,22 +422,54 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>
+        /// w8/robust: bucket details are queued and hashed under a frame budget (<see cref="ServePendingDetails"/>): each
+        /// bucket serializes up to 128 entities, and a burst of requests hashed in one frame cost the host tens of ms.
+        /// </summary>
         private void ServeDetails(PeerId peer, uint[] buckets, PeerGates gates, double now)
         {
-            var w = new SyncBatch.Writer();
             foreach (uint bucket in buckets)
             {
-                if (!gates.Details.TryTake(now))
+                if (!gates.Details.TryTake(now) || gates.PendingDetails >= MaxPendingDetailsPerPeer)
                 {
                     _droppedRequests++;
                     continue;
                 }
+                gates.PendingDetails++;
+                _pendingDetails.Enqueue((peer, bucket));
+            }
+        }
+
+        private const int MaxPendingDetailsPerPeer = 64;
+        private const double DetailBudgetMs = 1.0;
+        private readonly Queue<(PeerId Peer, uint Bucket)> _pendingDetails = new Queue<(PeerId, uint)>();
+        private readonly Dictionary<byte, SyncBatch.Writer> _detailWriters = new Dictionary<byte, SyncBatch.Writer>();
+
+        /// <summary>w8/robust (host, every frame): hashes queued bucket details within the budget (at least one per frame).</summary>
+        private void ServePendingDetails()
+        {
+            if (_pendingDetails.Count == 0) return;
+            long start = System.Diagnostics.Stopwatch.GetTimestamp();
+            int served = 0;
+            while (_pendingDetails.Count > 0)
+            {
+                if (served > 0 && (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > DetailBudgetMs) break;
+                (PeerId peer, uint bucket) = _pendingDetails.Dequeue();
+                if (!_gates.TryGetValue(peer.Value, out PeerGates gates)) continue; // the peer left
+                gates.PendingDetails = Math.Max(0, gates.PendingDetails - 1);
                 HashBucket(bucket, _hostList);
+                if (!_detailWriters.TryGetValue(peer.Value, out SyncBatch.Writer w)) _detailWriters[peer.Value] = w = new SyncBatch.Writer();
                 w.EntityHashes(bucket, _hostList);
                 _servedDetails++;
+                served++;
                 TouchAgents(_hostList);
             }
-            if (!w.IsEmpty) Send(peer, w);
+            foreach (KeyValuePair<byte, SyncBatch.Writer> pair in _detailWriters)
+            {
+                if (pair.Value.IsEmpty) continue;
+                Send(new PeerId(pair.Key), pair.Value);
+                pair.Value.Reset();
+            }
         }
 
         /// <summary>
