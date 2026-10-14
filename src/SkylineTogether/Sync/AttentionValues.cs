@@ -683,8 +683,8 @@ namespace SkylineTogether.Sync
                     {
                         if (data.Length > 1 && data[0] == SimValueMessage.Version && data[1] == SimValueMessage.TypeSample)
                         {
-                            List<SyncRecord> header = SimValueMessage.Read(data, 0, data.Length, out _, out uint tick, out _);
-                            if (header.Count > 0) _samples.Enqueue(tick, Now, data);
+                            SimValueMessage.ReadSampleHeader(data, 0, data.Length, out uint tick, out uint entities); // w9/perf: decoded once, when applied
+                            if (entities > 0) _samples.Enqueue(tick, Now, data);
                             continue;
                         }
                         Apply(data, out _);
@@ -726,12 +726,15 @@ namespace SkylineTogether.Sync
             }
         }
 
+        private readonly ApplyResult _applyResult = new ApplyResult();
+
         /// <summary>Writes one message; returns the sample's selected net id (0 for a values message).</summary>
         private uint Apply(byte[] data, out bool isSample)
         {
             List<SyncRecord> records = SimValueMessage.Read(data, 0, data.Length, out byte type, out _, out uint selected);
             isSample = type == SimValueMessage.TypeSample;
-            var result = new ApplyResult();
+            ApplyResult result = _applyResult; // w9/perf: reused (was a result with four collections per message)
+            result.Reset();
             _codec.ApplySimValues(data, 0, data.Length, records, result);
             if (result.Problems.Count > 0) _log.Debug(LogCategory.Replication, "simulation values: " + string.Join("; ", result.Problems));
             return isSample ? selected : 0;

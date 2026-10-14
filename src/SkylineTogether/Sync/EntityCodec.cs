@@ -786,7 +786,8 @@ namespace SkylineTogether.Sync
                 if (c.Kind != SyncComponentKind.Data) return "an asset the other player does not have";
                 try
                 {
-                    var keys = new ByteReader(c.Data, c.Offset, c.Count);
+                    ByteReader keys = _keyReader; // w9/perf: reused (was one reader per record)
+                    keys.Reset(c.Data, c.Offset, c.Count);
                     if (keys.ReadVarUInt32() != 0) return null;
                     _position.Value = c.Offset - batchOffset + keys.Position;
                     if (_position.Value < 0 || _position.Value + 4 > c.Offset - batchOffset + c.Count) return null; // malformed, the normal read reports it

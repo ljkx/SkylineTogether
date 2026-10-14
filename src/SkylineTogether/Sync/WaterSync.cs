@@ -49,6 +49,15 @@ namespace SkylineTogether.Sync
         private readonly ILog _log;
         private readonly Queue<byte[]> _inbox = new Queue<byte[]>();
         private readonly List<(double Due, int Tile)> _hot = new List<(double, int)>();
+
+        private bool HasHot(int tile, double due)
+        {
+            for (int i = 0; i < _hot.Count; i++)
+            {
+                if (_hot[i].Tile == tile && Math.Abs(_hot[i].Due - due) < 2.0) return true;
+            }
+            return false;
+        }
         private readonly HashSet<string> _warned = new HashSet<string>();
         private readonly ByteWriter _writer = new ByteWriter(1 << 16);
 
@@ -216,7 +225,7 @@ namespace SkylineTogether.Sync
                     {
                         double due = now + delay;
                         // a source that is tagged every frame must not flood the schedule: one entry per tile and delay
-                        if (_hot.Exists(h => h.Tile == index && Math.Abs(h.Due - due) < 2.0)) continue;
+                        if (HasHot(index, due)) continue; // w9/perf: a loop, not a closure per tile and delay
                         _hot.Add((due, index));
                     }
                 }
@@ -283,7 +292,10 @@ namespace SkylineTogether.Sync
             if (best >= 0)
             {
                 int tile = _hot[best].Tile;
-                _hot.RemoveAll(h => h.Tile == tile && h.Due <= now);
+                for (int i = _hot.Count - 1; i >= 0; i--) // w9/perf: no closure per sample
+                {
+                    if (_hot[i].Tile == tile && _hot[i].Due <= now) _hot.RemoveAt(i);
+                }
                 forced = true;
                 return tile;
             }

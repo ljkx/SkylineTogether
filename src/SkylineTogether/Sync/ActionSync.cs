@@ -105,6 +105,7 @@ namespace SkylineTogether.Sync
         private readonly Found _foundSelection;
         private readonly Action<Entity, ActionIntent> _foundWrite;
         private readonly Action _watchSelectionCall, _watchMeshCall, _watchRoutesCall;
+        private Action _detectDevTree, _detectMapTiles, _milestonesCall; // w9/perf
         private HashSet<Entity> _watchWrote; // the entities not to report this pass (host: proposals; client: host data)
         private bool _watchForHost;
 
@@ -223,8 +224,8 @@ namespace SkylineTogether.Sync
         {
             if (!Attached) return;
             _injectedUnlocks.Clear();
-            Guard("dev tree", DetectDevTree);
-            Guard("map tiles", DetectMapTiles);
+            Guard("dev tree", _detectDevTree ?? (_detectDevTree = DetectDevTree)); // w9/perf: cached delegates
+            Guard("map tiles", _detectMapTiles ?? (_detectMapTiles = DetectMapTiles));
         }
 
         private void DetectDevTree()
@@ -288,7 +289,7 @@ namespace SkylineTogether.Sync
         public void AfterApply()
         {
             if (!Attached) return;
-            Guard("milestones", Milestones);
+            Guard("milestones", _milestonesCall ?? (_milestonesCall = Milestones));
         }
 
         private void Milestones()

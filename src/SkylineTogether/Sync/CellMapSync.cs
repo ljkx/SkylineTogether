@@ -49,6 +49,7 @@ namespace SkylineTogether.Sync
         private const long MaxBacklogBytes = 256 * 1024;
         private const int MaxMessageBytes = 32 * 1024;
         private const int MaxInboxPerFrame = 16;
+        private const int MaxScanStalls = 8;
 
         private abstract class Channel
         {
@@ -79,6 +80,12 @@ namespace SkylineTogether.Sync
 
             public abstract bool TryGetLayout(out int width, out int height, out int cellBytes);
 
+            /// <summary>w9/perf: a job still writes the map (reading it now would stall the main thread).</summary>
+            public abstract bool WritersRunning();
+
+            /// <summary>w9/perf: frames a due scan waited for the map's writers.</summary>
+            public int ScanStalls;
+
             /// <summary>Copies the whole map into <paramref name="dst"/> after completing its writers.</summary>
             public abstract void CopyOut(byte[] dst);
 
@@ -97,6 +104,12 @@ namespace SkylineTogether.Sync
                 height = data.m_TextureSize.y;
                 cellBytes = UnsafeUtility.SizeOf<TCell>();
                 return data.m_Buffer.IsCreated && width > 0 && height > 0 && data.m_Buffer.Length == width * height;
+            }
+
+            public override bool WritersRunning()
+            {
+                System.GetMap(true, out JobHandle deps);
+                return !deps.IsCompleted;
             }
 
             public override void CopyOut(byte[] dst)
@@ -675,16 +688,41 @@ namespace SkylineTogether.Sync
             // painted maps first, then at most one due map per frame (each map about every ScanInterval)
             foreach (Channel c in _channels)
             {
-                if (c.Hot) ScanChannel(c, now);
+                if (c.Hot && !Stalled(c)) ScanChannel(c, now);
             }
             for (int i = 0; i < _channels.Count; i++)
             {
                 Channel c = _channels[(_scanIndex + i) % _channels.Count];
                 if (now < c.NextScan) continue;
+                if (Stalled(c)) break; // w9/perf: next frame, once the writers finished
                 _scanIndex = (_scanIndex + i + 1) % _channels.Count;
                 ScanChannel(c, now);
                 break;
             }
+        }
+
+        /// <summary>
+        /// w9/perf: true while a job still writes the map and the scan has waited fewer than <see cref="MaxScanStalls"/>
+        /// frames (the scan then copies the map without completing the simulation's jobs on the main thread).
+        /// </summary>
+        private static bool Stalled(Channel c)
+        {
+            bool running;
+            try
+            {
+                running = c.Layout != null && c.WritersRunning();
+            }
+            catch (Exception)
+            {
+                running = false;
+            }
+            if (running && c.ScanStalls < MaxScanStalls)
+            {
+                c.ScanStalls++;
+                return true;
+            }
+            c.ScanStalls = 0;
+            return false;
         }
 
         /// <summary>Copies one map and hashes its tiles; false when the map is unusable.</summary>

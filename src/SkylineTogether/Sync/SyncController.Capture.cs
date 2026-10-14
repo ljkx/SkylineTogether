@@ -56,9 +56,9 @@ namespace SkylineTogether.Sync
             if (_codec == null || (!IsLiveClient && !IsHost) || !Features.Replication.IsAvailable) return;
             EntityManager em = _codec.EntityManager;
             _toolApplied = true;
-            using (EntityQuery temps = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Tools.Temp>()))
+            if (_temps == default) _temps = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Tools.Temp>()); // w9/perf: cached
             {
-                NativeArray<Game.Tools.Temp> values = temps.ToComponentDataArray<Game.Tools.Temp>(Allocator.Temp);
+                NativeArray<Game.Tools.Temp> values = _temps.ToComponentDataArray<Game.Tools.Temp>(Allocator.Temp);
                 try
                 {
                     foreach (Game.Tools.Temp t in values)

@@ -270,15 +270,18 @@ namespace SkylineTogether.Sync
             return n;
         }
 
+        private readonly List<Entity> _valuesWritten = new List<Entity>();
+
         /// <summary>
         /// Client: writes decoded agent value records (<c>MessageKind.AgentValues</c>) into the bound entities,
         /// without tags. Only simulation-value types are written (never prefab, owner or seed; never movers). Ids whose
         /// values held a reference that did not resolve yet are added to <paramref name="unresolved"/>. Returns the
-        /// entities written.
+        /// entities written (a list reused by the next call).
         /// </summary>
         public List<Entity> ApplyAgentValues(byte[] data, int offset, int count, List<SyncRecord> records, ApplyResult result, List<uint> unresolved)
         {
-            var written = new List<Entity>();
+            List<Entity> written = _valuesWritten; // w9/perf: reused, valid until the next call (was a list per message)
+            written.Clear();
             if (records == null || records.Count == 0) return written;
             LoadBatch(data, offset, count);
             EntityManager em = EntityManager;
@@ -314,7 +317,8 @@ namespace SkylineTogether.Sync
         /// </summary>
         public List<Entity> ApplySimValues(byte[] data, int offset, int count, List<SyncRecord> records, ApplyResult result)
         {
-            var written = new List<Entity>();
+            List<Entity> written = _valuesWritten; // w9/perf: reused, valid until the next call (was a list per message)
+            written.Clear();
             if (records == null || records.Count == 0) return written;
             LoadBatch(data, offset, count);
             EntityManager em = EntityManager;

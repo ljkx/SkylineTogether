@@ -109,6 +109,34 @@ namespace SkylineTogether.Core.Sync
         /// unchanged while the records are used; the records have kind <see cref="SyncRecordKind.Values"/>. Throws
         /// <see cref="DecodeException"/> on malformed input.
         /// </summary>
+        /// <summary>
+        /// w9/perf: the header of an inspection sample (its tick and entity count) without decoding the entities (the
+        /// sample is queued until its tick and decoded once, when applied). Throws <see cref="DecodeException"/> for a
+        /// malformed header or another message type.
+        /// </summary>
+        public static void ReadSampleHeader(byte[] buffer, int offset, int count, out uint sampleTick, out uint entities)
+        {
+            var r = new ByteReader(buffer, offset, count);
+            try
+            {
+                byte version = r.ReadByte();
+                if (version != Version) throw new DecodeException(What + " version " + version.ToString(CultureInfo.InvariantCulture) + " (expected " + Version + ")");
+                if (r.ReadByte() != TypeSample) throw new DecodeException(What + ": not a sample");
+                sampleTick = r.ReadUInt32();
+                r.ReadVarUInt32();
+                entities = r.ReadUInt32();
+                if (entities > MaxEntities || entities > (uint)(r.Remaining / 4)) throw new DecodeException(What + " with " + entities + " entities");
+            }
+            catch (DecodeException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is IndexOutOfRangeException || ex is InvalidOperationException)
+            {
+                throw new DecodeException("malformed " + What + ": " + ex.Message);
+            }
+        }
+
         public static List<SyncRecord> Read(byte[] buffer, int offset, int count, out byte type, out uint sampleTick, out uint selectedNetId)
         {
             var r = new ByteReader(buffer, offset, count);

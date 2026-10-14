@@ -76,7 +76,7 @@ namespace SkylineTogether.Compat
                 PeerBudgets.Clear();
                 host.AppMessage += (peer, e) =>
                 {
-                    if (e.Kind == MessageKind.ModChannel) Guard.Run(Features.Mods, "mod channel receive", () => OnHostMessage(peer, e));
+                    if (e.Kind == MessageKind.ModChannel) HostReceive(peer, e); // w9/perf: no closure for the other kinds
                 };
                 host.PeerLeft += peer => PeerBudgets.Remove(peer.Value);
                 Started(true);
@@ -86,12 +86,16 @@ namespace SkylineTogether.Compat
                 Discover();
                 client.AppMessage += e =>
                 {
-                    if (e.Kind == MessageKind.ModChannel) Guard.Run(Features.Mods, "mod channel receive", () => OnClientMessage(e));
+                    if (e.Kind == MessageKind.ModChannel) ClientReceive(e);
                 };
                 client.BecameLive += () => Guard.Run(Features.Mods, "mod integration session start", () => Started(false));
             });
             sessions.SessionEnded += () => Guard.Run(Features.Mods, "mod integration session end", Ended);
         }
+
+        private static void HostReceive(PeerId peer, Envelope e) => Guard.Run(Features.Mods, "mod channel receive", () => OnHostMessage(peer, e));
+
+        private static void ClientReceive(Envelope e) => Guard.Run(Features.Mods, "mod channel receive", () => OnClientMessage(e));
 
         /// <summary>Session driver, every frame: binds the integration classes once the game has loaded every mod.</summary>
         public static void Tick()

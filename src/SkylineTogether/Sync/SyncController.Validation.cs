@@ -288,6 +288,8 @@ namespace SkylineTogether.Sync
             }
         }
 
+        private EntityQuery _temps;
+
         private long _proposalMaxRefund;
         private EntityQuery _economyParameters;
 

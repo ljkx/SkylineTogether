@@ -54,6 +54,7 @@ namespace SkylineTogether.Sync
     {
         private const double PassInterval = 1.0;
         private const double ScanBudgetMs = 0.75;
+        private const int MaxStallFrames = 4;
         private const int BytesPerSecond = 16_000, BurstBytes = 48_000;
         private const long MaxBacklogBytes = 256 * 1024;
         private const int MaxMessageBytes = 32 * 1024;
@@ -101,6 +102,7 @@ namespace SkylineTogether.Sync
             public Dictionary<FlowKey, Entity> ScanIndex = new Dictionary<FlowKey, Entity>(), Index = new Dictionary<FlowKey, Entity>();
             public Stage Stage;
             public int Cursor;
+            public int StallFrames; // w9/perf: frames the pass waited for the flow jobs instead of completing them
             public double NextPass;
             public Entity Source, Sink;
             public int Passes;
@@ -230,14 +232,22 @@ namespace SkylineTogether.Sync
             Reset();
             client.AppMessage += e =>
             {
-                if (e.Kind != MessageKind.FlowStatus) return;
-                Guard.Run(Features.FlowStatus, "flow status receive", () =>
-                {
-                    var copy = new byte[e.BodyCount];
-                    Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
-                    _inbox.Enqueue(copy);
-                });
+                if (e.Kind == MessageKind.FlowStatus) Receive(e); // w9/perf: no closure for the other kinds
             };
+        }
+
+        private void Receive(Core.Protocol.Envelope e)
+        {
+            try
+            {
+                var copy = new byte[e.BodyCount];
+                Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
+                _inbox.Enqueue(copy);
+            }
+            catch (Exception ex)
+            {
+                Guard.Report(Features.FlowStatus, "flow status receive", ex);
+            }
         }
 
         private void Reset()
@@ -401,6 +411,14 @@ namespace SkylineTogether.Sync
             while (g.Stage != Stage.Idle && _watch.Elapsed.TotalMilliseconds < budgetMs)
             {
                 EntityQuery query = QueryOf(g);
+                // w9/perf: the pass resumes next frame rather than stalling the main thread on running flow jobs (at
+                // most a few frames, then it completes them as before)
+                if (!query.GetDependency().IsCompleted && g.StallFrames < MaxStallFrames)
+                {
+                    g.StallFrames++;
+                    return false;
+                }
+                g.StallFrames = 0;
                 query.CompleteDependency();
                 NativeArray<ArchetypeChunk> chunks = query.ToArchetypeChunkArray(Allocator.Temp);
                 try

@@ -40,8 +40,10 @@ namespace SkylineTogether.Session
             {
                 Guard.Report(Features.Ui, "UI probe", ex);
             }
-            Guard.Run(Features.Mods, "mod integration", Compat.ModIntegration.Tick); // binds other mods once they are loaded
+            Guard.Run(Features.Mods, "mod integration", ModTick); // binds other mods once they are loaded
         }
+
+        private static readonly Action ModTick = Compat.ModIntegration.Tick; // w9/perf: cached (was a delegate per frame)
 
         private void OnApplicationQuit()
         {
