@@ -70,6 +70,8 @@ namespace SkylineTogether.Sync
 
         // client: last converged state
         private bool _primed;
+        /// <summary>Client: this frame's local edits were taken before a host write (<see cref="BeforeHostWrite"/>).</summary>
+        private bool _detectedThisFrame;
         private int[] _taxBase = Array.Empty<int>();
         private readonly Dictionary<uint, int> _budgetBase = new Dictionary<uint, int>();
         private readonly Dictionary<uint, float> _feeBase = new Dictionary<uint, float>();
@@ -618,6 +620,7 @@ namespace SkylineTogether.Sync
             // are recognised by their first record kind (offset 5: after the version byte and the record count) and
             // not decoded a further time
             if (data == null || SyncBatch.FirstRecordKind(data, 0, data.Length) != (byte)SyncRecordKind.Global) return;
+            if (!asHost) BeforeHostWrite(); // the player's edits are taken before the host's state overwrites them
             foreach (SyncRecord r in SyncBatch.Read(data, 0, data.Length, _decodePool))
             {
                 if (r.Kind != SyncRecordKind.Global || r.Payload == null) continue;
@@ -795,28 +798,46 @@ namespace SkylineTogether.Sync
 
         // ================================================================== client
 
-        /// <summary>Client, frame start (before any host data is applied): detects local edits first, so no apply can
-        /// overwrite an edit that was not proposed yet.</summary>
+        /// <summary>
+        /// Client, frame start (before any host data is applied). Local edits made since the last capture must be taken
+        /// before host data can overwrite them, but most frames write none of the state they cover: they are taken at the
+        /// first host write of the frame instead (<see cref="BeforeHostWrite"/>), and a frame without one reads the state
+        /// once, at the capture (was three full reads per frame: here, after the apply and at the capture).
+        /// </summary>
         public void BeforeApply()
         {
             if (!Attached) return;
+            _detectedThisFrame = false;
             if (!_primed)
             {
                 Rebaseline();
                 _primed = true;
-                return;
             }
+        }
+
+        /// <summary>
+        /// Client: host data that may change taxes, budgets, fees, the loan, names, the city name or the followed citizens
+        /// is about to be written (a global channel, a City or budget singleton record, an agent's structure, a spawn or
+        /// despawn, a released edit hold). The player's edits since the last capture are taken first, once per frame, and
+        /// the converged state becomes the new baseline after the apply.
+        /// </summary>
+        public void BeforeHostWrite()
+        {
+            if (!Attached || !_primed || _detectedThisFrame) return;
+            _detectedThisFrame = true;
             DetectLocal(Now);
         }
 
         /// <summary>Client, after the frame's host data was applied: releases expired holds, re-asserts predicted fees
-        /// (the City value scan may carry pre-change fees) and takes the converged state as the new baseline.</summary>
+        /// (the City value scan may carry pre-change fees) and, when the host wrote anything, takes the converged state as
+        /// the new baseline.</summary>
         public void AfterApply()
         {
             if (!Attached || !_primed) return;
             double now = Now;
             _released.Clear();
             _hold.TakeReleased(now, _released);
+            if (_released.Count > 0) BeforeHostWrite();
             foreach (KeyValuePair<uint, byte[]> r in _released)
             {
                 try
@@ -830,7 +851,8 @@ namespace SkylineTogether.Sync
             }
             if (_hold.IsHeld(GlobalChannel.Fee, now)) ReassertFees();
             else _feePredicted.Clear();
-            Rebaseline();
+            // without a host write the state is the last baseline plus the player's edits, which the capture takes
+            if (_detectedThisFrame) Rebaseline();
             PanelsAfterApply(); // chirp names
         }
 

@@ -106,6 +106,7 @@ namespace SkylineTogether.Sync
                         Guard.Report(Features.GlobalState, "global state (before apply)", ex);
                     }
                 }
+                if (_holds.Count > 0 && Features.GlobalState.IsAvailable) GlobalBeforeHostWrite(); // a released hold applies host records
                 SafeCall("edit holds", _editHoldsCall); // mod compatibility
                 if (Features.Events.IsAvailable)
                 {
@@ -315,6 +316,7 @@ namespace SkylineTogether.Sync
         private void ApplyFromHost(byte[] data)
         {
             List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length, _decodePool); // decoded once for every consumer (pooled records)
+            if (Features.GlobalState.IsAvailable && MayWriteGlobalState(records)) GlobalBeforeHostWrite();
             // ids this player deleted locally wait for the host's despawn; a rejected proposal releases its ids
             // (the rollback in the same message recreates them)
             if (_localDeletes.Count > 0) UpdateLocalDeletes(records);
@@ -367,6 +369,41 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Integrity, "integrity (host batch)", ex);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Client: records that may change state the global channels compare with their baseline (fees and loan on the City,
+        /// budgets on their singleton, followed citizens, names and the ids they are keyed by).
+        /// </summary>
+        private static bool MayWriteGlobalState(List<SyncRecord> records)
+        {
+            for (int i = 0; i < records.Count; i++)
+            {
+                SyncRecord r = records[i];
+                switch (r.Kind)
+                {
+                    case SyncRecordKind.Spawn:
+                    case SyncRecordKind.Despawn:
+                        return true;
+                    case SyncRecordKind.Upsert:
+                    case SyncRecordKind.Values:
+                        if (r.Family == Family.Singleton || r.Family == Family.Agent) return true;
+                        break;
+                }
+            }
+            return false;
+        }
+
+        private void GlobalBeforeHostWrite()
+        {
+            try
+            {
+                _global.BeforeHostWrite();
+            }
+            catch (Exception ex)
+            {
+                Guard.Report(Features.GlobalState, "global state (before a host write)", ex);
             }
         }
 
