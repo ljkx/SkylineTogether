@@ -347,7 +347,7 @@ namespace SkylineTogether.Sync
             foreach (Entity e in _touched)
             {
                 if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                if (em.HasBuffer<Game.Events.TargetElement>(e)) DropNullTargets(em.GetBuffer<Game.Events.TargetElement>(e));
+                if (em.HasBuffer<Game.Events.TargetElement>(e)) DropNullTargets(em, em.GetBuffer<Game.Events.TargetElement>(e));
                 if (em.HasComponent<Game.Triggers.Chirp>(e)) RestoreLike(em, e);
                 // a tree's growth stage arrived as values (no tag): its mesh is chosen again, as on the host
                 if (em.HasComponent<Game.Objects.Tree>(e) && !em.HasComponent<Game.Buildings.Building>(e) && !em.HasComponent<Game.Common.BatchesUpdated>(e)
@@ -398,11 +398,16 @@ namespace SkylineTogether.Sync
             em.SetComponentData(e, chirp);
         }
 
-        private static void DropNullTargets(DynamicBuffer<Game.Events.TargetElement> targets)
+        /// <summary>
+        /// Drops targets that resolve to nothing; w8/robust: also targets that are destroyed or being deleted here (the
+        /// event systems index a target's components from the list).
+        /// </summary>
+        private static void DropNullTargets(EntityManager em, DynamicBuffer<Game.Events.TargetElement> targets)
         {
             for (int i = targets.Length - 1; i >= 0; i--)
             {
-                if (targets[i].m_Entity == Entity.Null) targets.RemoveAt(i);
+                Entity t = targets[i].m_Entity;
+                if (t == Entity.Null || !em.Exists(t) || em.HasComponent<Game.Common.Deleted>(t)) targets.RemoveAt(i);
             }
         }
 
@@ -421,6 +426,8 @@ namespace SkylineTogether.Sync
                 foreach (Entity e in entities)
                 {
                     Game.Events.WeatherPhenomenon w = em.GetComponentData<Game.Events.WeatherPhenomenon>(e);
+                    // w8/robust: a non-finite hotspot would feed the interpolation and rendering of the phenomenon
+                    if (!math.all(math.isfinite(w.m_HotspotPosition)) || !math.all(math.isfinite(w.m_HotspotVelocity))) continue;
                     DynamicBuffer<Game.Events.HotspotFrame> frames = em.GetBuffer<Game.Events.HotspotFrame>(e);
                     if (frames.Length != 4)
                     {

@@ -19,6 +19,13 @@ namespace SkylineTogether.Core.Session
         public double DownloadStallTimeoutSeconds = 120;
         /// <summary>Longest wait for the host's "live" after the city loaded.</summary>
         public double LiveWaitTimeoutSeconds = 120;
+        /// <summary>
+        /// w8/robust: a live session in which nothing at all arrives from the host for this long ends (the host pings every
+        /// second): its game froze or is gone while the connection itself stays up. The player is offered a rejoin.
+        /// </summary>
+        public double LiveSilenceTimeoutSeconds = 120;
+        /// <summary>w8/robust: the longest the local load of the host's city may take before the join is abandoned.</summary>
+        public double LoadTimeoutSeconds = 1200;
     }
 
 
@@ -107,6 +114,8 @@ namespace SkylineTogether.Core.Session
         private float _loadProgress;
         private double _lastChunkAt;
         private double _loadedAt = -1;
+        // w8/robust: when anything last arrived from the host (live silence watchdog)
+        private double _lastHeard;
         private bool _disposed;
         private Action<Envelope> _appMessage;
 
@@ -299,6 +308,17 @@ namespace SkylineTogether.Core.Session
                 End("The city download stalled (nothing received for " + (int)_options.DownloadStallTimeoutSeconds + " s). Try joining again.", ClientEndKind.Timeout);
                 return;
             }
+            if (State == ClientState.Loading && _loadedAt < 0 && _options.LoadTimeoutSeconds > 0 && now - _stateSince > _options.LoadTimeoutSeconds)
+            {
+                End("Loading the host's city did not finish in " + (int)(_options.LoadTimeoutSeconds / 60) + " minutes. Try joining again.", ClientEndKind.Timeout);
+                return;
+            }
+            if (State == ClientState.Live && _options.LiveSilenceTimeoutSeconds > 0 && now - _lastHeard > _options.LiveSilenceTimeoutSeconds)
+            {
+                // w8/robust: the transport polled first, so anything that was waiting for this side counted already
+                End("The host stopped responding (nothing received for " + (int)(now - _lastHeard) + " s). Their game may be frozen or closed.", ClientEndKind.Timeout);
+                return;
+            }
             if (State == ClientState.Loading && _loadedAt >= 0 && now - _loadedAt > _options.LiveWaitTimeoutSeconds)
             {
                 End("The host did not confirm the join after the city loaded. Try joining again.", ClientEndKind.Timeout);
@@ -419,6 +439,7 @@ namespace SkylineTogether.Core.Session
         void ITransportEventSink.OnMessage(IConnection connection, Lane lane, byte[] buffer, int offset, int count)
         {
             if (connection != _connection || _channel == null || State == ClientState.Ended) return;
+            _lastHeard = _clock.Seconds;
             try
             {
                 if (!_channel.TryDecode(buffer, offset, count, out Envelope e)) return;
@@ -770,6 +791,7 @@ namespace SkylineTogether.Core.Session
 
         private void SetState(ClientState state)
         {
+            if (state == ClientState.Live) _lastHeard = _clock.Seconds; // w8/robust: the silence watchdog starts at live
             if (State == state) return;
             State = state;
             _stateSince = _clock.Seconds;

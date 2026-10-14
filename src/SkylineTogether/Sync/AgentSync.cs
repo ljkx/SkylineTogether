@@ -278,6 +278,13 @@ namespace SkylineTogether.Sync
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.AgentValues) return;
+                // w8/robust: with the agents feature off nothing drains the inbox; agent values are refreshed by the host's
+                // rolling scan, so dropping them while off loses nothing a rejoin or the integrity check does not restore
+                if (!Features.Agents.IsAvailable)
+                {
+                    _inbox.Clear();
+                    return;
+                }
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 _inbox.Enqueue(copy);

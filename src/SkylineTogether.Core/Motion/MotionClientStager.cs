@@ -112,6 +112,7 @@ namespace SkylineTogether.Core.Motion
 
         private void Assign(ushort interestSlot, byte generation, NetSlot slot, byte updateFrame, List<MotionPin> pins)
         {
+            if (interestSlot >= MotionWire.MaxInterestSlots) throw new DecodeException("interest slot " + interestSlot + " beyond " + MotionWire.MaxInterestSlots);
             while (_entries.Count <= interestSlot) _entries.Add(new Entry());
             Entry e = _entries[interestSlot];
             if (e.Assigned && e.Slot != slot) Unassign(interestSlot, pins);

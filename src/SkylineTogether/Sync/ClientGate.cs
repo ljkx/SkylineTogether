@@ -49,6 +49,13 @@ namespace SkylineTogether.Sync
             "Game.Simulation.RemovedSystem",
             "Game.Buildings.SchoolUpdatedSystem",
             "Game.Events.AddHealthProblemSystem",
+            // w8/robust (gap b of crashfix): Modification2, not GameSimulation, so the follower clock leaves it on. On
+            // terrain-change bounds (buildings, flatten/clip roads, terrain areas, TerrainSync tile copies) it re-samples
+            // edge Curve y, node y, on-ground object Transform and area node y from this client's own height cascade,
+            // which each peer renders itself from local lots and road clipping (16-bit heights: one step is 6 cm, the
+            // write threshold 1 cm). It overwrote the host's values a few frames after every repair ("differs in:
+            // Game.Net.Curve (value)", repaired again and again). The host's own results replicate with Updated tags.
+            "Game.Simulation.GroundHeightSystem",
         };
 
         /// <summary>Line systems: off on clients except inside a route-tool preview window.</summary>

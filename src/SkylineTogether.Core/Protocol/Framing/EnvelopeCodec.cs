@@ -83,7 +83,10 @@ namespace SkylineTogether.Core.Protocol
         /// are written into <paramref name="scratch"/>, which is reset first and must not hold the input. Throws
         /// <see cref="DecodeException"/> for every malformed envelope and for bodies above the limits.
         /// </summary>
-        public Envelope Decode(byte[] buffer, int offset, int count, ByteWriter scratch)
+        /// <remarks>w8/robust: <c>maxBody</c> is a lower body limit than the kind's own (a connection that has not been
+        /// admitted yet may only send small handshake messages); checked against the declared size before anything is
+        /// allocated or decompressed.</remarks>
+        public Envelope Decode(byte[] buffer, int offset, int count, ByteWriter scratch, int maxBody = int.MaxValue)
         {
             WireFormat.CheckRange(buffer, offset, count, nameof(buffer));
             if (scratch == null) throw new ArgumentNullException(nameof(scratch));
@@ -99,7 +102,7 @@ namespace SkylineTogether.Core.Protocol
             {
                 throw new DecodeException(kind + ": unknown envelope flags 0x" + ((byte)flags).ToString("X2", CultureInfo.InvariantCulture));
             }
-            int max = Limits.MaxBodyBytes(kind);
+            int max = Math.Min(Limits.MaxBodyBytes(kind), Math.Max(0, maxBody));
             int end = offset + count;
 
             if ((flags & EnvelopeFlags.Fragment) != 0)

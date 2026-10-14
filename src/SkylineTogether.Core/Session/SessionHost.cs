@@ -40,6 +40,34 @@ namespace SkylineTogether.Core.Session
         /// <see cref="IThreadSafeConnection"/> (Steam) use it; the session's own tick keeps pumping as well.
         /// </summary>
         public bool BackgroundPump;
+
+        /// <summary>
+        /// w8/robust: a live peer that sends nothing at all (live clients answer the host's pings every second and
+        /// acknowledge every batch) for this long is dropped as not responding, so a frozen client does not pin the id
+        /// quarantine and its queue forever. Its game is offered a rejoin.
+        /// </summary>
+        public double LiveSilenceTimeoutSeconds = 120;
+
+        /// <summary>
+        /// w8/robust: the longest a join may take from admission to live, whatever the joiner reports (a joiner that
+        /// keeps sending load progress but never finishes would hold the host's simulation forever).
+        /// </summary>
+        public double MaxJoinSeconds = 1800;
+
+        /// <summary>
+        /// w8/robust: a snapshot the save system has not delivered after this long is abandoned (the waiting joiners are
+        /// told, the next join requests a new one); without it a lost callback blocked every later join.
+        /// </summary>
+        public double SnapshotTimeoutSeconds = 360; // beyond the joiner's own 300 s wait (ClientOptions.SnapshotWaitTimeoutSeconds)
+
+        /// <summary>w8/robust: the largest message a connection may send before it is admitted (handshake messages only).</summary>
+        public int UnadmittedMaxBodyBytes = 1024 * 1024;
+
+        /// <summary>w8/robust: message handling failures (other than malformed data) after which a peer is disconnected.</summary>
+        public int MaxHandlingFailures = 50;
+
+        /// <summary>w8/robust: chat lines a peer may send per second (on average; bursts of 5).</summary>
+        public double ChatPerSecond = 2;
     }
 
     /// <summary>A chat line as the UI shows it.</summary>
@@ -97,6 +125,15 @@ namespace SkylineTogether.Core.Session
             public JoinTimeline Timeline;
             /// <summary>loadspeed: the background pump's registration of this peer's snapshot transfer (null without one).</summary>
             public IDisposable PumpToken;
+            /// <summary>w8/robust: when the peer was admitted (join deadline).</summary>
+            public double AdmittedAt;
+            /// <summary>w8/robust: message handling failures that were not decode errors, and when the last was logged.</summary>
+            public int Failures;
+            public double LastFailureLog = double.NegativeInfinity;
+            /// <summary>w8/robust: flood guards for chat lines and blob have-bitmaps.</summary>
+            public double ChatTokens = 5;
+            public double ChatRefilledAt;
+            public double LastHave = double.NegativeInfinity;
         }
 
         /// <summary>loadspeed: completed joins kept for the diagnostics and the UI.</summary>
@@ -137,6 +174,13 @@ namespace SkylineTogether.Core.Session
         private SpeedState _sentSpeed;
         private bool _disposed;
         private Action<PeerId, Envelope> _appMessage;
+        // w8/robust: frame stalls of the host itself (a long save, a hitch, a minimised game): the silence and age limits
+        // are suspended for a while afterwards, because the peers' messages were waiting for this side
+        private double _lastTickAt = double.NaN;
+        private double _stallGraceUntil = double.NegativeInfinity;
+        // w8/robust: snapshot requests that timed out (their late callbacks release the snapshot and are otherwise ignored)
+        private uint _abandonedSnapshotGen;
+        private long _listenerFailures;
 
         public SessionHost(ITransport transport, IGameInfoProvider info, ISnapshotProvider snapshots, HostOptions options, IClock clock, ILog log)
         {
@@ -240,6 +284,16 @@ namespace SkylineTogether.Core.Session
             if (_disposed) return;
             _transport.Poll(this);
             double now = _clock.Seconds;
+            // w8/robust: after a stall of this side, give the peers time to be heard before anything is judged silent
+            if (!double.IsNaN(_lastTickAt) && now - _lastTickAt > StallSeconds)
+            {
+                _stallGraceUntil = now + StallGraceSeconds;
+                _log.Info(LogCategory.Session, "the host did not tick for " + (now - _lastTickAt).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
+                                               + " s; silence and queue-age limits wait " + StallGraceSeconds + " s");
+            }
+            _lastTickAt = now;
+            bool grace = now < _stallGraceUntil;
+            if (_snapshotPending && _options.SnapshotTimeoutSeconds > 0 && now - _snapshotRequestedAt > _options.SnapshotTimeoutSeconds) AbandonSnapshot(now);
             // loadspeed: a running simulation may change the city at any frame, so a snapshot requested earlier is no
             // longer the city of a new joiner
             if (_snapshotUnchanged && !HoldSimulation && !_speed.Paused && !_speed.Held) _snapshotUnchanged = false;
@@ -251,7 +305,25 @@ namespace SkylineTogether.Core.Session
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "handshake timed out"));
                     continue;
                 }
-                if (p.Admitted && p.State != PlayerState.Live && now - p.LastHeard > _options.JoinStallTimeoutSeconds)
+                if (p.Admitted && p.State != PlayerState.Live && _options.MaxJoinSeconds > 0 && now - p.AdmittedAt > _options.MaxJoinSeconds && !grace)
+                {
+                    // w8/robust: an absolute deadline, whatever progress the joiner reports
+                    _log.Warn(LogCategory.Join, p.Name + ": still joining after " + (int)(now - p.AdmittedAt) + " s (" + p.State + "); dropping it");
+                    SystemMessage(p.Name + " took too long to join.");
+                    SendText(p, ControlKind.SessionEnd, "Joining took too long (more than " + (int)(_options.MaxJoinSeconds / 60) + " minutes). Try joining again.");
+                    (drop ?? (drop = new List<(Peer, string)>())).Add((p, "join took too long"));
+                    continue;
+                }
+                if (p.Admitted && p.State == PlayerState.Live && _options.LiveSilenceTimeoutSeconds > 0 && now - p.LastHeard > _options.LiveSilenceTimeoutSeconds && !grace)
+                {
+                    // w8/robust: live clients answer pings every second; total silence means its game froze or is gone
+                    _log.Warn(LogCategory.Session, p.Name + ": nothing received for " + (int)(now - p.LastHeard) + " s; dropping it as not responding");
+                    SystemMessage(p.Name + " stopped responding.");
+                    SendText(p, ControlKind.Kick, "The host received nothing from your game for " + (int)_options.LiveSilenceTimeoutSeconds + " s. Join again to continue.");
+                    (drop ?? (drop = new List<(Peer, string)>())).Add((p, "not responding"));
+                    continue;
+                }
+                if (p.Admitted && p.State != PlayerState.Live && now - p.LastHeard > _options.JoinStallTimeoutSeconds && !grace)
                 {
                     // a hung joiner would otherwise hold the host's simulation forever
                     _log.Warn(LogCategory.Join, p.Name + ": nothing received for " + (int)(now - p.LastHeard) + " s while joining (" + p.State + "); dropping it");
@@ -282,7 +354,8 @@ namespace SkylineTogether.Core.Session
                 // then, not the 60 s age limit (which would drop a joiner whose load stalls its main thread)
                 PeerOutbox outbox = p.Channel.Outbox;
                 // (and for a minute after it went live, while it drains what queued up during its load)
-                bool ageApplies = !p.Admitted || (p.State == PlayerState.Live && now - p.LiveSince > 60.0);
+                // w8/robust: and not right after a stall of the host itself (its own frames, not the peer, held the queue)
+                bool ageApplies = !grace && (!p.Admitted || (p.State == PlayerState.Live && now - p.LiveSince > 60.0));
                 bool tooSlow = ageApplies
                     ? outbox.OverLimit
                     : outbox.IsFaulted || outbox.QueuedBytes > JoinerQueueLimitBytes;
@@ -618,6 +691,8 @@ namespace SkylineTogether.Core.Session
                 Name = connection.Peer.DisplayName ?? connection.Peer.ToString(),
                 SteamId = connection.Peer.SteamId,
             };
+            // w8/robust: until it is admitted a connection may only send small handshake messages
+            peer.Channel.MaxBodyBytes = _options.UnadmittedMaxBodyBytes;
             _peers[connection] = peer;
             _log.Info(LogCategory.Session, "connection from " + connection.Peer + "; waiting for its hello");
         }
@@ -647,8 +722,80 @@ namespace SkylineTogether.Core.Session
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.Session, p.Name + ": message handling failed", ex);
+                // w8/robust: rate-limited, and a peer whose messages keep failing is disconnected (no error storm)
+                p.Failures++;
+                double now = _clock.Seconds;
+                if (now - p.LastFailureLog >= 10)
+                {
+                    p.LastFailureLog = now;
+                    _log.Error(LogCategory.Session, p.Name + ": message handling failed (" + p.Failures + " so far)", ex);
+                }
+                if (p.Failures >= _options.MaxHandlingFailures && _peers.ContainsKey(connection))
+                {
+                    _log.Warn(LogCategory.Session, p.Name + ": " + p.Failures + " messages could not be handled; disconnecting");
+                    SendText(p, ControlKind.Kick, "The host could not handle the data your game sends. Join again to get a fresh copy of the city.");
+                    Remove(p, TransportCloseReason.ProtocolError, "messages keep failing", true);
+                }
             }
+        }
+
+        /// <summary>w8/robust: a frame gap above this many seconds counts as a stall of the host.</summary>
+        private const double StallSeconds = 5;
+
+        /// <summary>w8/robust: how long silence and queue-age limits wait after a stall of the host.</summary>
+        private const double StallGraceSeconds = 15;
+
+        /// <summary>Total exceptions thrown by app-message listeners (diagnostics).</summary>
+        public long ListenerFailures => _listenerFailures;
+
+        private void SendText(Peer p, ControlKind kind, string text)
+        {
+            try
+            {
+                _payload.Reset();
+                SessionPayloads.WriteText(_payload, text);
+                SendControl(p, kind, _payload);
+            }
+            catch (Exception)
+            {
+                // best effort: the peer is being dropped
+            }
+        }
+
+        /// <summary>
+        /// w8/robust: delivers a replication message to every listener on its own, like the client does: one listener
+        /// that throws (a feature's bug) neither stops the others nor counts against the peer.
+        /// </summary>
+        private void DeliverApp(PeerId peer, Envelope e)
+        {
+            Action<PeerId, Envelope> listeners = _appMessage;
+            if (listeners == null) return;
+            foreach (Delegate d in listeners.GetInvocationList())
+            {
+                try
+                {
+                    ((Action<PeerId, Envelope>)d)(peer, e);
+                }
+                catch (Exception ex)
+                {
+                    _listenerFailures++;
+                    if (_listenerFailures <= 5 || _listenerFailures % 100 == 0)
+                    {
+                        _log.Error(LogCategory.Session, "a listener failed on " + e.Kind + " from " + peer + " (" + _listenerFailures + " so far)", ex);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// w8/robust: the save system did not deliver the requested snapshot in time: the waiting joiners are told and
+        /// removed, and the next join requests a new snapshot. A late delivery of the abandoned one is released unused.
+        /// </summary>
+        private void AbandonSnapshot(double now)
+        {
+            _abandonedSnapshotGen = _snapshotGen;
+            _log.Error(LogCategory.Join, "the snapshot requested " + (int)(now - _snapshotRequestedAt) + " s ago did not arrive; abandoned");
+            OnSnapshotFailed("saving the city took too long");
         }
 
         // ---------------------------------------------------------------- handshake
@@ -701,6 +848,12 @@ namespace SkylineTogether.Core.Session
                 case MessageKind.Chat:
                 {
                     if (!p.Admitted) return;
+                    // w8/robust: a token bucket per peer (bursts of 5, then ChatPerSecond); excess lines are dropped
+                    double t = _clock.Seconds;
+                    p.ChatTokens = Math.Min(5, p.ChatTokens + (t - p.ChatRefilledAt) * _options.ChatPerSecond);
+                    p.ChatRefilledAt = t;
+                    if (p.ChatTokens < 1) return;
+                    p.ChatTokens -= 1;
                     ChatMessage chat = ChatMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
                     string text = (chat.Text ?? "").Trim();
                     if (text.Length > 0) DistributeChat(new ChatEntry { From = p.Id, Name = p.Name, Text = text });
@@ -709,12 +862,16 @@ namespace SkylineTogether.Core.Session
                 case MessageKind.BlobHave:
                 {
                     if (p.Sender == null) return;
+                    // w8/robust: an empty have-bitmap re-queues the whole snapshot; the receiver sends one per 0.5 s at most
+                    double t = _clock.Seconds;
+                    if (t - p.LastHave < 0.25) return;
+                    p.LastHave = t;
                     ArraySegment<byte> bitmap = BlobCodec.DecodeHave(e.Body, e.BodyOffset, e.BodyCount, out uint blobId);
                     if (blobId == p.Sender.Manifest.BlobId) p.Sender.OnHave(bitmap.Array, bitmap.Offset, bitmap.Count);
                     return;
                 }
                 default:
-                    if (p.State == PlayerState.Live) _appMessage?.Invoke(p.Id, e);
+                    if (p.State == PlayerState.Live) DeliverApp(p.Id, e);
                     return;
             }
         }
@@ -921,6 +1078,8 @@ namespace SkylineTogether.Core.Session
             p.Admitted = true;
             p.State = PlayerState.WaitingForSnapshot;
             double admittedAt = _clock.Seconds;
+            p.AdmittedAt = admittedAt;
+            p.Channel.MaxBodyBytes = int.MaxValue; // w8/robust: admitted: the kinds' own limits apply
             p.Timeline = new JoinTimeline { Who = p.Name };
             p.Timeline.Mark(JoinStage.Start, admittedAt);
             p.Timeline.Mark(JoinStage.Welcome, admittedAt);
@@ -1014,11 +1173,21 @@ namespace SkylineTogether.Core.Session
                 if (p.Admitted && p.State == PlayerState.WaitingForSnapshot && p.MinSnapshotGen <= gen) p.Timeline?.Mark(JoinStage.SnapshotRequested, _snapshotRequestedAt, overwrite: true);
             }
             _log.Info(LogCategory.Join, "taking a snapshot of the city");
-            _snapshots.RequestSnapshot(ready => OnSnapshotReady(ready, gen), OnSnapshotFailed);
+            // w8/robust: callbacks of an abandoned (timed-out) request are released and otherwise ignored
+            _snapshots.RequestSnapshot(ready => OnSnapshotReady(ready, gen), reason =>
+            {
+                if (gen > _abandonedSnapshotGen) OnSnapshotFailed(reason);
+            });
         }
 
         private void OnSnapshotReady(SnapshotReady ready, uint gen)
         {
+            if (gen <= _abandonedSnapshotGen)
+            {
+                _log.Info(LogCategory.Join, "an abandoned snapshot arrived late; released");
+                _snapshots.Release(ready.Manifest.SnapshotId);
+                return;
+            }
             _snapshotPending = false;
             if (_disposed)
             {

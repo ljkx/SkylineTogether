@@ -110,13 +110,15 @@ namespace SkylineTogether.Sync
             {
                 _log.Warn(LogCategory.Replication, "following citizens will stay local", ex);
             }
-            AddCustom("Production.Statistic", 2.0, WriteProduction, ReadProduction);
+            // w8/robust (host): the production tables and the fee list are written by the systems' own jobs; reading them
+            // without completing those (what the vanilla Serialize does first) races a hash map insert against GetKeyArray
+            AddCustom("Production.Statistic", 2.0, WriteProduction, ReadProduction, null, ProductionWriters);
             AddCustom("Fees.Collected", 1.0, WriteCollectedFees, ReadCollectedFees, () =>
             {
                 // the budget system's job reads the fee list (CityServiceBudgetSystem.UpdateDataJob.m_CollectedFees)
                 _budgets.GetIncomeArray(out JobHandle readers);
                 readers.Complete();
-            });
+            }, FeeWriters);
             AddCustom("Runtime", 1.0, WriteRuntime, ReadRuntime);
             AddCustom("Chirp.Links", 2.0, WriteChirpLinks, ReadChirpLinks);
             try
@@ -133,8 +135,50 @@ namespace SkylineTogether.Sync
 
         private static int CheckedLength(int n, string what)
         {
-            if (n < 0 || n > MaxTableLength) throw new InvalidOperationException(what + ": bad length " + n);
+            if (n < 0 || n > MaxTableLength) throw new DecodeException(what + ": bad length " + n);
             return n;
+        }
+
+        private static System.Reflection.PropertyInfo _dependency;
+
+        /// <summary>w8/robust: the outstanding jobs of a system (its protected <c>Dependency</c>), or none when not readable.</summary>
+        private static JobHandle SystemJobs(SystemBase system)
+        {
+            try
+            {
+                if (_dependency == null) _dependency = typeof(SystemBase).GetProperty("Dependency", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                return _dependency != null ? (JobHandle)_dependency.GetValue(system) : default;
+            }
+            catch (Exception)
+            {
+                return default;
+            }
+        }
+
+        /// <summary>w8/robust: every job that writes what <see cref="WriteProduction"/> reads (as the vanilla Serialize completes).</summary>
+        private JobHandle ProductionWriters()
+        {
+            _production.GetConsumptionQueue(out JobHandle all);
+            foreach (CityProductionStatisticSystem.CityResourceUsage.Consumer c in Enum.GetValues(typeof(CityProductionStatisticSystem.CityResourceUsage.Consumer)))
+            {
+                try
+                {
+                    _production.GetCityResourceUsageAccumulator(c, out JobHandle d);
+                    all = JobHandle.CombineDependencies(all, d);
+                }
+                catch (Exception)
+                {
+                    // a count or placeholder member of the enum
+                }
+            }
+            return JobHandle.CombineDependencies(all, SystemJobs(_production));
+        }
+
+        /// <summary>w8/robust: the jobs that write the collected fee list.</summary>
+        private JobHandle FeeWriters()
+        {
+            _feeSystem.GetFeeQueue(out JobHandle queue);
+            return JobHandle.CombineDependencies(queue, SystemJobs(_feeSystem));
         }
 
         // ------------------------------------------------------------------ production panel

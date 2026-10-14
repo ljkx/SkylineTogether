@@ -392,6 +392,9 @@ namespace SkylineTogether.Sync
                 lines.Add("reference safety: " + _codec.UnresolvedSpawnsTotal + " new objects not created (owner/node/parent missing), " + _codec.UnsafeTotal
                           + " untagged or sanitized for broken net references, " + _codec.DeadReferencesTotal + " references to destroyed/deleted entities dropped; "
                           + _localDeletes.Count + " local deletions awaiting the host, " + _localDeleteSkips + " stale host records skipped, " + _cascadeUnbinds + " cascade unbinds");
+                // w8/robust: decode-boundary validation and the client's removal clean-up
+                lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal
+                          + " reads past a payload stopped; removal clean-up: " + DeletionCascade.Removed + " references to despawned entities removed");
             }
             _agents.Describe(lines); // w3/agents
             Perf.Counters.Describe(Perf.Now, lines);
