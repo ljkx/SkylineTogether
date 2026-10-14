@@ -565,7 +565,7 @@ namespace SkylineTogether.UI
             {
                 sessionName = s.Host.Options.SessionName;
                 hold = s.Host.HoldSimulation;
-                status = hold ? LocaleSource.Resolve("st.ui.session.holding") : "Hosting";
+                status = LocaleSource.Resolve(hold ? "st.ui.session.holding" : "st.ui.session.hosting");
                 // name who is joining and how far they are (the player list shows it per player too)
                 if (hold)
                 {
@@ -757,9 +757,10 @@ namespace SkylineTogether.UI
                 // robust branch: the finer kinds map onto the error screen's categories
                 case ClientEndKind.Unreachable: return "timeout"; // never connected ("check the Steam ID or address")
                 case ClientEndKind.RefusedTemporarily: return "refused";
+                // the error screen has its own copy for these two (what to check, what to update)
+                case ClientEndKind.LoadFailed: return "loadFailed";
+                case ClientEndKind.ProtocolError: return "protocolError";
                 case ClientEndKind.JoinFailed:
-                case ClientEndKind.LoadFailed:
-                case ClientEndKind.ProtocolError:
                 case ClientEndKind.LocalFault: return "failed";
                 default: return "";
             }

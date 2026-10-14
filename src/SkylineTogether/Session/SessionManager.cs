@@ -1220,13 +1220,15 @@ namespace SkylineTogether.Session
 
         /// <summary>
         /// A toast in the game's notification list (top left), removed again after <paramref name="seconds"/>. Title and
-        /// text are values, not localization ids (plain strings became ids, and the toasts never went away).
+        /// text are values, not localization ids (plain strings became ids, and the toasts never went away). Without an
+        /// <paramref name="id"/> the text is the identity: the same message again (a repeated click on Copy, a flapping
+        /// state) replaces the shown toast and restarts its timeout instead of stacking a copy.
         /// </summary>
         public static void Notify(string text, ProgressState? state = null, string id = null, float seconds = 7f)
         {
             try
             {
-                string identifier = id ?? "SkylineTogether." + Guid.NewGuid().ToString("N").Substring(0, 8);
+                string identifier = id ?? "SkylineTogether.text." + StableHash(text ?? "").ToString("x8", CultureInfo.InvariantCulture);
                 NotificationSystem.Pop(identifier, seconds, title: LocalizedString.Value(LocaleSource.Resolve("st.toast.title")), text: LocalizedString.Value(text ?? ""),
                     progressState: state, progress: state == ProgressState.Complete ? 100 : (int?)null);
             }
@@ -1235,6 +1237,18 @@ namespace SkylineTogether.Session
                 // the notification UI may not exist yet (very early in boot)
             }
             Mod.Log?.Info(LogCategory.Ui, "notification: " + text);
+        }
+
+        /// <summary>FNV-1a of a text: the same value in every run (string.GetHashCode is not guaranteed to be).</summary>
+        private static uint StableHash(string text)
+        {
+            uint hash = 2166136261;
+            foreach (char c in text)
+            {
+                hash ^= c;
+                hash *= 16777619;
+            }
+            return hash;
         }
 
         /// <summary>A toast that stays (with progress) until <see cref="Notify"/> or <see cref="Unnotify"/> uses the same id.</summary>

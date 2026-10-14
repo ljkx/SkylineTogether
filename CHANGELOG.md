@@ -64,6 +64,12 @@ No version has been published yet. Everything below is the work toward the first
 - One build id everywhere: the game compares and shows the installer's id (the start of the DLL's SHA-256) in the
   panel footer, refusals, the log and the diagnostics.
 - The password key is derived with PBKDF2-HMAC-SHA256 (10 000 rounds) instead of a single SHA-256.
+- UI polish: inline checks of the join address and the direct port, a pasted Steam profile link keeps only the Steam
+  ID, every refusal and failure screen says what to do next (new screen for a city that failed to load), Esc closes
+  panels and the error screen (Enter retries there), keyboard focus on the built-in buttons, the chat keeps its place
+  while you scroll up (with a "new below" button), shows times and a length counter, and wraps long words; text
+  contrast raised to WCAG AA on the panels; repeated notifications replace each other instead of stacking; clearer
+  English and German texts.
 
 ### Fixed
 
@@ -74,5 +80,8 @@ No version has been published yet. Everything below is the work toward the first
 - Direct IP connections without Steam authentication were admitted without a password, and a Steam ID claimed in the
   hello could replace another player's connection; both are refused now.
 - A player removed after loading the city saw "The session has ended" instead of the removal.
+- The UI could throw (and disappear) on unexpected binding data (a missing field, a value of the wrong type, a null in
+  a list); saving before the first state arrived could store "keep" as the host password; the player list re-rendered
+  with every cursor movement.
 
 [Unreleased]: https://github.com/ljkx/SkylineTogether/commits/main

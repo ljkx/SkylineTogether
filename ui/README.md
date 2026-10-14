@@ -28,6 +28,8 @@ Texts: every string is a key (`st.ui.*`) translated through `cs2/l10n` from `src
 (C# `LocaleSource`), with the module's `EN` table as the fallback.
 
 Checks: `node --check ui/SkylineTogether.mjs` and `node tools/ui_smoke.mjs` (renders every state with and without the
-game components; checks bindings and triggers against `SessionUISystem.cs` and the texts against the locale tables).
+game components, including malformed and extreme data; checks bindings and triggers against `SessionUISystem.cs`, the
+texts against the locale tables and, with the game installed, the CSS tokens against the game's stylesheet).
+`node tools/ui_smoke.mjs --html <folder>` writes HTML snapshots of every state to look at in a browser.
 
 The game project's `DeployMod` target copies `SkylineTogether.mjs` next to the DLLs when the file exists.

@@ -92,8 +92,9 @@ From the title screen:
 
 1. Click **Multiplayer** (in the main menu, after Load Game).
 2. On **Join a friend**, paste the host's Steam ID (17 digits) or `IP:port` into **Host**, and the password if the
-   host set one.
-3. Click **Join**.
+   host set one. A pasted Steam profile link works too: the field keeps only the Steam ID. If the entry cannot be a
+   Steam ID or an address, a warning under the field says what is wrong and **Join** stays disabled.
+3. Click **Join** (or press Enter in either field).
 
 From inside a city, open the Skyline Together panel, **Join** tab, and do the same.
 
@@ -101,8 +102,10 @@ With a **Steam invite**, accept it in Steam. On the title screen the game joins 
 asks you to click it to join (it stays for 30 seconds).
 
 The join screen shows five stages: connecting, checking versions and mods, the host saving the city, downloading
-(with size, speed and time left) and loading. **Cancel** stops the join. If the host refuses the join, a screen
-explains why; see [Troubleshooting](troubleshooting.md#join-refused).
+(with size, speed and time left, once they are known) and loading. **Cancel** stops the join. If the host refuses the
+join or the join fails, a screen explains why and what to do next; see
+[Troubleshooting](troubleshooting.md#join-refused). On that screen Enter tries again (where trying again can help)
+and Esc goes back.
 
 ## During a session
 
@@ -115,16 +118,21 @@ explains why; see [Troubleshooting](troubleshooting.md#join-refused).
   see their preview in their colour. Removals are filled red, invalid placements outlined red. You can turn this off
   under Options, **Show other players' building previews**.
 - **Chat.** Press **Enter** (when no text field has focus) to open the chat dock above the toolbar; Enter sends, Esc
-  closes. Messages are up to 500 characters; the last 100 lines are kept. Click the chat header to collapse it.
-- **Players list.** The panel lists all players with their role and ping. For the host, the **…** button on a player
-  offers **Make viewer** / **Make builder**, **Make co-host** / **Remove co-host**, **Kick** and **Ban**; a co-host gets
-  **Make viewer** / **Make builder** and **Kick** for builders and viewers.
+  clears the line and leaves the chat. Messages are up to 500 characters (a counter appears near the limit); the last
+  100 lines are kept, each with the time it arrived. Scrolled up to read, the chat stays put and a **new below** button
+  jumps to the newest lines. Click the chat header to collapse it; collapsed, it shows the number of unread messages
+  and the newest message for a few seconds.
+- **Players list.** The panel lists all players with their role (as a text badge) and ping (signal bars and
+  milliseconds). For the host, the **…** button on a player offers **Make viewer** / **Make builder**, **Make co-host** /
+  **Remove co-host**, **Kick** and **Ban**; a co-host gets **Make viewer** / **Make builder** and **Kick** for builders
+  and viewers. **Kick** and **Ban** ask for a second click (**Confirm kick**, **Confirm ban**) within 3 seconds.
+- **Closing the panel.** The **×** in its title bar, the round button again, or Esc (when no text field has focus).
 - **Build id.** The panel's footer (and the main menu page) shows **Build &lt;12 characters&gt;**, the same id the
   installer prints. All players must show the same one.
 - **Resync.** If your city drifts apart from the host's in many places that repairs cannot fix, the panel offers
-  **Resync now**: your game rejoins with a fresh copy of the city (as long as a join takes). **Not now** hides the offer
+  **Rejoin now**: your game rejoins with a fresh copy of the city (as long as a join takes). **Not now** hides the offer
   for 30 minutes.
-- **Network & diagnostics.** **Show network** adds a line with ping and traffic to the panel. **Write diagnostics**
+- **Network & diagnostics.** **Show network stats** adds a line with ping and traffic to the panel. **Write diagnostics**
   writes a report file for bug reports (see [Troubleshooting](troubleshooting.md#collecting-logs)).
 
 ## Roles: host, builder, viewer

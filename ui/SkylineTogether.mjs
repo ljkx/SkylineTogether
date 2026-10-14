@@ -48,13 +48,16 @@ const overlayBinding = bind("overlayAvailable", null);
 
 function parse(json) {
   try {
-    const v = JSON.parse(json || "{}");
-    return v !== null && typeof v === "object" ? v : {};
+    const v = JSON.parse(typeof json === "string" && json.length > 0 ? json : "{}");
+    return v !== null && typeof v === "object" && !Array.isArray(v) ? v : {};
   } catch (e) {
     return {};
   }
 }
 
+// The last parsed value per binding: presence updates up to 20 times a second and several components read the same
+// binding, so each new string is parsed once (not once per component and render). Treat the result as read-only.
+const parsed = new Map();
 function useJson(binding) {
   let raw = null;
   try {
@@ -62,7 +65,11 @@ function useJson(binding) {
   } catch (e) {
     raw = null;
   }
-  return parse(raw);
+  const hit = parsed.get(binding);
+  if (hit && hit.raw === raw) return hit.value;
+  const value = parse(raw);
+  parsed.set(binding, { raw: raw, value: value });
+  return value;
 }
 
 // null while the friends binding is missing or not an array
@@ -116,6 +123,28 @@ function list(v) {
   return Array.isArray(v) ? v : [];
 }
 
+// the entries of a list that are objects (a null or a stray value in a binding's array never reaches a component)
+function obj(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v) ? v : {};
+}
+
+function objs(v) {
+  return list(v).filter(function (x) {
+    return x !== null && typeof x === "object" && !Array.isArray(x);
+  });
+}
+
+// a value from a binding as display text: strings and numbers only (an object as a React child throws)
+function str(v) {
+  return typeof v === "string" ? v : typeof v === "number" && isFinite(v) ? String(v) : "";
+}
+
+// a finite number from a binding, or the fallback
+function num(v, fallback) {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim().length > 0 ? Number(v) : NaN;
+  return isFinite(n) ? n : fallback;
+}
+
 function cx() {
   let out = "";
   for (let i = 0; i < arguments.length; i++) if (arguments[i]) out += (out ? " " : "") + arguments[i];
@@ -133,6 +162,7 @@ const EN = {
   "st.ui.button.players": "{N} players in the session",
   "st.ui.close": "Close",
   "st.ui.back": "Back",
+  "st.ui.loading": "Loading…",
   "st.ui.steam.missing.title": "Steam is not available",
   "st.ui.steam.missing.text": "Skyline Together needs the Steam version of the game, with Steam running and logged in.",
   "st.ui.steam.ok": "Steam connected",
@@ -172,9 +202,10 @@ const EN = {
   "st.ui.host.banAddress": "address {ADDRESS}",
   "st.ui.host.port": "Port",
   "st.ui.host.portHint": "The UDP port players connect to directly (1024 to 65535).",
+  "st.ui.host.portInvalid": "Enter a port from 1024 to 65535.",
   "st.ui.host.start": "Host this city",
-  "st.ui.host.needCity": "Load or start a city first, then host it from the game.",
-  "st.ui.host.unavailable": "Hosting is not possible right now.",
+  "st.ui.host.needCity": "Load or start a city first, then host it from there.",
+  "st.ui.host.unavailable": "Hosting isn't possible right now. Wait until the city has finished loading, and leave any running session first.",
   "st.ui.host.settingsTitle": "Host settings",
   "st.ui.host.settingsNote": "Saved right away and used the next time you host.",
   "st.ui.host.menu.title": "Hosting starts from inside your city",
@@ -187,13 +218,17 @@ const EN = {
   "st.ui.join.title": "Join a friend",
   "st.ui.join.subtitle": "Play together in a friend's city",
   "st.ui.join.intro": "Enter the host's Steam ID (shown in their Skyline Together panel) or IP address and port.",
-  "st.ui.join.target": "Host's Steam ID (or IP:port) - paste it here",
+  "st.ui.join.target": "Host's Steam ID or IP address",
   "st.ui.join.targetShort": "Host",
   "st.ui.join.targetPlaceholder": "Steam ID or IP:port",
+  "st.ui.join.badSteamId": "A Steam ID has 17 digits. Copy it from the host's Skyline Together panel.",
+  "st.ui.join.badPort": "The port after the colon must be a number from 1 to 65535.",
+  "st.ui.join.badTarget": "Enter the host's Steam ID (17 digits) or an address like 203.0.113.7:27015.",
   "st.ui.join.password": "Password",
   "st.ui.join.passwordPlaceholder": "If the host set one",
   "st.ui.join.passwordHint": "Only needed when the host set a password.",
   "st.ui.join.start": "Join",
+  "st.ui.join.unavailable": "Joining isn't possible right now. Wait until the game has finished loading, and leave any running session first.",
   "st.ui.join.steamHint": "Got a Steam invite? Accept it in Steam and the game joins by itself.",
   "st.ui.join.info": "The host's game saves the city and sends it to you; your game then loads it. Large cities take a minute. After that everything you and your friends build is shared live.",
   "st.ui.join.findId": "The host finds their Steam ID at the top of their Skyline Together panel and can copy it with one click.",
@@ -209,10 +244,13 @@ const EN = {
   "st.ui.join.hint.connecting": "Reaching the host through Steam…",
   "st.ui.join.hint.handshaking": "Making sure both games run the same versions and mods.",
   "st.ui.join.hint.waiting": "The host's game saves the city for you. Large cities take a moment.",
-  "st.ui.join.hint.downloading": "{DONE} MB of {TOTAL} MB · {SPEED} MB/s · {ETA} left",
+  "st.ui.join.hint.downloading": "{DONE} of {TOTAL} MB",
+  "st.ui.join.hint.speed": "{SPEED} MB/s",
+  "st.ui.join.hint.eta": "{ETA} left",
   "st.ui.join.hint.downloadingStart": "Starting the download…",
   "st.ui.join.hint.loading": "Your game is loading the host's city. The session starts right after.",
   "st.ui.join.cancel": "Cancel",
+  "st.ui.join.patience": "Large cities take a few minutes to download and load.",
   "st.ui.join.percent": "{P} %",
   "st.ui.time.seconds": "{N} s",
   "st.ui.time.minutes": "{M}:{S} min",
@@ -221,9 +259,9 @@ const EN = {
   "st.ui.end.back": "Back",
   "st.ui.end.copy": "Copy details",
   "st.ui.end.copied": "Copied",
-  "st.ui.end.details": "Details from the host",
+  "st.ui.end.details": "Details",
   "st.ui.end.title.badPassword": "Wrong password",
-  "st.ui.end.text.badPassword": "The host refused the password. Check it with the host and try again.",
+  "st.ui.end.text.badPassword": "The host didn't accept the password. Check it with the host and try again. After several wrong tries the host's game blocks new attempts for a while.",
   "st.ui.end.title.passwordRequired": "This session needs a password",
   "st.ui.end.text.passwordRequired": "Ask the host for the password and enter it below.",
   "st.ui.end.title.mods": "Your mods don't match the host's",
@@ -233,37 +271,40 @@ const EN = {
   "st.ui.end.mods.versions": "Update to the host's version",
   "st.ui.end.mods.versionLine": "host {HOST} · you {YOU}",
   "st.ui.end.title.game": "Game versions differ",
-  "st.ui.end.text.game": "Both players need the same game version. Update the game and join again.",
+  "st.ui.end.text.game": "You both need the same game version. Update the game on the PC with the older version (restarting Steam usually does it), then join again.",
   "st.ui.end.versions": "Host: {HOST} · You: {YOU}",
   "st.ui.end.title.build": "Skyline Together versions differ",
-  "st.ui.end.text.build": "Both players need exactly the same Skyline Together version. Update the mod on both PCs.",
+  "st.ui.end.text.build": "You both need exactly the same Skyline Together build. Install the same release on both PCs (the build id is at the bottom of the panel), then join again.",
   "st.ui.end.builds": "Host build {HOST} · Your build {YOU}",
   "st.ui.end.title.full": "The session is full",
   "st.ui.end.text.full": "Ask the host to raise the player limit, or try again when someone leaves.",
   "st.ui.end.title.notAllowed": "You can't join this session",
-  "st.ui.end.text.notAllowed": "The host's session is open to their Steam friends and invited players only, or direct connections need a password. Ask the host for an invite.",
+  "st.ui.end.text.notAllowed": "This session is open to the host's Steam friends and invited players only. Ask the host to send you a Steam invite. Joining by IP address also needs the host's password.",
   "st.ui.end.title.notReady": "The host isn't ready yet",
   "st.ui.end.text.notReady": "The host's session is still starting, or an earlier join attempt is still running. Try again in a moment.",
   "st.ui.end.title.closing": "The host is closing the session",
-  "st.ui.end.text.closing": "The session is shutting down.",
+  "st.ui.end.text.closing": "The session is shutting down. Join again once the host hosts a new one.",
   "st.ui.end.title.timeout": "No answer from the host",
-  "st.ui.end.text.timeout": "Check the Steam ID or address, and that the host is hosting right now.",
+  "st.ui.end.text.timeout": "The host didn't answer in time. Check the Steam ID or address and make sure the host is hosting right now, then try again.",
   "st.ui.end.title.lost": "Connection lost",
-  "st.ui.end.text.lost": "The connection to the host was interrupted.",
+  "st.ui.end.text.lost": "The connection to the host was interrupted. Try again; if it keeps happening, check your internet connection.",
   "st.ui.end.title.kicked": "You were removed from the session",
-  "st.ui.end.text.kicked": "The host removed you from the session.",
+  "st.ui.end.text.kicked": "The host removed you from the session. You can join again if the host lets you.",
   "st.ui.end.title.banned": "You are banned from this session",
   "st.ui.end.text.banned": "The host banned you. Only the host can lift the ban.",
   "st.ui.end.title.ended": "The session has ended",
   "st.ui.end.text.ended": "The host ended the session.",
   "st.ui.end.title.failed": "Joining failed",
-  "st.ui.end.text.failed": "Something went wrong while joining.",
+  "st.ui.end.text.failed": "Something went wrong while joining. Try again. If it keeps happening, use Copy details and send them with the diagnostics file (Options → Skyline Together → Write diagnostics).",
+  "st.ui.end.title.loadFailed": "Your game couldn't load the host's city",
+  "st.ui.end.text.loadFailed": "The city arrived, but loading it failed. Try again. If it keeps failing, make sure you have the host's map and assets, then use Copy details and send them to the host.",
   "st.ui.session.host": "Host",
   "st.ui.session.player": "Player",
   "st.ui.session.you": "you",
   "st.ui.session.live": "Live",
   "st.ui.session.hosting": "You are hosting",
   "st.ui.session.connected": "Connected",
+  "st.ui.session.menuNote": "A session is still running. Leave it before you host or join another one.",
   "st.ui.session.speed": "Game speed (set by the host): {SPEED}",
   "st.ui.speed.held": "paused while a player joins",
   "st.ui.speed.paused": "paused",
@@ -275,7 +316,7 @@ const EN = {
   "st.ui.invite.copy": "Copy",
   "st.ui.invite.copied": "Copied",
   "st.ui.invite.steam": "Invite through Steam",
-  "st.ui.invite.direct": "Or your public IP address and port {PORT}.",
+  "st.ui.invite.direct": "Direct connection: your public IP address and port {PORT}.",
   "st.ui.friends.title": "Invite Steam friends",
   "st.ui.friends.search": "Search friends",
   "st.ui.friends.invite": "Invite",
@@ -295,12 +336,15 @@ const EN = {
   "st.ui.friends.noOverlay": "The Steam overlay is not available. Share your Steam ID with your friends: they paste it on the Join page.",
   "st.ui.players.title": "Players",
   "st.ui.players.count": "{N} / {MAX}",
+  "st.ui.players.unnamed": "Player {N}",
+  "st.ui.players.empty": "No players yet.",
   "st.ui.players.kick": "Kick",
   "st.ui.players.makeViewer": "Make viewer",
   "st.ui.players.makeBuilder": "Make builder",
-  "st.ui.players.kickConfirm": "Sure?",
+  "st.ui.players.kickConfirm": "Confirm kick",
   "st.ui.players.ban": "Ban",
-  "st.ui.players.banConfirm": "Ban for good?",
+  "st.ui.players.banConfirm": "Confirm ban",
+  "st.ui.players.confirmHint": "Click again to confirm.",
   "st.ui.players.makeCoHost": "Make co-host",
   "st.ui.players.removeCoHost": "Remove co-host",
   "st.ui.players.actions": "Player actions",
@@ -310,6 +354,7 @@ const EN = {
   "st.ui.players.state.Loading": "loading {P} %",
   "st.ui.players.state.Offline": "offline",
   "st.ui.players.ping": "{N} ms",
+  "st.ui.players.pingHint": "Time for a round trip to the host. Under 80 ms feels instant; above 250 ms actions show up late.",
   "st.ui.role.host": "Host",
   "st.ui.role.cohost": "Co-host",
   "st.ui.role.builder": "Builder",
@@ -324,10 +369,12 @@ const EN = {
   "st.ui.chat.hint": "Press Enter to chat",
   "st.ui.chat.empty": "No messages yet.",
   "st.ui.chat.unread": "{N} new",
+  "st.ui.chat.newBelow": "{N} new below",
+  "st.ui.chat.count": "{N} / {MAX}",
   "st.ui.chat.collapse": "Hide the chat",
   "st.ui.chat.expand": "Show the chat",
-  "st.ui.net.show": "Show network",
-  "st.ui.net.hide": "Hide network",
+  "st.ui.net.show": "Show network stats",
+  "st.ui.net.hide": "Hide network stats",
   "st.ui.net.diagnostics": "Write diagnostics",
   "st.ui.perf.show": "Show performance",
   "st.ui.perf.hide": "Hide performance",
@@ -361,8 +408,8 @@ const EN = {
   "st.ui.recovery.stayOffline": "Stay offline (keep a copy)",
   "st.ui.recovery.badge": "Disconnected",
   "st.ui.resync.title": "Your city differs from the host's",
-  "st.ui.resync.text": "Object repairs could not keep up. Rejoin with a fresh copy of the host's city? It takes about as long as joining.",
-  "st.ui.resync.now": "Resync now",
+  "st.ui.resync.text": "Parts of your city no longer match the host's, and automatic repairs couldn't fix them. Rejoin with a fresh copy of the host's city? It takes about as long as joining.",
+  "st.ui.resync.now": "Rejoin now",
   "st.ui.resync.later": "Not now",
   "st.ui.selftest.details": "Details",
   // solo testing (record/replay verdict)
@@ -370,7 +417,7 @@ const EN = {
   "st.ui.test.subtitle": "Check the sync on this PC, no second player needed",
   "st.ui.test.intro": "Record a session on this PC, then replay it the way a joining player receives it. The replay checks that every object, line, icon and global value ends up exactly as on the host.",
   "st.ui.test.record": "Record test session",
-  "st.ui.test.recordHint": "Adds a test recorder to your session (or hosts this city without network first) and records everything a joining player would receive. Build and play as usual, then stop.",
+  "st.ui.test.recordHint": "Records everything a joining player would receive while you play (if you aren't hosting, the city is hosted privately for the recording). Build and play as usual, then stop the recording.",
   "st.ui.test.stop": "Stop recording",
   "st.ui.test.needCity": "Load a city first to record a test session.",
   "st.ui.test.recordings": "Recordings",
@@ -426,10 +473,15 @@ function t(key, vars) {
 // The game's design tokens (index.css :root, and body.overwrite-legacy for the current interface style). Plain var()
 // only: these properties exist in every game version this module supports. Alpha variants of white are literals.
 const T = {
+  // text alphas chosen for WCAG AA (4.5:1) on the panel gradient's lightest colour (rgb 45, 79, 92): text 8.4:1,
+  // textDim 6.1:1, textDimmer 4.7:1; textFaint is for decorative marks (dots, borders), never for text
   text: "#f0fbff",
-  textDim: "rgba(240, 251, 255, 0.72)",
-  textDimmer: "rgba(240, 251, 255, 0.5)",
+  textDim: "rgba(240, 251, 255, 0.8)",
+  textDimmer: "rgba(240, 251, 255, 0.66)",
   textFaint: "rgba(240, 251, 255, 0.32)",
+  focus: "var(--focusedColor)",
+  // the game's negative red is 2.6:1 on the panel: as text it uses a lighter tint (5.0:1)
+  badText: "#ffb0a5",
   accent: "var(--accentColorNormal)",
   accentLight: "var(--accentColorLight)",
   accentDark: "var(--accentColorDark)",
@@ -488,8 +540,8 @@ const OV = {
   card: "linear-gradient(rgb(45, 79, 92), rgb(39, 55, 78))",
   cardSolid: "#2a3e52",
   text: "#f0fbff",
-  dim: "rgba(240, 251, 255, 0.75)",
-  faint: "rgba(240, 251, 255, 0.45)",
+  dim: "rgba(240, 251, 255, 0.8)",
+  faint: "rgba(240, 251, 255, 0.66)",
   divider: "rgba(255, 255, 255, 0.12)",
   well: "rgba(0, 0, 0, 0.25)",
   track: "rgba(0, 0, 0, 0.35)",
@@ -498,6 +550,7 @@ const OV = {
   good: "#8bdb46",
   warn: "#ffa42d",
   bad: "#e95f4a",
+  badText: "#ffb0a5",
   green: "linear-gradient(90deg, #0aae7a, #13a658, #13a658, #0aae7a)",
   greenHover: "linear-gradient(90deg, #19d89b, #2fc95a, #2fc95a, #19d89b)",
   greenBorder: "#48d991",
@@ -664,7 +717,7 @@ const store = {
 };
 // SessionUISystem.KeepPassword: "leave the stored password unchanged" (also before the first state arrived, when
 // s.keepPassword is still missing: an empty string there used to erase the saved host password)
-const KEEP_PASSWORD = "keep";
+const KEEP_PASSWORD = "keep";
 let menuButtonInstalled = false;
 let menuScreenInstalled = false;
 let topLeftRegistered = false;
@@ -787,6 +840,70 @@ function useHover() {
   return [hover, { onMouseEnter: function () { setHover(true); }, onMouseLeave: function () { setHover(false); } }];
 }
 
+// Keyboard reach for the built-in buttons (divs): focusable with Tab, Enter or Space presses them, and a focus ring.
+// The key never reaches the window handlers (Enter there opens the chat).
+function usePressable(onPress, disabled) {
+  const [focus, setFocus] = React.useState(false);
+  return [
+    focus,
+    {
+      tabIndex: disabled ? -1 : 0,
+      onFocus: function () { setFocus(true); },
+      onBlur: function () { setFocus(false); },
+      onKeyDown: function (e) {
+        const k = keyOf(e);
+        if (k !== "Enter" && k !== " " && k !== "Spacebar") return;
+        if (e && e.stopPropagation) e.stopPropagation();
+        if (e && e.preventDefault) e.preventDefault();
+        if (!disabled && onPress) onPress();
+      },
+    },
+  ];
+}
+
+// Window-level keys of an open surface (Escape closes, Enter confirms); ignored while a text field has focus (the
+// field handles its own Enter and Escape). Only the newest registered surface reacts, so stacked layers close one by
+// one; a modal surface (a dialog) also keeps Enter from opening the chat.
+const keyStack = [];
+function useWindowKeys(handlers, active, modal) {
+  const ref = React.useRef(handlers);
+  ref.current = handlers;
+  React.useEffect(function () {
+    if (!active) return undefined;
+    const entry = { ref: ref, modal: !!modal };
+    keyStack.push(entry);
+    const onKey = function (e) {
+      if (keyStack[keyStack.length - 1] !== entry || store.typing > 0 || anotherInputFocused()) return;
+      const fn = ref.current && ref.current[keyOf(e)];
+      if (typeof fn !== "function") return;
+      if (e && e.preventDefault) e.preventDefault();
+      if (e && e.stopPropagation) e.stopPropagation();
+      fn();
+    };
+    window.addEventListener("keydown", onKey);
+    return function () {
+      window.removeEventListener("keydown", onKey);
+      const i = keyStack.indexOf(entry);
+      if (i >= 0) keyStack.splice(i, 1);
+    };
+  }, [active]);
+}
+
+// a dialog (the error screen) is open: Enter belongs to it, not to the chat
+function modalOpen() {
+  for (const entry of keyStack) if (entry.modal) return true;
+  return false;
+}
+
+function anotherInputFocused() {
+  try {
+    const el = document.activeElement;
+    return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
+  } catch (e) {
+    return false;
+  }
+}
+
 // --------------------------------------------------------------------------------------------------- primitives
 
 // A monochrome game glyph tinted with a colour (how the game's TintedIcon draws Media/Glyphs).
@@ -872,15 +989,17 @@ const VANILLA_LAYOUT = {
 
 function FallbackButton(p) {
   const [hover, hv] = useHover();
+  const [focus, kb] = usePressable(p.onSelect, p.disabled);
   const kind = p.kind;
-  const look = (FB_LOOK[kind] || FB_LOOK.flat)(hover, p.disabled, p.selected);
+  const look = (FB_LOOK[kind] || FB_LOOK.flat)(hover || focus, p.disabled, p.selected);
   return h(
     "div",
-    merge(hv, {
+    merge(hv, kb, {
       style: merge(
         { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", flexShrink: 0, whiteSpace: "nowrap", cursor: p.disabled ? "default" : "pointer", opacity: p.disabled && kind !== "primary" ? 0.55 : 1 },
         FB_SHAPE[kind] || FB_SHAPE.flat,
         look,
+        focus && !p.disabled ? { boxShadow: "0 0 0 2rem " + T.focus } : null,
         p.style
       ),
       onClick: p.onSelect,
@@ -937,16 +1056,18 @@ function Field(p) {
   }, []);
   const look = p.look || "game";
   const menuClass = look === "menu" ? vc("stringField", "stringField") : null;
+  // invalid input: an amber border (the message under the field says what is wrong)
+  const edge = p.invalid ? (look === "overlay" ? OV.warn : T.warn) : null;
   let style;
-  if (menuClass) style = { flex: "0 1 50%", minWidth: 0 };
+  if (menuClass) style = merge({ flex: "0 1 50%", minWidth: 0 }, edge ? border("2rem", edge) : null);
   else if (look === "menu")
-    style = merge({ flex: "0 1 50%", minWidth: 0, backgroundColor: T.menuControl, color: T.menuText, borderRadius: "3rem", padding: "4rem 8rem", fontSize: "1em" }, border("2rem", focus ? T.accent : T.menuControlBorder));
+    style = merge({ flex: "0 1 50%", minWidth: 0, backgroundColor: T.menuControl, color: T.menuText, borderRadius: "3rem", padding: "4rem 8rem", fontSize: "1em" }, border("2rem", edge || (focus ? T.accent : T.menuControlBorder)));
   else if (look === "overlay")
-    style = merge({ width: "100%", height: "36rem", padding: "0 10rem", backgroundColor: "rgba(0, 0, 0, 0.35)", color: OV.text, borderRadius: "4rem", fontSize: "16rem" }, border("2rem", focus ? OV.accent : "rgba(255, 255, 255, 0.18)"));
+    style = merge({ width: "100%", height: "36rem", padding: "0 10rem", backgroundColor: "rgba(0, 0, 0, 0.35)", color: OV.text, borderRadius: "4rem", fontSize: "16rem" }, border("2rem", edge || (focus ? OV.accent : "rgba(255, 255, 255, 0.18)")));
   else
     style = merge(
       { width: "100%", height: "32rem", padding: "0 10rem", backgroundColor: focus ? "rgba(255, 255, 255, 0.08)" : T.field, color: T.text, borderRadius: T.radiusInner, fontSize: FS.m },
-      border("2rem", focus ? T.accent : T.fieldBorder)
+      border("2rem", edge || (focus ? T.accent : T.fieldBorder))
     );
   return h("input", {
     ref: p.inputRef,
@@ -1038,7 +1159,7 @@ function Dot(p) {
 }
 
 function Progress(p) {
-  const pct = Math.max(0, Math.min(100, Math.round((p.value || 0) * 100)));
+  const pct = Math.max(0, Math.min(100, Math.round(num(p.value, 0) * 100)));
   return h(
     "div",
     { style: merge({ height: (p.height || 6) + "rem", backgroundColor: p.track || T.progressTrack, borderRadius: (p.height || 6) / 2 + "rem", overflow: "hidden" }, p.style) },
@@ -1209,27 +1330,43 @@ function PanelShell(p) {
 function speedText(s) {
   if (s.speedHeld) return t("st.ui.speed.held");
   if (s.speedPaused) return t("st.ui.speed.paused");
-  if (s.speedValue > 0) return t("st.ui.speed.value", { N: s.speedValue });
-  return s.speed || "";
+  const v = num(s.speedValue, 0);
+  if (v > 0) return t("st.ui.speed.value", { N: v });
+  return str(s.speed);
 }
 
+const ROLES = { host: 1, cohost: 1, builder: 1, viewer: 1 };
+const PLAYER_STATES = { Handshaking: 1, WaitingForSnapshot: 1, Downloading: 1, Loading: 1, Offline: 1 };
+
 function roleText(role) {
-  return role ? t("st.ui.role." + role) : "";
+  return ROLES[role] ? t("st.ui.role." + role) : "";
 }
 
 function playerStateText(p) {
-  const pct = Math.round((p.progress || 0) * 100);
-  if (p.state === "Live") return "";
-  return t("st.ui.players.state." + p.state, { P: pct });
+  if (!PLAYER_STATES[p.state]) return "";
+  return t("st.ui.players.state." + p.state, { P: Math.round(Math.max(0, Math.min(1, num(p.progress, 0))) * 100) });
 }
 
-// what each remote player is doing, by player id (presence branch)
-function useActivities() {
-  const map = {};
-  list(useJson(presenceBinding).tags).forEach(function (tag) {
-    if (tag && tag.id !== undefined) map[tag.id] = tag;
-  });
-  return map;
+function playerName(pl) {
+  const name = str(pl.name).trim();
+  return name.length > 0 ? name : t("st.ui.players.unnamed", { N: num(pl.id, 0) });
+}
+
+// What a remote player is doing (presence branch). Its own small component: the presence binding changes up to 20
+// times a second, and only this line re-renders then, not the whole player list with its menus.
+function ActivityLine(p) {
+  const tags = useJson(presenceBinding).tags;
+  let activity = "";
+  for (const tag of objs(tags)) if (tag.id === p.id) activity = str(tag.activity);
+  if (!activity) return null;
+  return h("div", { style: merge(S.ellipsis, { color: T.textDimmer, fontSize: FS.xs, marginTop: "2rem" }) }, activity);
+}
+
+// role badge: text always, the host's in the accent colour (never colour alone)
+function RoleChip(p) {
+  const text = roleText(p.role);
+  if (!text) return null;
+  return h(Chip, { color: p.role === "host" ? T.accent : p.role === "cohost" ? T.accentLight : T.textDim, style: { marginLeft: "8rem" } }, text);
 }
 
 function PlayerRow(p) {
@@ -1239,14 +1376,17 @@ function PlayerRow(p) {
   const confirmBan = useConfirm();
   const [menu, setMenu] = React.useState(false);
   const [hover, hv] = useHover();
-  const doing = p.activity;
-  const color = pl.color || (doing && doing.color) || T.accent;
-  const joining = pl.state !== "Live";
+  const color = str(pl.color) || T.accent;
+  const live = pl.state === "Live" || !PLAYER_STATES[pl.state];
+  const joining = !live;
   const hosting = s.mode === "Hosting";
-  // w8/security: a co-host may remove builders and viewers and switch them (the host checks every request)
+  const ping = num(pl.ping, -1);
+  // a co-host may remove builders and viewers and switch them (the host checks every request)
   const coHostHere = s.mode === "Client" && s.localRole === "cohost" && !pl.host && !pl.you && (pl.role === "builder" || pl.role === "viewer");
   const canManage = (hosting && !pl.host) || coHostHere;
   const actionGap = { marginLeft: "6rem", marginTop: "4rem" };
+  // the host's own row has no ping, and neither has a player's own row before the first measurement
+  const showPing = !pl.host && live && !(pl.you && ping <= 0) && ping >= 0;
   return h(
     "div",
     { style: { borderRadius: T.radiusInner, backgroundColor: menu ? "rgba(0, 0, 0, 0.18)" : hover ? T.hover : "rgba(0, 0, 0, 0)" } },
@@ -1260,18 +1400,16 @@ function PlayerRow(p) {
         h(
           "div",
           { style: S.row },
-          h("div", { style: merge(S.ellipsis, { fontSize: FS.m, color: T.text, minWidth: 0 }) }, pl.name),
+          h("div", { style: merge(S.ellipsis, { flexShrink: 1, fontSize: FS.m, color: T.text, minWidth: 0 }) }, playerName(pl)),
           pl.you ? h("div", { style: { color: T.textDimmer, fontSize: FS.s, marginLeft: "6rem", flexShrink: 0 } }, "(" + t("st.ui.session.you") + ")") : null,
-          pl.role ? h(Chip, { color: pl.host ? T.accent : T.textDim, style: { marginLeft: "8rem" } }, roleText(pl.role)) : null
+          h(RoleChip, { role: pl.role })
         ),
         joining
-          ? h("div", { style: { marginTop: "4rem" } }, h("div", { style: { color: T.warn, fontSize: FS.xs, marginBottom: "3rem" } }, playerStateText(pl)), pl.state === "Downloading" || pl.state === "Loading" ? h(Progress, { value: pl.progress, height: 4 }) : null)
-          : doing && doing.activity
-            ? h("div", { style: merge(S.ellipsis, { color: T.textDimmer, fontSize: FS.xs, marginTop: "2rem" }) }, doing.activity)
-            : null
+          ? h("div", { style: { marginTop: "4rem" } }, h("div", { style: { color: pl.state === "Offline" ? T.badText : T.warn, fontSize: FS.xs, marginBottom: "3rem" } }, playerStateText(pl)), pl.state === "Downloading" || pl.state === "Loading" ? h(Progress, { value: pl.progress, height: 4 }) : null)
+          : pl.you ? null : h(ActivityLine, { id: pl.id })
       ),
-      !pl.host && !joining
-        ? h("div", { style: merge(S.row, { marginLeft: "8rem", flexShrink: 0 }) }, h(PingBars, { ping: pl.ping }), h("div", { style: { color: T.textDimmer, fontSize: FS.xs, marginLeft: "5rem", width: "42rem", textAlign: "right" } }, pl.ping >= 0 ? t("st.ui.players.ping", { N: pl.ping }) : ""))
+      showPing
+        ? withTooltip(h("div", { style: merge(S.row, { marginLeft: "8rem", flexShrink: 0 }) }, h(PingBars, { ping: ping }), h("div", { style: { color: T.textDimmer, fontSize: FS.xs, marginLeft: "5rem", minWidth: "42rem", textAlign: "right" } }, t("st.ui.players.ping", { N: Math.round(ping) }))), t("st.ui.players.pingHint"), "left")
         : null,
       canManage ? h(IconBtn, { src: G.more, size: 14, tooltip: t("st.ui.players.actions"), style: { marginLeft: "6rem" }, onClick: function () { setMenu(!menu); } }) : null
     ),
@@ -1279,16 +1417,17 @@ function PlayerRow(p) {
       ? h(
           "div",
           { style: merge(S.row, { justifyContent: "flex-end", flexWrap: "wrap", padding: "0 6rem 8rem 6rem" }) },
-          !joining && pl.role !== "cohost" // gameplay branch: viewers watch, builders build
-            ? h(Btn, { kind: "flat", style: actionGap, onClick: function () { send("toggleRole", pl.id); } }, pl.role === "viewer" ? t("st.ui.players.makeBuilder") : t("st.ui.players.makeViewer"))
+          !joining && pl.role !== "cohost" // viewers watch, builders build
+            ? h(Btn, { kind: "flat", style: actionGap, onClick: function () { send("toggleRole", num(pl.id, -1)); } }, pl.role === "viewer" ? t("st.ui.players.makeBuilder") : t("st.ui.players.makeViewer"))
             : null,
-          hosting && !joining // w8/security: co-hosts help moderate
-            ? h(Btn, { kind: "flat", style: actionGap, onClick: function () { send("toggleCoHost", pl.id); } }, pl.role === "cohost" ? t("st.ui.players.removeCoHost") : t("st.ui.players.makeCoHost"))
+          hosting && !joining // co-hosts help moderate
+            ? h(Btn, { kind: "flat", style: actionGap, onClick: function () { send("toggleCoHost", num(pl.id, -1)); } }, pl.role === "cohost" ? t("st.ui.players.removeCoHost") : t("st.ui.players.makeCoHost"))
             : null,
-          h(Btn, { kind: confirm.armed ? "danger" : "flat", style: actionGap, onClick: function () { confirm.run(function () { send("kick", pl.id); }); } }, confirm.armed ? t("st.ui.players.kickConfirm") : t("st.ui.players.kick")),
+          h(Btn, { kind: confirm.armed ? "danger" : "flat", style: actionGap, onClick: function () { confirm.run(function () { send("kick", num(pl.id, -1)); }); } }, confirm.armed ? t("st.ui.players.kickConfirm") : t("st.ui.players.kick")),
           hosting
-            ? h(Btn, { kind: confirmBan.armed ? "danger" : "flat", style: actionGap, onClick: function () { confirmBan.run(function () { send("ban", pl.id); }); } }, confirmBan.armed ? t("st.ui.players.banConfirm") : t("st.ui.players.ban"))
-            : null
+            ? h(Btn, { kind: confirmBan.armed ? "danger" : "flat", style: actionGap, onClick: function () { confirmBan.run(function () { send("ban", num(pl.id, -1)); }); } }, confirmBan.armed ? t("st.ui.players.banConfirm") : t("st.ui.players.ban"))
+            : null,
+          confirm.armed || confirmBan.armed ? h(Hint, { style: { width: "100%", textAlign: "right", marginTop: "4rem", fontSize: FS.xs } }, t("st.ui.players.confirmHint")) : null
         )
       : null
   );
@@ -1296,13 +1435,14 @@ function PlayerRow(p) {
 
 function Players(p) {
   const s = p.state;
-  const players = list(s.players);
-  const doing = useActivities();
+  const players = objs(s.players);
+  const max = num(s.maxPlayers, 0);
   return h(
     Section,
-    { title: t("st.ui.players.title"), right: h("div", { style: { color: T.textDimmer, fontSize: FS.s } }, s.mode === "Hosting" ? t("st.ui.players.count", { N: players.length, MAX: s.maxPlayers || "?" }) : String(players.length)) },
-    players.map(function (pl) {
-      return h(PlayerRow, { key: pl.id, player: pl, state: s, activity: doing[pl.id] });
+    { title: t("st.ui.players.title"), right: h("div", { style: { color: T.textDimmer, fontSize: FS.s } }, s.mode === "Hosting" && max > 0 ? t("st.ui.players.count", { N: players.length, MAX: max }) : String(players.length)) },
+    players.length === 0 ? h(Hint, { style: { padding: "2rem 10rem 8rem 10rem" } }, t("st.ui.players.empty")) : null,
+    players.map(function (pl, i) {
+      return h(PlayerRow, { key: pl.id !== undefined ? String(pl.id) : "i" + i, player: pl, state: s });
     })
   );
 }
@@ -1313,7 +1453,7 @@ function SessionHeader(p) {
   const hosting = s.mode === "Hosting";
   const flash = useFlash();
   const st = useStore();
-  const id = s.inviteSteamId || s.steamId || "";
+  const id = str(s.inviteSteamId) || str(s.steamId);
   const overlay = useOverlayAvailable();
   // the host invites from the friends list (works without the overlay); a player can only open Steam's dialog
   const canInviteHere = !!s.canInvite && (hosting || overlay);
@@ -1329,7 +1469,7 @@ function SessionHeader(p) {
     ),
     !hosting ? h(Hint, { style: { padding: "0 6rem 6rem 6rem" } }, t("st.ui.session.speed", { SPEED: speedText(s) })) : null,
     !hosting && s.localRole === "cohost" ? h(Hint, { style: { padding: "0 6rem 6rem 6rem" } }, t("st.ui.session.cohost")) : null,
-    s.hold ? h(Notice, null, s.status || t("st.ui.session.holding")) : null,
+    s.hold ? h(Notice, null, str(s.status) || t("st.ui.session.holding")) : null,
     h(
       "div",
       { style: { margin: "4rem 6rem 2rem 6rem", padding: "8rem 10rem", borderRadius: T.radiusInner, backgroundColor: "rgba(0, 0, 0, 0.2)" } },
@@ -1337,8 +1477,8 @@ function SessionHeader(p) {
       h(
         "div",
         { style: S.row },
-        h("div", { style: merge(S.ellipsis, S.ids, { flex: 1, fontSize: FS.l, color: T.text }) }, id),
-        h(IconBtn, { src: flash.on ? G.check : G.copy, size: 14, color: flash.on ? T.good : T.text, tooltip: flash.on ? t("st.ui.invite.copied") : t("st.ui.invite.copy"), onClick: function () { send("copySteamId"); flash.fire(); } })
+        h("div", { style: merge(S.ellipsis, S.ids, { flex: 1, fontSize: FS.l, color: id ? T.text : T.textDimmer }) }, id || "–"),
+        id ? h(IconBtn, { src: flash.on ? G.check : G.copy, size: 14, color: flash.on ? T.good : T.text, tooltip: flash.on ? t("st.ui.invite.copied") : t("st.ui.invite.copy"), onClick: function () { send("copySteamId"); flash.fire(); } }) : null
       ),
       canInviteHere
         ? h(
@@ -1352,7 +1492,7 @@ function SessionHeader(p) {
             )
           )
         : null,
-      hosting && s.directPort > 0 ? h(Hint, { style: { marginTop: "6rem", fontSize: FS.xs } }, t("st.ui.invite.direct", { PORT: s.directPort })) : null
+      hosting && num(s.directPort, 0) > 0 ? h(Hint, { style: { marginTop: "6rem", fontSize: FS.xs } }, t("st.ui.invite.direct", { PORT: num(s.directPort, 0) })) : null
     )
   );
 }
@@ -1375,7 +1515,7 @@ function FriendRow(p) {
     h(
       "div",
       { style: { flex: 1, minWidth: 0 } },
-      h("div", { style: merge(S.ellipsis, { fontSize: FS.s, color: state === "offline" ? T.textDimmer : T.text }) }, f.name || f.id),
+      h("div", { style: merge(S.ellipsis, { fontSize: FS.s, color: state === "offline" ? T.textDimmer : T.text }) }, str(f.name) || str(f.id)),
       h("div", { style: { fontSize: FS.xs, color: T.textDimmer } }, t("st.ui.friends.state." + state))
     ),
     f.inSession
@@ -1408,22 +1548,23 @@ function InvitePopover() {
     send("refreshFriends");
   }, []);
   const close = function () { setStore({ invitesOpen: false }); };
+  useWindowKeys({ Escape: close }, true);
   const q = query.trim().toLowerCase();
-  const all = list(friends)
-    .filter(function (f) { return f && f.id !== undefined; })
-    .filter(function (f) { return q.length === 0 || String(f.name || "").toLowerCase().indexOf(q) >= 0; })
+  const all = objs(friends)
+    .filter(function (f) { return str(f.id).length > 0; })
+    .filter(function (f) { return q.length === 0 || str(f.name).toLowerCase().indexOf(q) >= 0; })
     .sort(function (a, b) {
       const sa = FRIEND_ORDER[a.state] !== undefined ? FRIEND_ORDER[a.state] : 3;
       const sb = FRIEND_ORDER[b.state] !== undefined ? FRIEND_ORDER[b.state] : 3;
       if (sa !== sb) return sa - sb;
-      return String(a.name || "").localeCompare(String(b.name || ""));
+      return str(a.name).localeCompare(str(b.name));
     });
   const online = all.filter(function (f) { return f.state !== "offline" && FRIEND_ORDER[f.state] !== undefined; });
   const offline = all.filter(function (f) { return !(f.state !== "offline" && FRIEND_ORDER[f.state] !== undefined); });
   const overlay = function () { send("openInviteOverlay"); };
   const group = function (title, items) {
     if (items.length === 0) return null;
-    return h("div", { key: title }, h(Label, { style: { padding: "8rem 8rem 2rem 8rem", marginBottom: 0 } }, title), items.map(function (f) { return h(FriendRow, { key: f.id, friend: f }); }));
+    return h("div", { key: title }, h(Label, { style: { padding: "8rem 8rem 2rem 8rem", marginBottom: 0 } }, title), items.map(function (f) { return h(FriendRow, { key: str(f.id), friend: f }); }));
   };
   return h(
     "div",
@@ -1466,6 +1607,11 @@ function InvitePopover() {
 function LiveSettings(p) {
   const s = p.state;
   const [password, setPassword] = React.useState("");
+  const apply = function () {
+    if (password.length === 0) return;
+    send("saveHostSettings", str(s.playerName), str(s.sessionNameSetting), password);
+    setPassword("");
+  };
   return h(
     Foldout,
     { title: t("st.ui.settings.title") },
@@ -1475,10 +1621,10 @@ function LiveSettings(p) {
       h(
         "div",
         { style: S.row },
-        h(Field, { value: password, onChange: setPassword, password: true, placeholder: s.hasPassword ? t("st.ui.host.passwordKept") : t("st.ui.host.passwordPlaceholder"), title: t("st.ui.settings.livePassword"), style: { flex: 1, width: "auto", marginRight: "8rem" } }),
-        h(Btn, { kind: "flat", disabled: password.length === 0, onClick: function () { send("saveHostSettings", s.playerName || "", s.sessionNameSetting || "", password); setPassword(""); } }, t("st.ui.settings.apply"))
+        h(Field, { value: password, onChange: setPassword, onEnter: apply, password: true, placeholder: s.hasPassword ? t("st.ui.host.passwordKept") : t("st.ui.host.passwordPlaceholder"), title: t("st.ui.settings.livePassword"), style: { flex: 1, width: "auto", marginRight: "8rem" } }),
+        h(Btn, { kind: "flat", disabled: password.length === 0, onClick: apply }, t("st.ui.settings.apply"))
       ),
-      s.hasPassword ? h("div", { style: { marginTop: "6rem", fontSize: FS.s } }, h(LinkText, { onClick: function () { send("saveHostSettings", s.playerName || "", s.sessionNameSetting || "", ""); } }, t("st.ui.host.removePassword"))) : null
+      s.hasPassword ? h("div", { style: { marginTop: "6rem", fontSize: FS.s } }, h(LinkText, { onClick: function () { send("saveHostSettings", str(s.playerName), str(s.sessionNameSetting), ""); } }, t("st.ui.host.removePassword"))) : null
     ),
     h(HostOptions, { state: s, live: true })
   );
@@ -1490,7 +1636,7 @@ function NetLine() {
   return h(
     "div",
     { style: { padding: "2rem 6rem" } },
-    n.show && n.text ? h("div", { style: { color: T.textDim, fontSize: FS.xs, marginBottom: "6rem", lineHeight: 1.35 } }, n.text) : null,
+    n.show && str(n.text) ? h("div", { style: { color: T.textDim, fontSize: FS.xs, marginBottom: "6rem", lineHeight: 1.35 } }, str(n.text)) : null,
     h(
       "div",
       { style: merge(S.row, { fontSize: FS.xs }) },
@@ -1506,12 +1652,13 @@ function NetLine() {
 // robust branch: the startup self-test in one line (details go to the diagnostics file)
 function SelfTest(p) {
   const s = p.state;
-  if (!s.probes) return null;
-  const off = s.probes.indexOf("off:") >= 0;
+  const probes = str(s.probes);
+  if (!probes) return null;
+  const off = probes.indexOf("off:") >= 0;
   return h(
     "div",
     { style: merge({ fontSize: FS.xs, lineHeight: 1.35, color: off ? T.warn : p.menu ? T.menuText2 : T.textDimmer }, p.style) },
-    s.probes + " ",
+    probes + " ",
     h(LinkText, { onClick: function () { send("writeDiagnostics"); } }, t("st.ui.selftest.details"))
   );
 }
@@ -1521,7 +1668,7 @@ function Diagnostics(p) {
   return h(
     Foldout,
     { title: t("st.ui.diag.title") },
-    s.sync ? h("div", { style: { color: T.textDimmer, fontSize: FS.xs, lineHeight: 1.35, padding: "2rem 6rem 6rem 6rem" } }, s.sync) : null,
+    str(s.sync) ? h("div", { style: { color: T.textDimmer, fontSize: FS.xs, lineHeight: 1.35, padding: "2rem 6rem 6rem 6rem" } }, str(s.sync)) : null,
     h(NetLine, null),
     h(SelfTest, { state: s, style: { padding: "6rem 6rem 2rem 6rem" } })
   );
@@ -1530,21 +1677,23 @@ function Diagnostics(p) {
 // robust branch: a client session ended unexpectedly in the host's city: automatic rejoin, or the player's choice
 function RecoveryView(p) {
   const s = p.state;
-  const r = s.recovery || {};
+  const r = obj(s.recovery);
+  const attempt = num(r.attempt, 0);
+  const max = num(r.max, 0);
   let title;
   let text;
   let buttons = [];
   const full = { width: "100%", marginTop: "6rem" };
   if (r.phase === "Waiting") {
     title = t("st.ui.recovery.lost.title");
-    text = t("st.ui.recovery.lost.text", { S: r.seconds || 0, N: (r.attempt || 0) + 1, MAX: r.max || 0 });
+    text = t("st.ui.recovery.lost.text", { S: Math.max(0, num(r.seconds, 0)), N: attempt + 1, MAX: max });
     buttons = [
       h(Btn, { key: "now", kind: "primary", style: full, onClick: function () { send("reconnect"); } }, t("st.ui.recovery.reconnectNow")),
       h(Btn, { key: "menu", style: full, onClick: function () { send("mainMenu"); } }, t("st.ui.recovery.mainMenu")),
       h(Btn, { key: "stay", style: full, onClick: function () { send("stayOffline"); } }, t("st.ui.recovery.stayOffline")),
     ];
   } else if (r.phase === "Attempting") {
-    title = t("st.ui.recovery.attempt.title", { N: r.attempt || 1, MAX: r.max || 0 });
+    title = t("st.ui.recovery.attempt.title", { N: attempt || 1, MAX: max });
     text = STAGES.indexOf(r.attemptStage) >= 0 ? t("st.ui.join.stage." + r.attemptStage) : "";
     buttons = [h(Btn, { key: "cancel", style: full, onClick: function () { send("cancelReconnect"); } }, t("st.ui.recovery.cancel"))];
   } else {
@@ -1563,20 +1712,21 @@ function RecoveryView(p) {
       Section,
       { first: true },
       h("div", { style: merge(S.row, { padding: "4rem 6rem 6rem 6rem" }) }, h(Dot, { color: r.phase === "NeedsChoice" ? T.bad : T.warn, size: 10 }), h("div", { style: { flex: 1, fontSize: FS.m, color: T.text } }, title)),
-      r.reason ? h(Hint, { style: { padding: "0 6rem 6rem 6rem" } }, r.reason) : null,
+      str(r.reason) ? h(Hint, { style: { padding: "0 6rem 6rem 6rem" } }, str(r.reason)) : null,
       text ? h(Notice, { color: r.phase === "NeedsChoice" ? T.bad : T.warn }, text) : null,
       r.phase === "Attempting" ? h(Progress, { value: s.progress, style: { margin: "6rem" } }) : null,
       h("div", { style: { padding: "0 6rem 6rem 6rem" } }, buttons)
     ),
-    list(s.players).length > 0 ? h(Players, { state: s }) : null,
-    s.probes ? h(Section, null, h(SelfTest, { state: s, style: { padding: "2rem 6rem" } })) : null
+    objs(s.players).length > 0 ? h(Players, { state: s }) : null,
+    str(s.probes) ? h(Section, null, h(SelfTest, { state: s, style: { padding: "2rem 6rem" } })) : null
   );
 }
 
 // w8/security: the integrity check found more divergence than object repairs fix: offer a rejoin with a fresh snapshot
 function ResyncOffer(p) {
   const s = p.state;
-  if (!s.resync) return null;
+  const detail = str(s.resync);
+  if (!detail) return null;
   return h(
     Section,
     null,
@@ -1585,7 +1735,7 @@ function ResyncOffer(p) {
       { color: T.warn },
       h("div", { style: { fontWeight: "bold", marginBottom: "3rem" } }, t("st.ui.resync.title")),
       t("st.ui.resync.text"),
-      h("div", { style: { marginTop: "4rem", color: T.textDimmer, fontSize: FS.xs } }, s.resync)
+      h("div", { style: { marginTop: "4rem", color: T.textDimmer, fontSize: FS.xs } }, detail)
     ),
     h(
       "div",
@@ -1614,8 +1764,8 @@ function SessionView(p) {
 // w8/security: the build id, exactly as the installer prints it (players compare it when a join is refused)
 function BuildLine(p) {
   const s = p.state;
-  if (!s.build) return null;
-  return h("div", { style: merge({ color: p.menu ? T.menuText2 : T.textFaint, fontSize: FS.xs, marginTop: p.menu ? "6rem" : "6rem", textAlign: p.menu ? "left" : "center" }, p.style) }, t("st.ui.footer.build", { BUILD: s.build }));
+  if (!str(s.build)) return null;
+  return h("div", { style: merge({ color: p.menu ? T.menuText2 : T.textDimmer, fontSize: FS.xs, marginTop: "6rem", textAlign: p.menu ? "left" : "center" }, p.style) }, t("st.ui.footer.build", { BUILD: str(s.build) }));
 }
 
 function LeaveButton(p) {
@@ -1637,8 +1787,8 @@ function verdictColor(status) {
 }
 
 function VerdictCard(p) {
-  const v = p.verdict;
-  if (!v || !v.status) return null;
+  const v = obj(p.verdict);
+  if (!str(v.status)) return null;
   const kind = v.status === "passed" || v.status === "failed" ? v.status : "incomplete";
   const color = verdictColor(v.status);
   const textColor = p.menu ? T.menuText : T.text;
@@ -1646,13 +1796,13 @@ function VerdictCard(p) {
     "div",
     { style: merge({ padding: "10rem 12rem", margin: p.menu ? "0 0 12rem 0" : "4rem 6rem", borderRadius: T.radiusInner, backgroundColor: "rgba(0, 0, 0, 0.22)" }, border("3rem", color, ["Left"])) },
     h("div", { style: merge(S.row, { marginBottom: "4rem" }) }, h(Glyph, { src: kind === "passed" ? G.check : G.warning, size: 14, color: color, style: { marginRight: "8rem" } }), h("div", { style: { flex: 1, fontSize: p.menu ? FS.l : FS.m, color: textColor, fontWeight: "bold" } }, t("st.ui.test.verdict." + kind))),
-    h("div", { style: { color: p.menu ? T.menuText2 : T.textDim, fontSize: FS.s, lineHeight: 1.35 } }, v.summary || ""),
-    v.folder
+    h("div", { style: { color: p.menu ? T.menuText2 : T.textDim, fontSize: FS.s, lineHeight: 1.35 } }, str(v.summary)),
+    str(v.folder)
       ? h(
           "div",
           { style: { marginTop: "6rem", fontSize: FS.xs, color: p.menu ? T.menuText2 : T.textDimmer, lineHeight: 1.35 } },
-          t("st.ui.test.verdictFile", { FOLDER: v.folder }) + " ",
-          h(LinkText, { onClick: function () { send("copyText", v.folder); } }, t("st.ui.test.copyPath"))
+          t("st.ui.test.verdictFile", { FOLDER: str(v.folder) }) + " ",
+          h(LinkText, { onClick: function () { send("copyText", str(v.folder)); } }, t("st.ui.test.copyPath"))
         )
       : null
   );
@@ -1668,12 +1818,15 @@ function RecordingRow(p) {
   return h(
     "div",
     merge(hv, { style: merge(S.row, { padding: menu ? "8rem 12rem" : "6rem 8rem", borderRadius: "4rem", cursor: "pointer", backgroundColor: bg, color: fg }), onClick: function () { p.onSelect(r.id); } }),
-    h(Dot, { color: r.verdict ? verdictColor(r.verdict) : sel && menu ? T.menuInverted : T.textFaint, size: 8, gap: 10 }),
+    // the verdict as a glyph (check or warning) in its colour, so it does not rely on colour alone
+    r.verdict
+      ? h(Glyph, { src: r.verdict === "passed" ? G.check : G.warning, size: 12, color: sel && menu ? T.menuInverted : verdictColor(r.verdict), style: { marginRight: "10rem" } })
+      : h(Dot, { color: sel && menu ? T.menuInverted : T.textFaint, size: 8, gap: 14 }),
     h(
       "div",
       { style: { flex: 1, minWidth: 0 } },
-      h("div", { style: merge(S.ellipsis, { fontSize: menu ? FS.m : FS.s }) }, r.city || r.id || ""),
-      h("div", { style: { fontSize: FS.xs, opacity: 0.75 } }, (r.when || "") + (r.duration ? " · " + r.duration : "") + " · " + (r.mb || "0") + " MB")
+      h("div", { style: merge(S.ellipsis, { fontSize: menu ? FS.m : FS.s }) }, str(r.city) || str(r.id)),
+      h("div", { style: merge(S.ellipsis, { fontSize: FS.xs, opacity: 0.8 }) }, [str(r.when), str(r.duration), (str(r.mb) || "0") + " MB"].filter(function (x) { return x.length > 0; }).join(" · "))
     )
   );
 }
@@ -1718,7 +1871,7 @@ function useRecordings() {
   const r = useJson(replayBinding);
   const [selected, setSelected] = React.useState("");
   const [speed, setSpeed] = React.useState(1);
-  const recs = list(r.recordings);
+  const recs = objs(r.recordings).filter(function (x) { return str(x.id).length > 0; });
   let chosen = recs.length > 0 ? recs[0].id : "";
   for (const x of recs) if (x.id === selected) chosen = selected;
   return { r: r, recs: recs, chosen: chosen, setSelected: setSelected, speed: speed, setSpeed: setSpeed };
@@ -1747,7 +1900,7 @@ function SoloTestSection(p) {
       m.recs.length > 0 ? h("div", { style: { padding: "8rem 6rem 4rem 6rem" } }, h(SpeedPicker, { value: m.speed, onChange: m.setSpeed })) : null,
       m.recs.length > 0 ? h("div", { style: { padding: "4rem 6rem" } }, h(Btn, { kind: "primary", disabled: !r.canReplay || !m.chosen, onClick: function () { send("replayStart", m.chosen, m.speed); }, style: { width: "100%" } }, t("st.ui.test.replay"))) : null,
       m.recs.length > 0 && p.inGame ? h(Hint, { style: { padding: "2rem 6rem 4rem 6rem", fontSize: FS.xs } }, t("st.ui.test.replayHint")) : null,
-      r.root ? h("div", { style: { padding: "4rem 6rem 6rem 6rem", fontSize: FS.xs, color: T.textDimmer, lineHeight: 1.35 } }, t("st.ui.test.folder", { FOLDER: r.root })) : null
+      str(r.root) ? h("div", { style: { padding: "4rem 6rem 6rem 6rem", fontSize: FS.xs, color: T.textDimmer, lineHeight: 1.35 } }, t("st.ui.test.folder", { FOLDER: str(r.root) })) : null
     )
   );
 }
@@ -1763,7 +1916,7 @@ function RecordControls() {
         "div",
         { style: merge(S.row, { padding: "4rem 6rem 8rem 6rem" }) },
         h(Dot, { color: T.bad, size: 10 }),
-        h("div", { style: { flex: 1, color: T.text, fontSize: FS.s } }, r.recordStatus || "")
+        h("div", { style: { flex: 1, color: T.text, fontSize: FS.s } }, str(r.recordStatus))
       ),
       h("div", { style: { padding: "0 6rem 4rem 6rem" } }, h(Btn, { kind: "flat", disabled: !!r.stopping, onClick: function () { send("recordStop"); }, style: { width: "100%" } }, t("st.ui.test.stop")))
     );
@@ -1785,7 +1938,7 @@ function ReplayBanner() {
     Section,
     null,
     h(Notice, { icon: G.info, color: T.accent }, t("st.ui.test.replayBanner")),
-    r.replayStatus ? h(Hint, { style: { padding: "4rem 6rem" } }, r.replayStatus) : null,
+    str(r.replayStatus) ? h(Hint, { style: { padding: "4rem 6rem" } }, str(r.replayStatus)) : null,
     h(Progress, { value: r.progress, style: { margin: "6rem" } }),
     h("div", { style: { padding: "0 6rem 4rem 6rem" } }, h(Btn, { kind: "flat", onClick: function () { send("replayStop"); }, style: { width: "100%" } }, t("st.ui.test.stopReplay")))
   );
@@ -1798,18 +1951,29 @@ function SteamMissing(p) {
 }
 
 // host options shared by the lobby, the live session settings and the main menu (saved on every change)
+// the direct-connection port as typed: a whole number from 1024 to 65535, or 0
+function portOf(text) {
+  const t0 = str(text).trim();
+  if (!/^[0-9]{4,5}$/.test(t0)) return 0;
+  const n = parseInt(t0, 10);
+  return n >= 1024 && n <= 65535 ? n : 0;
+}
+
 function useHostOptions(s) {
-  const [maxPlayers, setMaxPlayers] = React.useState(s.maxPlayers || 8);
+  const [maxPlayers, setMaxPlayers] = React.useState(Math.max(2, Math.min(16, Math.round(num(s.maxPlayers, 8)))));
   const [allowDirect, setAllowDirect] = React.useState(!!s.allowDirect);
   const [requireMods, setRequireMods] = React.useState(s.requireSameMods !== false);
-  const [port, setPort] = React.useState(String(s.portSetting || 27015));
+  const [port, setPortText] = React.useState(String(Math.round(num(s.portSetting, 27015))));
   const save = function (next) {
     const v = merge({ maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, port: port }, next);
-    const portNumber = parseInt(v.port, 10);
-    send("saveHostOptions", v.maxPlayers, !!v.allowDirect, !!v.requireMods, portNumber >= 1024 && portNumber <= 65535 ? portNumber : 0);
+    // an invalid port is sent as 0, which keeps the saved one (the field says what is wrong)
+    send("saveHostOptions", v.maxPlayers, !!v.allowDirect, !!v.requireMods, portOf(v.port));
   };
   return {
-    maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, port: port, setPort: setPort, save: save,
+    maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, port: port, save: save,
+    portInvalid: portOf(port) === 0,
+    // digits only (a pasted "27015 " or "port 27015" keeps its number)
+    setPort: function (v) { setPortText(str(v).replace(/[^0-9]/g, "").slice(0, 5)); },
     setMax: function (v) { setMaxPlayers(v); save({ maxPlayers: v }); },
     setDirect: function (v) { setAllowDirect(v); save({ allowDirect: v }); },
     setMods: function (v) { setRequireMods(v); save({ requireMods: v }); },
@@ -1818,7 +1982,7 @@ function useHostOptions(s) {
 
 // w8/security: the host's ban list with an unban button per entry (stored with the host's settings)
 function BanList(p) {
-  const bans = list(p.state.bans);
+  const bans = objs(p.state.bans).filter(function (b) { return str(b.key).length > 0; });
   if (bans.length === 0) return null;
   const menu = !!p.menu;
   return h(
@@ -1829,12 +1993,12 @@ function BanList(p) {
     bans.map(function (b) {
       return h(
         "div",
-        { key: b.key, style: merge(S.row, { padding: "4rem 0", minHeight: "32rem" }, border("1rem", menu ? T.menuBorder : T.divider, ["Top"])) },
+        { key: str(b.key), style: merge(S.row, { padding: "4rem 0", minHeight: "32rem" }, border("1rem", menu ? T.menuBorder : T.divider, ["Top"])) },
         h(
           "div",
           { style: { flex: 1, minWidth: 0 } },
-          h("div", { style: merge(S.ellipsis, { color: menu ? T.menuText : T.text, fontSize: menu ? FS.m : FS.s }) }, b.name || b.id),
-          h("div", { style: merge(S.ellipsis, { color: menu ? T.menuText2 : T.textDimmer, fontSize: FS.xs }) }, b.kind === "ip" ? t("st.ui.host.banAddress", { ADDRESS: b.id }) : b.id)
+          h("div", { style: merge(S.ellipsis, { color: menu ? T.menuText : T.text, fontSize: menu ? FS.m : FS.s }) }, str(b.name) || str(b.id) || str(b.key)),
+          h("div", { style: merge(S.ellipsis, { color: menu ? T.menuText2 : T.textDimmer, fontSize: FS.xs }) }, b.kind === "ip" ? t("st.ui.host.banAddress", { ADDRESS: str(b.id) }) : str(b.id))
         ),
         h(Btn, { kind: menu ? "menuSecondary" : "flat", style: { marginLeft: "8rem" }, onClick: function () { send("unban", b.key); } }, t("st.ui.host.unban"))
       );
@@ -1860,21 +2024,75 @@ function HostOptions(p) {
       h(Check, { checked: o.allowDirect && directOk, disabled: !directOk, onChange: o.setDirect })
     ),
     o.allowDirect && directOk
-      ? h(GameRow, { label: t("st.ui.host.port") }, h(Field, { value: o.port, onChange: o.setPort, onBlur: function () { o.save({}); }, ids: true, max: 5, style: { width: "100rem", textAlign: "center" }, title: t("st.ui.host.port") }))
+      ? h(
+          GameRow,
+          { label: t("st.ui.host.port"), hint: o.portInvalid ? null : t("st.ui.host.portHint") },
+          h(Field, { value: o.port, onChange: o.setPort, onBlur: function () { o.save({}); }, onEnter: function () { o.save({}); }, invalid: o.portInvalid, ids: true, max: 5, style: { width: "100rem", textAlign: "center" }, title: t("st.ui.host.port"), description: t("st.ui.host.portHint") })
+        )
       : null,
+    o.allowDirect && directOk && o.portInvalid ? h(FieldError, { style: { padding: "0 6rem 6rem 6rem" } }, t("st.ui.host.portInvalid")) : null,
     h(BanList, { state: s })
+  );
+}
+
+// why the Host button is disabled, or "" (Steam and blocked reasons have their own notice above)
+function hostReason(s) {
+  if (s.canHost || s.steam === false || str(s.blocked)) return "";
+  return s.inGame === false ? t("st.ui.host.needCity") : t("st.ui.host.unavailable");
+}
+
+// why the Join button is disabled although the address is fine, or ""
+function joinReason(s) {
+  if (s.canJoin || s.steam === false || str(s.blocked)) return "";
+  return t("st.ui.join.unavailable");
+}
+
+// The host's Steam ID or address as typed or pasted. Spaces inside a Steam ID go, and a pasted Steam profile link (or
+// any text around a Steam ID, like "steam id: 7656…") gives the bare ID.
+function normalizeTarget(raw) {
+  const text = str(raw);
+  const compact = text.replace(/\s+/g, "");
+  if (/^[0-9]+$/.test(compact)) return compact;
+  const id = text.match(/(?:^|[^0-9])(7656119[0-9]{10})(?![0-9])/);
+  if (id && !/^[0-9.]+:[0-9]+$/.test(text.trim())) return id[1];
+  return text.replace(/^\s+/, "");
+}
+
+// what is wrong with a join target ("" when it looks fine or is empty), the same rules as the mod's own parser:
+// a Steam ID (15 or more digits), host:port, [IPv6]:port or a plain host name or address
+function targetProblem(raw) {
+  const t0 = str(raw).trim();
+  if (t0.length === 0) return "";
+  if (/^[0-9]+$/.test(t0)) return t0.length >= 15 && t0.length <= 20 ? "" : t("st.ui.join.badSteamId");
+  const v6 = t0.match(/^\[([0-9a-fA-F:.]+)\](?::([0-9]{1,5}))?$/);
+  if (v6) return !v6[2] || (+v6[2] >= 1 && +v6[2] <= 65535) ? "" : t("st.ui.join.badPort");
+  if (/^[0-9a-fA-F:]+$/.test(t0) && t0.split(":").length > 2) return ""; // a bare IPv6 address
+  const m = t0.match(/^([A-Za-z0-9.-]+)(?::([0-9]*))?$/);
+  if (!m || m[1].length === 0) return t("st.ui.join.badTarget");
+  if (m[2] !== undefined && !(m[2].length > 0 && +m[2] >= 1 && +m[2] <= 65535)) return t("st.ui.join.badPort");
+  return "";
+}
+
+// an inline validation message under a field (warning glyph and text: not colour alone)
+function FieldError(p) {
+  const menu = !!p.menu;
+  return h(
+    "div",
+    { style: merge(S.row, { alignItems: "flex-start", fontSize: menu ? FS.m : FS.xs, color: T.warn, lineHeight: 1.35 }, p.style) },
+    h(Glyph, { src: G.warning, size: menu ? 14 : 12, color: T.warn, style: { marginRight: "6rem", marginTop: "1rem" } }),
+    h("div", { style: { flex: 1, minWidth: 0 } }, p.children)
   );
 }
 
 function GameHostTab(p) {
   const s = p.state;
-  const [session, setSession] = React.useState(s.sessionNameSetting || "");
+  const [session, setSession] = React.useState(str(s.sessionNameSetting));
   const [password, setPassword] = React.useState("");
   // review fix: an untouched (empty) password field keeps the stored host password instead of wiping it
   const save = function (pw) {
-    send("saveHostSettings", p.name, session, pw !== undefined ? pw : password.length > 0 ? password : s.keepPassword || KEEP_PASSWORD);
+    send("saveHostSettings", p.name, session, pw !== undefined ? pw : password.length > 0 ? password : str(s.keepPassword) || KEEP_PASSWORD);
   };
-  const reason = !s.canHost ? t("st.ui.host.unavailable") : "";
+  const reason = hostReason(s);
   return h(
     "div",
     null,
@@ -1883,11 +2101,11 @@ function GameHostTab(p) {
       { first: true },
       h(Hint, { style: { padding: "4rem 6rem 4rem 6rem" } }, t("st.ui.host.intro")),
       p.nameField,
-      h(GameField, { label: t("st.ui.host.sessionName") }, h(Field, { value: session, onChange: setSession, onBlur: function () { save(); }, placeholder: t("st.ui.host.sessionNamePlaceholder", { NAME: p.name || s.playerName || "…" }), title: t("st.ui.host.sessionName"), max: 64 })),
+      h(GameField, { label: t("st.ui.host.sessionName"), hint: t("st.ui.host.sessionNameHint") }, h(Field, { value: session, onChange: setSession, onBlur: function () { save(); }, placeholder: t("st.ui.host.sessionNamePlaceholder", { NAME: p.name || str(s.playerName) || "…" }), title: t("st.ui.host.sessionName"), max: 64 })),
       h(
         GameField,
-        { label: t("st.ui.host.password") },
-        h(Field, { value: password, onChange: setPassword, onBlur: function () { save(); }, password: true, placeholder: s.hasPassword ? t("st.ui.host.passwordKept") : t("st.ui.host.passwordPlaceholder"), title: t("st.ui.host.password") }),
+        { label: t("st.ui.host.password"), hint: s.hasPassword ? null : t("st.ui.host.passwordHint") },
+        h(Field, { value: password, onChange: setPassword, onBlur: function () { save(); }, password: true, placeholder: s.hasPassword ? t("st.ui.host.passwordKept") : t("st.ui.host.passwordPlaceholder"), title: t("st.ui.host.password"), max: 64 }),
         s.hasPassword ? h("div", { style: { marginTop: "6rem", fontSize: FS.s } }, h(LinkText, { onClick: function () { setPassword(""); save(""); } }, t("st.ui.host.removePassword"))) : null
       )
     ),
@@ -1903,12 +2121,14 @@ function GameHostTab(p) {
 
 function GameJoinTab(p) {
   const s = p.state;
-  const [target, setTarget] = React.useState(s.joinTarget || "");
+  const [target, setTarget] = React.useState(str(s.joinTarget));
   const [password, setPassword] = React.useState("");
-  const canJoin = !!s.canJoin && target.trim().length > 0;
+  const problem = targetProblem(target);
+  const canJoin = !!s.canJoin && target.trim().length > 0 && !problem;
+  const reason = target.trim().length > 0 && !problem ? joinReason(s) : "";
   const join = function () {
     if (!canJoin) return;
-    send("saveHostSettings", p.name, s.sessionNameSetting || "", s.keepPassword || KEEP_PASSWORD);
+    send("saveHostSettings", p.name, str(s.sessionNameSetting), str(s.keepPassword) || KEEP_PASSWORD);
     send("join", target.trim(), password);
   };
   return h(
@@ -1919,13 +2139,19 @@ function GameJoinTab(p) {
       { first: true },
       h(Hint, { style: { padding: "4rem 6rem 4rem 6rem" } }, t("st.ui.join.intro")),
       p.nameField,
-      h(GameField, { label: t("st.ui.join.target") }, h(Field, { value: target, onChange: setTarget, onEnter: join, ids: true, placeholder: t("st.ui.join.targetPlaceholder"), title: t("st.ui.join.target"), max: 96 })),
-      h(GameField, { label: t("st.ui.join.password") }, h(Field, { value: password, onChange: setPassword, onEnter: join, password: true, placeholder: t("st.ui.join.passwordPlaceholder"), title: t("st.ui.join.password") }))
+      h(
+        GameField,
+        { label: t("st.ui.join.target"), hint: problem ? null : t("st.ui.join.findId") },
+        h(Field, { value: target, onChange: function (v) { setTarget(normalizeTarget(v)); }, onEnter: join, invalid: !!problem, ids: true, placeholder: t("st.ui.join.targetPlaceholder"), title: t("st.ui.join.target"), description: t("st.ui.join.intro"), max: 96 }),
+        problem ? h(FieldError, { style: { marginTop: "4rem" } }, problem) : null
+      ),
+      h(GameField, { label: t("st.ui.join.password"), hint: t("st.ui.join.passwordHint") }, h(Field, { value: password, onChange: setPassword, onEnter: join, password: true, placeholder: t("st.ui.join.passwordPlaceholder"), title: t("st.ui.join.password"), max: 64 }))
     ),
     h(
       Section,
       null,
       h(Notice, null, t("st.ui.join.replaceWarning")),
+      reason ? h(Hint, { style: { padding: "2rem 6rem 2rem 6rem" } }, reason) : null,
       h("div", { style: { padding: "4rem 6rem" } }, h(Btn, { kind: "primary", disabled: !canJoin, onClick: join, style: { width: "100%" } }, t("st.ui.join.start"))),
       h(Hint, { style: { padding: "4rem 6rem 4rem 6rem", fontSize: FS.xs } }, t("st.ui.join.steamHint"))
     )
@@ -1947,11 +2173,11 @@ function Tabs(p) {
 function GameLobby(p) {
   const s = p.state;
   const st = useStore();
-  const [name, setName] = React.useState(s.playerName || "");
+  const [name, setName] = React.useState(str(s.playerName));
   // its own page memory: in a city hosting comes first, in the main menu joining does
   const tab = st.gameTab === "join" || st.gameTab === "solo" ? st.gameTab : "host";
   const saveName = function () {
-    send("saveHostSettings", name, s.sessionNameSetting || "", s.keepPassword || KEEP_PASSWORD);
+    send("saveHostSettings", name, str(s.sessionNameSetting), str(s.keepPassword) || KEEP_PASSWORD);
   };
   const nameField = h(GameField, { label: t("st.ui.profile.name") }, h(Field, { value: name, onChange: setName, onBlur: saveName, placeholder: t("st.ui.profile.namePlaceholder"), title: t("st.ui.profile.name"), max: 64 }));
   return h(
@@ -1959,14 +2185,28 @@ function GameLobby(p) {
     null,
     h(Tabs, { value: tab, onChange: function (id) { setStore({ gameTab: id }); }, tabs: [{ id: "host", label: t("st.ui.tab.host") }, { id: "join", label: t("st.ui.tab.join") }, { id: "solo", label: t("st.ui.tab.solo") }] }),
     s.steam === false ? h(SteamMissing, { style: { margin: "8rem" } }) : null,
-    s.blocked ? h(Notice, { color: T.bad, style: { margin: "8rem" } }, t("st.ui.blocked", { REASON: s.blocked })) : null,
+    str(s.blocked) ? h(Notice, { color: T.bad, style: { margin: "8rem" } }, t("st.ui.blocked", { REASON: str(s.blocked) })) : null,
     tab === "host" ? h(GameHostTab, { state: s, name: name, nameField: nameField }) : tab === "join" ? h(GameJoinTab, { state: s, name: name, nameField: nameField }) : h(SoloTestSection, { inGame: true }),
-    s.probes ? h(Section, null, h(SelfTest, { state: s, style: { padding: "2rem 6rem" } })) : null
+    str(s.probes) ? h(Section, null, h(SelfTest, { state: s, style: { padding: "2rem 6rem" } })) : null
   );
+}
+
+// Before the first state value arrives (or when C# sent only why it cannot work) there is nothing to edit yet: the
+// forms would start empty and saving them would overwrite the stored settings.
+function stateReady(s) {
+  return typeof s.mode === "string" && s.mode.length > 0;
+}
+
+function NotReady(p) {
+  const s = p.state;
+  const blocked = str(s.blocked);
+  if (p.menu) return blocked ? h(MenuNotice, { color: T.bad }, t("st.ui.blocked", { REASON: blocked })) : h(MenuText, { style: { color: T.menuText2 } }, t("st.ui.loading"));
+  return blocked ? h(Notice, { color: T.bad, style: { margin: "8rem" } }, t("st.ui.blocked", { REASON: blocked })) : h(Hint, { style: { padding: "12rem" } }, t("st.ui.loading"));
 }
 
 function PanelContent(p) {
   const s = p.state;
+  if (!stateReady(s)) return h(NotReady, { state: s });
   const mode = s.mode || "None";
   if (mode === "Hosting" || mode === "Client") return h(SessionView, { state: s });
   if (mode === "Recovering") return h(RecoveryView, { state: s });
@@ -1978,7 +2218,7 @@ function PanelContent(p) {
       h(
         Section,
         { first: true },
-        h(Hint, { style: { padding: "4rem 6rem 8rem 6rem" } }, s.status || t("st.ui.join.overlayTitleUnknown")),
+        h(Hint, { style: { padding: "4rem 6rem 8rem 6rem" } }, str(s.status) || t("st.ui.join.overlayTitleUnknown")),
         h(Progress, { value: s.progress, style: { margin: "0 6rem 10rem 6rem" } }),
         h("div", { style: { padding: "0 6rem 4rem 6rem" } }, h(Btn, { kind: "flat", onClick: function () { send("leave"); }, style: { width: "100%" } }, t("st.ui.join.cancel")))
       )
@@ -1989,7 +2229,7 @@ function PanelContent(p) {
 
 function panelTitle(s) {
   const mode = s.mode || "None";
-  return (mode === "Hosting" || mode === "Client") && s.sessionName ? s.sessionName : t("st.ui.title");
+  return (mode === "Hosting" || mode === "Client") && str(s.sessionName) ? str(s.sessionName) : t("st.ui.title");
 }
 
 // ----------------------------------------------------------------------------------- main menu: multiplayer
@@ -2100,15 +2340,17 @@ function infoBlock(title, text, extra) {
 
 function MenuJoinPage(p) {
   const s = p.state;
-  const [name, setName] = React.useState(s.playerName || "");
-  const [target, setTarget] = React.useState(s.joinTarget || "");
+  const [name, setName] = React.useState(str(s.playerName));
+  const [target, setTarget] = React.useState(str(s.joinTarget));
   const [password, setPassword] = React.useState("");
   const [hoverInfo, setHoverInfo] = React.useState(null);
-  const canJoin = !!s.canJoin && s.steam !== false && target.trim().length > 0;
-  const saveName = function () { send("saveHostSettings", name, s.sessionNameSetting || "", s.keepPassword || KEEP_PASSWORD); };
+  const problem = targetProblem(target);
+  const canJoin = !!s.canJoin && s.steam !== false && target.trim().length > 0 && !problem;
+  const reason = target.trim().length > 0 && !problem ? joinReason(s) : "";
+  const saveName = function () { send("saveHostSettings", name, str(s.sessionNameSetting), str(s.keepPassword) || KEEP_PASSWORD); };
   const join = function () {
     if (!canJoin) return;
-    send("saveHostSettings", name, s.sessionNameSetting || "", s.keepPassword || KEEP_PASSWORD);
+    send("saveHostSettings", name, str(s.sessionNameSetting), str(s.keepPassword) || KEEP_PASSWORD);
     send("join", target.trim(), password);
   };
   const info = hoverInfo || infoBlock(t("st.ui.join.title"), t("st.ui.join.info"), h("div", { style: { marginTop: "16rem", color: T.menuText2, lineHeight: 1.4 } }, t("st.ui.join.steamHint")));
@@ -2118,13 +2360,18 @@ function MenuJoinPage(p) {
       title: t("st.ui.join.title"),
       subtitle: t("st.ui.join.subtitle"),
       info: info,
-      footer: h(Btn, { kind: "menuPrimary", disabled: !canJoin, onClick: join, style: { minWidth: "220rem" } }, t("st.ui.join.start")),
+      footer: [
+        h("div", { key: "why", style: { flex: 1, color: T.menuText2, fontSize: FS.m, marginRight: "16rem" } }, reason),
+        h(Btn, { key: "join", kind: "menuPrimary", disabled: !canJoin, onClick: join, style: { minWidth: "220rem" } }, t("st.ui.join.start")),
+      ],
     },
     s.steam === false ? h(MenuNotice, { color: T.bad }, h("div", { style: { fontWeight: "bold" } }, t("st.ui.steam.missing.title")), t("st.ui.steam.missing.text")) : null,
     h(MenuText, { style: { color: T.menuText2, fontSize: FS.m } }, t("st.ui.join.intro")),
     h(MenuRow, { label: t("st.ui.profile.name"), info: t("st.ui.profile.nameHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: name, onChange: setName, onBlur: saveName, placeholder: t("st.ui.profile.namePlaceholder"), title: t("st.ui.profile.name"), max: 64 })),
-    h(MenuRow, { label: t("st.ui.join.targetShort"), info: t("st.ui.join.intro") + " " + t("st.ui.join.findId"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: target, onChange: setTarget, onEnter: join, ids: true, placeholder: t("st.ui.join.targetPlaceholder"), title: t("st.ui.join.target"), max: 96 })),
-    h(MenuRow, { label: t("st.ui.join.password"), info: t("st.ui.join.passwordHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: password, onChange: setPassword, onEnter: join, password: true, placeholder: t("st.ui.join.passwordPlaceholder"), title: t("st.ui.join.password") }))
+    h(MenuRow, { label: t("st.ui.join.targetShort"), info: t("st.ui.join.intro") + " " + t("st.ui.join.findId"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: target, onChange: function (v) { setTarget(normalizeTarget(v)); }, onEnter: join, invalid: !!problem, ids: true, placeholder: t("st.ui.join.targetPlaceholder"), title: t("st.ui.join.target"), description: t("st.ui.join.intro"), max: 96 })),
+    problem ? h(FieldError, { menu: true, style: { padding: "0 16rem 8rem 16rem" } }, problem) : null,
+    h(MenuRow, { label: t("st.ui.join.password"), info: t("st.ui.join.passwordHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: password, onChange: setPassword, onEnter: join, password: true, placeholder: t("st.ui.join.passwordPlaceholder"), title: t("st.ui.join.password"), max: 64 })),
+    h(MenuNotice, { icon: G.info, color: T.accent }, t("st.ui.join.replaceWarning"))
   );
 }
 
@@ -2140,8 +2387,8 @@ function Step(p) {
 function MenuHostPage(p) {
   const s = p.state;
   const inGame = !!s.inGame;
-  const [name, setName] = React.useState(s.playerName || "");
-  const [session, setSession] = React.useState(s.sessionNameSetting || "");
+  const [name, setName] = React.useState(str(s.playerName));
+  const [session, setSession] = React.useState(str(s.sessionNameSetting));
   const [password, setPassword] = React.useState("");
   const [hoverInfo, setHoverInfo] = React.useState(null);
   const [friendsOnly, setFriendsOnly] = React.useState(!!s.friendsOnly);
@@ -2149,7 +2396,7 @@ function MenuHostPage(p) {
   const o = useHostOptions(s);
   // review fix: an untouched (empty) password field keeps the stored host password instead of wiping it
   const save = function (pw) {
-    send("saveHostSettings", name, session, pw !== undefined ? pw : password.length > 0 ? password : s.keepPassword || KEEP_PASSWORD);
+    send("saveHostSettings", name, session, pw !== undefined ? pw : password.length > 0 ? password : str(s.keepPassword) || KEEP_PASSWORD);
   };
   const info = hoverInfo || infoBlock(t("st.ui.host.title"), t("st.ui.host.info"), h("div", { style: { marginTop: "16rem", color: T.menuText2, lineHeight: 1.4 } }, t("st.ui.host.settingsNote")));
   return h(
@@ -2159,7 +2406,7 @@ function MenuHostPage(p) {
       subtitle: t("st.ui.host.subtitle"),
       info: info,
       footer: [
-        h("div", { key: "why", style: { flex: 1, color: T.menuText2, fontSize: FS.m, marginRight: "16rem" } }, !inGame ? t("st.ui.host.needCity") : !s.canHost ? t("st.ui.host.unavailable") : ""),
+        h("div", { key: "why", style: { flex: 1, color: T.menuText2, fontSize: FS.m, marginRight: "16rem" } }, !inGame ? t("st.ui.host.needCity") : hostReason(s)),
         h(Btn, { key: "host", kind: "menuPrimary", disabled: !inGame || !s.canHost, onClick: function () { save(); send("host"); }, style: { minWidth: "220rem" } }, t("st.ui.host.start")),
       ],
     },
@@ -2182,8 +2429,8 @@ function MenuHostPage(p) {
       : null,
     h(MenuGroup, null, t("st.ui.host.settingsTitle")),
     h(MenuRow, { label: t("st.ui.profile.name"), info: t("st.ui.profile.nameHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: name, onChange: setName, onBlur: function () { save(); }, placeholder: t("st.ui.profile.namePlaceholder"), title: t("st.ui.profile.name"), max: 64 })),
-    h(MenuRow, { label: t("st.ui.host.sessionName"), info: t("st.ui.host.sessionNameHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: session, onChange: setSession, onBlur: function () { save(); }, placeholder: t("st.ui.host.sessionNamePlaceholder", { NAME: name || s.playerName || "…" }), title: t("st.ui.host.sessionName"), max: 64 })),
-    h(MenuRow, { label: t("st.ui.host.password"), info: t("st.ui.host.passwordHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: password, onChange: setPassword, onBlur: function () { save(); }, password: true, placeholder: s.hasPassword ? t("st.ui.host.passwordKept") : t("st.ui.host.passwordPlaceholder"), title: t("st.ui.host.password") })),
+    h(MenuRow, { label: t("st.ui.host.sessionName"), info: t("st.ui.host.sessionNameHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: session, onChange: setSession, onBlur: function () { save(); }, placeholder: t("st.ui.host.sessionNamePlaceholder", { NAME: name || str(s.playerName) || "…" }), title: t("st.ui.host.sessionName"), max: 64 })),
+    h(MenuRow, { label: t("st.ui.host.password"), info: t("st.ui.host.passwordHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: password, onChange: setPassword, onBlur: function () { save(); }, password: true, placeholder: s.hasPassword ? t("st.ui.host.passwordKept") : t("st.ui.host.passwordPlaceholder"), title: t("st.ui.host.password"), max: 64 })),
     s.hasPassword ? h("div", { style: { padding: "0 16rem 8rem 16rem", textAlign: "right", fontSize: FS.m } }, h(LinkText, { onClick: function () { setPassword(""); save(""); } }, t("st.ui.host.removePassword"))) : null,
     h(MenuRow, { label: t("st.ui.host.maxPlayers"), info: t("st.ui.host.maxPlayersHint"), onInfo: setHoverInfo }, h(Stepper, { menu: true, value: o.maxPlayers, min: 2, max: 16, onChange: o.setMax })),
     h(MenuRow, { label: t("st.ui.host.requireMods"), info: t("st.ui.host.requireModsHint"), onInfo: setHoverInfo, onClick: function () { o.setMods(!o.requireMods); } }, h(Check, { menu: true, checked: o.requireMods, onChange: o.setMods })),
@@ -2196,8 +2443,9 @@ function MenuHostPage(p) {
     ),
     !directOk ? h("div", { style: { padding: "0 16rem 8rem 16rem", color: T.menuText2, fontSize: FS.m } }, t("st.ui.host.allowDirectNeedsPassword")) : null,
     o.allowDirect && directOk
-      ? h(MenuRow, { label: t("st.ui.host.port"), info: t("st.ui.host.portHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: o.port, onChange: o.setPort, onBlur: function () { o.save({}); }, ids: true, max: 5, title: t("st.ui.host.port"), style: { flex: "0 1 140rem", textAlign: "center" } }))
+      ? h(MenuRow, { label: t("st.ui.host.port"), info: t("st.ui.host.portHint"), onInfo: setHoverInfo }, h(Field, { look: "menu", value: o.port, onChange: o.setPort, onBlur: function () { o.save({}); }, onEnter: function () { o.save({}); }, invalid: o.portInvalid, ids: true, max: 5, title: t("st.ui.host.port"), description: t("st.ui.host.portHint"), style: { flex: "0 1 140rem", textAlign: "center" } }))
       : null,
+    o.allowDirect && directOk && o.portInvalid ? h(FieldError, { menu: true, style: { padding: "0 16rem 8rem 16rem" } }, t("st.ui.host.portInvalid")) : null,
     h(BanList, { state: s, menu: true })
   );
 }
@@ -2214,7 +2462,7 @@ function MenuSoloPage(p) {
       "div",
       { style: { marginTop: "16rem", color: T.menuText2, lineHeight: 1.4 } },
       h("div", null, inGame ? t("st.ui.test.replayHint") : t("st.ui.test.needCity")),
-      r.root ? h("div", { style: { marginTop: "12rem", fontSize: FS.s } }, t("st.ui.test.folder", { FOLDER: r.root })) : null
+      str(r.root) ? h("div", { style: { marginTop: "12rem", fontSize: FS.s } }, t("st.ui.test.folder", { FOLDER: str(r.root) })) : null
     )
   );
   return h(
@@ -2243,8 +2491,8 @@ function MenuSessionPage(p) {
   const s = p.state;
   return h(
     MenuPage,
-    { title: panelTitle(s), subtitle: s.status || "", footer: h(Btn, { kind: "menuSecondary", onClick: function () { send("leave"); } }, t("st.ui.leave.client")) },
-    h(MenuText, null, s.mode === "Hosting" ? t("st.ui.session.hosting") : s.mode === "Recovering" ? t("st.ui.recovery.badge") : t("st.ui.session.connected"))
+    { title: panelTitle(s), subtitle: s.mode === "Hosting" ? t("st.ui.session.hosting") : s.mode === "Recovering" ? t("st.ui.recovery.badge") : t("st.ui.session.connected"), footer: h(Btn, { kind: "menuSecondary", onClick: function () { send("leave"); } }, s.mode === "Hosting" ? t("st.ui.leave.host") : t("st.ui.leave.client")) },
+    h(MenuText, null, t("st.ui.session.menuNote"))
   );
 }
 
@@ -2268,7 +2516,7 @@ function MenuNav(p) {
         h(Dot, { color: s.steam === false ? T.bad : T.good, size: 8 }),
         s.steam === false ? t("st.ui.steam.missing.title") : t("st.ui.steam.ok")
       ),
-      s.blocked ? h("div", { style: { color: T.bad, fontSize: FS.xs, lineHeight: 1.35, marginBottom: "6rem" } }, t("st.ui.blocked", { REASON: s.blocked })) : null,
+      str(s.blocked) ? h("div", { style: { color: T.badText, fontSize: FS.xs, lineHeight: 1.35, marginBottom: "6rem" } }, t("st.ui.blocked", { REASON: str(s.blocked) })) : null,
       h(SelfTest, { state: s, menu: true }),
       h(BuildLine, { state: s, menu: true })
     )
@@ -2284,7 +2532,8 @@ function MultiplayerContent(p) {
   const detail = vc("options", "detail");
   const items = [{ id: "join", label: t("st.ui.nav.join") }, { id: "host", label: t("st.ui.nav.host") }, { id: "solo", label: t("st.ui.nav.solo") }];
   let body;
-  if (mode === "Hosting" || mode === "Client" || mode === "Recovering") body = h(MenuSessionPage, { state: s });
+  if (!stateReady(s)) body = h(MenuPage, { title: t("st.ui.menu.multiplayer") }, h(NotReady, { state: s, menu: true }));
+  else if (mode === "Hosting" || mode === "Client" || mode === "Recovering") body = h(MenuSessionPage, { state: s });
   else if (page === "host") body = h(MenuHostPage, { key: "host", state: s });
   else if (page === "solo") body = h(MenuSoloPage, { key: "solo", state: s });
   else body = h(MenuJoinPage, { key: "join", state: s });
@@ -2346,12 +2595,18 @@ function OvButton(p) {
   const [hover, hv] = useHover();
   const primary = p.kind === "primary";
   const disabled = !!p.disabled;
+  const press = function () {
+    if (!disabled && p.onClick) p.onClick();
+  };
+  const [focus, kb] = usePressable(press, disabled);
+  const lit = (hover || focus) && !disabled;
   return h(
     "div",
-    merge(hv, {
+    merge(hv, kb, {
       style: merge(
         { display: "flex", alignItems: "center", justifyContent: "center", height: "40rem", padding: "0 20rem", borderRadius: "5rem", fontSize: "16rem", textTransform: "uppercase", whiteSpace: "nowrap", cursor: disabled ? "default" : "pointer", color: "#ffffff", opacity: disabled ? 0.5 : 1 },
-        primary ? merge({ backgroundImage: hover && !disabled ? OV.greenHover : OV.green }, border("2rem", OV.greenBorder)) : merge({ backgroundColor: hover && !disabled ? OV.buttonHover : OV.button }, border("2rem", OV.buttonBorder)),
+        primary ? merge({ backgroundImage: lit ? OV.greenHover : OV.green }, border("2rem", OV.greenBorder)) : merge({ backgroundColor: lit ? OV.buttonHover : OV.button }, border("2rem", OV.buttonBorder)),
+        focus && !disabled ? { boxShadow: "0 0 0 2rem " + OV.accent } : null,
         p.style
       ),
       onClick: function () {
@@ -2413,17 +2668,27 @@ function JoinOverlay(p) {
   let hint = t("st.ui.join.hint." + stage);
   let progress = null;
   if (stage === "downloading") {
-    progress = j.total > 0 ? j.done / j.total : 0;
-    hint = j.total > 0 ? t("st.ui.join.hint.downloading", { DONE: mb(j.done), TOTAL: mb(j.total), SPEED: mb(j.bps), ETA: duration(j.eta) }) : t("st.ui.join.hint.downloadingStart");
+    const total = num(j.total, 0);
+    const done = Math.max(0, Math.min(total, num(j.done, 0)));
+    const bps = num(j.bps, 0);
+    const eta = num(j.eta, -1);
+    progress = total > 0 ? done / total : 0;
+    // size always; speed and time left only once they are known (no "0.0 MB/s · – left" at the start)
+    const parts = [t("st.ui.join.hint.downloading", { DONE: mb(done), TOTAL: mb(total) })];
+    if (bps > 0) parts.push(t("st.ui.join.hint.speed", { SPEED: mb(bps) }));
+    if (eta >= 0 && bps > 0) parts.push(t("st.ui.join.hint.eta", { ETA: duration(eta) }));
+    hint = total > 0 ? parts.join(" · ") : t("st.ui.join.hint.downloadingStart");
   } else if (stage === "loading") {
-    progress = j.load || 0;
+    progress = num(j.load, 0);
   }
-  const overall = j.progress != null ? j.progress : s.progress;
-  const title = j.session ? t("st.ui.join.overlayTitle", { SESSION: j.session }) : t("st.ui.join.overlayTitleUnknown");
+  const overall = Math.max(0, Math.min(1, num(j.progress, num(s.progress, 0))));
+  const session = str(j.session);
+  const target = str(j.target);
+  const title = session ? t("st.ui.join.overlayTitle", { SESSION: session }) : t("st.ui.join.overlayTitleUnknown");
   return h(
     OverlayCard,
     { title: title, z: 2000 },
-    j.target ? h("div", { style: merge(S.ids, { marginBottom: "10rem", fontSize: "14rem", color: OV.dim }) }, t("st.ui.join.via", { TARGET: j.target })) : null,
+    target ? h("div", { style: merge(S.ids, S.ellipsis, { marginBottom: "10rem", fontSize: "14rem", color: OV.dim }) }, t("st.ui.join.via", { TARGET: target })) : null,
     h(
       "div",
       { style: { padding: "6rem 14rem", borderRadius: "4rem", backgroundColor: OV.well } },
@@ -2435,20 +2700,27 @@ function JoinOverlay(p) {
       "div",
       { style: merge(S.row, { marginTop: "16rem" }) },
       h(Progress, { value: overall, height: 4, track: OV.track, color: OV.accent, style: { flex: 1 } }),
-      h("div", { style: { width: "56rem", textAlign: "right", fontSize: "14rem", color: OV.dim } }, t("st.ui.join.percent", { P: Math.round(Math.max(0, Math.min(1, overall || 0)) * 100) }))
+      h("div", { style: { minWidth: "56rem", textAlign: "right", fontSize: "14rem", color: OV.dim } }, t("st.ui.join.percent", { P: Math.round(overall * 100) }))
     ),
-    h("div", { style: { display: "flex", flexDirection: "row", justifyContent: "flex-end", marginTop: "18rem" } }, h(OvButton, { onClick: function () { send("leave"); } }, t("st.ui.join.cancel")))
+    h(
+      "div",
+      { style: merge(S.row, { marginTop: "18rem" }) },
+      h("div", { style: { flex: 1, fontSize: "13rem", color: OV.faint, lineHeight: 1.35, marginRight: "12rem" } }, t("st.ui.join.patience")),
+      h(OvButton, { onClick: function () { send("leave"); } }, t("st.ui.join.cancel"))
+    )
   );
 }
 
 // --------------------------------------------------------------------------------------------- error screen
 
+// the copy (title, text) for an end of a join or session; null for an end the player chose (left)
 function endCopy(e) {
   const r = e.kind === "refused" ? e.refuse : e.kind;
+  if (e.kind === "left") return null;
   if (e.kind === "passwordRequired") return "passwordRequired";
   if (e.kind === "refused") {
     if (r === "BadPassword") return "badPassword";
-    if (r === "Mismatch") return e.reportKind === "game" ? "game" : e.reportKind === "build" ? "build" : "mods";
+    if (r === "Mismatch") return e.reportKind === "game" ? "game" : e.reportKind === "build" || e.reportKind === "protocol" ? "build" : "mods";
     if (r === "ProtocolVersion") return "build";
     if (r === "Full") return "full";
     if (r === "Banned") return "banned";
@@ -2462,15 +2734,25 @@ function endCopy(e) {
   if (e.kind === "kicked") return "kicked";
   if (e.kind === "banned") return "banned";
   if (e.kind === "sessionEnded") return "ended";
+  if (e.kind === "loadFailed") return "loadFailed";
+  if (e.kind === "protocolError") return "build";
   return "failed";
 }
+
+// the ends a new attempt cannot fix: the player has to change something first (or cannot join at all)
+const NO_RETRY = { kicked: 1, banned: 1, notAllowed: 1, ended: 1, mods: 1, game: 1, build: 1 };
 
 function ModList(p) {
   if (p.items.length === 0) return null;
   return h(
     "div",
     { style: { marginBottom: "12rem" } },
-    h("div", { style: merge(S.row, { marginBottom: "6rem" }) }, h(Dot, { color: p.color }), h("div", { style: { fontSize: "15rem", fontWeight: "bold", textTransform: "uppercase", color: p.color } }, p.title + " (" + p.items.length + ")")),
+    h(
+      "div",
+      { style: merge(S.row, { marginBottom: "6rem" }) },
+      h(Glyph, { src: p.icon, size: 12, color: p.color, style: { marginRight: "8rem" } }),
+      h("div", { style: { fontSize: "15rem", fontWeight: "bold", textTransform: "uppercase", color: p.color } }, p.title + " (" + p.items.length + ")")
+    ),
     h(
       "div",
       { style: { maxHeight: "150rem", overflowY: "auto", padding: "4rem 12rem", borderRadius: "4rem", backgroundColor: OV.well } },
@@ -2478,20 +2760,28 @@ function ModList(p) {
         return h(
           "div",
           { key: i, style: merge({ display: "flex", flexDirection: "row", padding: "5rem 0", fontSize: "14rem" }, i === 0 ? null : border("1rem", OV.divider, ["Top"])) },
-          h("div", { style: merge(S.ellipsis, { flex: 1, color: OV.text }) }, m.name || "?"),
-          h("div", { style: { color: OV.dim, marginLeft: "10rem", flexShrink: 0 } }, p.versions ? t("st.ui.end.mods.versionLine", { HOST: m.host || "?", YOU: m.you || "?" }) : m.version || "")
+          h("div", { style: merge(S.ellipsis, { flex: 1, minWidth: 0, color: OV.text }) }, str(m.name) || str(m.id) || "?"),
+          h("div", { style: { color: OV.dim, marginLeft: "10rem", flexShrink: 0 } }, p.versions ? t("st.ui.end.mods.versionLine", { HOST: str(m.host) || "?", YOU: str(m.you) || "?" }) : str(m.version))
         );
       })
     )
   );
 }
 
-function reportText(e, title) {
-  const lines = [title, e.text || ""];
-  list(e.missing).forEach(function (m) { lines.push("+ " + m.name + " " + (m.version || "")); });
-  list(e.extra).forEach(function (m) { lines.push("- " + m.name + " " + (m.version || "")); });
-  list(e.versions).forEach(function (m) { lines.push("~ " + m.name + " (host " + (m.host || "?") + ", you " + (m.you || "?") + ")"); });
+function reportText(e, title, text) {
+  const lines = [title, text];
+  if (str(e.text)) lines.push(str(e.text));
+  objs(e.missing).forEach(function (m) { lines.push("+ " + str(m.name) + " " + str(m.version)); });
+  objs(e.extra).forEach(function (m) { lines.push("- " + str(m.name) + " " + str(m.version)); });
+  objs(e.versions).forEach(function (m) { lines.push("~ " + str(m.name) + " (host " + (str(m.host) || "?") + ", you " + (str(m.you) || "?") + ")"); });
+  if (str(e.hostGame)) lines.push("game: host " + str(e.hostGame) + ", you " + (str(e.yourGame) || "?"));
+  if (str(e.hostBuild)) lines.push("build: host " + str(e.hostBuild) + ", you " + (str(e.yourBuild) || "?"));
+  if (str(e.target)) lines.push("host: " + str(e.target));
   return lines.join("\n");
+}
+
+function VersionLine(p) {
+  return h("div", { style: merge(S.ids, { marginBottom: "14rem", padding: "8rem 12rem", borderRadius: "4rem", backgroundColor: OV.well, fontSize: "15rem", color: OV.text }) }, p.children);
 }
 
 function EndOverlay(p) {
@@ -2499,59 +2789,66 @@ function EndOverlay(p) {
   const st = useStore();
   const [password, setPassword] = React.useState("");
   const flash = useFlash();
-  const e = s.end;
-  if (!e || !e.kind || st.dismissedEnd === e.seq) return null;
-  const copy = endCopy(e);
-  const title = t("st.ui.end.title." + copy);
+  const e = obj(s.end);
+  const copy = str(e.kind) ? endCopy(e) : null;
+  const shown = !!copy && st.dismissedEnd !== e.seq;
   const needsPassword = copy === "badPassword" || copy === "passwordRequired";
-  const canRetry = copy !== "kicked" && copy !== "banned" && copy !== "notAllowed" && copy !== "ended" && copy !== "mods" && copy !== "game" && copy !== "build";
+  const canRetry = !!copy && !NO_RETRY[copy];
   const dismiss = function () {
     setStore({ dismissedEnd: e.seq });
     send("dismissEnd");
   };
   const retry = function () {
-    if (needsPassword && password.length === 0) return;
+    if (!canRetry || (needsPassword && password.length === 0)) return;
     setStore({ dismissedEnd: e.seq });
-    send("retryJoin", needsPassword ? password : s.keepPassword || KEEP_PASSWORD);
+    send("retryJoin", needsPassword ? password : str(s.keepPassword) || KEEP_PASSWORD);
   };
-  const isMods = copy === "mods" && (list(e.missing).length + list(e.extra).length + list(e.versions).length > 0);
+  // Escape goes back, Enter tries again (the password field handles its own Enter)
+  useWindowKeys({ Escape: dismiss, Enter: canRetry && !needsPassword ? retry : undefined }, shown, true);
+  if (!shown) return null;
+  const title = t("st.ui.end.title." + copy);
+  const text = t("st.ui.end.text." + copy);
+  const missing = objs(e.missing);
+  const extra = objs(e.extra);
+  const versions = objs(e.versions);
+  const isMods = copy === "mods" && missing.length + extra.length + versions.length > 0;
   const icon = h("div", { style: merge(S.center, { width: "26rem", height: "26rem", borderRadius: "13rem", backgroundColor: needsPassword ? OV.warn : OV.bad, marginRight: "12rem", flexShrink: 0 }) }, h(Glyph, { src: needsPassword ? G.lock : G.warning, size: 14, color: "#ffffff" }));
   return h(
     OverlayCard,
     { title: title, z: 2100, width: isMods ? "660rem" : "560rem", icon: icon, titleColor: OV.text },
-    h("div", { style: { fontSize: "16rem", marginBottom: "14rem", lineHeight: 1.45, color: OV.text } }, t("st.ui.end.text." + copy)),
+    h("div", { style: { fontSize: "16rem", marginBottom: "14rem", lineHeight: 1.45, color: OV.text } }, text),
     isMods
       ? h(
           "div",
           null,
-          h(ModList, { title: t("st.ui.end.mods.missing"), color: OV.good, items: list(e.missing) }),
-          h(ModList, { title: t("st.ui.end.mods.extra"), color: OV.bad, items: list(e.extra) }),
-          h(ModList, { title: t("st.ui.end.mods.versions"), color: OV.warn, items: list(e.versions), versions: true })
+          h(ModList, { title: t("st.ui.end.mods.missing"), color: OV.good, icon: G.plus, items: missing }),
+          h(ModList, { title: t("st.ui.end.mods.extra"), color: OV.badText, icon: G.close, items: extra }),
+          h(ModList, { title: t("st.ui.end.mods.versions"), color: OV.warn, icon: G.refresh, items: versions, versions: true })
         )
       : null,
-    copy === "game" && e.hostGame ? h("div", { style: merge(S.ids, { marginBottom: "14rem", fontSize: "15rem", color: OV.text }) }, t("st.ui.end.versions", { HOST: e.hostGame, YOU: e.yourGame || "?" })) : null,
-    copy === "build" && e.hostProto ? h("div", { style: merge(S.ids, { marginBottom: "14rem", fontSize: "15rem", color: OV.text }) }, t("st.ui.end.versions", { HOST: e.hostProto, YOU: e.yourProto || "?" })) : null,
-    copy === "build" && e.hostBuild ? h("div", { style: merge(S.ids, { marginBottom: "14rem", fontSize: "15rem", color: OV.text }) }, t("st.ui.end.builds", { HOST: e.hostBuild, YOU: e.yourBuild || "?" })) : null,
+    copy === "game" && str(e.hostGame) ? h(VersionLine, null, t("st.ui.end.versions", { HOST: str(e.hostGame), YOU: str(e.yourGame) || "?" })) : null,
+    copy === "build" && str(e.hostProto) && !str(e.hostBuild) ? h(VersionLine, null, t("st.ui.end.versions", { HOST: str(e.hostProto), YOU: str(e.yourProto) || "?" })) : null,
+    copy === "build" && str(e.hostBuild) ? h(VersionLine, null, t("st.ui.end.builds", { HOST: str(e.hostBuild), YOU: str(e.yourBuild) || "?" })) : null,
     needsPassword
       ? h(
           "div",
           { style: { marginBottom: "10rem" } },
           h("div", { style: { fontSize: "12rem", textTransform: "uppercase", color: OV.faint, marginBottom: "5rem" } }, t("st.ui.join.password")),
-          h(Field, { look: "overlay", value: password, onChange: setPassword, onEnter: retry, password: true, placeholder: t("st.ui.join.passwordPlaceholder"), title: t("st.ui.join.password") })
+          h(Field, { look: "overlay", value: password, onChange: setPassword, onEnter: retry, onEscape: dismiss, password: true, placeholder: t("st.ui.join.passwordPlaceholder"), title: t("st.ui.join.password"), max: 64 })
         )
       : null,
-    e.text && !isMods
+    str(e.text) && !isMods
       ? h(
           "div",
           { style: { marginTop: "4rem", padding: "10rem 12rem", borderRadius: "4rem", backgroundColor: OV.well } },
           h("div", { style: { fontSize: "12rem", textTransform: "uppercase", color: OV.faint, marginBottom: "4rem" } }, t("st.ui.end.details")),
-          h("div", { style: { fontSize: "14rem", color: OV.dim, lineHeight: 1.35 } }, e.text)
+          h("div", { style: { fontSize: "14rem", color: OV.dim, lineHeight: 1.35, overflowWrap: "break-word", wordBreak: "break-word" } }, str(e.text))
         )
       : null,
     h(
       "div",
       { style: merge(S.row, { marginTop: "18rem" }) },
-      h("div", { style: merge(S.row, { cursor: "pointer", color: OV.accent, fontSize: "14rem" }), onClick: function () { send("copyText", reportText(e, title)); flash.fire(); } }, h(Glyph, { src: flash.on ? G.check : G.copy, size: 14, color: OV.accent, style: { marginRight: "6rem" } }), flash.on ? t("st.ui.end.copied") : t("st.ui.end.copy")),
+      h(LinkText, { color: OV.accent, style: merge(S.row, { fontSize: "14rem" }), onClick: function () { send("copyText", reportText(e, title, text)); flash.fire(); } }, h(Glyph, { src: flash.on ? G.check : G.copy, size: 14, color: OV.accent, style: { marginRight: "6rem" } }), flash.on ? t("st.ui.end.copied") : t("st.ui.end.copy")),
       h("div", { style: { flex: 1 } }),
       h(OvButton, { onClick: dismiss }, t("st.ui.end.back")),
       canRetry ? h(OvButton, { kind: "primary", disabled: needsPassword && password.length === 0, onClick: retry, style: { marginLeft: "10rem" } }, needsPassword ? t("st.ui.end.retryPassword") : t("st.ui.end.retry")) : null
@@ -2561,54 +2858,75 @@ function EndOverlay(p) {
 
 // ------------------------------------------------------------------------------------------------ chat dock
 
-// first time each chat line (by its session-independent sequence number) was seen: the time shown on hover
+// first time each chat line (by its session-independent sequence number) was seen: the time shown next to it
 const seenAt = {};
-
-function anotherInputFocused() {
-  try {
-    const el = document.activeElement;
-    return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
-  } catch (e) {
-    return false;
-  }
-}
+let seenCount = 0;
+const CHAT_MAX = 500;
+// the counter shows from here on (most messages are short; a counter on every keystroke is noise)
+const CHAT_COUNT_FROM = 400;
+const WRAP = { overflowWrap: "break-word", wordBreak: "break-word" };
 
 function ChatLine(p) {
   const l = p.line;
-  const [hover, hv] = useHover();
-  const time = seenAt[l.seq] ? clock(seenAt[l.seq]) : "";
+  const at = seenAt[l.seq];
+  const time = at ? clock(at) : "";
   return h(
     "div",
-    merge(hv, { style: merge(S.row, { alignItems: "flex-start", padding: "3rem 8rem", borderRadius: "3rem", backgroundColor: hover ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0)" }) }),
+    { style: merge(S.row, { alignItems: "flex-start", padding: "3rem 8rem" }) },
     h(
       "div",
-      { style: { flex: 1, minWidth: 0, fontSize: FS.s, lineHeight: 1.35 } },
+      { style: merge({ flex: 1, minWidth: 0, overflow: "hidden", fontSize: FS.s, lineHeight: 1.35 }, WRAP) },
       l.system
-        ? h("span", { style: { color: T.textDimmer, fontStyle: "italic" } }, l.text)
-        : [h("span", { key: "n", style: { color: l.color || T.accent, fontWeight: "bold" } }, l.name + "  "), h("span", { key: "t", style: { color: T.text } }, l.text)]
+        ? h("span", { style: { color: T.textDim, fontStyle: "italic" } }, str(l.text))
+        : // the name is isolated from the text, so a right-to-left name or message does not swap them around
+          [h("span", { key: "n", style: { color: str(l.color) || T.accent, fontWeight: "bold", unicodeBidi: "isolate" } }, str(l.name) || "?"), h("span", { key: "c", style: { color: str(l.color) || T.accent, fontWeight: "bold" } }, ": "), h("span", { key: "t", style: { color: T.text, unicodeBidi: "isolate" } }, str(l.text))]
     ),
-    h("div", { style: { width: "38rem", textAlign: "right", fontSize: FS.xs, color: T.textFaint, flexShrink: 0, paddingTop: "1rem", opacity: hover ? 1 : 0 } }, time)
+    time ? h("div", { style: { marginLeft: "8rem", fontSize: FS.xs, color: T.textDimmer, flexShrink: 0, paddingTop: "1rem" } }, time) : null
   );
 }
 
-// The chat box docked on the right: collapsible, unread badge, player colours, Enter to type, Esc to leave.
+// is a scrolling box (nearly) at its end
+function atEnd(el) {
+  try {
+    return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  } catch (e) {
+    return true;
+  }
+}
+
+// The chat box docked on the right: collapsible, unread badge, player colours, time stamps, Enter to type, Esc to
+// leave. New lines scroll it down only while it is at the bottom; scrolled up, a "new messages" button jumps down.
 function ChatDock(p) {
-  const lines = list(p.state.chat);
+  const lines = objs(p.state.chat);
   const st = useStore();
   const [text, setText] = React.useState("");
   const [typingHere, setTypingHere] = React.useState(false);
   const [preview, setPreview] = React.useState(-1);
+  // the newest line seen at the bottom while scrolled up; -1 while following the newest line
+  const [readUpTo, setReadUpTo] = React.useState(-1);
   const inputRef = React.useRef(null);
   const scrollRef = React.useRef(null);
   const previewTimer = React.useRef(null);
   const now = Date.now();
   lines.forEach(function (l) {
-    if (l && l.seq !== undefined && seenAt[l.seq] === undefined) seenAt[l.seq] = now;
+    if (l.seq !== undefined && seenAt[l.seq] === undefined) {
+      seenAt[l.seq] = now;
+      // the history keeps the last 100 lines: forget times of lines long gone
+      if (++seenCount > 400) {
+        const keep = {};
+        lines.forEach(function (x) { if (seenAt[x.seq] !== undefined) keep[x.seq] = seenAt[x.seq]; });
+        for (const k in seenAt) delete seenAt[k];
+        Object.assign(seenAt, keep);
+        seenCount = lines.length;
+      }
+    }
   });
-  const lastSeq = lines.length > 0 && lines[lines.length - 1].seq !== undefined ? lines[lines.length - 1].seq : -1;
+  const lastSeq = lines.length > 0 ? num(lines[lines.length - 1].seq, -1) : -1;
   const open = st.chatOpen;
   let unread = 0;
-  if (!open) for (const l of lines) if (!l.system && !l.you && l.seq > st.chatSeen) unread++;
+  if (!open) for (const l of lines) if (!l.system && !l.you && num(l.seq, -1) > st.chatSeen) unread++;
+  let below = 0;
+  if (open && readUpTo >= 0) for (const l of lines) if (num(l.seq, -1) > readUpTo) below++;
   const focusInput = function () {
     try {
       if (inputRef.current) inputRef.current.focus();
@@ -2616,10 +2934,18 @@ function ChatDock(p) {
       // not mounted
     }
   };
+  const toBottom = function () {
+    try {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    } catch (e) {
+      // not mounted
+    }
+    setReadUpTo(-1);
+  };
   React.useEffect(function () {
-    // Enter (while nothing else takes typing) opens the chat and focuses the input
+    // Enter (while nothing else takes typing and no dialog is open) opens the chat and focuses the input
     const onKey = function (e) {
-      if (keyOf(e) !== "Enter" || store.typing > 0 || anotherInputFocused()) return;
+      if (keyOf(e) !== "Enter" || store.typing > 0 || anotherInputFocused() || modalOpen()) return;
       if (e.preventDefault) e.preventDefault();
       if (!store.chatOpen) setStore({ chatOpen: true, chatFocus: true });
       else focusInput();
@@ -2633,11 +2959,8 @@ function ChatDock(p) {
   React.useEffect(function () {
     if (open) {
       if (store.chatSeen !== lastSeq) store.chatSeen = lastSeq;
-      try {
-        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      } catch (e) {
-        // not mounted
-      }
+      // follow the newest line unless the player scrolled up to read
+      if (readUpTo < 0) toBottom();
       if (store.chatFocus) {
         store.chatFocus = false;
         focusInput();
@@ -2654,6 +2977,11 @@ function ChatDock(p) {
       }
     }
   }, [open, lastSeq]);
+  const onScroll = function () {
+    const end = atEnd(scrollRef.current);
+    if (end && readUpTo >= 0) setReadUpTo(-1);
+    else if (!end && readUpTo < 0) setReadUpTo(lastSeq);
+  };
   const blur = function () {
     try {
       if (inputRef.current) inputRef.current.blur();
@@ -2662,7 +2990,11 @@ function ChatDock(p) {
     }
   };
   const sendLine = function () {
-    if (text.trim().length > 0) send("chat", text);
+    const line = text.trim();
+    if (line.length > 0) {
+      send("chat", line.slice(0, CHAT_MAX));
+      toBottom(); // your own line always shows
+    }
     setText("");
     blur();
   };
@@ -2671,6 +3003,7 @@ function ChatDock(p) {
   };
   const previewLine = !open && preview >= 0 ? lines.filter(function (l) { return l.seq === preview; })[0] : null;
   const [hover, hv] = useHover();
+  const [headFocus, headKb] = usePressable(toggle, false);
   return h(
     "div",
     // right side, above the toolbar (two rows of --toolbarHeight) and left of the right-hand button column
@@ -2683,12 +3016,12 @@ function ChatDock(p) {
       { style: merge(S.col, { borderRadius: T.radius, boxShadow: "0 4rem 20rem rgba(0, 0, 0, 0.25)" }) },
       h(
         "div",
-        merge(hv, {
-          style: merge(S.row, { minHeight: "36rem", padding: "4rem 6rem 4rem 12rem", cursor: "pointer", color: T.titleBlue, backgroundColor: hover ? "var(--panelColorDark-hover)" : T.panelDark, backdropFilter: T.blur, borderTopLeftRadius: T.radius, borderTopRightRadius: T.radius }, open ? null : { borderBottomLeftRadius: T.radius, borderBottomRightRadius: T.radius }),
+        merge(hv, headKb, {
+          style: merge(S.row, { minHeight: "36rem", padding: "4rem 6rem 4rem 12rem", cursor: "pointer", color: T.titleBlue, backgroundColor: hover || headFocus ? "var(--panelColorDark-hover)" : T.panelDark, backdropFilter: T.blur, borderTopLeftRadius: T.radius, borderTopRightRadius: T.radius }, open ? null : { borderBottomLeftRadius: T.radius, borderBottomRightRadius: T.radius }, headFocus ? { boxShadow: "0 0 0 2rem " + T.focus } : null),
           onClick: toggle,
         }),
         h("div", { style: { flex: 1, textTransform: "uppercase", fontSize: FS.m } }, t("st.ui.chat.title")),
-        unread > 0 ? h("div", { style: { minWidth: "20rem", height: "20rem", padding: "0 6rem", borderRadius: "10rem", backgroundColor: T.accent, color: "#0c1a25", fontSize: FS.xs, fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", marginRight: "8rem" } }, t("st.ui.chat.unread", { N: unread })) : null,
+        unread > 0 ? h("div", { style: { minWidth: "20rem", height: "20rem", padding: "0 6rem", borderRadius: "10rem", backgroundColor: T.accent, color: "#0c1a25", fontSize: FS.xs, fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", marginRight: "8rem" } }, t("st.ui.chat.unread", { N: unread > 99 ? "99+" : unread })) : null,
         withTooltip(h("div", { style: merge(S.center, { width: "26rem", height: "26rem" }) }, h(Glyph, { src: open ? G.down : G.up, size: 11, color: T.textDim })), open ? t("st.ui.chat.collapse") : t("st.ui.chat.expand"), "up")
       ),
       open
@@ -2696,9 +3029,21 @@ function ChatDock(p) {
             "div",
             { style: merge(S.col, { backgroundColor: "rgba(42, 55, 83, 0.6)", backgroundImage: T.panelGradient, backdropFilter: T.blur, borderBottomLeftRadius: T.radius, borderBottomRightRadius: T.radius }) },
             h(
-              Scroll,
-              { scrollRef: scrollRef, style: { height: "220rem", padding: "6rem 4rem" } },
-              lines.length === 0 ? h(Hint, { style: { padding: "8rem" } }, t("st.ui.chat.empty")) : lines.map(function (l, i) { return h(ChatLine, { key: l.seq !== undefined ? l.seq : i, line: l }); })
+              "div",
+              { style: { position: "relative" } },
+              // a plain scrolling box (not the vanilla Scrollable): the dock must set and read its scroll position
+              h(
+                "div",
+                { ref: scrollRef, onScroll: onScroll, style: { height: "220rem", padding: "6rem 4rem", overflowY: "auto", overflowX: "hidden" } },
+                lines.length === 0 ? h(Hint, { style: { padding: "8rem" } }, t("st.ui.chat.empty")) : lines.map(function (l, i) { return h(ChatLine, { key: l.seq !== undefined ? String(l.seq) : "i" + i, line: l }); })
+              ),
+              below > 0
+                ? h(
+                    "div",
+                    { style: { position: "absolute", left: 0, right: 0, bottom: "6rem", display: "flex", flexDirection: "row", justifyContent: "center" } },
+                    h(Btn, { kind: "flat", onClick: toBottom, style: { padding: "3rem 10rem", fontSize: FS.xs } }, h(Glyph, { src: G.down, size: 10, style: { marginRight: "6rem" } }), t("st.ui.chat.newBelow", { N: below }))
+                  )
+                : null
             ),
             h(
               "div",
@@ -2713,8 +3058,11 @@ function ChatDock(p) {
                 onBlur: function () { setTypingHere(false); },
                 placeholder: typingHere ? t("st.ui.chat.placeholder") : t("st.ui.chat.hint"),
                 title: t("st.ui.chat.title"),
-                max: 500,
-              })
+                max: CHAT_MAX,
+              }),
+              text.length >= CHAT_COUNT_FROM
+                ? h("div", { style: { marginTop: "4rem", textAlign: "right", fontSize: FS.xs, color: text.length >= CHAT_MAX ? T.warn : T.textDimmer } }, t("st.ui.chat.count", { N: text.length, MAX: CHAT_MAX }))
+                : null
             )
           )
         : null
@@ -2726,24 +3074,28 @@ function ChatDock(p) {
 
 // Remote players' name tags over their cursors (positions are fractions of the screen, from C#).
 function NameTags() {
-  const tags = list(useJson(presenceBinding).tags);
+  const tags = objs(useJson(presenceBinding).tags);
   return h(
     "div",
     { style: S.layer },
     tags
       .filter(function (tag) {
-        return tag && tag.on;
+        return tag.on && isFinite(num(tag.x, NaN)) && isFinite(num(tag.y, NaN));
       })
       .map(function (tag) {
         return h(
           "div",
           {
-            key: tag.id,
+            key: str(tag.id) || str(tag.name),
             style: merge(
               {
                 position: "absolute",
-                left: (Number(tag.x) * 100).toFixed(2) + "%",
-                top: (Number(tag.y) * 100).toFixed(2) + "%",
+                // kept on screen: a cursor at the very edge would push its tag out of view
+                left: (Math.max(0.04, Math.min(0.96, num(tag.x, 0))) * 100).toFixed(2) + "%",
+                top: (Math.max(0.05, Math.min(1, num(tag.y, 0))) * 100).toFixed(2) + "%",
+                maxWidth: "320rem",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
                 transform: "translate(-50%, -130%)",
                 padding: "2rem 9rem",
                 borderRadius: "11rem",
@@ -2752,11 +3104,11 @@ function NameTags() {
                 fontSize: FS.s,
                 whiteSpace: "nowrap",
               },
-              border("2rem", tag.color || "#4bc3f1")
+              border("2rem", str(tag.color) || "#4bc3f1")
             ),
           },
-          h("span", { style: { color: tag.color || T.text, fontWeight: "bold" } }, tag.name),
-          tag.activity ? h("span", { style: { color: T.textDim } }, " · " + tag.activity) : null
+          h("span", { style: { color: str(tag.color) || T.text, fontWeight: "bold", unicodeBidi: "isolate" } }, str(tag.name)),
+          str(tag.activity) ? h("span", { style: { color: T.textDim } }, " · " + str(tag.activity)) : null
         );
       })
   );
@@ -2767,9 +3119,9 @@ function NameTags() {
 function PerfHud() {
   const p = useJson(perfBinding);
   if (!p.show) return null;
-  const frame = p.frame || {};
-  const features = list(p.features);
-  const peers = list(p.peers);
+  const frame = obj(p.frame);
+  const features = objs(p.features);
+  const peers = objs(p.peers);
   const num = function (v, d) {
     const x = Number(v);
     return isFinite(x) ? x.toFixed(d) : "0";
@@ -2787,7 +3139,7 @@ function PerfHud() {
       return h(
         "div",
         { key: "f" + i, style: row },
-        h("div", { style: merge(S.ellipsis, { width: "92rem", color: T.textDim }) }, f.n),
+        h("div", { style: merge(S.ellipsis, { width: "92rem", color: T.textDim }) }, str(f.n)),
         h(
           "div",
           { style: { width: "70rem", height: "6rem", marginRight: "6rem", borderRadius: "3rem", backgroundColor: T.progressTrack } },
@@ -2801,7 +3153,7 @@ function PerfHud() {
       return h(
         "div",
         { key: "p" + i, style: row },
-        h("div", { style: merge(S.ellipsis, { width: "92rem", color: T.textDim }) }, q.name),
+        h("div", { style: merge(S.ellipsis, { width: "92rem", color: T.textDim }) }, str(q.name)),
         h("div", { style: { color: T.textDim } }, t("st.ui.perf.peer", { IN: num(q.in, 1), OUT: num(q.out, 1), PING: num(q.ping, 0) }) + (Number(q.deferred) > 0 ? " · " + t("st.ui.perf.deferred", { N: num(q.deferred, 0) }) : ""))
       );
     }),
@@ -2820,7 +3172,7 @@ function Badge(p) {
   const mode = s.mode || "None";
   const color = statusColor(mode);
   if (!color) return null;
-  const count = list(s.players).length;
+  const count = objs(s.players).length;
   return h(
     "div",
     { style: { position: "absolute", right: "-4rem", top: "-4rem", minWidth: "18rem", height: "18rem", padding: "0 4rem", borderRadius: "9rem", backgroundColor: color, color: "rgba(12, 26, 37, 0.9)", fontSize: FS.xs, fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" } },
@@ -2840,7 +3192,7 @@ function FallbackRoundButton(p) {
 }
 
 function tooltipNode(s) {
-  const count = list(s.players).length;
+  const count = objs(s.players).length;
   const live = s.mode === "Hosting" || s.mode === "Client";
   return h(
     "div",
@@ -2887,7 +3239,7 @@ function FallbackToggle(p) {
     },
     h(Glyph, { src: ICON_GLYPH, size: 20, style: { marginRight: "8rem" } }),
     h(Dot, { color: color, size: 8 }),
-    mode === "None" ? t("st.ui.menu.multiplayer") : mode === "Joining" ? t("st.ui.join.overlayTitleUnknown") : mode === "Recovering" ? t("st.ui.menu.multiplayer") + " · " + t("st.ui.recovery.badge") : t("st.ui.menu.multiplayer") + " · " + list(s.players).length
+    mode === "Joining" ? t("st.ui.join.overlayTitleUnknown") : mode === "Recovering" ? t("st.ui.menu.multiplayer") + " · " + t("st.ui.recovery.badge") : mode === "Hosting" || mode === "Client" ? t("st.ui.menu.multiplayer") + " · " + objs(s.players).length : t("st.ui.menu.multiplayer")
   );
 }
 
@@ -2919,6 +3271,8 @@ function GameRoot() {
   const close = function () {
     setStore({ open: false, invitesOpen: false });
   };
+  // Escape closes the panel (the invite popover registers after it, so it closes first)
+  useWindowKeys({ Escape: close }, st.open && !photo);
   const showInvites = st.open && st.invitesOpen && mode === "Hosting" && !!s.canInvite;
   return h(
     "div",

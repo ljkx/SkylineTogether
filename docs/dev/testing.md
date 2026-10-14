@@ -79,7 +79,17 @@ the game's UI modules for many session states, with and without the game's compo
 - a binding or trigger name that `src/SkylineTogether/UI/*UISystem.cs` does not declare,
 - a text key without an English text, English texts that differ from `src/SkylineTogether/Data/locale.en-US.json`,
   keys missing in another locale or in `locale-keys.generated.json`,
-- a main menu entry, top-left button or root that was not registered.
+- a main menu entry, top-left button or root that was not registered,
+- a plain object rendered as a child (React throws on that: a binding field that was not a string),
+- a window listener or store subscription that an effect adds and its cleanup does not remove (Enter and Escape are
+  pressed on every surface first),
+- a `var(--token)` the game's stylesheet does not define (only when the game's `index.css` is found through `GameDir`
+  or the default Steam folder).
+
+The states include partial and malformed data, values of the wrong type, 200 players, very long names and messages,
+and right-to-left and emoji text. `node tools/ui_smoke.mjs --html <folder>` also writes one HTML snapshot per state
+and surface (built-in look, inline styles, the game's tokens and fonts when installed) to look at the layout in a
+normal browser; Gameface is not Chrome, so a snapshot is a layout check, not the exact in-game look.
 
 ## Repository checks
 

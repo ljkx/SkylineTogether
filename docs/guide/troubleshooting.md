@@ -14,7 +14,7 @@
 ## Join refused
 
 When the host's game refuses a join, the joining player sees a screen with a title, an explanation and, for most
-reasons, a box **Details from the host** with the host's own text. **Copy details** copies everything for a bug report.
+reasons, a box **Details** with the host's own text. **Copy details** copies everything for a bug report.
 
 The host checks, in this order: bans, **Friends and invited only**, protocol version, a second connection of the same
 player, password (always for direct IP joiners), and only then build, game version, mods (only with **Require the same
@@ -29,7 +29,6 @@ mods** on) and the player limit. A player who has not passed the password learns
 | **Wrong password** | The password does not match, or there were too many wrong passwords ("Try again in N s": three wrong guesses are free, then each one locks you out longer, up to 10 minutes). | Enter the right password in the field on the screen and click **Join with this password** (after the wait). |
 | **This session needs a password** | No password was entered (for example after accepting a Steam invite, which does not carry the password). | Ask the host for it and enter it on the screen. |
 | **The host isn't ready yet** | An earlier join attempt of yours is still running on the host (the host heard from it in the last 15 seconds). | Wait a moment and click **Try again**, or restart the game. |
-
 | **You are banned from this session** | The host banned you (by Steam ID, or by address for direct joiners). | Only the host can lift it (host options, **Banned players**, **Unban**). |
 | **You can't join this session** | The host allows only Steam friends and invited players, or you connected by direct IP to a host without a password. | Ask the host for an invite (or to set a password for direct IP). |
 | **The host is closing the session** | The host stopped hosting or left the city while you were joining. | Join again when the host hosts again. |
@@ -38,6 +37,7 @@ mods** on) and the player limit. A player who has not passed the password learns
 
 | What you see | Meaning | What to do |
 |---|---|---|
+| **Your game couldn't load the host's city** | The city arrived, but loading it failed (for example missing map or climate assets). | Try again. If it keeps failing, see [Missing assets](#missing-assets) and send the copied details to the host. |
 | **No answer from the host** ("The host did not answer. Check the address or Steam ID and that the host is hosting.") | Nothing answered within 30 seconds. | Check the Steam ID (17 digits) or the address. The host must have clicked **Host this city** and still be in the city. |
 | "The host did not send the city in time. Try joining again." | The host's save of the city did not arrive within 5 minutes. | Very large cities on slow PCs; try again. The host's log shows how long saving took. |
 | "The city download stalled (nothing received for 120 s). Try joining again." | The download stopped. | Usually a network problem on either side; try again. |

@@ -5,15 +5,38 @@
 //  - a text key that renders raw (missing from the module's English table),
 //  - English texts that differ from src/SkylineTogether/Data/locale.en-US.json, keys missing in another locale table
 //    or in locale-keys.generated.json,
-//  - a main menu entry, top-left button or root that was not registered.
-// Usage: node tools/ui_smoke.mjs [file:///<absolute path to ui/SkylineTogether.mjs>] (default: ../ui/SkylineTogether.mjs)
+//  - a main menu entry, top-left button or root that was not registered,
+//  - a plain object rendered as a child (React throws on that: a binding field that was not a string),
+//  - a window listener or store subscription that an effect adds and its cleanup does not remove,
+//  - a var(--token) the game's stylesheet does not define (only when the game's index.css is found: env GameDir or the
+//    default Steam folder; skipped otherwise).
+// Usage: node tools/ui_smoke.mjs [--html <dir>] [file:///<absolute path to ui/SkylineTogether.mjs>]
+//   --html <dir>  also writes one HTML snapshot per state and surface (built-in look, every style inline, the game's
+//                 design tokens and fonts when the game is installed) plus an index.html, to look at the layout in a
+//                 normal browser. Gameface is not Chrome: treat the snapshots as a layout check, not as the real look.
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = new URL("../", import.meta.url);
 const read = (rel) => fs.readFileSync(fileURLToPath(new URL(rel, repo)), "utf8");
 let failed = 0;
 const fail = (msg) => { failed++; console.log("FAIL " + msg); };
+const args = process.argv.slice(2);
+const htmlAt = args.indexOf("--html");
+const htmlDir = htmlAt >= 0 ? args.splice(htmlAt, 2)[1] : null;
+if (htmlAt >= 0 && !htmlDir) { console.log("--html needs a folder"); process.exit(2); }
+
+// the game's stylesheet (for the token check and the snapshots), when the game is installed here
+const gameUi = (() => {
+  const dirs = [process.env.GameDir, "C:/Program Files (x86)/Steam/steamapps/common/Cities Skylines II"].filter(Boolean);
+  for (const d of dirs) {
+    const ui = path.join(d, "Cities2_Data", "Content", "Game", "UI");
+    if (fs.existsSync(path.join(ui, "index.css"))) return ui;
+  }
+  return null;
+})();
+const gameCss = gameUi ? fs.readFileSync(path.join(gameUi, "index.css"), "utf8") : "";
 
 // ------------------------------------------------------------------------------------------- C# declarations
 // every UI system of the module's group (SessionUISystem, ReplayUISystem for solo testing, InviteUISystem for Steam
@@ -33,17 +56,28 @@ for (const t of ["inviteFriend", "openInviteOverlay", "refreshFriends"]) if (!cs
 // ------------------------------------------------------------------------------------------------ stubs
 let values = {};
 let forceTrue = false;
+let runEffects = false;
 const triggers = [];
 const handlers = [];
+const cleanups = [];
 globalThis.window = globalThis;
 window.__skylineTogetherSmoke = {};
+// window key listeners (effects add them: Enter opens the chat, Escape closes panels); the effects pass presses keys
+const winListeners = new Map();
+window.addEventListener = (type, fn) => { if (!winListeners.has(type)) winListeners.set(type, new Set()); winListeners.get(type).add(fn); };
+window.removeEventListener = (type, fn) => { if (winListeners.has(type)) winListeners.get(type).delete(fn); };
 class Component { constructor(props) { this.props = props; this.state = {}; } setState() {} }
 window.React = {
   createElement(type, props, ...children) { return { type, props: props || {}, children }; },
   // the forced passes start every flag true and every text non-empty, so guarded paths (send, retry) run too
   useState(init) { return [forceTrue && init === false ? true : forceTrue && init === "" ? "smoke" : typeof init === "function" ? init() : init, () => {}]; },
   useRef(init) { return { current: init === undefined ? null : init }; },
-  useEffect() {},
+  // the effects pass runs every effect once after the render and its cleanup after the key presses
+  useEffect(fn) {
+    if (!runEffects) return;
+    try { const c = fn(); if (typeof c === "function") cleanups.push(c); }
+    catch (e) { fail("effect: " + (e && e.stack)); }
+  },
   Component,
   Children: { toArray(c) { return (Array.isArray(c) ? c.flat(Infinity) : [c]).filter((x) => x != null && x !== false); } },
 };
@@ -93,7 +127,7 @@ const registry = new Map([
   ["game-ui/common/focus/focus-key.ts", { FOCUS_DISABLED: { debugName: "disabled" } }],
 ]);
 
-const target = process.argv[2] || new URL("../ui/SkylineTogether.mjs", import.meta.url).href;
+const target = args[0] || new URL("../ui/SkylineTogether.mjs", import.meta.url).href;
 const mod = await import(target);
 const smoke = window.__skylineTogetherSmoke;
 const appended = {};
@@ -122,6 +156,7 @@ if (!smoke.store) fail("the smoke hook is missing");
 
 // ---------------------------------------------------------------------------------------------- renderer
 const rawKeys = new Set();
+let renderLabel = "";
 function render(node) {
   if (node == null || typeof node === "boolean") return 0;
   if (typeof node === "string" || typeof node === "number") {
@@ -129,6 +164,10 @@ function render(node) {
     return 0;
   }
   if (Array.isArray(node)) return node.reduce((n, c) => n + render(c), 0);
+  if (typeof node !== "object" || node.type === undefined) {
+    fail(renderLabel + ": a " + typeof node + " rendered as a child (React throws): " + String(JSON.stringify(node)).slice(0, 80));
+    return 0;
+  }
   if (typeof node.type === "function") {
     const props = Object.assign({}, node.props, { children: node.children.length === 1 ? node.children[0] : node.children });
     if (node.type.prototype instanceof Component) {
@@ -243,20 +282,80 @@ const cases = {
   soloHostIdle: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X" }, replay: { canRecord: true, recording: false } },
   soloReplaying: { state: { ...base, mode: "Client", status: "Connected", sessionName: "X (test)" }, replay: { replaying: true, replayStatus: "Replayed 0:40 of the recording · 1 checkpoints compared · 0 objects differ", progress: 0.3 } },
   soloReplayLoading: { state: { ...base, mode: "Joining", stage: "loading", progress: 0.7 }, join: join("loading", { load: 0.4, progress: 0.7 }), replay: { replaying: true, replayStatus: "Loading the recorded city…", progress: 0.1 } },
+  // robustness: partial data, values of the wrong type, huge lists, long, right-to-left and emoji texts
+  missingFields: { state: { mode: "Hosting", players: [null, {}, { id: 3 }, { name: "Only a name" }, 7, "x", [1]], chat: [null, {}, { text: "no name" }, { name: "Anna" }, 5], bans: [null, {}, { key: "k" }], end: null, recovery: null },
+    presence: { tags: [null, { id: 1 }, { on: true, x: "a", y: null }] }, friends: [null, {}, { id: 5 }], net: { show: true }, replay: { recordings: [null, {}, { id: "r1" }], verdict: {} } },
+  hostileTypes: { state: { ...base, mode: "Client", sessionName: { a: 1 }, status: ["x"], sync: { n: 1 }, speed: {}, speedValue: "fast", maxPlayers: "lots", steamId: 76561190000000000, inviteSteamId: { id: 1 }, directPort: "27015",
+    progress: "half", build: { b: 1 }, probes: { p: 1 }, blocked: 0, resync: { r: 1 }, localRole: { x: 1 }, canInvite: true,
+    players: [{ id: "a", name: { first: "A" }, host: "yes", you: 0, state: { s: 1 }, ping: "fast", progress: "x", color: { c: 1 }, role: { r: 1 } }, { id: 2, name: 42, state: "Downloading", progress: "0.5", ping: "80", role: "admin" }],
+    chat: [{ name: ["A"], text: { t: 1 }, system: "no", seq: "1", you: 1, color: 5 }, { name: "B", text: 12, seq: 2 }] },
+    net: { show: true, text: { t: 1 } }, presence: { tags: [{ id: 1, name: { n: 1 }, color: [1], x: "0.5", y: 0.5, on: true, activity: { a: 1 } }] },
+    perf: { show: true, frame: "x", features: [null, { n: { a: 1 }, avg: {}, cap: "c" }], peers: [{ name: { n: 1 } }, null], queue: {} },
+    join: { stage: "downloading", session: { s: 1 }, target: [1], done: "x", total: "y", bps: {}, eta: "z", progress: "q" }, friends: [{ id: { i: 1 }, name: { n: 1 } }, { id: 7, name: 7, state: {} }],
+    replay: { recordings: [{ id: { i: 1 } }, { id: "r", city: { c: 1 }, mb: {}, when: [], verdict: { v: 1 } }], verdict: { status: "passed", summary: { s: 1 }, folder: [1] }, recordStatus: {}, replaying: true, replayStatus: { r: 1 }, progress: "p" } },
+  hostingHostile: { state: { ...base, mode: "Hosting", maxPlayers: { m: 1 }, portSetting: "port", allowDirect: true, hasPassword: true, bans: [{ key: "k", name: { n: 1 }, id: [1], kind: "ip" }], players: [{ id: 0, host: true, you: true, role: "host" }] }, net: { show: true, text: 5 } },
+  endHostile: { state: { ...base, mode: "None", end: { seq: "s", kind: "refused", refuse: "Mismatch", reportKind: "mods", text: { t: 1 }, missing: [null, { name: { n: 1 } }, 3], extra: "nope", versions: [{ name: "M", host: {}, you: [] }], hostGame: 1 } } },
+  recoveryHostile: { state: { ...base, mode: "Recovering", recovery: { phase: "Waiting", attempt: "two", max: {}, seconds: "soon", reason: { r: 1 } }, players: "none" } },
+  hugeSession: { state: { ...base, mode: "Hosting", sessionName: "Big", maxPlayers: 16, canInvite: true,
+    players: Array.from({ length: 200 }, (_, i) => ({ id: i, name: "Player number " + i + " with a rather long Steam name", host: i === 0, you: i === 0, state: i % 7 === 3 ? "Downloading" : "Live", ping: (i * 37) % 400, progress: (i % 10) / 10, color: "#3fb6e8", role: i === 0 ? "host" : i % 5 === 0 ? "viewer" : i % 9 === 0 ? "cohost" : "builder" })),
+    chat: Array.from({ length: 100 }, (_, i) => ({ name: "P" + i, text: "message " + i + " ".repeat(i % 3) + "lorem ipsum dolor sit amet ".repeat(i % 6), system: i % 17 === 0, seq: 1000 + i, you: i % 4 === 0, color: "#5fcf7a" })),
+    bans: Array.from({ length: 60 }, (_, i) => ({ key: "steam:" + i, name: "Banned " + i, kind: "steam", id: "7656119000000" + String(1000 + i) })) },
+    friends: Array.from({ length: 300 }, (_, i) => ({ id: String(76561190000001000 + i), name: "Friend " + i, state: ["ingame", "online", "away", "offline"][i % 4], inSession: i % 11 === 0 })), overlayAvailable: true,
+    presence: { tags: Array.from({ length: 200 }, (_, i) => ({ id: i, name: "Player number " + i, color: "#3fb6e8", x: (i % 20) / 20, y: (i % 10) / 10, on: true, activity: "building" })) } },
+  longTexts: { state: { ...base, mode: "Client", sessionName: "A session name that goes on and on and on well beyond the panel width".repeat(2), canInvite: true, localRole: "cohost", status: "Connected",
+    resync: "34 of 200 checked areas still differed from the host after repairs, 2 checks in a row ".repeat(3), sync: "x".repeat(600),
+    players: [{ id: 0, name: "H".repeat(64), host: true, you: false, state: "Live", ping: 40, progress: 1, color: "#f2b84b", role: "host" }, { id: 1, name: "Supercalifragilisticexpialidocious_and_more_without_any_spaces", host: false, you: true, state: "Live", ping: 0, progress: 1, color: "#3fb6e8", role: "cohost" },
+      { id: 2, name: "W".repeat(64), host: false, you: false, state: "Loading", ping: 999, progress: 0.99, color: "#5fcf7a", role: "builder" }],
+    chat: [{ name: "N".repeat(64), text: "a".repeat(500), system: false, seq: 1, you: false, color: "#3fb6e8" }, { name: "Bo", text: "https://example.com/" + "very/long/path/".repeat(30), system: false, seq: 2, you: false, color: "#5fcf7a" }, { name: "", text: "System line ".repeat(40), system: true, seq: 3, you: false, color: "" }] },
+    net: { show: true, text: "ping 40 ms · in 12.0 KB/s · out 3.1 KB/s ".repeat(5) }, presence: { tags: [{ id: 2, name: "W".repeat(64), color: "#5fcf7a", x: 0.99, y: 0.01, on: true, activity: "building a very long road name ".repeat(4) }] } },
+  endLongMods: { state: { ...base, mode: "None", end: Object.assign({}, mods, { text: "detail ".repeat(200), missing: Array.from({ length: 40 }, (_, i) => ({ name: "A mod with a very long display name number " + i + " ".repeat(3) + "and suffix", version: "1.2.3-beta+" + "x".repeat(20), id: String(i) })) }) } },
+  rtlEmoji: { state: { ...base, mode: "Hosting", sessionName: "مدينة سارة 🏙️", canInvite: true,
+    players: [{ id: 0, name: "דנה 🚀", host: true, you: true, state: "Live", ping: 0, progress: 1, color: "#f2b84b", role: "host" }, { id: 1, name: "سارة", host: false, you: false, state: "Live", ping: 45, progress: 1, color: "#3fb6e8", role: "builder" }, { id: 2, name: "👨‍👩‍👧‍👦🎉🔥", host: false, you: false, state: "Downloading", ping: 30, progress: 0.3, color: "#5fcf7a", role: "viewer" }],
+    chat: [{ name: "سارة", text: "مرحبا! hello 👋 שלום", system: false, seq: 1, you: false, color: "#3fb6e8" }, { name: "👨‍👩‍👧‍👦🎉🔥", text: "🏗️🛣️🚧".repeat(40), system: false, seq: 2, you: false, color: "#5fcf7a" }] },
+    presence: { tags: [{ id: 1, name: "سارة", color: "#3fb6e8", x: 0.5, y: 0.5, on: true, activity: "تبني طريقا" }] }, friends: [{ id: "76561190000000011", name: "עמית 🎮", state: "ingame", inSession: false }] },
+  // inline validation: a too short Steam ID, a port below 1024
+  lobbyInvalid: { state: { ...base, mode: "None", joinTarget: "12345", portSetting: 80, allowDirect: true, hasPassword: true } },
+  lobbyBadPort: { state: { ...base, mode: "None", inGame: false, joinTarget: "203.0.113.7:99999", portSetting: 80, allowDirect: true, hasPassword: true } },
+  blockedOnly: { state: { blocked: "the session layer did not start (see the log)" } },
+  endLoadFailed: { state: { ...base, mode: "None", end: end("loadFailed") } },
+  endProtocolError: { state: { ...base, mode: "None", end: end("protocolError") } },
+  endLeft: { state: { ...base, mode: "None", end: end("left") } },
+  endUnknownKind: { state: { ...base, mode: "None", end: end("somethingNew", "AlsoNew") } },
+  joiningUnknownStage: { state: { ...base, mode: "Joining", stage: "teleporting", progress: 2 }, join: { active: true, stage: "teleporting", progress: -1 } },
   garbage: { state: "{not json", net: "", presence: "null", join: "[1,2", replay: "{oops", friends: "{bad", perf: "{\"show\":true,\"features\":7,\"peers\":null" },
   empty: { state: "{}" },
+  arrayState: { state: "[1,2,3]", presence: "[]", join: "\"text\"", replay: "42" },
 };
 const passes = [
-  { name: "vanilla", ui: vanillaUi, locale: null, forceTrue: false },
-  { name: "vanilla-de-forced", ui: vanillaUi, locale: de, forceTrue: true },
-  { name: "builtin", ui: null, locale: null, forceTrue: true },
+  { name: "vanilla", ui: vanillaUi, locale: null, forceTrue: false, effects: true },
+  { name: "vanilla-de-forced", ui: vanillaUi, locale: de, forceTrue: true, effects: false },
+  { name: "builtin", ui: null, locale: null, forceTrue: true, effects: true },
 ];
+// after a render with effects: press Enter and Escape on the window listeners, then unmount (run every cleanup) and
+// check that nothing was left subscribed
+const KEYS = ["Enter", "Escape"].map((key) => ({ key, preventDefault() {}, stopPropagation() {}, target: { blur() {} } }));
+function settle(label) {
+  if (!runEffects) return;
+  for (const ev of KEYS) {
+    for (const fn of [...(winListeners.get("keydown") || [])]) {
+      try { fn(ev); } catch (e) { fail(label + " key " + ev.key + ": " + (e && e.stack)); }
+    }
+  }
+  for (const c of cleanups.splice(0).reverse()) {
+    try { c(); } catch (e) { fail(label + " effect cleanup: " + (e && e.stack)); }
+  }
+  let left = 0;
+  for (const set of winListeners.values()) { left += set.size; set.clear(); }
+  if (left > 0) fail(label + ": " + left + " window listener(s) left after unmount");
+  if (smoke.store.listeners.size > 0) { fail(label + ": " + smoke.store.listeners.size + " store listener(s) left after unmount"); smoke.store.listeners.clear(); }
+}
 const roots = ["GameTopLeft", "Game", "Menu"];
 let total = 0;
 for (const pass of passes) {
   smoke.V.ok = pass.ui !== null; // the built-in look, as after a game component failed
   locale = pass.locale;
   forceTrue = pass.forceTrue;
+  runEffects = pass.effects;
   for (const [name, c] of Object.entries(cases)) {
     values = {};
     for (const k of Object.keys(c)) values[k] = typeof c[k] === "string" || typeof c[k] === "boolean" ? c[k] : JSON.stringify(c[k]);
@@ -264,8 +363,10 @@ for (const pass of passes) {
       for (const slot of roots) {
         // every surface at once: panel, invite popover, expanded and collapsed chat dock
         Object.assign(smoke.store, { open: true, menuOpen: true, tab, gameTab: tab, dismissedEnd: -1, typing: 0, invitesOpen: true, chatOpen: tab !== "solo", chatSeen: -1, sent: tab === "join" ? { "76561190000000002": true } : {} });
+        renderLabel = pass.name + " " + name + " " + slot;
         try { total += render({ type: appended[slot], props: {}, children: [] }); }
         catch (e) { fail(pass.name + " " + name + " " + slot + ": " + (e && e.stack)); }
+        settle(renderLabel);
         runHandlers(pass.name + " " + name + " " + slot);
       }
     }
@@ -273,13 +374,17 @@ for (const pass of passes) {
     for (const [menuOpen, tab] of [[true, "join"], [true, "host"], [true, "solo"], [false, "join"]]) {
       Object.assign(smoke.store, { menuOpen, tab, dismissedEnd: -1, typing: 0 });
       let nodes = 0;
+      renderLabel = pass.name + " " + name + " multiplayer page";
       try { nodes = render({ type: appended["Menu"], props: {}, children: [] }); total += nodes; }
       catch (e) { fail(pass.name + " " + name + " multiplayer page: " + (e && e.stack)); }
+      settle(renderLabel);
       if (menuOpen && nodes < 20) fail(pass.name + " " + name + " multiplayer page rendered almost nothing (" + nodes + " nodes)");
       runHandlers(pass.name + " " + name + " multiplayer page");
     }
+    renderLabel = pass.name + " " + name + " main menu";
     try { total += render({ type: extended[MAIN_MENU + "@MainMenuNavigation"], props: { children: [{ type: "a", props: {}, children: [] }, { type: "b", props: {}, children: [] }, { type: "c", props: {}, children: [] }, false, { type: "d", props: {}, children: [] }] }, children: [] }); }
     catch (e) { fail(pass.name + " " + name + " main menu: " + (e && e.stack)); }
+    settle(renderLabel);
     runHandlers(pass.name + " " + name + " main menu");
   }
   console.log("ok pass " + pass.name);
@@ -320,4 +425,97 @@ else {
   // literal keys; prefixes ("st.ui.tab." + id) are covered by the raw-key check of the rendered output
   for (const used of src.matchAll(/\bt\("([^"]+)"/g)) if (!used[1].endsWith(".") && EN[used[1]] === undefined) fail("t() of a key missing in EN: " + used[1]);
 }
+
+// ------------------------------------------------------------------------------------- the game's design tokens
+// Gameface drops a declaration whose var() names an undefined property (and the module never writes fallbacks), so
+// every token the module uses must exist in the game's own stylesheet.
+if (gameCss) {
+  const defined = new Set([...gameCss.matchAll(/(--[A-Za-z0-9-]+)\s*:/g)].map((m) => m[1]));
+  const code = src.replace(/\/\/.*$/gm, "");
+  const missing = [...new Set([...code.matchAll(/var\((--[A-Za-z0-9-]+)\)/g)].map((m) => m[1]))].filter((v) => !defined.has(v));
+  if (missing.length > 0) fail("CSS tokens the game's index.css does not define: " + missing.join(", "));
+  else console.log("design tokens: all defined in the game's index.css");
+} else {
+  console.log("design tokens: skipped (the game's index.css was not found; set GameDir)");
+}
+
+// ------------------------------------------------------------------------------------------------ snapshots
+function writeSnapshots(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  smoke.V.ok = false; // the built-in look: every style is inline (the vanilla classes exist only in the game)
+  locale = null;
+  forceTrue = false;
+  runEffects = false;
+  const files = [];
+  const write = (file, title, body) => {
+    fs.writeFileSync(path.join(dir, file), page(title, body));
+    files.push([file, title]);
+  };
+  for (const [name, c] of Object.entries(cases)) {
+    values = {};
+    for (const k of Object.keys(c)) values[k] = typeof c[k] === "string" || typeof c[k] === "boolean" ? c[k] : JSON.stringify(c[k]);
+    const st = typeof c.state === "object" ? c.state : {};
+    const lobby = (st.mode || "None") === "None" && !st.end;
+    for (const tab of lobby ? ["host", "join", "solo"] : ["host"]) {
+      Object.assign(smoke.store, { open: true, menuOpen: false, tab, gameTab: tab, dismissedEnd: -1, typing: 0, invitesOpen: true, chatOpen: true, chatSeen: -1, sent: {} });
+      write(name + ".game" + (lobby ? "-" + tab : "") + ".html", name + " (in game" + (lobby ? ", " + tab : "") + ")", toHtml({ type: appended["Game"], props: {}, children: [] }) + '<div style="position:absolute;left:10rem;top:10rem">' + toHtml({ type: appended["GameTopLeft"], props: {}, children: [] }) + "</div>");
+      Object.assign(smoke.store, { open: false, menuOpen: true });
+      write(name + ".menu-" + tab + ".html", name + " (main menu, " + tab + ")", toHtml({ type: appended["Menu"], props: {}, children: [] }));
+    }
+  }
+  fs.writeFileSync(path.join(dir, "index.html"), "<!doctype html><meta charset=\"utf-8\"><title>UI snapshots</title><ul>" + files.map(([f, t]) => '<li><a href="' + f + '">' + esc(t) + "</a></li>").join("") + "</ul>");
+  console.log("snapshots: " + files.length + " pages in " + dir);
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+}
+
+const UNITLESS = new Set(["flex", "flexGrow", "flexShrink", "opacity", "zIndex", "fontWeight", "lineHeight", "order"]);
+function cssText(style) {
+  return Object.entries(style || {})
+    .filter(([, v]) => v !== null && v !== undefined && v !== "" && typeof v !== "boolean")
+    .map(([k, v]) => {
+      const prop = k.startsWith("--") ? k : k.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+      const val = typeof v === "number" && !UNITLESS.has(k) && v !== 0 ? v + "px" : String(v);
+      return prop + ":" + val + (/^mask/.test(k) ? ";-webkit-" + prop + ":" + val : "");
+    })
+    .join(";");
+}
+
+function toHtml(node) {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return esc(node);
+  if (Array.isArray(node)) return node.map(toHtml).join("");
+  if (typeof node !== "object" || node.type === undefined) return "";
+  if (typeof node.type === "function") {
+    const props = Object.assign({}, node.props, { children: node.children.length === 1 ? node.children[0] : node.children });
+    try {
+      return toHtml(node.type.prototype instanceof Component ? new node.type(props).render() : node.type(props));
+    } catch (e) {
+      return "<pre style=\"color:red\">" + esc(e && e.stack) + "</pre>";
+    }
+  }
+  const p = node.props || {};
+  const tag = /^[a-z]+$/.test(node.type) ? node.type : "div";
+  let attrs = p.style ? ' style="' + esc(cssText(p.style)) + '"' : "";
+  if (p.tabIndex !== undefined) attrs += ' tabindex="' + esc(p.tabIndex) + '"';
+  if (tag === "input") return "<input" + attrs + ' type="' + (p.type === "password" ? "password" : "text") + '" value="' + esc(p.value || "") + '" placeholder="' + esc(p.placeholder || "") + '">';
+  return "<" + tag + attrs + ">" + (node.children || []).map(toHtml).join("") + "</" + tag + ">";
+}
+
+// a 1920 x 1080 frame like the game's UI at 1080p (1rem = 1px there), over a backdrop with dark and bright parts (the
+// panels are translucent). <body> sets black text like Gameface's default, so a surface without its own colour shows.
+function page(title, body) {
+  const tokens = gameCss ? [...gameCss.matchAll(/:root\s*\{([^}]*)\}/g)].map((m) => m[1]).join(";") : "";
+  const base = gameUi ? pathToFileURL(gameUi + path.sep).href : "";
+  return "<!doctype html><html><head><meta charset=\"utf-8\"><title>" + esc(title) + "</title>" + (base ? '<base href="' + esc(base) + '">' : "") +
+    "<style>:root{" + tokens + "}" +
+    "@font-face{font-family:Overpass;src:url(\"Fonts/Overpass-Regular.ttf\")}@font-face{font-family:Overpass;font-weight:bold;src:url(\"Fonts/Overpass-Bold.ttf\")}" +
+    "html{font-size:1px}body{margin:0;font-family:Overpass,\"Noto Sans\",sans-serif;font-size:14rem;color:#000;background:#111}" +
+    ".frame{position:relative;width:1920px;height:1080px;overflow:hidden;background-image:linear-gradient(120deg,#26302a 0%,#5d6b58 45%,#b9c2b2 75%,#e4e8e0 100%)}" +
+    "input{outline:none;font-family:inherit;box-sizing:border-box}div{box-sizing:border-box}" +
+    "</style></head><body><div class=\"frame\">" + body + "</div></body></html>";
+}
+if (htmlDir) writeSnapshots(htmlDir);
 process.exit(failed ? 1 : 0);
