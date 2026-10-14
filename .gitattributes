@@ -1,11 +1,27 @@
-# Normalise text files to LF in the repository; check-out follows the platform (core.autocrlf).
+# Line endings
+# The repository stores every text file with LF. On checkout, text files follow the platform (core.autocrlf /
+# core.eol: CRLF on Windows, LF elsewhere), so editors and the build see native line endings and no file shows up
+# as changed only because of its line endings.
 * text=auto
 
 # Shell scripts must keep LF on every platform, or bash fails on the carriage returns.
 *.sh text eol=lf
 
+# Windows scripts are always checked out with CRLF (cmd.exe and Windows PowerShell 5.1 expect it).
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Solution files: Visual Studio rewrites them with CRLF.
+*.sln text eol=crlf
+
 # Binary content
 *.dll binary
+*.exe binary
 *.pdb binary
 *.zip binary
 *.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.dmp binary

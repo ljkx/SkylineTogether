@@ -7,11 +7,16 @@ using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Session
 {
+    /// <summary>Settings of a <see cref="SessionClient"/> join attempt: who joins, the password, the timeouts.</summary>
     public sealed class ClientOptions
     {
+        /// <summary>The name the other players see.</summary>
         public string PlayerName = "Player";
+        /// <summary>The player's Steam ID, sent in the hello; the host recognises a repeated connection by it.</summary>
         public ulong SteamId;
+        /// <summary>The session password; empty when none was entered.</summary>
         public string Password = "";
+        /// <summary>Longest time for connecting and the handshake together.</summary>
         public double ConnectTimeoutSeconds = 30;
         /// <summary>Longest wait for the host's snapshot after the welcome (the host saves the city first).</summary>
         public double SnapshotWaitTimeoutSeconds = 300;
@@ -21,7 +26,7 @@ namespace SkylineTogether.Core.Session
         public double LiveWaitTimeoutSeconds = 120;
     }
 
-
+    /// <summary>Stages of a client session, in order; Ended is final (why: <see cref="ClientEndKind"/>).</summary>
     public enum ClientState
     {
         Idle,

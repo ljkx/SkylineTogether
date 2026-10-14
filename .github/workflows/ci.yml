@@ -1,0 +1,62 @@
+# Continuous integration. The game layer (src/SkylineTogether) compiles against the game's own assemblies and cannot
+# be built here; SkylineTogether.Core falls back to the .NET SDK's netstandard2.1 reference assemblies when the game
+# is missing (see src/SkylineTogether.Core/SkylineTogether.Core.csproj and docs/dev/building.md), and the test
+# project compiles the Core sources for net8.0. No NuGet package is restored.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  core:
+    name: Core build and tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build SkylineTogether.Core (without the game)
+        run: dotnet build src/SkylineTogether.Core/SkylineTogether.Core.csproj -c Release
+      - name: Build the tests
+        run: dotnet build tests/SkylineTogether.Core.Tests/SkylineTogether.Core.Tests.csproj -c Release
+      - name: Run the tests
+        # the exit code is the number of failed tests
+        run: dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll
+
+  ui:
+    name: UI module checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: node --check ui/SkylineTogether.mjs
+      - name: Smoke test
+        run: node tools/ui_smoke.mjs
+
+  repo:
+    name: Repository checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: No personal data in tracked files
+        run: python tools/check_personal_data.py
+      - name: Relative links in Markdown files resolve
+        run: python tools/check_links.py

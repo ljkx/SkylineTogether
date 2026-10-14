@@ -1,8 +1,7 @@
 # Action coverage
 
 This document covers every player action from research 10 (`docs/research/10-player-actions.md`) and the vanilla tool
-actions. For each one it lists how the action syncs in both directions and where it is implemented. Branch
-`w2/gameplay`. The design references are ARCH §5 and R10 §2-§7.
+actions. For each one it lists how the action syncs in both directions and where it is implemented. The design references are ARCH §5 and R10 §2-§7.
 
 ## How each action travels
 
@@ -96,7 +95,7 @@ Status values:
 | 39 | Terraforming | Terrain stamps (`TerrainSync`) | OK | |
 | 40 | Disasters and emergencies | Host simulation | OK | No player trigger exists apart from rebuild (row 8) and policies (rows 18-19). |
 | 41 | Pause and speed (T1, T3) | Speed | OK | Clients send requests (viewers' requests are refused). On a host with live players, TimeUISystem's forced pause (pause menu, focus loss) no longer pauses everyone. A pause that someone chose is kept. |
-| 42 | Follow citizen (F1), chirp likes (F2), tutorials (F3) | — | Local | Per-player meta. Tutorial prefabs stay out of the unlock set. |
+| 42 | Follow citizen (F1) | Global | OK | Channel `Follow` (`GlobalStateSync.Panels.cs`, SYNC-COVERAGE fix 13): clients send follow/unfollow deltas, the host follows through the vanilla API, agent replication brings `Followed` and the life path to everyone. Needs the Names permission, so viewers cannot follow. Chirp likes (F2) and tutorials (F3) stay local per-player meta; tutorial prefabs stay out of the unlock set. |
 | 43 | Signature building notice, milestone notice clear, camera, info views, photo mode | — | Local | Presentation (R10 §6.1). |
 | 44 | Viewer role | No-predict gate | OK | `ViewerGateSystem` rewrites `Apply` to `Clear` before `ToolOutputSystem`. The host refuses viewers' proposals in any case. |
 | 45 | Direct-write mod tools (Move It, Zoning Toolkit, ...) | Tool (direct-write flag) | Partial | Generic un-applied capture while a non-vanilla tool is active (flag `DirectTool`, permission `ModTools`). Mod-specific robustness is handled on another branch. |

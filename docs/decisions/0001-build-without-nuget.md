@@ -58,3 +58,13 @@ The only inputs are the .NET SDK (8.0) and the game's own `Cities2_Data\Managed`
 
 With .NET SDK 8.0.425 and the current game build: the Core and game projects and the test project build with
 `TreatWarningsAsErrors=true` (Debug and Release), and the test runner discovers and runs the tests.
+
+## Amendment (2026-10-14): building Core without the game
+
+For continuous integration and for contributors who only work on Core, `SkylineTogether.Core.csproj` no longer fails
+when the game is missing. When `$(GameManagedPath)\mscorlib.dll` does not exist, Core targets `netstandard2.1` and
+compiles against the reference assemblies that ship inside the .NET SDK (`packs/NETStandard.Library.Ref`), so restore
+still downloads nothing. netstandard2.1 is the API level of the game's own `netstandard.dll` facade, so this compile
+check accepts the same APIs as the real build; the netstandard2.0 rule of point 2 is still enforced by review. The
+output of that fallback is never shipped. With the game present the project is built exactly as described above.
+The game project itself still needs the game. See [docs/dev/building.md](../dev/building.md).

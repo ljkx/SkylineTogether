@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest something Skyline Together should do (or do differently).
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: Describe the situation in a session where this would help.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: How it could work for the host and for the other players.
+  - type: textarea
+    id: mods
+    attributes:
+      label: Mods involved
+      description: If this is about compatibility with another mod, name it and link its page.
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything else
