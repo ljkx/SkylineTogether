@@ -43,9 +43,7 @@ namespace SkylineTogether.Sync
         private const double HostInterval = 1.0;
         private const double KeyframeInterval = 30.0;
         private const double HoldSeconds = 1.5;
-        private const int TaxBound = 100;
-        private const int MaxBudget = 300;
-        private const float MaxFee = 100000f;
+        private const int MaxBudget = GlobalProposalRules.MaxBudget;
 
         private readonly ILog _log;
         private readonly ChannelSendGate _send = new ChannelSendGate(KeyframeInterval);
@@ -65,6 +63,7 @@ namespace SkylineTogether.Sync
         private CitySystem _city;
         private EntityQuery _budgetQuery;
         private EntityQuery _modifyQuery;
+        private EntityQuery _feeParameters; // w9/perf (trust): fee maxima and adjustability
         private EntityArchetype _modifyArchetype;
         private FieldInfo _namesField;
         private double _lastHost = double.NegativeInfinity;
@@ -235,6 +234,7 @@ namespace SkylineTogether.Sync
                 EntityManager em = world.EntityManager;
                 _budgetQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ServiceBudgetData>());
                 _modifyQuery = em.CreateEntityQuery(ComponentType.ReadOnly<Game.Common.Event>(), ComponentType.ReadOnly<Modify>());
+                _feeParameters = em.CreateEntityQuery(ComponentType.ReadOnly<ServiceFeeParameterData>());
                 // the archetype PoliciesUISystem uses for its events (PoliciesUISystem.cs:157)
                 _modifyArchetype = em.CreateArchetype(ComponentType.ReadWrite<Game.Common.Event>(), ComponentType.ReadWrite<Modify>());
                 _namesField = Diagnostics.Probes.NameSystemNames;
@@ -439,21 +439,28 @@ namespace SkylineTogether.Sync
             }
             if (!Permitted(peer, channel, RequiredPermission(channel), payload)) return;
             if (ApplyPanelProposal(peer, channel, payload)) return; // followed citizens
+            _proposalPeer = peer;
             if (channel == GlobalChannel.Tax)
             {
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
                 // TaxationUISystem completes the readers the same way before it writes (TaxationUISystem.cs:275)
                 _tax.Readers.Complete();
                 NativeArray<int> rates = _tax.GetTaxRates();
+                if (!WithinLimit(_intList.Count, channel)) return;
                 foreach (KeyValuePair<uint, int> e in _intList)
                 {
-                    if (e.Key < (uint)rates.Length) rates[(int)e.Key] = Math.Max(-TaxBound, Math.Min(TaxBound, e.Value));
+                    if (e.Key < (uint)rates.Length) rates[(int)e.Key] = GlobalProposalRules.ClampTax(e.Value);
                 }
+                // w9/perf (trust): the game's own clamp cascade (total, area, job level and resource limits of
+                // TaxParameterData), as its tax panel setters apply it; the raw offsets alone could exceed every limit
+                TaxParameterData limits = _tax.GetTaxParameterData(); // loads the limits the setters clamp with
+                if (limits.m_TotalTaxLimits.x < limits.m_TotalTaxLimits.y) _tax.TaxRate = _tax.TaxRate;
                 _send.MarkDirty(channel);
             }
             else if (channel == GlobalChannel.Budget)
             {
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
+                if (!WithinLimit(_intList.Count, channel)) return;
                 var budgets = new List<KeyValuePair<uint, int>>(_intList);
                 // gameplay branch: SetServiceBudget tags the budget entity through EndFrameBarrier: late phase
                 _late.Add(() =>
@@ -463,7 +470,9 @@ namespace SkylineTogether.Sync
                     {
                         Entity service = _ids.GetEntity(e.Key);
                         if (service == Entity.Null || !lem.Exists(service) || !lem.HasComponent<ServiceData>(service)) continue;
-                        _budgets.SetServiceBudget(service, Math.Max(0, Math.Min(MaxBudget, e.Value)));
+                        // w9/perf (trust): only budgets the game's panel lets players adjust
+                        if (!GlobalProposalRules.TryBudget(e.Value, lem.GetComponentData<ServiceData>(service).m_BudgetAdjustable, out int percentage)) continue;
+                        _budgets.SetServiceBudget(service, percentage);
                     }
                     _send.MarkDirty(GlobalChannel.Budget);
                 });
@@ -471,27 +480,35 @@ namespace SkylineTogether.Sync
             else if (channel == GlobalChannel.Fee)
             {
                 if (!ReadDelta(GlobalPayload.ReadFloats(payload, 0, payload.Length, Cleared(_floatList)), peer, channel)) return;
+                if (!WithinLimit(_floatList.Count, channel)) return;
                 Entity city = _city.City;
                 if (city == Entity.Null || !em.HasBuffer<ServiceFee>(city)) return;
                 DynamicBuffer<ServiceFee> fees = em.GetBuffer<ServiceFee>(city);
+                bool haveParameters = !_feeParameters.IsEmptyIgnoreFilter;
+                ServiceFeeParameterData parameters = haveParameters ? _feeParameters.GetSingleton<ServiceFeeParameterData>() : default;
                 foreach (KeyValuePair<uint, float> e in _floatList)
                 {
                     var resource = (PlayerResource)(int)e.Key;
-                    if (resource == PlayerResource.Parking || float.IsNaN(e.Value) || float.IsInfinity(e.Value)) continue;
+                    if (resource == PlayerResource.Parking || e.Key > 64) continue;
+                    // w9/perf (trust): the game's fee maximum, and only fees its panel lets players adjust
+                    FeeParameters limits = haveParameters ? parameters.GetFeeParameters(resource) : new FeeParameters { m_Adjustable = true, m_Max = GlobalProposalRules.MaxFee };
+                    if (!GlobalProposalRules.TryFee(e.Value, limits.m_Adjustable, limits.m_Max, out float fee)) continue;
                     // ServiceBudgetUISystem.SetServiceFee does exactly this (ServiceBudgetUISystem.cs:257-264)
-                    ServiceFeeSystem.SetFee(resource, fees, Math.Max(0f, Math.Min(MaxFee, e.Value)));
+                    ServiceFeeSystem.SetFee(resource, fees, fee);
                 }
             }
             else if (channel == GlobalChannel.Loan)
             {
                 if (!ReadDelta(GlobalPayload.ReadInts(payload, 0, payload.Length, Cleared(_intList)), peer, channel)) return;
-                // LoanSystem clamps against the host's money and creditworthiness and applies in Modification1
-                foreach (KeyValuePair<uint, int> e in _intList) _loan.ChangeLoan(Math.Max(0, e.Value));
+                // LoanSystem clamps against the host's money and creditworthiness and applies in Modification1; w9/perf: one
+                // loan exists, so only the last entry counts (was one ChangeLoan per entry, up to 65536)
+                if (_intList.Count > 0) _loan.ChangeLoan(GlobalProposalRules.ClampLoan(_intList[_intList.Count - 1].Value));
             }
             else if (channel == GlobalChannel.Policy)
             {
                 _policyList.Clear();
                 if (!ReadDelta(GlobalPayload.ReadPolicies(payload, 0, payload.Length, _policyList), peer, channel)) return;
+                if (!WithinLimit(_policyList.Count, channel)) return;
                 foreach (PolicyChange c in _policyList)
                 {
                     // gameplay branch: a target deleted meanwhile is a conflict (rollback of the client's prediction)
@@ -501,7 +518,9 @@ namespace SkylineTogether.Sync
             else if (channel == GlobalChannel.Name)
             {
                 if (!ReadDelta(GlobalPayload.ReadStrings(payload, 0, payload.Length, Cleared(_stringList)), peer, channel)) return;
-                var names = new List<KeyValuePair<uint, string>>(_stringList);
+                if (!WithinLimit(_stringList.Count, channel)) return;
+                var names = new List<KeyValuePair<uint, string>>(_stringList.Count);
+                foreach (KeyValuePair<uint, string> e in _stringList) names.Add(new KeyValuePair<uint, string>(e.Key, GlobalProposalRules.CleanName(e.Value))); // w9/perf (trust)
                 // gameplay branch: NameSystem.SetCustomName uses EndFrameBarrier (NameSystem.cs:214-241): late phase
                 _late.Add(() =>
                 {
@@ -514,7 +533,7 @@ namespace SkylineTogether.Sync
                             Reject?.Invoke(peer, RejectReason.Conflict, new[] { e.Key });
                             continue;
                         }
-                        _names.SetCustomName(target, e.Value ?? "");
+                        _names.SetCustomName(target, e.Value);
                     }
                     _send.MarkDirty(GlobalChannel.Name);
                 });
@@ -524,7 +543,7 @@ namespace SkylineTogether.Sync
                 if (!ReadDelta(GlobalPayload.ReadStrings(payload, 0, payload.Length, Cleared(_stringList)), peer, channel)) return;
                 foreach (KeyValuePair<uint, string> e in _stringList)
                 {
-                    if (!string.IsNullOrWhiteSpace(e.Value)) _config.cityName = e.Value;
+                    if (GlobalProposalRules.TryCityName(e.Value, out string cityName)) _config.cityName = cityName; // w9/perf (trust): sanitised
                 }
                 _send.MarkDirty(channel);
             }
@@ -532,6 +551,16 @@ namespace SkylineTogether.Sync
             {
                 Once("unknown proposal " + channel, "global state: " + peer + " proposed unknown channel 0x" + channel.ToString("X8", CultureInfo.InvariantCulture), null);
             }
+        }
+
+        private PeerId _proposalPeer;
+
+        /// <summary>w9/perf (trust): a proposal with more entries than a panel edit can produce is dropped whole.</summary>
+        private bool WithinLimit(int count, uint channel)
+        {
+            if (GlobalProposalRules.WithinEntryLimit(count)) return true;
+            Once("entries " + channel, "global state: " + _proposalPeer + " proposed " + count + " " + ChannelName(channel) + " entries at once; ignored", null);
+            return false;
         }
 
         /// <summary>gameplay branch: the permission a channel proposal needs (ARCH §5.6).</summary>
@@ -565,9 +594,13 @@ namespace SkylineTogether.Sync
             if (policy == Entity.Null || !em.Exists(policy)) return true;
             if (!em.HasComponent<PolicyData>(policy)) return true;
             if (!em.HasBuffer<Policy>(target) && !em.HasComponent<Game.Buildings.Extension>(target)) return true;
-            if (float.IsNaN(c.Adjustment) || float.IsInfinity(c.Adjustment)) return true;
+            // w9/perf (trust): a policy that is still locked cannot be enacted; a slider value stays within its range
+            if (em.HasComponent<Locked>(policy) && em.IsComponentEnabled<Locked>(policy)) return true;
+            bool hasRange = em.HasComponent<PolicySliderData>(policy);
+            Colossal.Mathematics.Bounds1 range = hasRange ? em.GetComponentData<PolicySliderData>(policy).m_Range : default;
+            if (!GlobalProposalRules.TryPolicyAdjustment(c.Adjustment, hasRange, range.min, range.max, out float adjustment)) return true;
             Entity ev = em.CreateEntity(_modifyArchetype);
-            em.SetComponentData(ev, new Modify(target, policy, (c.Flags & (byte)PolicyFlags.Active) != 0, c.Adjustment));
+            em.SetComponentData(ev, new Modify(target, policy, (c.Flags & (byte)PolicyFlags.Active) != 0, adjustment));
             return true;
         }
 
