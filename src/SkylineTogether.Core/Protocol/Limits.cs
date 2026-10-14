@@ -98,5 +98,18 @@ namespace SkylineTogether.Core.Protocol
         public static bool IsKnownKind(MessageKind kind) => (kind >= MessageKind.Hello && kind <= MessageKind.Water) || kind == MessageKind.ApplyAck || (kind >= MessageKind.SimValues && kind <= MessageKind.Statistics)
                                                             || kind == MessageKind.AgentValues || kind == MessageKind.AgentRefresh
                                                             || kind == MessageKind.FlowStatus || kind == MessageKind.ModChannel;
+
+        /// <summary>
+        /// True for the reserved kinds (ARCHITECTURE.md#reserved-wire-values): defined, with a body limit, but never sent
+        /// by this build (<see cref="MessageKind.Clock"/>, <see cref="MessageKind.HashDetail"/>,
+        /// <see cref="MessageKind.RepairRequest"/>, <see cref="MessageKind.BlobManifest"/>).
+        /// </summary>
+        public static bool IsReservedKind(MessageKind kind) => kind == MessageKind.Clock || kind == MessageKind.HashDetail || kind == MessageKind.RepairRequest || kind == MessageKind.BlobManifest;
+
+        /// <summary>
+        /// True for the kinds the session layer hands to the replication layer's listeners: known and not reserved. Unknown
+        /// and reserved kinds are dropped on receipt (a newer peer's addition or a stray value is never an error).
+        /// </summary>
+        public static bool IsDeliverable(MessageKind kind) => IsKnownKind(kind) && !IsReservedKind(kind);
     }
 }

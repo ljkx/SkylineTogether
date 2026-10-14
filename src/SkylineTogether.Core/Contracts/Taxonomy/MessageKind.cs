@@ -3,6 +3,12 @@ namespace SkylineTogether.Core
     /// <summary>
     /// Envelope message kinds (ARCHITECTURE.md#envelope-and-message-kinds). The values are the first byte of every message and must
     /// never change; 0 is not a valid kind.
+    /// <para>
+    /// Reserved values (ARCHITECTURE.md#reserved-wire-values): <see cref="Clock"/>, <see cref="HashDetail"/>,
+    /// <see cref="RepairRequest"/> and <see cref="BlobManifest"/> belong to the original design and have no sender. Their
+    /// numbers stay taken; receivers drop them (<see cref="Protocol.Limits.IsReservedKind"/>) like unknown kinds, before
+    /// any listener sees them.
+    /// </para>
     /// </summary>
     public enum MessageKind : byte
     {
@@ -15,11 +21,15 @@ namespace SkylineTogether.Core
         Proposal,
         Motion,
         MotionControl,
+        /// <summary>Reserved (10): never sent; dropped on receipt. The host's frame travels as the batch's <c>Clock</c> record.</summary>
         Clock,
         View,
         Presence,
+        /// <summary>Reserved (13): never sent; dropped on receipt (integrity details travel as batch records).</summary>
         HashDetail,
+        /// <summary>Reserved (14): never sent; dropped on receipt (repairs are requested with batch records).</summary>
         RepairRequest,
+        /// <summary>Reserved (15): never sent; dropped on receipt (the snapshot's manifest is <c>Control SnapshotManifest</c>).</summary>
         BlobManifest,
         BlobChunk,
         BlobHave,

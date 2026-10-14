@@ -4,23 +4,33 @@ namespace SkylineTogether.Core.Protocol
     /// Kinds of <see cref="ControlMessage"/> (ARCHITECTURE.md#envelope-and-message-kinds); the values travel on the wire and never change. Payload
     /// codecs: <see cref="PasswordChallenge"/> → <see cref="PasswordChallengeMessage"/>, <see cref="PasswordResponse"/>
     /// → <see cref="PasswordResponseMessage"/>, <see cref="ManifestDetail"/> → <see cref="ManifestDetailMessage"/>,
-    /// <see cref="SnapshotManifest"/> →
-    /// <see cref="SnapshotManifestCodec"/>, <see cref="LineRows"/> → core-integrity's <c>LineStateRow</c>; the session
-    /// payloads (settings, players, roles, speed, toasts, resume, ...) are defined by core-session.
+    /// <see cref="SnapshotManifest"/> → <see cref="SnapshotManifestCodec"/>; the session payloads (players, speed,
+    /// toasts, load progress, ...) are defined by <c>Session.SessionPayloads</c>.
+    /// <para>
+    /// Values marked "reserved" (ARCHITECTURE.md#reserved-wire-values) come from the original design and are never sent;
+    /// their numbers stay taken, and both session ends ignore them (<see cref="ControlMessage.IsReservedKind"/>), as they do
+    /// unknown values.
+    /// </para>
     /// </summary>
     public enum ControlKind : byte
     {
         PasswordChallenge,
         PasswordResponse,
+        /// <summary>Reserved (2): never sent; ignored on receipt.</summary>
         ManifestRequest,
         ManifestDetail,
+        /// <summary>Reserved (4): never sent; ignored (the session settings travel in the welcome).</summary>
         SessionSettings,
         Players,
+        /// <summary>Reserved (6): never sent; ignored (roles travel in the player list).</summary>
         Roles,
+        /// <summary>Reserved (7): never sent; ignored.</summary>
         HostBusy,
+        /// <summary>Reserved (8): never sent; ignored.</summary>
         HostReady,
         /// <summary>Host → client: the session ended for everyone (payload: text reason).</summary>
         SessionEnd,
+        /// <summary>Reserved (10): never sent; ignored.</summary>
         SessionReset,
         /// <summary>Host → client: the player was removed (payload: text reason); they may join again.</summary>
         Kick,
@@ -28,22 +38,27 @@ namespace SkylineTogether.Core.Protocol
         Ban,
         SpeedRequest,
         SpeedChanged,
+        /// <summary>Reserved (15): never sent; ignored (a resync is a rejoin).</summary>
         ResyncRequest,
+        /// <summary>Reserved (16): never sent; ignored.</summary>
         ResyncStart,
         Toast,
         SnapshotManifest,
         ReadyForSnapshot,
         LoadDone,
         Live,
+        /// <summary>Reserved (22): never sent; ignored.</summary>
         ResumeRequest,
+        /// <summary>Reserved (23): never sent; ignored.</summary>
         ResumeResult,
-        /// <summary>Host → originator on receipt of a proposal (ARCHITECTURE.md#host-validation-and-commit) (reserved; not sent by the shipped build).</summary>
+        /// <summary>Reserved (24): never sent; ignored.</summary>
         ProposalReceived,
+        /// <summary>Reserved (25): never sent; ignored.</summary>
         RepairThrottled,
         Disconnecting,
-        /// <summary><c>/st lines compare</c>: request of the host's line rows (ARCHITECTURE.md#line-check-and-icon-digest).</summary>
+        /// <summary>Reserved (27): never sent; ignored (the line check travels as batch records).</summary>
         LineRowsRequest,
-        /// <summary>The host's line rows at one sample tick.</summary>
+        /// <summary>Reserved (28): never sent; ignored.</summary>
         LineRows,
         /// <summary>Client → host: join progress while downloading and loading (payload: f32 fraction of the phase 0..1, u8 phase 0 = download, 1 = load).</summary>
         LoadProgress,

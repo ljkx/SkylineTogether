@@ -19,8 +19,36 @@ namespace SkylineTogether.Core.Protocol
         public ControlKind Kind;
         public byte[] Payload;
 
-        /// <summary>True for the kinds of <see cref="ControlKind"/>.</summary>
-        public static bool IsKnownKind(ControlKind kind) => kind <= ControlKind.LoadProgress;
+        /// <summary>True for the kinds of <see cref="ControlKind"/> (reserved ones included).</summary>
+        public static bool IsKnownKind(ControlKind kind) => kind <= ControlKind.PlayerAction;
+
+        /// <summary>
+        /// True for the reserved kinds (ARCHITECTURE.md#reserved-wire-values): defined in the original design, never sent by
+        /// this build; both session ends ignore them like unknown kinds.
+        /// </summary>
+        public static bool IsReservedKind(ControlKind kind)
+        {
+            switch (kind)
+            {
+                case ControlKind.ManifestRequest:
+                case ControlKind.SessionSettings:
+                case ControlKind.Roles:
+                case ControlKind.HostBusy:
+                case ControlKind.HostReady:
+                case ControlKind.SessionReset:
+                case ControlKind.ResyncRequest:
+                case ControlKind.ResyncStart:
+                case ControlKind.ResumeRequest:
+                case ControlKind.ResumeResult:
+                case ControlKind.ProposalReceived:
+                case ControlKind.RepairThrottled:
+                case ControlKind.LineRowsRequest:
+                case ControlKind.LineRows:
+                    return true;
+                default:
+                    return false;
+            }
+        }
 
         public static void Write(ByteWriter w, ControlMessage m)
         {

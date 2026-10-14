@@ -584,6 +584,8 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
                 default:
+                    // unknown and reserved kinds (ARCHITECTURE.md#reserved-wire-values) are neither buffered nor delivered
+                    if (!Limits.IsDeliverable(e.Kind)) return;
                     if (State == ClientState.Live && _buffered.Count == 0)
                     {
                         if (e.Kind == MessageKind.Epoch) ApplyAcks.OnReceived();

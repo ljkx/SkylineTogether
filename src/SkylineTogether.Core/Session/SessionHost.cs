@@ -1025,7 +1025,8 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
                 default:
-                    if (p.State == PlayerState.Live) DeliverApp(p.Id, e);
+                    // unknown and reserved kinds (ARCHITECTURE.md#reserved-wire-values) never reach a listener
+                    if (p.State == PlayerState.Live && Limits.IsDeliverable(e.Kind)) DeliverApp(p.Id, e);
                     return;
             }
         }
