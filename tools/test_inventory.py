@@ -15,10 +15,15 @@ and string literals stripped:
 
 This is an approximation (it cannot tell which branches run), but it shows which areas have no test at all.
 
-Usage:  python tools/test_inventory.py [--area <Folder>] [--untested] [--members] [--json]
+The "game" column counts the types the game layer (src/SkylineTogether) reaches, directly or through Core sources,
+the same way: a type nothing reaches is a dead-code candidate, and an UNTESTED type the game reaches is a gap that
+matters.
+
+Usage:  python tools/test_inventory.py [--area <Folder>] [--untested] [--members] [--unused] [--json]
   --area      restrict the detail lists to one Core folder (e.g. Session, Protocol)
-  --untested  list the UNTESTED (and INDIRECT) types
+  --untested  list the UNTESTED (and INDIRECT) types, marking those the game layer reaches
   --members   list unreferenced public members of tested types
+  --unused    list the types the game layer does not reach (tests do not count)
   --json      machine-readable output of everything
 Exit code 0 always (it is a report, not a gate). Pure standard library.
 """
@@ -33,6 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 CORE = os.path.join(REPO, "src", "SkylineTogether.Core")
 TESTS = os.path.join(REPO, "tests", "SkylineTogether.Core.Tests")
+GAME = os.path.join(REPO, "src", "SkylineTogether")
 
 TYPE_DECL = re.compile(
     r"\b(?P<mods>(?:(?:public|internal|private|protected|sealed|abstract|static|partial|readonly|unsafe|new|ref)\s+)*)"
@@ -196,6 +202,37 @@ def parse_tests():
     return files
 
 
+def reach(types, by_name, start_idents):
+    """Types named in start_idents, plus everything reachable from their source files (file-level approximation)."""
+    reached = set()
+    frontier = [t for t in types if t.name in start_idents]
+    for t in frontier:
+        reached.add(t.full)
+    seen_files = set()
+    while frontier:
+        nxt = []
+        for t in frontier:
+            if t.path in seen_files:
+                continue
+            seen_files.add(t.path)
+            for ident in t.body_idents:
+                for target in by_name.get(ident, ()):
+                    if target.full not in reached:
+                        reached.add(target.full)
+                        nxt.append(target)
+        frontier = nxt
+    return reached
+
+
+def parse_game():
+    idents = set()
+    if os.path.isdir(GAME):
+        for path in cs_files(GAME):
+            with open(path, encoding="utf-8-sig") as fh:
+                idents |= set(IDENT.findall(strip_code(fh.read())))
+    return idents
+
+
 def analyse():
     types = parse_core()
     tests = parse_tests()
@@ -247,7 +284,8 @@ def analyse():
             if not hit and len(member_owners[name]) == 1 and name in all_test_idents:
                 hit = True
             members[(t.full, name)] = (what, hit)
-    return types, status, members
+    game = reach(types, by_name, parse_game())
+    return types, status, members, game
 
 
 def main():
@@ -255,10 +293,11 @@ def main():
     ap.add_argument("--area")
     ap.add_argument("--untested", action="store_true")
     ap.add_argument("--members", action="store_true")
+    ap.add_argument("--unused", action="store_true")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
-    types, status, members = analyse()
+    types, status, members, game = analyse()
     visible = [t for t in types if t.access in ("public", "internal")]
 
     if args.json:
@@ -266,7 +305,7 @@ def main():
         for t in visible:
             out.append({
                 "type": t.full, "kind": t.kind, "access": t.access, "area": t.area,
-                "file": os.path.relpath(t.path, REPO).replace("\\", "/"), "status": status[t.full],
+                "file": os.path.relpath(t.path, REPO).replace("\\", "/"), "status": status[t.full], "game": t.full in game,
                 "members": [{"name": n, "kind": w, "referenced": h}
                             for (tf, n), (w, h) in members.items() if tf == t.full],
             })
@@ -276,8 +315,9 @@ def main():
 
     areas = OrderedDict()
     for t in sorted(visible, key=lambda t: (t.area, t.full)):
-        a = areas.setdefault(t.area, {"types": 0, "DIRECT": 0, "INDIRECT": 0, "UNTESTED": 0, "members": 0, "memhit": 0})
+        a = areas.setdefault(t.area, {"types": 0, "DIRECT": 0, "INDIRECT": 0, "UNTESTED": 0, "members": 0, "memhit": 0, "game": 0})
         a["types"] += 1
+        a["game"] += 1 if t.full in game else 0
         a[status[t.full]] += 1
         for (tf, n), (w, h) in members.items():
             if tf == t.full:
@@ -289,15 +329,15 @@ def main():
 
     print("SkylineTogether.Core test inventory (static; tokens in tests/SkylineTogether.Core.Tests)")
     print()
-    print("%-14s %6s %7s %9s %9s %8s %8s" % ("area", "types", "direct", "indirect", "untested", "members", "refd"))
+    print("%-14s %6s %7s %9s %9s %8s %8s %6s" % ("area", "types", "direct", "indirect", "untested", "members", "refd", "game"))
     tot = defaultdict(int)
     for name, a in areas.items():
-        print("%-14s %6d %7d %9d %9d %8d %8s" % (name, a["types"], a["DIRECT"], a["INDIRECT"], a["UNTESTED"],
-                                                  a["members"], pct(a["memhit"], a["members"])))
+        print("%-14s %6d %7d %9d %9d %8d %8s %6d" % (name, a["types"], a["DIRECT"], a["INDIRECT"], a["UNTESTED"],
+                                                      a["members"], pct(a["memhit"], a["members"]), a["game"]))
         for k, v in a.items():
             tot[k] += v
-    print("%-14s %6d %7d %9d %9d %8d %8s" % ("TOTAL", tot["types"], tot["DIRECT"], tot["INDIRECT"], tot["UNTESTED"],
-                                              tot["members"], pct(tot["memhit"], tot["members"])))
+    print("%-14s %6d %7d %9d %9d %8d %8s %6d" % ("TOTAL", tot["types"], tot["DIRECT"], tot["INDIRECT"], tot["UNTESTED"],
+                                                  tot["members"], pct(tot["memhit"], tot["members"]), tot["game"]))
 
     selected = [t for t in visible if args.area is None or t.area.lower() == args.area.lower()]
     if args.untested:
@@ -305,8 +345,14 @@ def main():
         print("Types without a direct test reference (INDIRECT = reachable from a tested type):")
         for t in sorted(selected, key=lambda t: (status[t.full], t.area, t.full)):
             if status[t.full] != "DIRECT":
-                print("  %-9s %-10s %-9s %s  (%s)" % (status[t.full], t.area, t.kind, t.full,
-                                                     os.path.relpath(t.path, REPO).replace("\\", "/")))
+                print("  %-9s %-4s %-10s %-9s %s  (%s)" % (status[t.full], "GAME" if t.full in game else "", t.area, t.kind, t.full,
+                                                          os.path.relpath(t.path, REPO).replace("\\", "/")))
+    if args.unused:
+        print()
+        print("Types the game layer does not reach (dead-code candidates; tests do not count):")
+        for t in sorted(selected, key=lambda t: (t.area, t.full)):
+            if t.full not in game:
+                print("  %-10s %-9s %s  [%s]" % (t.area, t.kind, t.full, status[t.full].lower()))
     if args.members:
         print()
         print("Public members never referenced by a test (of types that tests do reference):")
