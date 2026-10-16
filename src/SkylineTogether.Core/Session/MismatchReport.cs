@@ -31,7 +31,9 @@ namespace SkylineTogether.Core.Session
     /// encoding is UTF-8 text, one tab-separated record per line; unknown records are skipped when read, so the format
     /// can grow without breaking older readers. The "overridable" and "joined-anyway" records were added that way: a
     /// refusal the joiner may pass with "join anyway" carries the first, the notice of a joiner that did the second; the
-    /// <see cref="Protocol.RefuseMessage"/> around the report keeps its layout (docs/dev/releasing.md).
+    /// <see cref="Protocol.RefuseMessage"/> around the report keeps its layout (docs/dev/releasing.md). The city-data
+    /// records ("city-data", "host-city-data", "city-data-checked", "rest-overridable") and the old multiplayer mod's
+    /// ("conflict-host", "conflict-you", kind "conflict") were added the same way (<see cref="CityDataRule"/>).
     /// </summary>
     public sealed class MismatchReport
     {
@@ -40,7 +42,8 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>
         /// "mods", "game", "build", "protocol", "content" (DLC the joiner lacks), "assets" (asset packs differ and the host
-        /// requires the same) or "notice" (an admitted joiner's differences).
+        /// requires the same), "conflict" (the old multiplayer mod is loaded on one side) or "notice" (an admitted joiner's
+        /// differences).
         /// </summary>
         public string Kind = "mods";
         public string HostGameVersion;
@@ -83,6 +86,45 @@ namespace SkylineTogether.Core.Session
         /// differences in it would have refused the join otherwise.
         /// </summary>
         public bool JoinedAnyway;
+
+        /// <summary>
+        /// A refusal (kind "mods"): the host's mods that store data in the city and the joiner lacks; never overridable
+        /// (<see cref="CityDataRule"/>). Each entry is also in <see cref="Missing"/>; <see cref="ModEntry.CityDataInCity"/>
+        /// says whether the host's current city holds its data.
+        /// </summary>
+        public readonly List<ModEntry> CityData = new List<ModEntry>();
+
+        /// <summary>
+        /// A notice (kind "notice"): every mod of the host's that stores city data, for the joiner's check before it loads
+        /// the city (<see cref="CityDataRule.CheckBeforeLoad"/>). Not a difference.
+        /// </summary>
+        public readonly List<ModEntry> HostCityData = new List<ModEntry>();
+
+        /// <summary>A notice from a host that checked city data (<see cref="HostCityData"/> is complete, possibly empty).</summary>
+        public bool CityDataChecked;
+
+        /// <summary>
+        /// A refusal with <see cref="CityData"/>: the host lets players join with different mods, so the other differences
+        /// in it can be passed with "join anyway" once the city-data mods are enabled.
+        /// </summary>
+        public bool RestOverridable;
+
+        /// <summary>Kind "conflict": the host runs the old multiplayer mod (this entry), or null.</summary>
+        public ModEntry HostConflict;
+
+        /// <summary>Kind "conflict": the joiner runs the old multiplayer mod (this entry), or null.</summary>
+        public ModEntry ClientConflict;
+
+        /// <summary>The entries of <see cref="Missing"/> that are not in <see cref="CityData"/> (the overridable ones).</summary>
+        public List<ModEntry> OtherMissing()
+        {
+            var list = new List<ModEntry>();
+            foreach (ModEntry m in Missing)
+            {
+                if (!CityDataRule.Has(CityData, m)) list.Add(m);
+            }
+            return list;
+        }
 
         public bool HasModDifferences => Missing.Count > 0 || Extra.Count > 0 || Versions.Count > 0;
 
@@ -135,12 +177,21 @@ namespace SkylineTogether.Core.Session
         public string Describe()
         {
             var missing = new List<string>();
-            foreach (ModEntry m in Missing) missing.Add(m.ToString());
+            foreach (ModEntry m in OtherMissing()) missing.Add(m.ToString());
             var extra = new List<string>();
             foreach (ModEntry m in Extra) extra.Add(m.ToString());
             var version = new List<string>();
             foreach (ModVersionDifference v in Versions) version.Add((v.Name ?? "?") + " (host " + (v.HostVersion ?? "?") + ", you " + (v.ClientVersion ?? "?") + ")");
             var sb = new StringBuilder();
+            if (ClientConflict != null) sb.Append(ConflictText(false)).Append(' ');
+            if (HostConflict != null) sb.Append(ConflictText(true)).Append(' ');
+            if (CityData.Count > 0)
+            {
+                var required = new List<string>();
+                foreach (ModEntry m in CityData) required.Add(CityDataText(m));
+                sb.Append("Enable these mods to join: ").Append(string.Join(", ", required)).Append(". ");
+                if (missing.Count > 0 || extra.Count > 0 || version.Count > 0) sb.Append("Other differences: ");
+            }
             if (missing.Count > 0) sb.Append("Missing (enable these): ").Append(string.Join(", ", missing)).Append(". ");
             if (extra.Count > 0) sb.Append("Not on host (disable these): ").Append(string.Join(", ", extra)).Append(". ");
             if (version.Count > 0) sb.Append("Different version: ").Append(string.Join(", ", version)).Append(". ");
@@ -162,6 +213,26 @@ namespace SkylineTogether.Core.Session
                 sb.Append("Mod settings set to the host's values: ").Append(string.Join(", ", settings)).Append('.');
             }
             return sb.ToString().Trim();
+        }
+
+        /// <summary>
+        /// One required mod with the reason: <c>ZoningToolkit (this city contains its data – loading it without the mod
+        /// would crash the game)</c>, or "it can store data in a city" when the host's city holds none of it yet.
+        /// </summary>
+        public static string CityDataText(ModEntry m)
+        {
+            string name = m?.Name ?? "?";
+            return m != null && m.CityDataInCity
+                ? name + " (this city contains its data – loading it without the mod would crash the game)"
+                : name + " (it can store data in a city – loading the city without the mod can crash the game)";
+        }
+
+        /// <summary>The old multiplayer mod's message, for the side that has it (<paramref name="host"/>: the host has it).</summary>
+        public static string ConflictText(bool host)
+        {
+            return host
+                ? "The host has the '" + CityDataRule.OldMultiplayerModTitle + "' enabled – two multiplayer mods at once conflict. The host has to disable it and restart the game."
+                : "Disable the '" + CityDataRule.OldMultiplayerModTitle + "' – two multiplayer mods at once conflict. Disable it, restart the game and join again.";
         }
 
         /// <summary>A pack's name with its id: <c>Name (Paradox Mods 123)</c>, or the id alone.</summary>
@@ -199,6 +270,12 @@ namespace SkylineTogether.Core.Session
             foreach (SettingDifference d in r.Settings) Line(sb, "setting", d.Mod, d.Key, d.HostValue, d.ClientValue);
             if (r.Overridable) Line(sb, "overridable");
             if (r.JoinedAnyway) Line(sb, "joined-anyway");
+            foreach (ModEntry m in r.CityData) Line(sb, "city-data", m.Name, m.Version, m.PlatformId, m.CityDataInCity ? "1" : "0");
+            foreach (ModEntry m in r.HostCityData) Line(sb, "host-city-data", m.Name, m.Version, m.PlatformId, m.CityDataInCity ? "1" : "0");
+            if (r.CityDataChecked) Line(sb, "city-data-checked");
+            if (r.RestOverridable) Line(sb, "rest-overridable");
+            if (r.HostConflict != null) Line(sb, "conflict-host", r.HostConflict.Name, r.HostConflict.Version, r.HostConflict.PlatformId);
+            if (r.ClientConflict != null) Line(sb, "conflict-you", r.ClientConflict.Name, r.ClientConflict.Version, r.ClientConflict.PlatformId);
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
@@ -240,10 +317,25 @@ namespace SkylineTogether.Core.Session
                     case "setting": r.Settings.Add(new SettingDifference { Mod = Field(f, 1), Key = Field(f, 2), HostValue = Field(f, 3), ClientValue = Field(f, 4) }); break;
                     case "overridable": r.Overridable = true; break;
                     case "joined-anyway": r.JoinedAnyway = true; break;
+                    case "city-data": r.CityData.Add(CityDataEntry(f)); break;
+                    case "host-city-data": r.HostCityData.Add(CityDataEntry(f)); break;
+                    case "city-data-checked": r.CityDataChecked = true; break;
+                    case "rest-overridable": r.RestOverridable = true; break;
+                    case "conflict-host": r.HostConflict = new ModEntry { Name = Field(f, 1), Version = Field(f, 2), PlatformId = Field(f, 3) }; break;
+                    case "conflict-you": r.ClientConflict = new ModEntry { Name = Field(f, 1), Version = Field(f, 2), PlatformId = Field(f, 3) }; break;
                 }
             }
             return r;
         }
+
+        private static ModEntry CityDataEntry(string[] f) => new ModEntry
+        {
+            Name = Field(f, 1),
+            Version = Field(f, 2),
+            PlatformId = Field(f, 3),
+            StoresCityData = true,
+            CityDataInCity = Field(f, 4) == "1",
+        };
 
         private static string Key(ModEntry m) => !string.IsNullOrEmpty(m.PlatformId) ? "id:" + m.PlatformId : "name:" + (m.Name ?? "");
 

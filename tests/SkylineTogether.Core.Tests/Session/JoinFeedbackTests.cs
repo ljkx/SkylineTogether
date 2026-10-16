@@ -17,7 +17,7 @@ namespace SkylineTogether.Core.Tests.Session
                 i.Mods.Add(new ModEntry { Name = "Traffic", Version = "2.0", PlatformId = "200" });
                 i.Mods.Add(new ModEntry { Name = "Move It", Version = "0.9", PlatformId = "100" });
             });
-            rig.HostInfo.Mods.Add(new ModEntry { Name = "Anarchy", Version = "3.1", PlatformId = "300" });
+            rig.HostInfo.Mods.Add(new ModEntry { Name = "Road Builder", Version = "3.1", PlatformId = "300" });
             rig.Run(100);
             Assert.Equal(ClientState.Ended, client.State);
             Assert.Equal(ClientEndKind.Refused, client.EndKind);
@@ -26,14 +26,14 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.NotNull(r, "the refusal carries a report");
             Assert.Equal("mods", r.Kind);
             Assert.Equal(1, r.Missing.Count);
-            Assert.Equal("Anarchy", r.Missing[0].Name);
+            Assert.Equal("Road Builder", r.Missing[0].Name);
             Assert.Equal("300", r.Missing[0].PlatformId);
             Assert.Equal(1, r.Extra.Count);
             Assert.Equal("Traffic", r.Extra[0].Name);
             Assert.Equal(1, r.Versions.Count);
             Assert.Equal("1.0", r.Versions[0].HostVersion);
             Assert.Equal("0.9", r.Versions[0].ClientVersion);
-            Assert.Contains("Missing (enable these): Anarchy 3.1", client.EndReason);
+            Assert.Contains("Missing (enable these): Road Builder 3.1", client.EndReason);
         }
 
         [Test]

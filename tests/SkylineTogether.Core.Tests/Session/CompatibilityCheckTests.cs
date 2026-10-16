@@ -16,11 +16,13 @@ namespace SkylineTogether.Core.Tests.Session
         private static ContentEntry Pack(string id, string name, string version = "1.0", ulong digest = 1, int prefabs = 10) =>
             new ContentEntry { Id = id, Name = name, Version = version, Digest = digest, Prefabs = prefabs };
 
+        // the host's default mod is Move It: world-affecting, but it stores no data in the city, so its differences stay
+        // overridable (a joiner without a mod that stores city data is never admitted: CityDataRuleTests)
         private static HandshakeManifest Manifest(List<ContentEntry> content = null, List<ContentEntry> packs = null, List<SettingEntry> settings = null, List<ModEntry> mods = null)
         {
             var m = new HandshakeManifest
             {
-                Mods = mods ?? new List<ModEntry> { new ModEntry { Name = "Traffic", Version = "1.0", PlatformId = "80095", RegistersTypesOrSystemsOrPrefabs = true } },
+                Mods = mods ?? new List<ModEntry> { new ModEntry { Name = "MoveIt", Version = "1.0", PlatformId = "74324", RegistersTypesOrSystemsOrPrefabs = true } },
                 Content = content ?? new List<ContentEntry> { Dlc("2427731", "San Francisco Set"), Dlc("2427740", "Beach Properties") },
                 AssetPacks = packs ?? new List<ContentEntry> { Pack("75426", "Bus Stops"), Pack("80010", "Trees", "2.1", 7, 40) },
                 Settings = settings ?? new List<SettingEntry> { new SettingEntry { Mod = "Traffic", Key = "AllowUTurns", Value = "True" } },
@@ -144,10 +146,10 @@ namespace SkylineTogether.Core.Tests.Session
             HandshakeManifest client = Manifest(mods: new List<ModEntry>());
             CompatibilityResult required = CompatibilityCheck.Compare(Manifest(), client, new CompatibilityOptions { RequireSameMods = true });
             Assert.Equal("mods", required.Refusal.Kind);
-            Assert.Contains("Missing (enable these): Traffic 1.0", required.RefusalDetail);
+            Assert.Contains("Missing (enable these): MoveIt 1.0", required.RefusalDetail);
             CompatibilityResult allowed = CompatibilityCheck.Compare(Manifest(), client, new CompatibilityOptions { RequireSameMods = false });
             Assert.Null(allowed.Refusal);
-            Assert.Equal("Traffic", allowed.Notice.Missing[0].Name);
+            Assert.Equal("MoveIt", allowed.Notice.Missing[0].Name);
         }
 
         [Test]
@@ -261,7 +263,7 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Null(r.Refusal);
             Assert.True(r.Notice.JoinedAnyway);
             Assert.False(r.Notice.Overridable);
-            Assert.Equal("Traffic", r.Notice.Missing[0].Name);
+            Assert.Equal("MoveIt", r.Notice.Missing[0].Name);
             Assert.Equal("Anarchy", r.Notice.Extra[0].Name);
 
             MismatchReport back = MismatchReport.Decode(MismatchReport.Encode(r.Notice));
@@ -311,7 +313,7 @@ namespace SkylineTogether.Core.Tests.Session
             CompatibilityResult joined = CompatibilityCheck.Compare(Manifest(), client, Options(allow: true, joinAnyway: true, sameAssets: true));
             Assert.Null(joined.Refusal);
             Assert.True(joined.Notice.JoinedAnyway);
-            Assert.Equal("Traffic", joined.Notice.Missing[0].Name);
+            Assert.Equal("MoveIt", joined.Notice.Missing[0].Name);
             Assert.Equal("Trees", joined.Notice.AssetsMissing[0].Name);
         }
 
@@ -329,7 +331,7 @@ namespace SkylineTogether.Core.Tests.Session
             var relaxed = new CompatibilityOptions { RequireSameMods = false, AllowOverride = true, JoinAnyway = true };
             CompatibilityResult mods = CompatibilityCheck.Compare(Manifest(), Manifest(mods: new List<ModEntry>()), relaxed);
             Assert.False(mods.Notice.JoinedAnyway);
-            Assert.Equal("Traffic", mods.Notice.Missing[0].Name);
+            Assert.Equal("MoveIt", mods.Notice.Missing[0].Name);
         }
 
         [Test]

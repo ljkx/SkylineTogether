@@ -21,7 +21,8 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>
         /// The joiner chose "join anyway" (<see cref="Protocol.HelloJoinFlags.AcceptModMismatch"/>). Counts only together with
-        /// <see cref="AllowOverride"/>, and only for code mods and asset packs; DLC the joiner lacks still refuses.
+        /// <see cref="AllowOverride"/>, and only for code mods and asset packs; DLC the joiner lacks, mods with city data it
+        /// lacks and the old multiplayer mod still refuse.
         /// </summary>
         public bool JoinAnyway;
     }
@@ -47,7 +48,11 @@ namespace SkylineTogether.Core.Session
 
     /// <summary>
     /// The host's compatibility decision after the password (ARCHITECTURE.md#handshake-and-admission), per category of
-    /// the handshake manifest. A category is compared item by item only when its digests differ (or one is missing):
+    /// the handshake manifest. Two rules come before every option (<see cref="CityDataRule"/>): the old multiplayer mod on
+    /// either side refuses (kind "conflict"), and a joiner that lacks one of the host's mods that store data in the city
+    /// is refused with the list (<see cref="MismatchReport.CityData"/>), never overridable, whatever "require the same
+    /// mods", "let players join with different mods" and "join anyway" say. A category is compared item by item only when
+    /// its digests differ (or one is missing):
     /// <list type="bullet">
     /// <item>code mods: refused with "require the same mods", otherwise told (client-local mods never count,
     /// <see cref="MismatchReport.CompareMods"/>);</item>
@@ -84,6 +89,15 @@ namespace SkylineTogether.Core.Session
             MismatchReport refusal = null;
             string refusalDetail = null;
 
+            // the old multiplayer mod on either side: never overridable (two multiplayer mods at once conflict)
+            MismatchReport conflict = CityDataRule.Conflict(CityDataRule.FindOldMultiplayerMod(host.Mods), CityDataRule.FindOldMultiplayerMod(client.Mods));
+            if (conflict != null)
+            {
+                result.Refusal = conflict;
+                result.RefusalDetail = conflict.Describe();
+                return result;
+            }
+
             // DLC and content packs first: lacking the host's is never overridable
             if (Differs(host.Digests.Content, client.Digests.Content) && host.Content != null && client.Content != null)
             {
@@ -111,6 +125,32 @@ namespace SkylineTogether.Core.Session
             else if (Differs(host.Digests.Mods, client.Digests.Mods))
             {
                 mods = MismatchReport.CompareMods(host.Mods, client.Mods);
+            }
+            // mods that store data in the city: a joiner without one of them cannot load the city (the game's loader
+            // crashes), so it is refused whatever the options and the joiner's choice say
+            bool modsDiffer = (host.Mods == null || client.Mods == null) ? host.Digests.Mods != client.Digests.Mods : Differs(host.Digests.Mods, client.Digests.Mods);
+            List<ModEntry> hostCityData = CityDataRule.CityDataMods(host.Mods);
+            if (modsDiffer && hostCityData.Count > 0)
+            {
+                // a joiner whose list was too long to send cannot show that it has them: all of them are required
+                List<ModEntry> lacking = client.Mods == null ? hostCityData : CityDataRule.MissingFrom(hostCityData, client.Mods);
+                if (lacking.Count > 0)
+                {
+                    MismatchReport required = CityDataRule.Refusal(new List<ModEntry>(Cap(lacking)), mods);
+                    bool others = required.OtherMissing().Count > 0 || required.Extra.Count > 0 || required.Versions.Count > 0;
+                    required.RestOverridable = others && options.AllowOverride && options.RequireSameMods;
+                    result.Refusal = required;
+                    result.RefusalDetail = (client.Mods == null ? "Your mod list was too long to compare. " : "")
+                                           + required.Describe()
+                                           + (required.RestOverridable ? " Once these are enabled, the host lets you join anyway with the other differences." : "");
+                    return result;
+                }
+            }
+            if (modsDiffer)
+            {
+                // the joiner checks these again before it loads the city (CityDataRule.CheckBeforeLoad)
+                notice.CityDataChecked = true;
+                notice.HostCityData.AddRange(Cap(hostCityData));
             }
             if (mods != null)
             {

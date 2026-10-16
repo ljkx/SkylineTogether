@@ -295,6 +295,13 @@ namespace SkylineTogether.Core.Session
         public event Action<PeerId, string, MismatchReport> JoinerDiffers;
 
         /// <summary>
+        /// A joiner was refused by a rule no option relaxes (<see cref="CityDataRule"/>): it lacks mods that store data in
+        /// this city (<see cref="MismatchReport.CityData"/>), or the old multiplayer mod runs on one side (kind "conflict").
+        /// The player's name and the refusal's report.
+        /// </summary>
+        public event Action<string, MismatchReport> JoinerBlocked;
+
+        /// <summary>
         /// A live peer's presence (cursor, tool) arrived; <see cref="PresenceMessage.From"/> is set by the host. It has
         /// already been relayed to the other live peers. The instance is new for every call.
         /// </summary>
@@ -1419,6 +1426,18 @@ namespace SkylineTogether.Core.Session
                 }
                 // the detail text is cut at 1024 characters; the report carries the complete lists for the UI
                 Refuse(p, RefuseReason.Mismatch, compat.RefusalDetail, compat.Refusal);
+                if (compat.Refusal.CityData.Count > 0 || compat.Refusal.Kind == "conflict")
+                {
+                    if (joinAnyway) _log.Info(LogCategory.Join, p.Name + " asked to join anyway, but no option lets a player join without mods that store data in this city or with the old multiplayer mod");
+                    try
+                    {
+                        JoinerBlocked?.Invoke(p.Name, compat.Refusal);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(LogCategory.Session, "a join-refusal listener failed", ex);
+                    }
+                }
                 return;
             }
             // several handshakes may pass the password at once; each is checked here, after its own answer

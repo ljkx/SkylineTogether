@@ -18,6 +18,22 @@ namespace SkylineTogether.Core
         /// unless the built-in list knows it as world-affecting (Session.ModCompatibility).</summary>
         public bool ClientLocalHint;
 
+        /// <summary>
+        /// Local to the peer that built the entry, never on the wire (the handshake manifest does not carry it): the
+        /// peer's scan of its own copy found that the mod may store data in a saved city (saved component types or system
+        /// state, or the scan failed; Modding.CityDataEvidence). The host refuses every joiner that lacks such a mod,
+        /// whatever its options say (Session.CityDataRule). In a join notice or a refusal (Session.MismatchReport) the flag
+        /// comes from the host's records.
+        /// </summary>
+        public bool StoresCityData;
+        /// <summary>
+        /// Local, like <see cref="StoresCityData"/>: the current city actually holds the mod's data (entities with one of
+        /// its saved component types, or a system of it that saves state exists), counted when the manifest was built.
+        /// </summary>
+        public bool CityDataInCity;
+        /// <summary>Local, like <see cref="StoresCityData"/>: what the data is, for the log ("saves 1 component type (...)").</summary>
+        public string CityDataDetail;
+
         public override string ToString() => (Name ?? "?") + " " + (Version ?? "?");
     }
 }

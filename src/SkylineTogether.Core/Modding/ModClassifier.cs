@@ -101,6 +101,11 @@ namespace SkylineTogether.Core.Modding
         public readonly List<string> Problems = new List<string>();
         /// <summary>Hints for the mod's author (nothing was changed because of them).</summary>
         public readonly List<string> Hints = new List<string>();
+        /// <summary>
+        /// What the mod can write into a saved city (never changed by declarations); a joiner that lacks a mod whose
+        /// evidence <see cref="CityDataEvidence.StoresData"/> is always refused (Core <c>Session.CityDataRule</c>).
+        /// </summary>
+        public CityDataEvidence CityData = new CityDataEvidence { Unknown = true };
 
         public IEnumerable<string> ComponentsWith(ComponentTreatment t)
         {
@@ -171,6 +176,7 @@ namespace SkylineTogether.Core.Modding
             {
                 (AssemblyName ?? "?") + ": " + Summary(),
                 "  scope: " + (WorldAffecting ? "world-affecting" : "client-local") + (ScopeDeclared ? " (declared)" : "") + " - " + string.Join("; ", ScopeReasons),
+                "  city data: " + (CityData ?? new CityDataEvidence { Unknown = true }).Describe() + (CityData == null || CityData.StoresData ? " (a joiner without the mod is refused)" : ""),
             };
             foreach (ComponentDecision c in Components) lines.Add("  component " + c.Name + ": " + Text(c.Treatment) + Note(c.Note));
             foreach (SystemDecision s in Systems) lines.Add("  system " + s.Name + ": " + Text(s.Treatment) + Note(s.Note));
@@ -239,7 +245,7 @@ namespace SkylineTogether.Core.Modding
 
         public static ModReport Classify(ModFacts facts, ModDeclarations declarations = null)
         {
-            var report = new ModReport { AssemblyName = facts?.AssemblyName };
+            var report = new ModReport { AssemblyName = facts?.AssemblyName, CityData = CityDataEvidence.Of(facts) };
             if (facts == null)
             {
                 report.WorldAffecting = true;

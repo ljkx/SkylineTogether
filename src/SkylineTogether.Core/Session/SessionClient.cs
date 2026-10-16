@@ -133,6 +133,8 @@ namespace SkylineTogether.Core.Session
         private BlobReceiver _receiver;
         private Stream _target;
         private SnapshotManifest _manifest;
+        // this game's own code mods as sent in the handshake (the city-data check's fallback when they cannot be read again)
+        private IReadOnlyList<ModEntry> _ownMods;
         private List<PlayerInfo> _players = new List<PlayerInfo>();
         private double _lastProgressSent;
         private double _lastHaveSent;
@@ -477,6 +479,7 @@ namespace SkylineTogether.Core.Session
             // one manifest for both messages: the hello's digests are those of the lists that follow
             HandshakeManifest manifest = _info.BuildManifest() ?? new HandshakeManifest { Digests = _info.GetDigests() };
             HandshakeDigests digests = manifest.Digests;
+            _ownMods = manifest.Mods;
             _body.Reset();
             HelloMessage.Write(_body, new HelloMessage
             {
@@ -681,6 +684,8 @@ namespace SkylineTogether.Core.Session
                     if (notice == null || JoinNotice != null) return;
                     JoinNotice = notice;
                     _log.Info(LogCategory.Join, "the host reports differences: " + notice.Describe());
+                    // mods that store data in the host's city and this game lacks: stop now, not after the download
+                    if (StopForCityData("join notice")) return;
                     JoinNoticeReceived?.Invoke(notice);
                     return;
                 }
@@ -770,6 +775,8 @@ namespace SkylineTogether.Core.Session
             }
             Timeline.Mark(JoinStage.Verified, _clock.Seconds);
             CloseTarget();
+            // the last moment before the game's loader reads the city: it crashes on saved types of a mod it lacks
+            if (StopForCityData("before the load")) return;
             EnteredCity = true;
             SetState(ClientState.Loading);
             double rate = Timeline.TransferBytesPerSecond;
@@ -786,6 +793,39 @@ namespace SkylineTogether.Core.Session
             {
                 _log.Error(LogCategory.Join, "starting the load failed", ex);
                 OnLoaded(new LoadOutcome { Success = false, FailureDetail = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// The joiner's own city-data check (<see cref="CityDataRule.CheckBeforeLoad"/>, ARCHITECTURE.md#snapshot-join):
+        /// when the host's join notice names a mod that stores data in the city and this game lacks it (or this game runs
+        /// the old multiplayer mod), the join ends as refused with the same report the host would have sent, instead of
+        /// loading a city the game cannot read. Covers an older or misconfigured host. True when the join was ended.
+        /// </summary>
+        private bool StopForCityData(string when)
+        {
+            MismatchReport stop = CityDataRule.CheckBeforeLoad(JoinNotice, LoadedMods());
+            if (stop == null) return false;
+            string detail = stop.Describe();
+            _log.Warn(LogCategory.Join, "not loading the host's city (" + when + "): " + detail);
+            RefusedFor = RefuseReason.Mismatch;
+            EndReport = stop;
+            End(detail, ClientEndKind.Refused);
+            return true;
+        }
+
+        // the code mods this game has loaded now (read again: the check is about what the loader will have), else the
+        // handshake's list
+        private IReadOnlyList<ModEntry> LoadedMods()
+        {
+            try
+            {
+                return _info.BuildManifest()?.Mods ?? _ownMods;
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Join, "could not read this game's mods again (" + ex.Message + "); checking the handshake's list");
+                return _ownMods;
             }
         }
 
