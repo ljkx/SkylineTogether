@@ -9,8 +9,7 @@ There is no automated release pipeline yet; releases are built on a PC with the 
 | Release version | `<Version>` in `Directory.Build.props` (currently 0.1.0) | Used for the zip names and the file version of both DLLs. |
 | Assembly version | `<AssemblyVersion>1.0.0.0</AssemblyVersion>` in both projects | **Never change it.** The network id system is saved in cities by assembly-qualified name. |
 | Protocol version | `ProtocolVersion.Current` in `src/SkylineTogether.Core/Protocol/ProtocolVersion.cs` | Increment it for every change of the wire format (see [Protocol version policy](#protocol-version-policy)); update the golden byte vectors of the tests (`Protocol/*GoldenTests.cs`). Peers with different versions refuse each other, and solo test recordings cannot be replayed by another protocol version. |
-| Build id | First 12 hex digits of the SHA-256 of `SkylineTogether.dll` | Printed by the installer; players compare it. |
-| Mod build | The game layer assembly's MVID (`Session/GameInfoProvider.cs`) | Compared by the host on join; shown as "mod build" in diagnostics. |
+| Build id | First 12 hex digits of the SHA-256 of `SkylineTogether.dll` | Printed by the installer, shown in the panel footer and compared by the host on join (the game hashes the loaded DLL the same way; only if the file cannot be read does it fall back to the assembly's MVID, shown as "(mvid)"). |
 
 Every compile produces a different build that refuses to play with any other build, even at the same version number.
 Players must therefore all install the same published setup zip.
@@ -52,11 +51,16 @@ format are refused by version instead of failing half-way through a replay.
    python tools/installer/make_installer.py # dist/SkylineTogether-Setup.zip, prints the build id
    ```
 
+   `make_installer.py` refuses to build when any packaged file contains personal data (home-folder paths, e-mail
+   addresses, Steam IDs; the patterns of `tools/check_personal_data.py`). `Directory.Build.props` maps the checkout
+   path to `/_/` (`DeterministicSourcePaths`), so the PDBs, the DLLs and stack traces in players' logs never contain the
+   builder's paths; Source Link points stack traces at the commit on GitHub, so build releases from a pushed commit.
+
 5. Test the setup zip itself (not a `--deploy` build): install it with `Install.cmd` on two PCs, check that both show
    the build id printed in step 4, and run the [two-player checklist](../guide/testing.md#two-player-test) and a solo
    test.
-6. Tag the commit (`git tag v<version>`) and push the tag.
-7. Create a GitHub release for the tag. Attach `SkylineTogether-Setup.zip` (for players) and
+6. Tag the commit (`git tag v<version>`, e.g. `v0.1.0-alpha.1`) and push the tag.
+7. Create a GitHub release for the tag (mark versions with a `-alpha`/`-beta` suffix as pre-releases). Attach `SkylineTogether-Setup.zip` (for players) and
    `SkylineTogether-<version>.zip` (manual install). In the notes, give the build id, the game version it was tested
    with and the changelog section.
 

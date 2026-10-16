@@ -3,7 +3,7 @@
 Usage (repo root):  python tools/installer/make_installer.py
 Run after tools/build.sh --package.
 """
-import base64, hashlib, io, os, re, sys, zipfile
+import base64, hashlib, importlib.util, io, os, re, sys, zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 dist = os.path.join(ROOT, 'dist')
@@ -18,6 +18,23 @@ with zipfile.ZipFile(io.BytesIO(payload)) as z:
     # value from the loaded DLL (Core Session/BuildId.cs, GameInfoProvider.Build) and the installer script from the
     # installed file, so all three print the same id.
     build = hashlib.sha256(z.read('SkylineTogether/SkylineTogether.dll')).hexdigest()[:12]
+
+# nothing the builder's machine knows may ship: scan every packaged file (as bytes decoded both as 8-bit text and as
+# UTF-16, since .NET metadata strings are UTF-16) with the repository's personal-data patterns
+spec = importlib.util.spec_from_file_location('check_personal_data', os.path.join(ROOT, 'tools', 'check_personal_data.py'))
+checks = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(checks)
+found = []
+with zipfile.ZipFile(io.BytesIO(payload)) as z:
+    for name in z.namelist():
+        data = z.read(name)
+        for text in (data.decode('latin-1'), data[len(data) % 2:].decode('utf-16-le', errors='ignore')):
+            for line in text.splitlines():
+                checks.scan_line(name, line, found)
+if found:
+    for f in sorted(set(found)):
+        print(f)
+    sys.exit('personal data in the package; build again (Directory.Build.props maps source paths to /_/)')
 b64 = base64.b64encode(payload).decode('ascii')
 lines = '\n'.join(b64[i:i + 120] for i in range(0, len(b64), 120))
 here = os.path.dirname(__file__)

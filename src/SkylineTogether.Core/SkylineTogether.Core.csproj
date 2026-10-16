@@ -21,7 +21,8 @@
     <RootNamespace>SkylineTogether.Core</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>$(Version)</FileVersion>
+    <!-- a file version is numeric: the pre-release suffix (0.1.0-alpha.1) stays in the informational version -->
+    <FileVersion>$(Version.Split('-')[0])</FileVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <DebugType>portable</DebugType>
   </PropertyGroup>

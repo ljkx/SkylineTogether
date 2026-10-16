@@ -10,7 +10,8 @@ The host's game runs the simulation. The other players' games show the host's ci
 which checks and applies them for everyone. Differences are detected and repaired automatically.
 
 > **Status: early testing.** Hosting, joining and the sync of the city work in test builds, and real two-PC sessions are
-> under way. Expect bugs, back up your saves and play on a copy of a city. No release has been published yet.
+> under way. Expect bugs, back up your saves and play on a copy of a city. Test builds are on the
+> [Releases page](https://github.com/ljkx/SkylineTogether/releases).
 
 ## Features
 
@@ -38,8 +39,9 @@ which checks and applies them for everyone. Differences are detected and repaire
 ## Install
 
 1. Close the game.
-2. Get `SkylineTogether-Setup.zip` from the [Releases page](https://github.com/ljkx/SkylineTogether/releases) once a
-   release is published, or [build it yourself](docs/dev/building.md#packaging-and-the-player-installer).
+2. Download `SkylineTogether-Setup.zip` from the latest release on the
+   [Releases page](https://github.com/ljkx/SkylineTogether/releases) (not the green "Code" button: that is the source
+   code), or [build it yourself](docs/dev/building.md#packaging-and-the-player-installer).
 3. Unzip it and double-click **`Install.cmd`**. It installs the mod into
    `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether` and prints a **build id**:
    every player must see the same one.

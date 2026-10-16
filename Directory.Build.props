@@ -12,6 +12,10 @@
     <ModDeployDir Condition="'$(ModDeployDir)' == ''">$(CS2UserDataPath)\Mods\SkylineTogether</ModDeployDir>
     <LangVersion>10.0</LangVersion>
     <Deterministic>true</Deterministic>
+    <!-- the builder's checkout path never reaches a shipped file: deterministic source paths map the repository root to
+         /_/ in the PDBs (so in stack traces in players' logs), in the PDB path inside the DLLs and in the Source Link map -->
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <DeterministicSourcePaths>true</DeterministicSourcePaths>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- CS1591 (missing XML comment) would turn every undocumented public member into an error together with
          GenerateDocumentationFile; contracts are documented in the plan, not necessarily in XML -->
@@ -24,7 +28,7 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>0.1.0</Version>
+    <Version>0.1.0-alpha.1</Version>
     <Company>Skyline Together</Company>
     <Product>Skyline Together</Product>
     <!-- never restore or reference NuGet packages implicitly -->

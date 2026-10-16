@@ -5,8 +5,10 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
-No version has been published yet. Everything below is the work toward the first release, 0.1.0 (the version in
-`Directory.Build.props`), which is in early testing.
+## [0.1.0-alpha.1] - 2026-10-16
+
+First public test build (pre-release). It has not been through a complete two-player session yet; expect bugs and play
+on a copy of a city.
 
 ### Added
 
@@ -106,4 +108,5 @@ No version has been published yet. Everything below is the work toward the first
   a list); saving before the first state arrived could store "keep" as the host password; the player list re-rendered
   with every cursor movement.
 
-[Unreleased]: https://github.com/ljkx/SkylineTogether/commits/main
+[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.1.0-alpha.1...main
+[0.1.0-alpha.1]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.1

@@ -10,7 +10,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- pinned: NetIdSystem is saved by assembly-qualified name (ARCHITECTURE.md#net-ids) -->
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>$(Version)</FileVersion>
+    <!-- a file version is numeric: the pre-release suffix (0.1.0-alpha.1) stays in the informational version -->
+    <FileVersion>$(Version.Split('-')[0])</FileVersion>
     <!-- compile against the game's own corlib, not a reference pack -->
     <NoStdLib>true</NoStdLib>
     <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
