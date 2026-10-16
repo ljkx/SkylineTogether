@@ -90,6 +90,16 @@ All notable changes to this project are documented in this file. The format is b
   - both sides apply the host's updates with the same rule: a new segment without valid nodes is not created, and a
     segment or object that would dangle (its node or owner gone) is removed cleanly instead of being kept, then asked
     for again.
+- **Joining players' game crashing shortly after joining** (a native crash with no error, even with nobody building):
+  when households, citizens and companies disappeared on a joining player (the host's despawns, or entities the
+  player's game removed itself), buildings, hotels, companies and households kept naming them: a departed tourist stayed
+  in its hotel's guest list, dead workers stayed in their company's employee list, and the join snapshot itself could
+  carry employee entries naming nobody (the game saves a worker that is already gone that way). The game reads these
+  lists without checking, so the next panel or job that touched one crashed. Joining players now do the game's own
+  clean-up the moment an agent goes (renters, guests, employees, pupils, patients, occupants, household members, homes,
+  hotels, workplaces and schools), also for what the player's own game deletes, and never take an empty entry from the
+  host. After every update they apply, the objects it touched are checked, and a background check repairs any dangling
+  link it finds within 20 seconds (instead of only logging it) and asks the host for the object again.
 
 ## [0.1.0-alpha.2] - 2026-10-16
 

@@ -1514,6 +1514,16 @@ namespace SkylineTogether.Sync
         public long DeadReferencesTotal => _rs.DeadReferences;
 
         /// <summary>
+        /// Client: while not null, the net ids of references that did not resolve because nothing is bound to them here
+        /// are added to this list (<see cref="NetReaderState.MissingIds"/>; the reference audit asks the host for them).
+        /// </summary>
+        public List<uint> MissingIds
+        {
+            get => _rs.MissingIds;
+            set => _rs.MissingIds = value;
+        }
+
+        /// <summary>
         /// The structural references of a new entity: without them the game's reference systems index nothing
         /// (<c>SubObjectReferencesSystem</c>: <c>m_SubObjects[owner]</c>; <c>Net.ReferencesSystem</c>: <c>m_Edges[edge.m_Start]</c>;
         /// attached objects follow their parent).

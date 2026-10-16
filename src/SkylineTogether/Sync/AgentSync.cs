@@ -195,6 +195,12 @@ namespace SkylineTogether.Sync
         private double _lastPanelRefresh, _lastSweep;
         private bool _warnedApply;
 
+        /// <summary>Client: collects the ids of references to agents this client does not have (set by the controller; may be null).</summary>
+        public List<uint> MissingIds;
+
+        /// <summary>Client: called with the entities an agent value message wrote (the targeted reference repair).</summary>
+        public Action<List<Entity>> ValuesApplied;
+
         public AgentSync(SessionManager sessions, ILog log)
         {
             _sessions = sessions;
@@ -1189,7 +1195,18 @@ namespace SkylineTogether.Sync
                         List<SyncRecord> records = SimValueMessage.Read(data, 0, data.Length, _decodePool, out _, out _, out _);
                         _result.Reset();
                         _unresolved.Clear();
-                        List<Entity> written = _codec.ApplyAgentValues(data, 0, data.Length, records, _result, _unresolved);
+                        List<Entity> written;
+                        _codec.MissingIds = MissingIds;
+                        try
+                        {
+                            written = _codec.ApplyAgentValues(data, 0, data.Length, records, _result, _unresolved);
+                        }
+                        finally
+                        {
+                            _codec.MissingIds = null;
+                        }
+                        // a value that kept an old link or dropped a list element must not leave a dangling link behind
+                        ValuesApplied?.Invoke(written);
                         _valuesApplied += written.Count;
                         _messagesApplied++;
                         any |= written.Count > 0;

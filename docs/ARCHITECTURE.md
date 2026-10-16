@@ -206,6 +206,7 @@ The registrations in [`Mod.OnLoad`](../src/SkylineTogether/Mod.cs) are authorita
 | `SyncToolApplySystem` | first in ApplyTool | Records the tool's `Temp` originals and cost before vanilla consumes them; terrain and resource brush stamps |
 | `IconAuthorityFilterSystem` | ModificationEnd, before `IconCommandSystem` | Client: drops local icon decisions, reconciles host icon sets |
 | `ChirpDrainSystem` | ModificationEnd, before `CreateChirpSystem` | Client: empties the local chirp queue |
+| `RemovalCascadeSystem` | ModificationEnd | Client: the reference clean-up of entities deleted on this client this frame ([reference safety](#reference-safety)) |
 | `SyncBindSystem` | MainLoop, before `SaveGameSystem` | Host: binds entities created this frame (a snapshot taken now carries them); client: warns about local saves |
 | `MoverCaptureSystem` | MainLoop, before `SaveGameSystem` | Host: mover existence and motion |
 | `SyncCaptureSystem` | MainLoop, before `PrepareCleanUpSystem` | `SyncController.CaptureOutgoing`: every tag of the frame is still visible |
@@ -662,8 +663,9 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
 5. writes the values; enabled bits of enableable components;
 6. applies despawns with `Deleted`, and on clients
    [`DeletionCascade`](../src/SkylineTogether/Sync/DeletionCascade.cs) removes references to the despawned entity
-   (renters, workers, students, ...) that the gated vanilla cleanup systems would have removed. A despawned node takes
-   every edge that still ends at it and that the batch does not despawn itself with it;
+   (renters, workers, students, household members, hotel guests, ...) that the gated vanilla cleanup systems would have
+   removed ([reference safety](#reference-safety)). A despawned node takes every edge that still ends at it and that
+   the batch does not despawn itself with it;
 7. **never keeps a dangling entity**: every entity of the touch set (the records' entities and their net closure) that
    would dangle after the batch, an edge whose start or end node is missing, no node or being deleted, or an entity
    whose owner is gone, is deleted the way a despawn is (references made safe for the game's reference systems, the
@@ -675,6 +677,12 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
 8. tags: created entities carry `Created`/`Updated` from their archetype; edits get `Updated` with the net closure (an
    edge's nodes and their edges); agents are never tagged.
 
+Right after each batch (and each agent value message) the client repairs the agent links of every entity the apply
+wrote, tagged or cascaded ([reference safety](#reference-safety)), so no link the batch left dangling reaches the game
+systems of the same frame. The apply runs before every game system of the frame, and each write goes through the
+`EntityManager`, which completes the jobs that read or write the type first (a structural change completes all of
+them), so no job reads these buffers while they change.
+
 The game's Modification systems then rebuild geometry, lanes, zone blocks and sub-objects. On a client the applied
 entities are recorded so its own capture never proposes them back: their converged state becomes the baseline of the
 player's edits, hashed lazily ([`PendingBaselines`](../src/SkylineTogether.Core/Sync/PendingBaselines.cs)): all of it
@@ -684,6 +692,55 @@ host's despawn for up to 20 s (records the host sent before it applied the delet
 entity the player is dragging with a direct-write mod tool is held against the host's echoes for 0.6 s
 (`EditHold`). An apply failure on a client counts against `Features.Replication`; repeated failures end the session
 with a rejoin offer.
+
+### Reference safety
+
+The game's jobs and panels follow many entity references without a check; a reference to a destroyed entity (or a null
+where the game never keeps one) is a native crash in a Burst job. The applier never writes such a reference: an
+unknown, destroyed or deleted target resolves to nothing (`NetReaderState.CheckLiveness`, `Dying` for the batch's own
+despawns); an existing entity keeps its value, a new one gets a null; a buffer element that does not resolve is left out.
+
+Agents need more, because the game's removal systems are off on clients and several reverse lists are only pruned by
+the simulation. [`AgentLinkGraph`](../src/SkylineTogether.Core/Sync/AgentLinkGraph.cs) lists the links of the agent
+graph, each with the clean-up the game applies when its target goes:
+
+| Link | On | Target gone |
+|---|---|---|
+| `Renter.m_Renter` | buildings, hotel companies | element dropped |
+| `Employee.m_Worker` | companies, service buildings | element dropped |
+| `Buildings.Student`, `Patient`, `Occupant` | schools, hospitals, prisons and shelters | element dropped |
+| `HouseholdCitizen`, `HouseholdAnimal` | households | element dropped |
+| `PropertyRenter.m_Property` | households, companies | component removed (null is normal) |
+| `Worker.m_Workplace`, `Citizens.Student.m_School` | citizens | component removed with the work or school `TravelPurpose` |
+| `TouristHousehold.m_Hotel`, `HomelessHousehold.m_TempHome` | households | reference cleared |
+| `CurrentBuilding` | citizens | component removed (null is normal) |
+| `HouseholdMember`, `HouseholdPet` | citizens, pets | component removed (the host deletes them with the household) |
+
+The client applies these rules in four places, all through
+[`AgentLinkAccess`](../src/SkylineTogether/Sync/AgentLinkAccess.cs):
+
+- **Despawns** ([`DeletionCascade`](../src/SkylineTogether/Sync/DeletionCascade.cs), `AgentLinkGraph.PlanCascade`):
+  as an owner, every member its lists name loses its link to it (a renter its `PropertyRenter`, a worker its `Worker`,
+  a guest its hotel, a member its household link) unless the member names another live owner (a list out of date
+  here); as a member, it leaves the lists of the owners its links name (a tourist its hotel's renters, a citizen its
+  household, workplace, school and hospital, a company its building). This includes what the game only prunes later
+  (`WorkProviderSystem` for employees, `LodgingProviderSystem` for hotel guests, `HouseholdBehaviorSystem` for the
+  hotel of a closed hotel). It never deletes or creates an entity and raises no trigger or icon.
+- **Local deletions** (`RemovalCascadeSystem`, ModificationEnd, where `RemovedSystem` runs on the host): the same for
+  every household, citizen, pet, company and building deleted on this client in the frame and not already handled by
+  the applier: the player's own bulldozing, snapshot agents without a host id, mod tools.
+- **After every apply** (`ReferenceAudit.AfterApply`): the agent links of the entities the batch or agent value message
+  wrote, tagged or cascaded are checked and repaired (an existing entity kept its old link while the new one did not
+  resolve; a new entity got a null; a despawn missed a list that was out of date here).
+- **Background sweep** ([reference audit](#reference-audit)): every link type, chunk by chunk, within a bounded lap.
+
+The wire never brings a null into these lists: `Renter`, `Student`, `HouseholdCitizen` and `HouseholdAnimal` travel as
+id lists that drop nulls, and the generic buffer handler drops an `Employee`, `Patient` or `Occupant` element naming
+nobody (a save writes a worker that is already gone as null, so the join snapshot can carry such elements; the sweep
+removes them). References to ids this client has no entity for are collected while it applies host data
+(`NetReaderState.MissingIds`); every holder whose link was cleared or removed, every agent whose list lost an element
+and every id still missing after 3 s (once nothing is queued for apply) is asked from the host with the integrity check's repair request (`IntegritySync.RequestRepair`; at most three
+times per id in five minutes), so the host's own state replaces the clean-up.
 
 ### Client proposals
 
@@ -902,7 +959,8 @@ are tolerated. When a probe fails (registration lists, frame setter) the clock s
 [`ClientGate`](../src/SkylineTogether/Sync/ClientGate.cs) closes when the client goes live and switches off, by name,
 systems outside `GameSimulation` that would overwrite, append to or randomise host data: initializers of agents,
 routes, events and buildings, progression writers (XP, milestones, dev tree), `AutoSaveSystem`, connection warnings,
-the reference cleanup systems (replaced by `DeletionCascade`), `GroundHeightSystem` (it re-sampled heights from each
+the reference cleanup systems (replaced by `DeletionCascade` and `RemovalCascadeSystem`,
+[reference safety](#reference-safety)), `GroundHeightSystem` (it re-sampled heights from each
 peer's own terrain cascade and fought the host's values), `TrafficRoutesSystem` (the selected object's traffic routes:
 `SegmentCurveSystem` draws them every frame from each source's path, current lane and navigation lanes, which a
 follower never advances, so they started where a vehicle was at the join and joined rebuilt lanes with straight lines
@@ -970,7 +1028,9 @@ reaches clients within a frame or two instead of a whole scan pass, which in a l
 check's agent confirmation window (45 s). **Values** are found by a rolling hash scan and sent per peer by
 [`AgentPlanner`](../src/SkylineTogether.Core/Scheduling/AgentPlanner.cs) as `AgentValues`: the closure of the peer's
 selected or followed entity first, then agents around its camera, then the rest oldest first. Clients request agents
-whose values referenced something unknown (`AgentRefresh`). Clients never propose agents.
+whose values referenced something unknown (`AgentRefresh`). Clients never propose agents. Despawned and locally
+deleted agents are taken out of every list and link that names them in the same frame, and every apply of agent values
+is followed by a repair of the links it wrote ([reference safety](#reference-safety)).
 
 ### Movers
 
@@ -1260,9 +1320,16 @@ bytes per peer and the apply queue in game. See [dev/debugging.md](dev/debugging
 
 ### Reference audit
 
-[`ReferenceAudit`](../src/SkylineTogether/Sync/ReferenceAudit.cs) walks, on clients, one reference type at a time a few
-chunks per frame and logs references to destroyed entities that the game's jobs would follow unchecked, so a log that
-ends in a native crash names the dangling reference. It changes nothing.
+[`ReferenceAudit`](../src/SkylineTogether/Sync/ReferenceAudit.cs) walks, on clients, one reference type at a time
+chunk by chunk and finds references to null, destroyed or deleted entities that the game's jobs would follow unchecked.
+Links of the agent graph are **repaired** with the game's own clean-up ([reference safety](#reference-safety)) and
+the holder is asked from the host again; the other references (net topology, owners, sub-objects, routes, passengers)
+are reported only, since their own channels repair them. A lap over every type must finish within 20 s (8 s for the
+first lap after going live): each frame gets 0.3 ms, more (up to 2 ms) while the lap is behind its schedule
+([`SweepPacer`](../src/SkylineTogether.Core/Sync/LinkRepairPacing.cs)). The same repair runs right after every applied
+batch for the entities it touched. Each repair is counted per link; the log gets at most three lines per link and
+minute (`repaired dangling reference: <link> of #id (family) -> <target> (<fix>)`) and a summary per minute
+(`reference repair: N in the last 60 s (...)`); the diagnostics show sweeps, lap times, repairs and requests.
 
 ### Solo test (record and replay)
 

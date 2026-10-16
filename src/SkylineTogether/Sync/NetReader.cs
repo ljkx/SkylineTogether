@@ -40,6 +40,12 @@ namespace SkylineTogether.Sync
         public List<Entity> Collect;
 
         /// <summary>
+        /// When not null, the net id of every reference that did not resolve because the id is not bound here (an agent
+        /// this client does not have yet) is added, so the client can ask the host for it (ARCHITECTURE.md#reference-safety).
+        /// </summary>
+        public List<uint> MissingIds;
+
+        /// <summary>
         /// When not null, every reference is added as it was written (a net id, -1 for null, -2 - k for derived key k),
         /// resolved or not: the host's placement checks name a new edge's nodes before they exist (<c>EntityCodec.TryPeekRefs</c>).
         /// </summary>
@@ -177,8 +183,15 @@ namespace SkylineTogether.Sync
                     value = Entity.Null;
                     _state.DeadReferences++;
                 }
-                if (index > 0 && value == Entity.Null) _state.Unresolved = true;
-                else if (value != Entity.Null) _state.Collect?.Add(value);
+                if (index > 0 && value == Entity.Null)
+                {
+                    _state.Unresolved = true;
+                    if (index >= table.Length || table[index] == Entity.Null) _state.MissingIds?.Add((uint)index);
+                }
+                else if (value != Entity.Null)
+                {
+                    _state.Collect?.Add(value);
+                }
                 return;
             }
             if (index == -1)

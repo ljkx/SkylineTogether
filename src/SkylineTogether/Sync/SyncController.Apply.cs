@@ -219,8 +219,8 @@ namespace SkylineTogether.Sync
                 SafeCall("milestones", _milestonesCall);
             }
             if (IsHost) UpdateQuarantine(now);
-            // client: the rolling audit of references the game follows unchecked (diagnostics only)
-            if (!IsHost && Features.Integrity.IsAvailable) _audit.Update(now);
+            // client: the reference sweep (repairs dangling agent links, reports the others) and its requests to the host
+            if (!IsHost) _audit.Update(now, _inbox.Count);
             double applied = Perf.Stop(Perf.Apply, start);
             budget.EndFrame(applied);
             Perf.Budget.End(Perf.BudgetApply, applied);
@@ -347,8 +347,23 @@ namespace SkylineTogether.Sync
             // the host's batch judged by the same referential-integrity rule as a proposal on this world; what would
             // dangle here is not kept dangling by the apply (not created, or deleted cleanly) and is asked for again
             CheckHostBatch(records, data);
-            ApplyResult r = _codec.Apply(records, data, 0, data.Length, null, skip);
+            // references to ids not bound here are collected, so the reference audit can ask the host for them
+            _codec.MissingIds = _audit.MissingIds;
+            ApplyResult r;
+            try
+            {
+                r = _codec.Apply(records, data, 0, data.Length, null, skip);
+            }
+            finally
+            {
+                _codec.MissingIds = null;
+            }
             if (_structureRepairs.Count > 0 || r.DanglingIds.Count > 0) RequestStructureRepairs(r);
+            // no agent link the batch wrote, tagged or cascaded is left dangling for this frame's game systems
+            // (ARCHITECTURE.md#reference-safety)
+            double applied = Perf.Now;
+            _audit.NoteMissing(applied);
+            _audit.AfterApply(r.Touched, applied);
             // mod compatibility: tell the player once that objects of missing assets are left out (details in the log)
             if (!_missingNotified && _codec.MissingAssets.Count > 0)
             {

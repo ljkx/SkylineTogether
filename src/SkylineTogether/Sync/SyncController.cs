@@ -278,6 +278,16 @@ namespace SkylineTogether.Sync
             _statistics = new StatisticsSync(sessions, log);
             _agents = new AgentSync(sessions, log);
             Integrity.TouchAgent = _agents.Touch; // agents of a requested bucket are scanned first
+            // reference safety (ARCHITECTURE.md#reference-safety): repaired holders and missing ids are asked from the host;
+            // agent values get the same targeted repair as structure batches
+            _audit.RequestRepair = Integrity.RequestRepair;
+            _agents.MissingIds = _audit.MissingIds;
+            _agents.ValuesApplied = written =>
+            {
+                double now = Perf.Now;
+                _audit.NoteMissing(now);
+                _audit.AfterApply(written, now);
+            };
             Integrity.ResendMover = (peer, id) => MoverSync.Instance?.Host.QueueResend(peer, id); // movers a client's roster check lacks
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
@@ -424,7 +434,7 @@ namespace SkylineTogether.Sync
                           + _localDeletes.Count + " local deletions awaiting the host, " + _localDeleteSkips + " stale host records skipped, " + _cascadeUnbinds + " cascade unbinds");
                 // decode-boundary validation and the client's removal clean-up
                 lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal
-                          + " reads past a payload stopped; removal clean-up: " + DeletionCascade.Removed + " references to despawned entities removed");
+                          + " reads past a payload stopped; removal clean-up: " + DeletionCascade.Removed + " references to deleted entities removed");
                 if (!IsHost) lines.Add(_audit.Describe());
             }
             _agents.Describe(lines);
