@@ -6,7 +6,7 @@
 	Paths are relative to this project folder (src/SkylineTogether).
 	-->
 	<!--Empty for the first upload (PublishNewMod). Afterwards put the id that ModPublisher prints ("Mod published with Id=...") here-->
-	<ModId Value="" />
+	<ModId Value="163578" />
 	<DisplayName Value="Skyline Together" />
 	<ShortDescription Value="Co-op multiplayer: build one city together with your friends over Steam. Early test version." />
 	<LongDescription>
@@ -55,7 +55,6 @@ Open source under the MIT licence. Not affiliated with or endorsed by Paradox In
 	<Screenshot Value="Properties/Screenshots/03-joining.png" />
 	<!--"Code Mod" is the tag every code mod on Paradox Mods carries; the platform has no multiplayer tag-->
 	<Tag Value="Code Mod" />
-	<ForumLink Value="https://github.com/ljkx/SkylineTogether/issues" />
 	<!--The release version: <Version> of Directory.Build.props (tools/publish_paradox.py checks that they match)-->
 	<ModVersion Value="0.1.0-alpha.4" />
 	<!--The game version the build was compiled and tested against (1.6.2f1); another game version may switch features off-->
