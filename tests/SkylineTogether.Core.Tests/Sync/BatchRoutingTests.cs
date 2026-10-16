@@ -40,6 +40,11 @@ namespace SkylineTogether.Core.Tests.Sync
             despawnOnly.MoverDespawn(5);
             byte[] d = Bytes(despawnOnly);
             Assert.True(SyncBatch.IsMoverBatch(d, 0, d.Length));
+            // a quiet frame's movers batch may hold nothing but the roster
+            var rosterOnly = new SyncBatch.Writer();
+            rosterOnly.MoverRoster(1, 1024, new uint[] { 3, 2 });
+            byte[] ro = Bytes(rosterOnly);
+            Assert.True(SyncBatch.IsMoverBatch(ro, 0, ro.Length));
 
             // an entity batch (structure stream, repairs) belongs to neither
             var entities = new SyncBatch.Writer();
@@ -82,6 +87,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 SyncRecordKind.ModSettings, // mod compatibility: the host's mod settings
                 SyncRecordKind.PrefabSource, // mod compatibility: where a prefab comes from
                 SyncRecordKind.MoverAgents, // the agents a mover refers to
+                SyncRecordKind.MoverRoster, // the host's live movers of a window of ids
                 SyncRecordKind.ReplayHashes, SyncRecordKind.ReplayMembers, SyncRecordKind.ReplayCheckpoint, // solo testing: checkpoints for the recorder
             };
             foreach (SyncRecordKind k in fromClient) Assert.True(SyncBatch.AcceptedFromClient(k), k.ToString());

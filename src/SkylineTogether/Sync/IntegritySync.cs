@@ -92,6 +92,12 @@ namespace SkylineTogether.Sync
         /// </summary>
         public Action<uint> TouchAgent;
 
+        /// <summary>
+        /// Host: a client asked again for a mover it lacks (its roster check, <see cref="MoverClient"/>); the mover channel
+        /// answers with the mover's spawn (<see cref="MoverHost.QueueResend"/>). Set by the controller.
+        /// </summary>
+        public Action<PeerId, uint> ResendMover;
+
         private sealed class PeerGates
         {
             public readonly RateGate Details = new RateGate(16, 32);
@@ -586,6 +592,11 @@ namespace SkylineTogether.Sync
                     {
                         // the client holds an id the host does not have: it goes
                         if (family != Family.Prefab && family != Family.Singleton) w.Despawn(id);
+                        continue;
+                    }
+                    if (family == Family.Mover)
+                    {
+                        ResendMover?.Invoke(peer, id); // movers are records of their own channel
                         continue;
                     }
                     if (!IntegrityHasher.IsVerified(family)) continue;

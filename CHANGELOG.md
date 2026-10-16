@@ -25,8 +25,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ### Changed
 
-- Wire change, protocol 4 (the hello carries a join flags byte): earlier builds are refused with "Skyline Together
-  versions differ".
+- Wire change, protocol 5 (protocol 4: the hello carries a join flags byte; protocol 5: the mover roster record):
+  earlier builds are refused with "Skyline Together versions differ".
 - DLC the joining player lacks is now reported before different code mods.
 
 ### Fixed
@@ -44,6 +44,10 @@ All notable changes to this project are documented in this file. The format is b
   An airplane far away is still in plain view, so it hung in mid-air where the host's plane had long left. Aircraft
   (airplanes, helicopters, rockets) now move on every client anywhere on the map, ships and mainline trains up to 4 km
   from the camera; beyond the normal interest they are updated at half rate.
+- **Vehicles and pedestrians only one player has**: a mover the host had removed could stay on a client for the rest of
+  the session (a despawn that failed, a mover the host lost without one, or one the joining player's snapshot still
+  held). The host now sends a roster of its movers (every id about every half minute, and a fast pass right after a
+  player joins); clients remove movers the host does not have and ask for the ones they lack.
 - **Households repaired over and over**: the integrity check kept re-sending households (and whole buckets of agents)
   in an active city. Citizens move between households without the game tagging anything (students moving out, couples
   moving together, divorces), and the host found such moves only when its rolling agent scan reached them, which in a

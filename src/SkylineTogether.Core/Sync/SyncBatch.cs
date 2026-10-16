@@ -62,6 +62,13 @@ namespace SkylineTogether.Core.Sync
         MoverState = 21,
         /// <summary>Host → client: a mover disappeared.</summary>
         MoverDespawn = 22,
+        /// <summary>
+        /// Host → client, the last record of a movers batch: every live mover the host has in one window of net ids
+        /// (<see cref="MoverRoster"/>; <see cref="SyncRecord.RangeStart"/>, <see cref="SyncRecord.RangeCount"/> and the runs
+        /// in <see cref="SyncRecord.Ids"/>). The client removes movers of the window the host does not have and asks for
+        /// those it lacks.
+        /// </summary>
+        MoverRoster = 23,
 
         // ---- mod compatibility (docs/design/MOD-COMPATIBILITY.md; values 110-119 are reserved for it) ----
 
@@ -230,7 +237,10 @@ namespace SkylineTogether.Core.Sync
         /// <summary><see cref="SyncRecordKind.BucketDigest"/>, <see cref="SyncRecordKind.IconControl"/>: the digest.</summary>
         public ulong Hash;
         public List<EntityHash> Hashes;
-        /// <summary><see cref="SyncRecordKind.RequestIds"/>: the ids (buckets, entities or lines).</summary>
+        /// <summary>
+        /// <see cref="SyncRecordKind.RequestIds"/>: the ids (buckets, entities or lines); <see cref="SyncRecordKind.MoverRoster"/>:
+        /// the runs of live movers as <c>start, length</c> pairs.
+        /// </summary>
         public uint[] Ids;
         public List<ComponentHash> ComponentHashes;
         /// <summary><see cref="SyncRecordKind.IconSet"/>: the owner and its icons.</summary>
@@ -377,7 +387,7 @@ namespace SkylineTogether.Core.Sync
         {
             byte kind = FirstRecordKind(data, offset, count);
             return kind == (byte)SyncRecordKind.MoverSpawn || kind == (byte)SyncRecordKind.MoverState || kind == (byte)SyncRecordKind.MoverDespawn
-                   || kind == (byte)SyncRecordKind.MoverAgents;
+                   || kind == (byte)SyncRecordKind.MoverAgents || kind == (byte)SyncRecordKind.MoverRoster;
         }
 
         /// <summary>
@@ -694,6 +704,33 @@ namespace SkylineTogether.Core.Sync
             {
                 _w.WriteByte((byte)SyncRecordKind.MoverDespawn);
                 _w.WriteVarUInt32(netId);
+                _count++;
+            }
+
+            /// <summary>
+            /// The live movers of the window <c>[first, first + span)</c> (<see cref="SyncRecordKind.MoverRoster"/>):
+            /// <c>varint first | varint span | varint runs | runs × (varint gap, varint length)</c>, where a run starts
+            /// <c>gap</c> ids after the end of the previous one (the first after <paramref name="first"/>; only the first gap
+            /// may be 0). <paramref name="runs"/> are <c>start, length</c> pairs (<see cref="Sync.MoverRoster.BuildRuns"/>).
+            /// </summary>
+            public void MoverRoster(uint first, uint span, IReadOnlyList<uint> runs)
+            {
+                if (runs == null) throw new ArgumentNullException(nameof(runs));
+                if (first == 0 || span > Sync.MoverRoster.MaxSpan || (runs.Count & 1) != 0 || runs.Count / 2 > Sync.MoverRoster.MaxRuns) throw new ArgumentException("invalid mover roster");
+                _w.WriteByte((byte)SyncRecordKind.MoverRoster);
+                _w.WriteVarUInt32(first);
+                _w.WriteVarUInt32(span);
+                _w.WriteVarUInt32((uint)(runs.Count / 2));
+                ulong cursor = first;
+                ulong end = (ulong)first + span;
+                for (int i = 0; i < runs.Count; i += 2)
+                {
+                    uint start = runs[i], length = runs[i + 1];
+                    if (start < cursor || (i > 0 && start == cursor) || length == 0 || (ulong)start + length > end) throw new ArgumentException("mover roster runs out of order or outside the window", nameof(runs));
+                    _w.WriteVarUInt32((uint)(start - cursor));
+                    _w.WriteVarUInt32(length);
+                    cursor = (ulong)start + length;
+                }
                 _count++;
             }
 
@@ -1060,6 +1097,27 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.MoverDespawn:
                     rec.NetId = r.ReadVarUInt32();
                     return rec;
+                case SyncRecordKind.MoverRoster:
+                {
+                    rec.RangeStart = r.ReadVarUInt32();
+                    rec.RangeCount = r.ReadVarUInt32();
+                    if (rec.RangeStart == 0 || rec.RangeCount > Sync.MoverRoster.MaxSpan) throw new DecodeException("mover roster window " + rec.RangeStart + "+" + rec.RangeCount);
+                    uint n = ReadCount(r, Sync.MoverRoster.MaxRuns, 2, "mover runs");
+                    rec.Ids = new uint[n * 2];
+                    ulong cursor = rec.RangeStart;
+                    ulong end = (ulong)rec.RangeStart + rec.RangeCount;
+                    for (uint i = 0; i < n; i++)
+                    {
+                        uint gap = r.ReadVarUInt32();
+                        uint length = r.ReadVarUInt32();
+                        ulong start = cursor + gap;
+                        if ((i > 0 && gap == 0) || length == 0 || start + length > end) throw new DecodeException("mover roster run outside its window");
+                        rec.Ids[2 * i] = (uint)start;
+                        rec.Ids[2 * i + 1] = length;
+                        cursor = start + length;
+                    }
+                    return rec;
+                }
                 case SyncRecordKind.MoverAgents:
                     rec.NetId = r.ReadVarUInt32();
                     rec.AgentLinks = MoverAgentLinksCodec.Read(r);

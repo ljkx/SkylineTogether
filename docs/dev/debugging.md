@@ -84,6 +84,19 @@ help ("still differ from the host after 2 repairs; not repaired again for 10 min
 and per-component explanations of what differs. Search the client's log for `[integrity]`. The behaviour is
 described in [Troubleshooting → desync](../guide/troubleshooting.md#something-looks-different-for-another-player-desync).
 
+## Movers
+
+Vehicles and creatures ([ARCHITECTURE.md#movers](../ARCHITECTURE.md#movers)) log under `[replication]` and `[motion]`:
+
+- Host: `peer:N: motion stream started; a full mover roster pass follows` when a player's first view report arrives, then
+  `mover roster: pass P sent (M movers, fast pass for a joining player)`; a pass that found movers whose entity vanished
+  without a despawn says so (`... movers that vanished here without a despawn were despawned`).
+- Client: `movers: N pinned at their snapshot pose, K unbound movers removed` at going live, then
+  `movers: first roster pass after joining: removed R movers the host no longer has (A aircraft), asked the host for Q
+  missing here`; later passes are logged only when they removed or asked for something.
+- The diagnostics dump has a `movers:` and a `mover roster:` line on both sides (far-field frames of aircraft, ships and
+  trains, windows, passes, removals, re-sends).
+
 ## Solo test
 
 The solo test (record a session on the host, replay it through the client path on the same PC) exercises the joining

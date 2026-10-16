@@ -84,6 +84,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 w.Mover(SyncRecordKind.MoverSpawn, 40, new MoverRecord { Kind = MoverKind.Riding, PrefabNetId = 12, Layout = new uint[] { 1, 2 }, Route = 3, HasHumanFlags = true, Vehicle = 9, X = 1, Y = 2, Z = 3 });
                 w.MoverDespawn(41);
                 w.MoverAgents(40, new MoverAgentLinks { Agent = 1, Keeper = 2, Owner = 3 });
+                w.MoverRoster(30, 2048, new uint[] { 30, 5, 40, 1, 1000, 300 });
                 w.Epoch(17);
                 w.ProposalHeader(5, 16, ProposalFlags.None);
                 w.ProposalResult(5, RejectReason.None);
@@ -330,7 +331,7 @@ namespace SkylineTogether.Core.Tests.Sync
 
         private static void WriteRandomRecord(Gen g, SyncBatch.Writer w)
         {
-            switch (g.Int(23))
+            switch (g.Int(24))
             {
                 case 0:
                 {
@@ -393,6 +394,26 @@ namespace SkylineTogether.Core.Tests.Sync
                 case 19: w.ModSettings(g.List(5, x => new SettingEntry { Mod = x.String(30), Key = x.String(30), Value = x.String(200) })); break;
                 case 20: w.Epoch(g.UIntEdgy()); break;
                 case 21: w.PrefabSource(g.UIntEdgy(), new AssetSource { Kind = g.Enum<AssetSourceKind>(), Name = g.String(120), PlatformId = g.String(12) }); break;
+                case 22:
+                {
+                    // runs inside the window: random gaps (only the first may be 0) and lengths
+                    uint first = 1 + g.UInt() % 100000;
+                    uint span = (uint)g.Int(1, 8192);
+                    var runs = new List<uint>();
+                    ulong cursor = first, end = (ulong)first + span;
+                    int n = g.Size(30);
+                    for (int i = 0; i < n; i++)
+                    {
+                        ulong start = cursor + (ulong)g.Int(i == 0 ? 0 : 1, 40);
+                        ulong length = (ulong)g.Int(1, 60);
+                        if (start + length > end) break;
+                        runs.Add((uint)start);
+                        runs.Add((uint)length);
+                        cursor = start + length;
+                    }
+                    w.MoverRoster(first, span, runs);
+                    break;
+                }
                 default:
                     if (g.Bool()) w.ProposalHeader(g.UIntEdgy(), g.UIntEdgy(), g.Enum<ProposalFlags>());
                     else w.ProposalResult(g.UIntEdgy(), g.Enum<RejectReason>());
@@ -439,6 +460,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 case SyncRecordKind.LineRows: w.LineRows(rec.Payload, 0, rec.Payload.Length); break;
                 case SyncRecordKind.MoverDespawn: w.MoverDespawn(rec.NetId); break;
                 case SyncRecordKind.MoverAgents: w.MoverAgents(rec.NetId, rec.AgentLinks); break;
+                case SyncRecordKind.MoverRoster: w.MoverRoster(rec.RangeStart, rec.RangeCount, rec.Ids); break;
                 case SyncRecordKind.EnabledBits: w.EnabledBits(rec.NetId, rec.EnabledBits); break;
                 case SyncRecordKind.ModSettings: w.ModSettings(rec.Settings); break;
                 case SyncRecordKind.PrefabSource: w.PrefabSource(rec.NetId, rec.Source); break;

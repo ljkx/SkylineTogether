@@ -34,6 +34,10 @@ namespace SkylineTogether.Sync
     /// Out-of-interest movers get a rare pose refresh, so they stay roughly in place on every client. Movers seen from far
     /// away have a wider reach (<see cref="MoverReach"/>): aircraft stream everywhere on the map, ships and mainline trains in
     /// a region three times as wide; outside the client's own region their frames are far-field, every second sample.
+    /// Every movers batch ends with a <see cref="MoverRoster"/> window when one is due (<see cref="MoverRosterSchedule"/>: a
+    /// pass over all ids about every half minute, a fast pass when a player starts its motion stream), so clients remove
+    /// movers the host no longer has and ask for the ones they lack (<see cref="QueueResend"/>); a mover whose entity
+    /// vanished here without a <c>Deleted</c> tag is despawned when its window comes up.
     /// Runs right before <c>SaveGameSystem</c>, so a join snapshot taken this frame already carries the new ids.
     /// Main thread only.
     /// </summary>
@@ -122,6 +126,17 @@ namespace SkylineTogether.Sync
         private ComponentTypeHandle<Unspawned> _unspawnedType;
         private ComponentTypeHandle<PrefabRef> _prefabRefType;
         private long _wideFrames, _farSkipped;
+        // the roster (ARCHITECTURE.md#movers): windows of live movers, and movers asked for again by a client
+        private readonly MoverRosterSchedule _roster = new MoverRosterSchedule();
+        private readonly List<uint> _rosterIds = new List<uint>();
+        private readonly List<uint> _rosterRuns = new List<uint>();
+        private readonly List<uint> _vanishedIds = new List<uint>();
+        private readonly List<(byte Peer, uint Id)> _resendQueue = new List<(byte, uint)>();
+        private readonly SyncBatch.Writer _resendBatch = new SyncBatch.Writer();
+        private const int MaxQueuedResends = 4096;
+        private long _rosterWindows, _vanished, _resent, _lastPasses;
+        private long _passMovers, _passVanished;
+        private bool _burstPass;
 
         public MoverHost(SessionManager sessions, ILog log)
         {
@@ -141,6 +156,10 @@ namespace SkylineTogether.Sync
             _peers.Clear();
             _prefabReach.Clear();
             _wideFrames = _farSkipped = 0;
+            _roster.Reset();
+            _resendQueue.Clear();
+            _rosterWindows = _vanished = _resent = _lastPasses = _passMovers = _passVanished = 0;
+            _burstPass = false;
             _bindAll = true;
             _sampleInit = false;
             _active = true;
@@ -158,6 +177,7 @@ namespace SkylineTogether.Sync
             _movers.Clear();
             _peers.Clear();
             _refresh.Clear();
+            _resendQueue.Clear();
             _encoder = null;
         }
 
@@ -172,7 +192,10 @@ namespace SkylineTogether.Sync
                         view = new PeerView { Peer = peer };
                         _peers[peer.Value] = view;
                         _encoder?.AddPeer(peer);
-                        _log.Info(LogCategory.Motion, peer + ": motion stream started");
+                        // a fast roster pass: movers its snapshot holds but the host no longer has go at once
+                        _roster.Burst();
+                        _burstPass = true;
+                        _log.Info(LogCategory.Motion, peer + ": motion stream started; a full mover roster pass follows");
                     }
                     ViewReport.ReadInto(new ByteReader(e.Body, e.BodyOffset, e.BodyCount), view.Report);
                     view.HasReport = true;
@@ -246,12 +269,14 @@ namespace SkylineTogether.Sync
             CaptureCreated(em);
             CaptureChanged(em);
             Refresh(em);
+            if (_peers.Count > 0) WriteRoster(em); // last: it describes the movers after every record of this batch
             if (!_batch.IsEmpty)
             {
                 ArraySegment<byte> bytes = _batch.Finish();
                 _sessions.Host.Broadcast(MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
                 Perf.Counters.AddBytes(Perf.MoverBytes, (long)bytes.Count * Math.Max(1, _peers.Count), Perf.Now);
             }
+            ServeResends(em);
             Perf.Stop(Perf.MoverCapture, start);
             if (_peers.Count == 0) return;
             long motion = Perf.Start();
@@ -467,6 +492,101 @@ namespace SkylineTogether.Sync
                     _log.Debug(LogCategory.Replication, "mover refresh failed: " + ex.Message);
                 }
             }
+        }
+
+        /// <summary>
+        /// The next roster window when one is due (ARCHITECTURE.md#movers): every mover of the window this host tracks
+        /// whose entity is alive. A tracked mover whose entity is gone (destroyed without a <c>Deleted</c> tag, so no
+        /// despawn was ever captured) is despawned here first.
+        /// </summary>
+        private void WriteRoster(EntityManager em)
+        {
+            bool burst = _roster.BurstRemaining > 0;
+            if (!_roster.TryNext(_sessions.Clock.Seconds, _ids.Ids.Next, out uint first, out uint span)) return;
+            _rosterIds.Clear();
+            _vanishedIds.Clear();
+            ulong end = (ulong)first + span;
+            for (ulong i = first; i < end; i++)
+            {
+                uint id = (uint)i;
+                if (_ids.GetFamily(id) != Family.Mover || !_movers.ContainsKey(id)) continue;
+                Entity e = _ids.GetEntity(id);
+                if (e != Entity.Null && em.Exists(e) && !em.HasComponent<Deleted>(e)) _rosterIds.Add(id);
+                else _vanishedIds.Add(id);
+            }
+            foreach (uint id in _vanishedIds)
+            {
+                _batch.MoverDespawn(id);
+                _ids.Unbind(id, despawnSent: true); // quarantined until every peer applied this batch
+                _movers.Remove(id);
+                ForgetInterest(id);
+            }
+            MoverRoster.BuildRuns(_rosterIds, _rosterRuns);
+            _batch.MoverRoster(first, span, _rosterRuns);
+            _rosterWindows++;
+            _vanished += _vanishedIds.Count;
+            _passMovers += _rosterIds.Count;
+            _passVanished += _vanishedIds.Count;
+            _burstPass |= burst;
+            if (_roster.Passes == _lastPasses) return;
+            _lastPasses = _roster.Passes;
+            if (_burstPass || _passVanished > 0)
+            {
+                _log.Info(LogCategory.Replication, "mover roster: pass " + _lastPasses + " sent (" + _passMovers + " movers" + (_burstPass ? ", fast pass for a joining player" : "")
+                                                   + (_passVanished > 0 ? "; " + _passVanished + " movers that vanished here without a despawn were despawned" : "") + ")");
+            }
+            _passMovers = _passVanished = 0;
+            _burstPass = _roster.BurstRemaining > 0;
+        }
+
+        /// <summary>
+        /// A client lacks this mover (its roster check found it missing twice): its spawn and agent links are sent to that
+        /// client at the end of the next capture. Called from the integrity request path (<c>ResendEntities</c>).
+        /// </summary>
+        public void QueueResend(PeerId peer, uint id)
+        {
+            if (!_active || _resendQueue.Count >= MaxQueuedResends) return;
+            _resendQueue.Add((peer.Value, id));
+        }
+
+        private void ServeResends(EntityManager em)
+        {
+            if (_resendQueue.Count == 0) return;
+            SessionHost host = _sessions.Host;
+            _resendQueue.Sort((a, b) => a.Peer != b.Peer ? a.Peer.CompareTo(b.Peer) : a.Id.CompareTo(b.Id));
+            int i = 0;
+            while (i < _resendQueue.Count)
+            {
+                byte peer = _resendQueue[i].Peer;
+                _resendBatch.Reset();
+                uint previous = 0;
+                for (; i < _resendQueue.Count && _resendQueue[i].Peer == peer; i++)
+                {
+                    uint id = _resendQueue[i].Id;
+                    if (id == previous) continue;
+                    previous = id;
+                    try
+                    {
+                        if (!_movers.ContainsKey(id)) continue; // gone meanwhile: its despawn or the next roster tells the client
+                        Entity e = _ids.GetEntity(id);
+                        if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) continue;
+                        MoverRecord rec = Describe(em, e);
+                        if (rec == null) continue;
+                        _resendBatch.Mover(SyncRecordKind.MoverSpawn, id, rec);
+                        MoverAgentLinks links = Links(em, e);
+                        if (!links.IsEmpty) _resendBatch.MoverAgents(id, links);
+                        _resent++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Debug(LogCategory.Replication, "mover re-send failed: " + ex.Message);
+                    }
+                }
+                if (_resendBatch.IsEmpty || host == null) continue;
+                ArraySegment<byte> bytes = _resendBatch.Finish();
+                host.SendTo(new PeerId(peer), MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
+            }
+            _resendQueue.Clear();
         }
 
         /// <summary>
@@ -749,6 +869,8 @@ namespace SkylineTogether.Sync
             if (!_active) return;
             lines.Add("movers: " + _movers.Count + " tracked, " + _peers.Count + " motion streams; " + _wideFrames + " far-field frames of aircraft, ships and trains ("
                       + _farSkipped + " samples thinned), " + _sampleCarryOvers + " sampling carry-overs");
+            lines.Add("mover roster: " + _rosterWindows + " windows in " + _roster.Passes + " passes, " + _vanished + " vanished movers despawned, "
+                      + _resent + " movers re-sent to clients that lacked them");
         }
 
         private static int TickDiff(uint a, uint b) => unchecked((int)(a - b));

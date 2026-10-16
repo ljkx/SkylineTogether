@@ -563,7 +563,7 @@ A [`SyncBatch`](../src/SkylineTogether.Core/Sync/SyncBatch.cs) is `u8 version | 
 records are `kind | varint netId | u8 family | bool completeSet | u16 count | components`, each component
 `u64 StableTypeHash | u8 kind (data, buffer, presence) | varint length | bytes`. Other records: `Prefab`,
 `PrefabSource`, `ZoneCells`, `IdRange`, `Cost`, `Clock`, `Request`, `Global`, `IdCeiling`, integrity and icon records (40-46), mover
-records (20-22, 120), `EnabledBits` and `ModSettings` (110-111), `Epoch`, `ProposalHeader`, `ProposalResult`
+records (20-23, 120), `EnabledBits` and `ModSettings` (110-111), `Epoch`, `ProposalHeader`, `ProposalResult`
 (80-82), and solo-test checkpoint records (160-162). Batches of mover records are recognised by their first record and
 handled by `MoverClient` only.
 
@@ -910,7 +910,21 @@ radius, and hidden (`Unspawned`) movers never get more. Outside the client's own
 far-field and only every second sample is sent (phase spread by id); the client interpolates between them. Every mover
 class has its own move system in the game (cars and trailers, humans and animals every tick by `UpdateFrame` slice;
 aircraft, ships and trains all at once every 16 ticks at their prefab's fixed `UpdateFrame`, 10, 8 and 3), and all of
-them are gated on clients, so a mover outside every interest region does not move there. [`MoverClient`](../src/SkylineTogether/Sync/MoverClient.cs) applies the records after the
+them are gated on clients, so a mover outside every interest region does not move there.
+
+**Roster.** Every movers batch ends, when one is due, with a `MoverRoster` record
+([`MoverRoster`](../src/SkylineTogether.Core/Sync/MoverRoster.cs)): the ids of every mover the host tracks in one window
+of net ids, as runs (`gap, length` pairs; movers bound together at session start occupy long runs). The id space is
+cut into 64 windows of at least 1024 ids; one window goes out every 0.5 s (a pass in about half a minute), and when a
+player's motion stream starts (its first view report, right after it went live) a fast pass sends one window per frame,
+so movers its snapshot holds but the host no longer has are gone within the first second or two. A client applies
+movers batches strictly in order, so at the roster it holds exactly the host's movers of the window unless a record was
+lost or failed: movers only it has are removed at once (riders released, ids unbound), movers it lacks are asked for when
+they were missing in two rosters in a row ([`MoverRosterAudit`](../src/SkylineTogether.Core/Sync/MoverRoster.cs), sent as
+an integrity `ResendEntities` request; the host answers with the mover's spawn and agent links to that client only). On
+the host, a tracked mover whose entity vanished without a `Deleted` tag (so no despawn was ever captured) is despawned
+when its window comes up. The client's orphan sweep at going live only removes snapshot movers without a host id;
+movers with an id the host no longer uses are the roster's job. [`MoverClient`](../src/SkylineTogether/Sync/MoverClient.cs) applies the records after the
 structure apply, stages motion and writes the transform frames the interpolation reads just in time before
 `PreCullingSystem`. Movers are never tagged `Updated` for motion.
 
@@ -1227,8 +1241,8 @@ the most ids alive at once plus the quarantine and are released at session end.
 - **Water and weather are approximate.** Water is corrected tile by tile on a visual basis; snow, wind, wetness and dirt
   are simulated locally.
 - **Values are eventually consistent.** Simulation values, agents, flow status and cell maps follow by attention and
-  rolling refresh within byte budgets; far from every camera they lag. Mover motion is shown only inside interest;
-  outside it movers are pinned.
+  rolling refresh within byte budgets; far from every camera they lag. Mover motion is shown only inside interest
+  (aircraft everywhere, ships and mainline trains up to 4 km); outside it movers are pinned.
 - **Local saves on clients** are allowed (the game offers no clean way to refuse) and produce a copy of the host's city
   without net ids; the player is warned.
 - **Rejoin is the catch-up path** for a client that falls behind, stalls or loses its connection; changes made while

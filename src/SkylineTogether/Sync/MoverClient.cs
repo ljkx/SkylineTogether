@@ -35,7 +35,10 @@ namespace SkylineTogether.Sync
     /// interpolation will read are written "just in time" (R15 §2.2-2.6): <c>F1 = u + 16·((R − u − 32) >> 4)</c>, frames
     /// for <c>F1</c>, <c>F1 + 16</c> and <c>F1 + 32</c>. Movers outside interest are pinned: all four slots hold the
     /// same pose with zero velocity, so the ring never cycles back. Movers are never tagged <c>Updated</c> for motion
-    /// (it would reset their frames, <c>UpdateGroupSystem.cs:561-615</c>). Main thread only.
+    /// (it would reset their frames, <c>UpdateGroupSystem.cs:561-615</c>). The host's roster records
+    /// (<see cref="MoverRoster"/>, the last record of a movers batch) are compared with the movers of their window: movers
+    /// the host does not have are removed at once, movers missing here twice in a row are asked for again
+    /// (<see cref="MoverRosterAudit"/>, sent as <c>ResendEntities</c>). Main thread only.
     /// </summary>
     public sealed class MoverClient
     {
@@ -124,6 +127,14 @@ namespace SkylineTogether.Sync
         private const int MaxQueuedMotion = 256;
         private long _motionDropped, _recordFailures, _familyMismatches, _ridersReleased;
         private double _lastFailureLog = double.NegativeInfinity;
+        // the host's roster (ARCHITECTURE.md#movers)
+        private readonly MoverRosterAudit _audit = new MoverRosterAudit();
+        private readonly List<uint> _rosterLocal = new List<uint>();
+        private readonly List<uint> _rosterRemove = new List<uint>();
+        private readonly List<uint> _rosterRequests = new List<uint>();
+        private readonly SyncBatch.Writer _requestWriter = new SyncBatch.Writer();
+        private long _rosterPasses, _passRemoved, _passAircraft, _requestedAtPassStart;
+        private bool _sawRoster;
 
         public MoverClient(SessionManager sessions, ILog log)
         {
@@ -143,6 +154,7 @@ namespace SkylineTogether.Sync
             _motion.Clear();
             _stager = new MotionClientStager();
             _slots.Clear();
+            ResetRoster();
             client.AppMessage += OnMessage;
             client.BecameLive += () => _pendingLive = true;
         }
@@ -156,6 +168,7 @@ namespace SkylineTogether.Sync
             _slots.Clear();
             _force.Clear();
             _archetypes.Clear();
+            ResetRoster();
             _stager = new MotionClientStager();
             foreach ((ComponentSystemBase system, bool wasEnabled) in _gated)
             {
@@ -286,6 +299,7 @@ namespace SkylineTogether.Sync
                 Perf.Budget.End(Perf.BudgetMoverApply, applied); // shared budget telemetry (apply priority)
             }
             if (_pendingLinks.Count > 0) RetryLinks(em);
+            if (_rosterRequests.Count > 0) SendRosterRequests();
         }
 
         private void GoLive(EntityManager em)
@@ -323,7 +337,8 @@ namespace SkylineTogether.Sync
             {
                 _log.Error(LogCategory.Replication, "preparing movers for the session failed", ex);
             }
-            _log.Info(LogCategory.Replication, "movers: " + pinned + " pinned at their snapshot pose, " + orphans + " unbound movers removed");
+            _log.Info(LogCategory.Replication, "movers: " + pinned + " pinned at their snapshot pose, " + orphans + " unbound movers removed"
+                                               + " (movers the host no longer has follow with its first roster pass)");
         }
 
         /// <summary>Movers without a host id can never be updated or removed by the host: delete them (guarded).</summary>
@@ -482,6 +497,110 @@ namespace SkylineTogether.Sync
                     NoteFailure("mover agent links failed: " + ex.Message);
                 }
             }
+            // the roster comes last: by now this game holds every mover the host had when it wrote the batch
+            foreach (SyncRecord r in records)
+            {
+                if (r.Kind != SyncRecordKind.MoverRoster) continue;
+                try
+                {
+                    ApplyRoster(em, r);
+                }
+                catch (Exception ex)
+                {
+                    NoteFailure("mover roster failed: " + ex.Message);
+                }
+            }
+        }
+
+        private void ResetRoster()
+        {
+            _audit.Clear();
+            _rosterLocal.Clear();
+            _rosterRemove.Clear();
+            _rosterRequests.Clear();
+            _rosterPasses = _passRemoved = _passAircraft = _requestedAtPassStart = 0;
+            _sawRoster = false;
+        }
+
+        /// <summary>
+        /// One roster window (ARCHITECTURE.md#movers): the movers bound here in <c>[first, first + span)</c> against the host's.
+        /// Movers only this game has are deleted (their riders released, their ids unbound); movers it lacks are queued
+        /// for a re-send request once they were missing twice. The result is logged after the host's fast pass for this
+        /// player (the first <see cref="MoverRosterSchedule.Windows"/> windows cover every id), then per pass of the host
+        /// (a window starting at id 1 begins the next) when it changed something.
+        /// </summary>
+        private void ApplyRoster(EntityManager em, SyncRecord r)
+        {
+            uint first = r.RangeStart, span = r.RangeCount;
+            if (first == 1 && _sawRoster && _audit.Rosters > MoverRosterSchedule.Windows) EndRosterPass(false);
+            _sawRoster = true;
+            _rosterLocal.Clear();
+            ulong end = (ulong)first + span;
+            for (ulong i = first; i < end; i++)
+            {
+                uint id = (uint)i;
+                if (_ids.GetFamily(id) != Family.Mover) continue;
+                Entity e = _ids.GetEntity(id);
+                if (e == Entity.Null) continue;
+                if (!em.Exists(e))
+                {
+                    _ids.Unbind(id); // a binding of a destroyed entity: nothing to compare
+                    continue;
+                }
+                if (!em.HasComponent<Deleted>(e)) _rosterLocal.Add(id);
+            }
+            _rosterRemove.Clear();
+            _audit.OnRoster(first, span, r.Ids, _rosterLocal, _rosterRemove, _rosterRequests);
+            foreach (uint id in _rosterRemove)
+            {
+                Entity e = _ids.GetEntity(id);
+                _ids.Unbind(id);
+                _force.Remove(id);
+                _pendingLinks.Remove(id);
+                if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) continue;
+                if (em.HasComponent<Aircraft>(e)) _passAircraft++;
+                ReleaseRiders(em, e);
+                em.AddComponent<Deleted>(e);
+                _passRemoved++;
+                _despawned++;
+            }
+            if (_audit.Rosters == MoverRosterSchedule.Windows) EndRosterPass(true);
+        }
+
+        private void EndRosterPass(bool joinPass)
+        {
+            _rosterPasses++;
+            long requested = _audit.Requested - _requestedAtPassStart;
+            if (joinPass || _passRemoved > 0 || requested > 0)
+            {
+                _log.Info(LogCategory.Replication, "movers: " + (joinPass ? "first roster pass after joining" : "roster pass " + _rosterPasses) + ": removed " + _passRemoved
+                                                   + " movers the host no longer has (" + _passAircraft + " aircraft), asked the host for " + requested + " missing here"
+                                                   + (joinPass ? " (requests follow when a mover is missing in the next pass too)" : ""));
+            }
+            _passRemoved = _passAircraft = 0;
+            _requestedAtPassStart = _audit.Requested;
+        }
+
+        /// <summary>Asks the host for the movers the roster found missing (an integrity re-send request; the host answers with their spawns).</summary>
+        private void SendRosterRequests()
+        {
+            SessionClient client = _sessions.Client;
+            if (client == null)
+            {
+                _rosterRequests.Clear();
+                return;
+            }
+            int at = 0;
+            while (at < _rosterRequests.Count)
+            {
+                int n = Math.Min(SyncBatch.MaxIdsPerRecord, _rosterRequests.Count - at);
+                _requestWriter.Reset();
+                _requestWriter.RequestIds(SyncRequest.ResendEntities, _rosterRequests.GetRange(at, n));
+                ArraySegment<byte> bytes = _requestWriter.Finish();
+                client.SendToHost(MessageKind.Proposal, bytes.Array, bytes.Offset, bytes.Count);
+                at += n;
+            }
+            _rosterRequests.Clear();
         }
 
         /// <summary>
@@ -1143,6 +1262,8 @@ namespace SkylineTogether.Sync
         {
             if (!_active) return;
             lines.Add("movers: " + Status + "; motion frames accepted " + _stager.FramesAccepted + ", dropped " + _stager.FramesDropped);
+            lines.Add("mover roster: " + _audit.Rosters + " windows checked, " + _rosterPasses + " passes, " + _audit.Removed + " movers removed (not on the host), "
+                      + _audit.Requested + " asked for (missing here), " + _audit.Pending + " missing once");
         }
 
         /// <summary>One line for diagnostics.</summary>

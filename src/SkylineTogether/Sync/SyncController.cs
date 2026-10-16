@@ -278,6 +278,7 @@ namespace SkylineTogether.Sync
             _statistics = new StatisticsSync(sessions, log);
             _agents = new AgentSync(sessions, log);
             Integrity.TouchAgent = _agents.Touch; // agents of a requested bucket are scanned first
+            Integrity.ResendMover = (peer, id) => MoverSync.Instance?.Host.QueueResend(peer, id); // movers a client's roster check lacks
             _modSettings = new Compat.ModSettingsSync(log); // mod compatibility
             _epochSent = peer => _sessions.Host?.GetEpochSent(new PeerId(peer)) ?? 0;
             _mayCreate = MayCreate;

@@ -25,7 +25,7 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void PlanConstantsArePinned()
         {
-            Assert.Equal(4, ProtocolVersion.Current); // 4: the join flags of the hello (ProtocolVersion history)
+            Assert.Equal(5, ProtocolVersion.Current); // 5: the mover roster record (ProtocolVersion history)
             Assert.Equal(512 * 1024, Limits.MaxMessageBytes);
             Assert.Equal(480 * 1024, Limits.FragmentThreshold);
             Assert.Equal(8 * 1024 * 1024, Limits.MaxUncompressedBytes);
