@@ -14,7 +14,9 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using AreaNode = Game.Areas.Node;
+using NetElevation = Game.Net.Elevation;
 using NetNode = Game.Net.Node;
+using ObjectElevation = Game.Objects.Elevation;
 using ObjectTransform = Game.Objects.Transform;
 using RoutePosition = Game.Routes.Position;
 using WaterSourceData = Game.Simulation.WaterSourceData;
@@ -30,6 +32,13 @@ namespace SkylineTogether.Presence
     /// net edges, objects, areas, zone blocks, lines and water sources, then net nodes, then sub-elements of the preview
     /// itself (a building's own roads, lots and sub-buildings). Main thread; reads through the entity manager (completing the
     /// writers of the few types read), at the presence rate only and only while a tool is active. Never writes.
+    /// <para>
+    /// Every point keeps its real height (curve control points, node and object positions). Pieces above or below the
+    /// ground are flagged so the receivers can draw them in 3D: an edge by its composition (<c>Elevated</c> for elevated
+    /// roads and bridges, <c>Tunnel</c>) and otherwise, like a node, by its net <c>Elevation</c> (above
+    /// <see cref="ElevationThreshold"/>: elevated, below its negative: underground); an object by its object
+    /// <c>Elevation</c> (placed at an elevation, stacked).
+    /// </para>
     /// </summary>
     internal sealed class ToolPreviewCapture : IDisposable
     {
@@ -40,8 +49,12 @@ namespace SkylineTogether.Presence
             "Game.Prefabs.NetGeometryData", "Game.Prefabs.NetCompositionData", "Game.Objects.Object", "Game.Objects.Transform",
             "Game.Prefabs.ObjectGeometryData", "Game.Prefabs.BuildingData", "Game.Areas.Area", "Game.Areas.Node", "Game.Zones.Block",
             "Game.Zones.Cell", "Game.Routes.Route", "Game.Routes.RouteWaypoint", "Game.Routes.RouteSegment", "Game.Routes.Position",
-            "Game.Routes.CurveElement", "Game.Simulation.WaterSourceData", "Game.Common.Owner",
+            "Game.Routes.CurveElement", "Game.Simulation.WaterSourceData", "Game.Common.Owner", "Game.Net.Elevation", "Game.Objects.Elevation",
+            "Game.Simulation.TerrainSystem",
         };
+
+        /// <summary>Metres above (or below) the ground from which a piece counts as elevated (or underground).</summary>
+        public const float ElevationThreshold = 1f;
 
         private const TempFlags Shown = TempFlags.Create | TempFlags.Delete | TempFlags.Modify | TempFlags.Replace | TempFlags.Upgrade
                                         | TempFlags.Dragging | TempFlags.Duplicate | TempFlags.Select;
@@ -140,7 +153,34 @@ namespace SkylineTogether.Presence
         {
             Bezier4x3 b = _em.GetComponentData<Curve>(e).m_Bezier;
             if (!Finite(b.a) || !Finite(b.b) || !Finite(b.c) || !Finite(b.d)) return false;
-            return into.AddCurve(flags, P(b.a), P(b.b), P(b.c), P(b.d), EdgeWidth(e));
+            return into.AddCurve(flags | EdgeHeight(e), P(b.a), P(b.b), P(b.c), P(b.d), EdgeWidth(e));
+        }
+
+        /// <summary>Elevated or underground by the edge's composition (bridges and elevated roads, tunnels), else by its elevation.</summary>
+        private ToolPreviewFlags EdgeHeight(Entity e)
+        {
+            if (_em.HasComponent<Composition>(e))
+            {
+                Entity composition = _em.GetComponentData<Composition>(e).m_Edge;
+                if (composition != Entity.Null && _em.HasComponent<NetCompositionData>(composition))
+                {
+                    CompositionFlags.General general = _em.GetComponentData<NetCompositionData>(composition).m_Flags.m_General;
+                    if ((general & CompositionFlags.General.Tunnel) != 0) return ToolPreviewFlags.Underground;
+                    if ((general & CompositionFlags.General.Elevated) != 0) return ToolPreviewFlags.Elevated;
+                }
+            }
+            return NetHeight(e);
+        }
+
+        /// <summary>Elevated or underground by the net elevation of an edge or node (both sides; ramps count by their higher side).</summary>
+        private ToolPreviewFlags NetHeight(Entity e)
+        {
+            if (!_em.HasComponent<NetElevation>(e)) return ToolPreviewFlags.None; // on the ground
+            float2 elevation = _em.GetComponentData<NetElevation>(e).m_Elevation;
+            if (!math.all(math.isfinite(elevation))) return ToolPreviewFlags.None;
+            float high = math.cmax(elevation);
+            if (high > ElevationThreshold) return ToolPreviewFlags.Elevated;
+            return high < -ElevationThreshold ? ToolPreviewFlags.Underground : ToolPreviewFlags.None;
         }
 
         private float EdgeWidth(Entity e)
@@ -185,7 +225,7 @@ namespace SkylineTogether.Presence
                     float3 p = _em.GetComponentData<NetNode>(e).m_Position;
                     if (!Finite(p)) continue;
                     if (!primary) flags |= ToolPreviewFlags.Secondary;
-                    if (!into.AddCircle(flags, P(p), NetWidth(_em.GetComponentData<PrefabRef>(e).m_Prefab))) return;
+                    if (!into.AddCircle(flags | NetHeight(e), P(p), NetWidth(_em.GetComponentData<PrefabRef>(e).m_Prefab))) return;
                 }
             }
             finally
@@ -230,6 +270,7 @@ namespace SkylineTogether.Presence
             ObjectTransform t = _em.GetComponentData<ObjectTransform>(e);
             if (!Finite(t.m_Position) || !math.all(math.isfinite(t.m_Rotation.value))) return false;
             Entity prefab = _em.GetComponentData<PrefabRef>(e).m_Prefab;
+            flags |= ObjectHeight(e);
             float3 forward = math.mul(t.m_Rotation, new float3(0f, 0f, 1f));
             float yaw = math.atan2(forward.x, forward.z);
             if (prefab != Entity.Null && _em.HasComponent<BuildingData>(prefab))
@@ -250,6 +291,15 @@ namespace SkylineTogether.Presence
                 }
             }
             return into.AddCircle(flags, P(t.m_Position), 4f);
+        }
+
+        /// <summary>Elevated or underground by the object's elevation above the ground (placed at an elevation, stacked).</summary>
+        private ToolPreviewFlags ObjectHeight(Entity e)
+        {
+            if (!_em.HasComponent<ObjectElevation>(e)) return ToolPreviewFlags.None;
+            float elevation = _em.GetComponentData<ObjectElevation>(e).m_Elevation;
+            if (elevation > ElevationThreshold) return ToolPreviewFlags.Elevated;
+            return elevation < -ElevationThreshold ? ToolPreviewFlags.Underground : ToolPreviewFlags.None; // NaN: neither
         }
 
         // ---------------------------------------------------------------- areas, zones, lines, water

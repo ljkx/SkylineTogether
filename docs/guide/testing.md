@@ -32,7 +32,9 @@ Do each step, then both players look at the same spot and compare.
 4. The friend places a service building (for example a school), the host deletes something; both are identical.
 5. **Bulldoze:** each player bulldozes a road, a building and a tree. Nobody crashes, both are identical.
 6. **Building previews:** one player starts drawing a road without finishing it; the other sees the outline in that
-   player's colour. Same for placing a building, zoning and drawing a district. Esc removes it.
+   player's colour. Same for placing a building, zoning and drawing a district. Esc removes it. Raise the road with
+   the elevation steps: the other sees it rise to its height with drop lines to the ground and "+10 m" on the name
+   tag; lowered into a tunnel, it is dashed on the surface.
 7. **Train line:** build two train stations, rails with a deliberate gap and a train line through both. Both players
    open the line panel: it must show the same "not connected" segment. Close the gap: both must show the line
    connected at the same time.

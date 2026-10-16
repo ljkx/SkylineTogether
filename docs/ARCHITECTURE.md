@@ -1016,6 +1016,26 @@ radius and the live tool preview (read from the game's `Temp` output by
 (setting the sender, dropping updates faster than 40 ms). Remote cursors and previews are drawn into the overlay buffer,
 never as entities, and expire after 5 s of silence.
 
+Previews are 3D. Every point keeps its real height ([`ToolPreviewCodec`](../src/SkylineTogether.Core/Session/ToolPreviewCodec.cs)
+quantises heights with their own step, so they stay at 1/16 m even when a preview spans the map and the horizontal step
+grows), and the capture flags pieces off the ground: edges by their composition (`Elevated` for elevated roads and
+bridges, `Tunnel`) or else by their net `Elevation`, nodes by their net `Elevation`, objects by their object
+`Elevation` (more than 1 m above or below the ground). The net tool's elevation setting travels with the preview (2
+bytes, only when not 0) and is appended to the player's activity on the name tag ("building Small Road (+10 m)"). The
+receivers ([`ToolPreviewRenderer`](../src/SkylineTogether/Presence/ToolPreviewRenderer.cs)) draw elevated pieces in
+world space at their height (absolute overlay curves, fading where something hides them) with a faint shadow projected
+onto the ground and thin vertical drop lines (the overlay's cylinder mesh) down to the terrain, which each receiver
+samples from its own (synced) terrain; underground pieces stay on the terrain surface, dashed and dimmer, with a
+downward arrow over each tunnel piece; everything else is projected onto the ground as before. The smoother eases the
+heights like the other coordinates, so a road raised by an elevation step rises smoothly. Area outlines, line paths and
+zone cells stay projected onto the ground.
+
+The preview bytes have their own version (the first byte, now 2): a decoder ignores a preview of another version
+instead of failing, and a change confined to the preview layout bumps that version rather than the protocol version
+([releasing](dev/releasing.md#protocol-version-policy)). Version 2 added the vertical quantisation step, the tool
+elevation and the `Elevated` and `Underground` shape flags; a preview without a tool elevation has the same size as in
+version 1.
+
 ### Chat and mod channel
 
 Chat goes through the host: sanitised, at most 500 characters, a token bucket per player (bursts of 5, then 2 lines

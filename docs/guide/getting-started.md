@@ -140,8 +140,10 @@ and Esc goes back.
 - **Cursors and name tags.** Each player has a colour. You see the other players' cursors as rings with a name tag
   that shows what they are doing ("building", "zoning", "bulldozing", ...).
 - **Building previews.** While another player draws a road, places a building, paints zones or draws a district, you
-  see their preview in their colour. Removals are filled red, invalid placements outlined red. You can turn this off
-  under Options, **Show other players' building previews**.
+  see their preview in their colour. Removals are filled red, invalid placements outlined red. Elevated roads, bridges
+  and raised objects appear at their real height with thin lines down to the ground, tunnels dashed on the surface
+  with a downward arrow, and while a player builds with an elevation their name tag shows it ("+10 m"). You can turn
+  this off under Options, **Show other players' building previews**.
 - **Chat.** Press **Enter** (when no text field has focus) to open the chat dock above the toolbar; Enter sends, Esc
   clears the line and leaves the chat. Messages are up to 500 characters (a counter appears near the limit); the last
   100 lines are kept, each with the time it arrived. Scrolled up to read, the chat stays put and a **new below** button

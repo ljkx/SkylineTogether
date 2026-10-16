@@ -22,12 +22,20 @@ All notable changes to this project are documented in this file. The format is b
   one. The installer warns when the mod is also subscribed on Paradox Mods.
 - The log and the diagnostics say where the mod was loaded from (local Mods folder or Paradox Mods id and version,
   never a path).
+- **Building previews in 3D**: other players' elevated roads, bridges, raised nodes and objects placed at an
+  elevation are shown at their real height, with a faint shadow on the ground and thin drop lines down to the terrain;
+  tunnels are drawn dashed and dimmer on the surface with a downward arrow. Raising or lowering a road with the
+  elevation steps is visible to everyone as it happens, and the name tag shows the net tool's elevation
+  ("building Small Road (+10 m)").
 
 ### Changed
 
 - Wire change, protocol 5 (protocol 4: the hello carries a join flags byte; protocol 5: the mover roster record):
   earlier builds are refused with "Skyline Together versions differ".
 - DLC the joining player lacks is now reported before different code mods.
+- The tool preview inside presence messages has format version 2 (heights with their own precision, the tool
+  elevation, elevated and underground pieces); it has its own version byte, so the protocol version is unchanged and
+  a preview of another version is ignored.
 
 ### Fixed
 

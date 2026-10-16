@@ -6,6 +6,7 @@ using Game.Common;
 using Game.Input;
 using Game.Prefabs;
 using Game.Rendering;
+using Game.Simulation;
 using Game.Tools;
 using SkylineTogether.Core;
 using SkylineTogether.Core.Buffers;
@@ -33,7 +34,9 @@ namespace SkylineTogether.Presence
     /// read from the game's own <c>Temp</c> output, never written) and sends it as a whole (a keyframe) in the same
     /// message, so a change goes out at once and a lost message heals with the next one; the remote previews are eased
     /// between keyframes (<see cref="ToolPreviewSmoother"/>) and drawn as overlay outlines in the player's colour
-    /// (<see cref="ToolPreviewRenderer"/>), unless the player turned "Show other players' building previews" off.
+    /// (<see cref="ToolPreviewRenderer"/>, elevated pieces at their real height), unless the player turned "Show other
+    /// players' building previews" off. The net tool's elevation setting travels with the preview and is appended to the
+    /// player's activity ("building Small Road (+10 m)").
     /// </para>
     /// </summary>
     public sealed class PresenceSystem : GameSystemBase
@@ -47,8 +50,8 @@ namespace SkylineTogether.Presence
         /// noticeably, so the UI is not rebuilt for every projected frame.</summary>
         private readonly List<PresenceTag> _tagScratch = new List<PresenceTag>();
 
-        /// <summary>The activity text per peer for its last tool and prefab (no string building per frame).</summary>
-        private readonly Dictionary<byte, (byte Tool, int Prefab, string Text)> _activity = new Dictionary<byte, (byte, int, string)>();
+        /// <summary>The activity text per peer for its last tool, prefab and tool elevation (no string building per frame).</summary>
+        private readonly Dictionary<byte, (byte Tool, int Prefab, int Elevation, string Text)> _activity = new Dictionary<byte, (byte, int, int, string)>();
         private readonly PresenceMessage _outgoing = new PresenceMessage();
 
         /// <summary>The local tool preview, its encoded bytes (reused every send) and the reader of the game's tool output.</summary>
@@ -61,6 +64,7 @@ namespace SkylineTogether.Presence
         private OverlayRenderSystem _overlay;
         private RaycastSystem _raycast;
         private CameraUpdateSystem _camera;
+        private TerrainSystem _terrain;
         private ToolSystem _tools;
         private PrefabRankIndex _ranks;
         private PresenceController _subscribed;
@@ -72,6 +76,7 @@ namespace SkylineTogether.Presence
             _overlay = World.GetOrCreateSystemManaged<OverlayRenderSystem>();
             _raycast = World.GetOrCreateSystemManaged<RaycastSystem>();
             _camera = World.GetOrCreateSystemManaged<CameraUpdateSystem>();
+            _terrain = World.GetOrCreateSystemManaged<TerrainSystem>();
             _tools = World.GetOrCreateSystemManaged<ToolSystem>();
             _ranks = new PrefabRankIndex(Mod.Log);
             try
@@ -179,7 +184,7 @@ namespace SkylineTogether.Presence
             byte toolByte = PresenceToolKind.Pack(kind, hit);
             if (!hit) position = default;
             if (!presence.Throttle.Due(presence.Now)) return; // the preview below is gathered at the send rate only
-            int previewLength = CapturePreview(presence, kind);
+            int previewLength = CapturePreview(presence, kind, tool);
             ulong previewHash = previewLength > 0 ? XxHash64.Hash(_previewBytes.Buffer, 0, previewLength) | 1UL : 0UL;
             if (!presence.Throttle.ShouldSend(presence.Now, position.x, position.y, position.z, toolByte, rank, brush, previewHash)) return;
             _outgoing.Preview = _previewBytes.Buffer;
@@ -199,7 +204,7 @@ namespace SkylineTogether.Presence
         /// Captures and encodes the local tool's preview into <see cref="_previewBytes"/>; returns its
         /// length (0: none — no building tool, a viewer, the feature off, or nothing in progress). Never throws.
         /// </summary>
-        private int CapturePreview(PresenceController presence, PresenceTool kind)
+        private int CapturePreview(PresenceController presence, PresenceTool kind, ToolBaseSystem tool)
         {
             _previewBytes.Reset();
             _preview.Clear();
@@ -208,6 +213,7 @@ namespace SkylineTogether.Presence
             try
             {
                 _capture.Capture(_preview);
+                if (tool is NetToolSystem net) _preview.Elevation = net.elevation; // the elevation steps (0 on the ground)
                 return Captured(presence, ToolPreviewCodec.Encode(_preview, _previewBytes));
             }
             catch (Exception ex)
@@ -263,6 +269,14 @@ namespace SkylineTogether.Presence
             OverlayRenderSystem.Buffer buffer = default;
             bool haveBuffer = false;
             bool showPreviews = Diagnostics.Features.Previews.IsAvailable && (Mod.Settings == null || Mod.Settings.ShowBuildingPreviews);
+            TerrainHeightData terrain = default;
+            bool haveTerrain = false;
+            float2 facing = default;
+            if (camera != null)
+            {
+                Vector3 forward = camera.transform.forward;
+                facing = new float2(forward.x, forward.z);
+            }
             foreach (PresenceTable.Entry e in entries)
             {
                 string name = presence.NameOf(e.Peer);
@@ -286,7 +300,12 @@ namespace SkylineTogether.Presence
                             previewWriters.Complete();
                             haveBuffer = true;
                         }
-                        DrawPreview(buffer, e.ShownPreview, rgba, camera);
+                        if (!haveTerrain)
+                        {
+                            terrain = _terrain.GetHeightData(); // the main-thread copy (only written on the main thread)
+                            haveTerrain = true;
+                        }
+                        DrawPreview(buffer, e.ShownPreview, rgba, camera, facing, ref terrain);
                     }
                 }
                 else if (!e.ShownPreview.IsEmpty)
@@ -335,13 +354,13 @@ namespace SkylineTogether.Presence
         }
 
         /// <summary>One remote preview; a failure turns the previews off, never the cursors.</summary>
-        private static void DrawPreview(OverlayRenderSystem.Buffer buffer, ToolPreview preview, uint rgba, Camera camera)
+        private static void DrawPreview(OverlayRenderSystem.Buffer buffer, ToolPreview preview, uint rgba, Camera camera, float2 facing, ref TerrainHeightData terrain)
         {
             try
             {
                 PreviewPoint anchor = preview.PointAt(0, 0);
                 float distance = math.distance((float3)camera.transform.position, new float3(anchor.X, anchor.Y, anchor.Z));
-                ToolPreviewRenderer.Draw(buffer, preview, ToColor(rgba, 1f), distance);
+                ToolPreviewRenderer.Draw(buffer, preview, ToColor(rgba, 1f), distance, facing, ref terrain);
             }
             catch (Exception ex)
             {
@@ -353,9 +372,10 @@ namespace SkylineTogether.Presence
         {
             int prefab = e.Prefab.IsNone ? -1 : e.Prefab.Value;
             byte tool = (byte)e.Tool;
-            if (_activity.TryGetValue(e.Peer.Value, out var c) && c.Tool == tool && c.Prefab == prefab) return c.Text;
+            int elevation = PresenceToolKind.ElevationKey(e.Preview.Elevation);
+            if (_activity.TryGetValue(e.Peer.Value, out var c) && c.Tool == tool && c.Prefab == prefab && c.Elevation == elevation) return c.Text;
             string text = Activity(e);
-            _activity[e.Peer.Value] = (tool, prefab, text);
+            _activity[e.Peer.Value] = (tool, prefab, elevation, text);
             return text;
         }
 
@@ -364,7 +384,9 @@ namespace SkylineTogether.Presence
             string verb = PresenceToolKind.Verb(e.Tool);
             if (verb == null) return "";
             string title = e.Prefab.IsNone ? null : _ranks.TitleOf(World, e.Prefab.Value);
-            return string.IsNullOrEmpty(title) ? verb : verb + " " + title;
+            string text = string.IsNullOrEmpty(title) ? verb : verb + " " + title;
+            string elevation = PresenceToolKind.ElevationLabel(e.Preview.Elevation);
+            return elevation == null ? text : text + " (" + elevation + ")";
         }
 
         private void PruneShown(IReadOnlyList<PresenceTable.Entry> entries)
