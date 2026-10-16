@@ -62,6 +62,20 @@ All notable changes to this project are documented in this file. The format is b
   large city takes longer than the check waits before it repairs an agent. The host now watches the membership
   components' chunk change versions and streams a move within a frame or two, and a household's member list counts as
   a key link like the citizen's own household.
+- **Crash when a joining player bulldozes (elevated) roads**: the host's game (and earlier the joining player's) crashed
+  natively after a joining player bulldozed an elevated road (bulldozing often merges the remaining segments of a node
+  into a new one). A change could reach the host with a new road segment that did not name its nodes (it was written
+  before its new node had an id) or with a node removed under a segment that stays, and the host applied it; its
+  safety net only left such a segment untagged, which the game's jobs still follow. Now:
+  - the joining player binds every new object of a change before writing any of it, keeps the ids it deletes until the
+    change is sent, and checks its own change before sending it (a log line names what would dangle);
+  - the host checks every change of another player against its own city after the change (every kept road segment
+    ends at two existing nodes, a removed node takes all its segments with it, owned objects keep their owner) and
+    refuses it as a whole if anything would dangle, so it is rolled back on the player's side (`Invalid` or
+    `Conflict`, with one log line naming the problem);
+  - both sides apply the host's updates with the same rule: a new segment without valid nodes is not created, and a
+    segment or object that would dangle (its node or owner gone) is removed cleanly instead of being kept, then asked
+    for again.
 
 ## [0.1.0-alpha.2] - 2026-10-16
 

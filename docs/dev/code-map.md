@@ -60,7 +60,8 @@ Almost all Core code is reached by the game layer; the exceptions (test fakes an
                                                                   SyncController.CaptureClient
  SyncController.ApplyProposal  ◀───────────────────────────────── MessageKind.Proposal (entity records, intents)
    ├ rate limit (120/s, burst 240)
-   ├ Validate: role, conflicts (base ledger epoch), rules
+   ├ Validate: role, conflicts (base ledger epoch), referential integrity
+   │   (StructureIntegrity: nothing left dangling), rules
    ├ refused → RejectProposal (the client is rolled back)
    └ accepted → EntityCodec.Apply; captured and broadcast next frame
 ```

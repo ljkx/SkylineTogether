@@ -142,7 +142,7 @@ Core types declare their thread with `[ThreadAffinity]`
 | `Replay` | Solo test: recording format, `RecorderPeer`, `PlaybackTransport`, checkpoints, `ReplayChecker`, `ReplayVerdict` |
 | `Scheduling` | `TokenBucket`, `PeerByteBudget`, `CoalescingQueue` + `LinkBudget`, `AttentionPlanner`, `AgentPlanner`, `RollingScan`, `SpatialHashGrid`, infoview topics |
 | `Session` | `SessionHost`, `SessionClient`, `PeerChannel`, `JoinSecurity` (bans, join policy, password lockout, moderation rules), `SessionCrypto`, `RejoinController`, `JoinTimeline`, presence and tool-preview codecs, mod-list comparison |
-| `Sync` | `SyncBatch` (the replication record format), `NetIdAllocator`, `ProposalGuard` (rate limits, conflict ledger, rules), apply acknowledgements, global-state, terrain, water, mover, flow-status, integrity and agent records |
+| `Sync` | `SyncBatch` (the replication record format), `NetIdAllocator`, `ProposalGuard` (rate limits, conflict ledger, rules), `StructureIntegrity` (referential integrity of proposals and batches), apply acknowledgements, global-state, terrain, water, mover, flow-status, integrity and agent records |
 | `Testing` | Fakes for tests (`ManualClock`, `ListLog`, `NullLog`, `DeterministicRandom`) and `StopwatchClock` |
 | `Transport` | `PeerOutbox`, `SendRateController`, blob transfer, `BackgroundPump`, `CompositeTransport`, loopback and network-simulator transports (tests, solo test) |
 
@@ -609,19 +609,36 @@ then simulation values, flow status, agent values, event fix-ups and traffic lig
 spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCodec.cs) does, per batch:
 
 0. prefab bindings and channel records (id ranges, cost, clock); a host applying a client's batch ignores every
-   record kind that `SyncBatch.AcceptedFromClient` does not allow;
+   record kind that `SyncBatch.AcceptedFromClient` does not allow. Before the apply, a client judges a host batch that
+   deletes or writes nodes and edges with the host's [referential-integrity rule](#host-validation-and-commit) on its
+   own world (`CheckHostBatch`): the host's world is consistent, so a problem means this client differs (an edge of its
+   own prediction at a node the host deleted, a node it lacks). It logs one line (`host batch would leave dangling
+   references here ...`, at most every 10 s), the steps below keep nothing dangling, and the ids involved are asked for
+   again (`IntegritySync.RequestRepair`);
 1. despawns of the batch first (their entities count as dying for every reference read below; a despawn before a
    spawn of the same id is applied first);
 2. creates the entities of spawns, from the prefab's own archetype, all before any value is written, so references
    inside the batch resolve; records of missing prefabs are skipped and reported ([missing assets](#mod-compatibility));
-3. drops new entities whose structural references (owner, edge nodes, parent) do not resolve here;
+3. drops new entities whose structural references (owner, edge nodes, parent) do not resolve here, a new edge whose
+   `Edge` value is missing or presence only (the sender could not name a node) or does not name two nodes that exist and
+   are not being deleted, and a new entity whose owner travelled as presence only; new entities that reference a dropped
+   one go too;
 4. reconciles the replicated component set (complete records remove components the host no longer has);
 5. writes the values; enabled bits of enableable components;
-6. tags: created entities carry `Created`/`Updated` from their archetype; edits get `Updated` with the net closure (an
-   edge's nodes and their edges); edges whose nodes are missing stay untagged; agents are never tagged;
-7. applies despawns with `Deleted`, and on clients
+6. applies despawns with `Deleted`, and on clients
    [`DeletionCascade`](../src/SkylineTogether/Sync/DeletionCascade.cs) removes references to the despawned entity
-   (renters, workers, students, ...) that the gated vanilla cleanup systems would have removed.
+   (renters, workers, students, ...) that the gated vanilla cleanup systems would have removed. A despawned node takes
+   every edge that still ends at it and that the batch does not despawn itself with it;
+7. **never keeps a dangling entity**: every entity of the touch set (the records' entities and their net closure) that
+   would dangle after the batch, an edge whose start or end node is missing, no node or being deleted, or an entity
+   whose owner is gone, is deleted the way a despawn is (references made safe for the game's reference systems, the
+   client's removal clean-up, a client unbinds the id and asks for it again; the host keeps the binding, so its capture
+   broadcasts the despawn), repeatedly, since a deletion adds its surviving node's closure. The game's Burst jobs follow
+   `Edge`, `ConnectedEdge` and `Owner` unchecked whether an entity is tagged or not, so leaving such an edge untagged
+   (as earlier builds did) still crashed the game. Middle connections (`ConnectedNode`) of a kept edge to a node that is
+   gone are dropped;
+8. tags: created entities carry `Created`/`Updated` from their archetype; edits get `Updated` with the net closure (an
+   edge's nodes and their edges); agents are never tagged.
 
 The game's Modification systems then rebuild geometry, lanes, zone blocks and sub-objects. On a client the applied
 entities are recorded so its own capture never proposes them back: their converged state becomes the baseline of the
@@ -642,6 +659,20 @@ mod tool is active, and untagged mod state. It writes them as `Spawn`/`Upsert`/`
 `Cost` record (what the local apply charged) and a `ProposalHeader` (sequence number, base ledger epoch, flags), and
 sends the batch as `MessageKind.Proposal`. New entities get ids from ranges the host granted (4096 per grant; the
 client asks for more below 1024, with backoff).
+
+The capture works in two passes: every new entity of the frame is bound first, then the records are written, so a new
+edge always names its new nodes (written in chunk order, an edge whose node came in a later chunk sent its `Edge` value
+as presence only, and the host created an edge with null nodes). The ids the proposal deletes stay bound until it is
+written and checked. Before sending, the client judges its own proposal with the host's
+[referential-integrity rule](#host-validation-and-commit) on its own world (where the change is already applied;
+`CheckOwnProposal`); a proposal that fails is still sent (the host refuses it and its rollback restores the host's
+state) and the client logs `own change <seq> would leave dangling references on the host (<reason>; ...): <problems>`.
+
+A bulldozer proposal is complete when every deleted node comes with the deletion of every edge that ends at it: the
+game deletes a node left without edges and merges the two remaining edges of a node into one new edge (node reduction:
+both edges and the node are deleted, the merged edge is created), and every one of those entities is in the proposal.
+`ConnectedEdge` lists, lanes, pillars and other prefab sub-objects are derived: every peer's own systems rebuild them
+from the edges and nodes, and the game's sub-object system deletes them with their owner, so they never travel.
 
 Actions whose vanilla handlers write without a capturable tag travel as intents ([player actions](#player-actions));
 UI edits of global state as global-state deltas ([global state](#global-state-and-panels)).
@@ -677,6 +708,18 @@ line state survives.
      no-op); a conflict is an entity whose last authored change (by somebody else) is newer than the proposal's base
      epoch ([`AuthoredLedger`](../src/SkylineTogether.Core/Sync/ProposalGuard.cs)); records naming a prefab the host
      lacks are refused (`HostError`);
+   - **referential integrity**, judged on the host's world after the proposal (Core:
+     [`StructureIntegrity`](../src/SkylineTogether.Core/Sync/StructureIntegrity.cs), the records read with
+     `EntityCodec.PeekStructure`, the host's facts from [`StructureFacts`](../src/SkylineTogether/Sync/StructureFacts.cs)):
+     every kept edge ends at two nodes that exist and are not deleted, or that the proposal creates (an edit without the
+     `Edge` value keeps the host's nodes); a new edge must name its nodes; every node the proposal deletes leaves no edge
+     behind that still ends there (the proposal deletes it or re-points it); every kept entity's owner survives and a new
+     one's owner is named. A proposal that fails is refused as a whole, never applied partially or sanitized:
+     `Invalid` when it contradicts itself (an edge kept at a node it deletes, a new edge or owned entity whose reference
+     the sender could not name), `Conflict` when the host's world differs (a node or owner the host lacks, an edge the
+     host has at a deleted node and the client did not know of). The refusal line names the problems, for example
+     `peer:1: refused proposal 17 (Invalid; 9 entities, 0 zone blocks): would leave dangling references: new edge #835
+     names no nodes (its Edge value was not sent: the sender could not name a node)`;
    - **placement** ([below](#placement-checks)): prefab classes and unlocks, owned map tiles, geometry;
    - **money**: the cost must be affordable unless money is unlimited.
 3. **Apply** with the same `EntityCodec.Apply`. On existing entities a proposal never writes the host-owned types
@@ -692,8 +735,8 @@ line state survives.
 4. **Refuse**: a `ProposalResult` record and a rollback to the originator: every touched entity as the host has it
    (alive: full record; unknown: despawn, which removes the client's predicted creations) and the host's cells of every
    painted zone block. The client shows one toast per reason and second in its own language
-   (`st.toast.rejected` with the reason's `st.reject.*` text, `ProposalRules.LocaleKey`). Rate, size, malformed and
-   host-only refusals count as violations (`ViolationTracker`); 20 within 10 s kick the player. Placement, conflict,
+   (`st.toast.rejected` with the reason's `st.reject.*` text, `ProposalRules.LocaleKey`). Rate, size, malformed
+   (including a self-contradicting referential-integrity refusal) and host-only refusals count as violations (`ViolationTracker`); 20 within 10 s kick the player. Placement, conflict,
    money and permission refusals never count (a vanilla client meets them in ordinary play, or through a mod the
    rules do not know). A peer whose proposals keep failing to apply is removed (`FeatureHealth` per peer).
 
@@ -1234,7 +1277,8 @@ the most ids alive at once plus the quarantine and are released at session end.
   limits before decompression, record and component counts in `SyncBatch`) and throws `DecodeException`; a malformed
   envelope disconnects the sender, a batch that fails to apply counts against the sender until it is removed.
 - Proposals: record kinds (`AcceptedFromClient`), a mandatory header, role permissions, size, the age of the base
-  epoch, host-only families, id grants, existence and conflicts, prefab classes and unlocks, owned map tiles, cheap
+  epoch, host-only families, id grants, existence and conflicts, referential integrity of the world after the proposal
+  (edge nodes, deleted nodes, owners), prefab classes and unlocks, owned map tiles, cheap
   geometry limits ([placement checks](#placement-checks)), money and cost bounds, host-owned types, unknown prefabs,
   float sanity (including water sources); rate limits and violation kicks ([validation](#host-validation-and-commit)). Intents are permission-checked, map tiles priced by the
   host; global-state edits are permission- and range-checked; terrain stamps and paint patches are rate-limited and
