@@ -35,7 +35,7 @@ No port forwarding is needed for Steam joins. Direct IP connections are optional
 ## Requirements and compatibility
 
 - Steam version of the game on Windows, with Steam running.
-- Every player needs the **same version of Skyline Together** (the panel shows a build id: it must be the same on every PC), the **same game version** and, by default, the **same code mods** in the same versions. If the mods differ, the join screen lists exactly what to enable, disable or update, and the host can let players join anyway.
+- Every player needs the **same version of Skyline Together** (the panel shows a build id: it must be the same on every PC), the **same game version** and, by default, the **same code mods** in the same versions. If the mods differ, the join screen lists exactly what to enable, disable or update. The host can let players join anyway, except when a missing mod stores data in the city (loading the city without it would crash the game).
 - Mods that only change your own screen (translations, tooltips, icon libraries, overlays) may differ. Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It have dedicated support; other code mods are analysed automatically.
 - Use the same asset subscriptions on every PC. Objects whose asset a player lacks are left out on that player's game.
 - **Not compatible with other multiplayer mods.** Disable them.
