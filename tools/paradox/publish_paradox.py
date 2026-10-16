@@ -1,0 +1,266 @@
+"""Checks and uploads Skyline Together to Paradox Mods with the game's own ModPublisher (no NuGet, no toolchain targets).
+
+Usage (repo root, after tools/build.sh --package):
+
+  python tools/paradox/publish_paradox.py check        validate everything and print the ModPublisher command (default)
+  python tools/paradox/publish_paradox.py Publish      first upload of a new mod (ModId must be empty)
+  python tools/paradox/publish_paradox.py NewVersion   upload a new version (ModId set, new ModVersion and ChangeLog)
+  python tools/paradox/publish_paradox.py Update       update only the page (texts, images, tags, links) from the config
+
+  options:  --dry-run        do everything except running ModPublisher
+            --yes            do not ask before uploading
+            --game-dir <p>   the game's install folder (default: env GameDir, else the Steam path of Directory.Build.props)
+            --publisher <p>  ModPublisher.exe (default: env CSII_MODPUBLISHERPATH, else the one inside the game folder)
+            --zip <p>        the release zip to upload (default: dist/SkylineTogether-<Version>.zip)
+
+What it does (docs/dev/publishing-paradox-mods.md):
+  1. reads <Version> from Directory.Build.props and src/SkylineTogether/Properties/PublishConfiguration.xml and checks
+     the required fields, ModVersion == Version, the ModId rule of the command, a ChangeLog for NewVersion, a CHANGELOG.md
+     section for the version, and that the thumbnail and screenshots exist;
+  2. extracts the content folder dist/paradox/SkylineTogether from the release zip (the exact files that were tested and
+     that the GitHub setup installs, without the zip's README.txt), so a Paradox Mods player and a GitHub player have the
+     same build id; prints that build id;
+  3. scans the content folder and the configuration for personal data (tools/check_personal_data.py patterns);
+  4. writes dist/paradox/PublishConfiguration.xml: the configuration with absolute image paths and without the
+     indentation of multi-line texts;
+  5. runs  ModPublisher.exe <command> dist/paradox/PublishConfiguration.xml -c dist/paradox/SkylineTogether -v
+     (the same arguments as the toolchain's Mod.targets). ModPublisher logs in with the account of the running game, so
+     start the game and log in to Paradox first. It needs the .NET 6 runtime; without one, DOTNET_ROLL_FORWARD=Major
+     lets it run on a newer runtime.
+  After a successful Publish, the new mod id is written into the ModId of PublishConfiguration.xml (commit it).
+"""
+import argparse
+import hashlib
+import importlib.util
+import os
+import re
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+import zipfile
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+PROJECT = os.path.join(ROOT, 'src', 'SkylineTogether')
+CONFIG = os.path.join(PROJECT, 'Properties', 'PublishConfiguration.xml')
+DIST = os.path.join(ROOT, 'dist', 'paradox')
+CONTENT = os.path.join(DIST, 'SkylineTogether')
+EFFECTIVE = os.path.join(DIST, 'PublishConfiguration.xml')
+REQUIRED_FILES = ['SkylineTogether.dll', 'SkylineTogether.Core.dll', 'SkylineTogether.mjs']
+LEFT_OUT = {'README.txt'}  # the zip's manual-install notes; Paradox Mods installs by itself
+TOOLCHAIN = [
+    ('Cities2_Data', 'Content', 'Game', '.ModdingToolchain', 'ModPublisher', 'ModPublisher.exe'),
+    ('Cities2_Data', 'StreamingAssets', '~Tooling~', 'ModPublisher', 'ModPublisher.exe'),
+]
+COMMANDS = {'check': 'check', 'publish': 'Publish', 'newversion': 'NewVersion', 'update': 'Update',
+            'publishnewmod': 'Publish', 'publishnewversion': 'NewVersion', 'updatepublishedconfiguration': 'Update'}
+
+
+def fail(msg):
+    sys.exit('PUBLISH CHECK FAILED: ' + msg)
+
+
+def props_value(name):
+    text = open(os.path.join(ROOT, 'Directory.Build.props'), encoding='utf-8').read()
+    m = re.search(r'<%s(?:\s[^>]*)?>([^<]+)</%s>' % (name, name), text)
+    return m.group(1).strip() if m else None
+
+
+def read_config():
+    try:
+        tree = ET.parse(CONFIG)
+    except (OSError, ET.ParseError) as e:
+        fail('cannot read %s: %s' % (os.path.relpath(CONFIG, ROOT), e))
+    root = tree.getroot()
+
+    def value(tag):
+        el = root.find(tag)
+        if el is None:
+            return ''
+        return (el.get('Value') if el.get('Value') is not None else (el.text or '')).strip()
+
+    return root, value
+
+
+def check_config(command, version):
+    root, value = read_config()
+    problems = []
+    for tag in ('DisplayName', 'ShortDescription', 'LongDescription', 'Thumbnail', 'ModVersion', 'GameVersion'):
+        if not value(tag):
+            problems.append(tag + ' is empty')
+    tags = [t.get('Value', '').strip() for t in root.findall('Tag')]
+    if not any(tags):
+        problems.append('at least one Tag is needed (ModPublisher refuses otherwise)')
+    if value('ModVersion') != version:
+        problems.append('ModVersion "%s" differs from <Version> "%s" in Directory.Build.props' % (value('ModVersion'), version))
+    mod_id = value('ModId')
+    if command == 'Publish' and mod_id not in ('', '0'):
+        problems.append('ModId is set (%s): a first upload needs it empty; use NewVersion or Update for the existing mod' % mod_id)
+    if command in ('NewVersion', 'Update') and not re.fullmatch(r'\d+', mod_id):
+        problems.append('ModId must be the id of the published mod for %s (it is "%s")' % (command, mod_id))
+    if command == 'NewVersion' and not value('ChangeLog'):
+        problems.append('NewVersion needs a ChangeLog')
+    changelog = open(os.path.join(ROOT, 'CHANGELOG.md'), encoding='utf-8').read()
+    if not re.search(r'^## \[%s\]' % re.escape(version), changelog, re.M):
+        problems.append('CHANGELOG.md has no "## [%s]" section: move the Unreleased entries to it first' % version)
+    images = [value('Thumbnail')] + [s.get('Value', '').strip() for s in root.findall('Screenshot') if s.get('Value', '').strip()]
+    for rel in images:
+        if rel and not os.path.isfile(os.path.join(PROJECT, rel)):
+            problems.append('image not found: src/SkylineTogether/' + rel)
+    for tag in ('LongDescription', 'ChangeLog'):
+        el = root.find(tag)
+        if el is not None and el.text and re.search(r'\n[ \t]+\S', el.text):
+            problems.append(tag + ' has indented lines (leading spaces break the Paradox Mods markdown)')
+    if problems:
+        fail('\n  - ' + '\n  - '.join(problems))
+    print('config ok: %s %s, game %s, %d screenshot(s), tags %s, ModId "%s", access %s'
+          % (value('DisplayName'), value('ModVersion'), value('GameVersion'), len(images) - 1, tags, mod_id, value('AccessLevel') or 'default'))
+    return images
+
+
+def stage_content(zip_path):
+    if not os.path.isfile(zip_path):
+        fail('no %s; run tools/build.sh --package first (and test exactly that build)' % os.path.relpath(zip_path, ROOT))
+    if os.path.isdir(CONTENT):
+        shutil.rmtree(CONTENT)
+    os.makedirs(CONTENT)
+    with zipfile.ZipFile(zip_path) as z:
+        for name in z.namelist():
+            parts = name.replace('\\', '/').split('/')
+            if len(parts) < 2 or parts[0] != 'SkylineTogether' or not parts[-1] or name.endswith('/'):
+                continue
+            rel = '/'.join(parts[1:])
+            if rel in LEFT_OUT or '..' in parts:
+                continue
+            target = os.path.join(CONTENT, *parts[1:])
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, 'wb') as f:
+                f.write(z.read(name))
+    for f in REQUIRED_FILES:
+        if not os.path.isfile(os.path.join(CONTENT, f)):
+            fail('the release zip has no SkylineTogether/' + f)
+    build =hashlib.sha256(open(os.path.join(CONTENT, 'SkylineTogether.dll'), 'rb').read()).hexdigest()[:12]
+    print('content: %s (%s)' % (os.path.relpath(CONTENT, ROOT), ', '.join(sorted(os.listdir(CONTENT)))))
+    print('build id: %s  (the same id the GitHub setup prints; players of both installs can play together)' % build)
+    return build
+
+
+def scan_personal_data():
+    spec = importlib.util.spec_from_file_location('check_personal_data', os.path.join(ROOT, 'tools', 'check_personal_data.py'))
+    checks = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checks)
+    found = []
+    files = [os.path.join(dp, f) for dp, _, fs in os.walk(CONTENT) for f in fs] + [CONFIG]
+    for path in files:
+        data = open(path, 'rb').read()
+        name = os.path.relpath(path, ROOT)
+        for text in (data.decode('latin-1'), data[len(data) % 2:].decode('utf-16-le', errors='ignore')):
+            for line in text.splitlines():
+                checks.scan_line(name, line, found)
+    if found:
+        for f in sorted(set(found)):
+            print(f)
+        fail('personal data in the upload (see above)')
+    print('personal-data scan: clean (%d files)' % len(files))
+
+
+def write_effective_config():
+    text = open(CONFIG, encoding='utf-8').read()
+
+    def absolute(m):
+        path = os.path.abspath(os.path.join(PROJECT, m.group(2)))
+        return m.group(1) + path.replace('&', '&amp;').replace('"', '&quot;') + '"'
+
+    text = re.sub(r'(<(?:Thumbnail|Screenshot)\s+Value=")([^"]+)"', absolute, text)
+
+    def dedent(m):
+        body = '\n'.join(line.strip() for line in m.group(3).strip().splitlines())
+        return m.group(1) + '\n' + body + '\n' + m.group(4)
+
+    text = re.sub(r'(<(LongDescription|ChangeLog)>)(.*?)(</\2>)', dedent, text, flags=re.S)
+    os.makedirs(DIST, exist_ok=True)
+    with open(EFFECTIVE, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(text)
+    ET.parse(EFFECTIVE)  # still well-formed
+    print('config for ModPublisher: ' + os.path.relpath(EFFECTIVE, ROOT))
+
+
+def find_publisher(explicit, game_dir):
+    candidates = []
+    if explicit:
+        candidates.append(explicit)
+    if os.environ.get('CSII_MODPUBLISHERPATH'):
+        candidates.append(os.environ['CSII_MODPUBLISHERPATH'])
+    game = game_dir or os.environ.get('GameDir') or props_value('GameDir')
+    if game:
+        for parts in TOOLCHAIN:
+            candidates.append(os.path.join(game, *parts))
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    fail('ModPublisher.exe not found (looked at: %s). Pass --publisher or --game-dir.' % '; '.join(candidates))
+
+
+def dotnet_env():
+    env = dict(os.environ)
+    try:
+        out = subprocess.run(['dotnet', '--list-runtimes'], capture_output=True, text=True, check=False).stdout
+    except OSError:
+        out = ''
+    if not re.search(r'^Microsoft\.NETCore\.App 6\.', out, re.M):
+        env['DOTNET_ROLL_FORWARD'] = 'Major'
+        print('no .NET 6 runtime: ModPublisher (built for .NET 6) runs with DOTNET_ROLL_FORWARD=Major on a newer runtime')
+    return env
+
+
+def main():
+    ap = argparse.ArgumentParser(description='Check and upload Skyline Together to Paradox Mods.')
+    ap.add_argument('command', nargs='?', default='check')
+    ap.add_argument('--dry-run', action='store_true')
+    ap.add_argument('--yes', action='store_true')
+    ap.add_argument('--game-dir')
+    ap.add_argument('--publisher')
+    ap.add_argument('--zip')
+    args = ap.parse_args()
+    command = COMMANDS.get(args.command.lower())
+    if not command:
+        fail('unknown command "%s" (check, Publish, NewVersion, Update)' % args.command)
+
+    version = props_value('Version')
+    if not version:
+        fail('no <Version> in Directory.Build.props')
+    print('Skyline Together %s -> Paradox Mods (%s)' % (version, command))
+    check_config(command if command != 'check' else 'NewVersion-or-Publish', version)
+    stage_content(args.zip or os.path.join(ROOT, 'dist', 'SkylineTogether-%s.zip' % version))
+    scan_personal_data()
+    write_effective_config()
+    publisher = find_publisher(args.publisher, args.game_dir)
+    env = dotnet_env()
+    shown = command if command != 'check' else '<Publish|NewVersion|Update>'
+    cmd = [publisher, shown, EFFECTIVE, '-c', CONTENT, '-v']
+    print('ModPublisher command:\n  ' + ' '.join('"%s"' % c if ' ' in c else c for c in cmd))
+    if command == 'check' or args.dry_run:
+        print('not uploading (%s)' % ('check' if command == 'check' else '--dry-run'))
+        return
+    print('\nModPublisher logs in with the Paradox account of the running game: start Cities: Skylines II and log in first.')
+    if not args.yes:
+        answer = input('Upload Skyline Together %s to Paradox Mods now (%s)? Type yes: ' % (version, command))
+        if answer.strip().lower() != 'yes':
+            print('cancelled')
+            return
+    proc = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
+    sys.stdout.write(proc.stdout)
+    sys.stderr.write(proc.stderr)
+    if proc.returncode != 0:
+        fail('ModPublisher exited with %d' % proc.returncode)
+    m = re.search(r'Mod published with Id=\s*(\d+)', proc.stdout)
+    if command == 'Publish' and m:
+        text = open(CONFIG, encoding='utf-8').read()
+        text = re.sub(r'<ModId Value="[^"]*"', '<ModId Value="%s"' % m.group(1), text, count=1)
+        with open(CONFIG, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(text)
+        print('\nPublished as mod %s; written into ModId of %s. Commit that change.' % (m.group(1), os.path.relpath(CONFIG, ROOT)))
+
+
+if __name__ == '__main__':
+    main()

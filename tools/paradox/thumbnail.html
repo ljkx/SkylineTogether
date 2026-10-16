@@ -1,0 +1,127 @@
+<!doctype html>
+<!--
+  The Paradox Mods thumbnail of Skyline Together (src/SkylineTogether/Properties/Thumbnail.png), drawn with shapes only
+  (no game assets). Rendered at 1024 x 1024 by tools/paradox/make_images.py with a headless Edge or Chrome. The skyline is
+  generated from a fixed seed, so every render is the same. Colours are the UI module's (ui/SkylineTogether.mjs):
+  navy panels, the accent blue and the warm orange of a second player.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Skyline Together thumbnail</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #0b1622; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<svg id="art" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08111b"/>
+      <stop offset="0.55" stop-color="#11273a"/>
+      <stop offset="1" stop-color="#1b4562"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4bc3f1" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#4bc3f1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="warm" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffa42d" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffa42d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#sky)"/>
+  <ellipse cx="330" cy="760" rx="520" ry="300" fill="url(#glow)"/>
+  <ellipse cx="760" cy="780" rx="420" ry="260" fill="url(#warm)"/>
+  <g id="stars"></g>
+  <g id="back"></g>
+  <g id="link"></g>
+  <g id="front"></g>
+  <g id="rings"></g>
+  <g id="title" font-family="Bahnschrift, 'Segoe UI', Arial, sans-serif" text-anchor="middle">
+    <text x="512" y="236" font-size="148" font-weight="700" letter-spacing="10" fill="#f0fbff">SKYLINE</text>
+    <text x="512" y="378" font-size="148" font-weight="700" letter-spacing="10" fill="#4bc3f1">TOGETHER</text>
+    <rect x="392" y="420" width="240" height="4" rx="2" fill="#f0fbff" fill-opacity="0.35"/>
+    <text x="512" y="476" font-size="34" font-weight="400" letter-spacing="9" fill="#f0fbff" fill-opacity="0.82">CO-OP MULTIPLAYER</text>
+  </g>
+</svg>
+<script>
+  // a small deterministic generator (mulberry32), so the skyline is identical in every render
+  let seed = 20261016;
+  function rnd() {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  const NS = "http://www.w3.org/2000/svg";
+  function el(parent, name, attrs) {
+    const e = document.createElementNS(NS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    document.getElementById(parent).appendChild(e);
+    return e;
+  }
+  const BLUE = "#4bc3f1", ORANGE = "#ffa42d";
+
+  // stars: sparse, faint, only in the upper sky
+  for (let i = 0; i < 70; i++) {
+    el("stars", "circle", { cx: (rnd() * 1024).toFixed(1), cy: (rnd() * 560).toFixed(1), r: (0.8 + rnd() * 1.4).toFixed(2), fill: "#f0fbff", "fill-opacity": (0.15 + rnd() * 0.35).toFixed(2) });
+  }
+
+  // one row of buildings from x0 to x1; heights between hMin and hMax above the ground (1024)
+  function row(layer, color, hMin, hMax, wMin, wMax, lit, litColor) {
+    const tops = [];
+    let x = -20;
+    while (x < 1044) {
+      const w = Math.round(wMin + rnd() * (wMax - wMin));
+      const center = x + w / 2;
+      // taller in the middle third, so the title sits above a skyline that peaks under it
+      const peak = 1 - Math.min(1, Math.abs(center - 512) / 560);
+      const h = Math.round(hMin + (hMax - hMin) * (0.35 + 0.65 * rnd()) * (0.55 + 0.45 * peak));
+      const y = 1024 - h;
+      el(layer, "rect", { x: x, y: y, width: w, height: h + 2, fill: color });
+      // roof details: a setback or an antenna on some towers
+      if (rnd() < 0.35 && w > 40) el(layer, "rect", { x: x + w * 0.25, y: y - 18, width: w * 0.5, height: 20, fill: color });
+      if (rnd() < 0.18) el(layer, "rect", { x: x + w / 2 - 2, y: y - 46, width: 4, height: 48, fill: color });
+      if (lit > 0) {
+        const c = typeof litColor === "function" ? litColor(center) : litColor;
+        for (let wy = y + 16; wy < 1004; wy += 22) {
+          for (let wx = x + 9; wx < x + w - 14; wx += 17) {
+            if (rnd() < lit) el(layer, "rect", { x: wx, y: wy, width: 8, height: 11, rx: 1, fill: c, "fill-opacity": (0.55 + rnd() * 0.45).toFixed(2) });
+          }
+        }
+      }
+      tops.push({ x: center, y: y });
+      x += w + Math.round(rnd() * 6);
+    }
+    return tops;
+  }
+
+  row("back", "#18324a", 260, 520, 46, 96, 0.10, "#7fa6c2");
+  // the front row: one player's lights on the left, the other's on the right, mixed around the middle
+  const tops = row("front", "#0a131d", 170, 400, 54, 118, 0.22, function (cx) {
+    const t = (cx - 330) / 360;
+    return rnd() < Math.max(0, Math.min(1, t)) ? ORANGE : BLUE;
+  });
+
+  // two presence rings (like the in-game cursors of two players) over a building on each side, joined by a thin arc
+  function pick(target) {
+    let best = tops[0];
+    for (const t of tops) if (Math.abs(t.x - target) < Math.abs(best.x - target)) best = t;
+    return best;
+  }
+  const a = pick(300), b = pick(724);
+  const ay = a.y - 70, by = b.y - 70;
+  const mx = (a.x + b.x) / 2, my = Math.min(ay, by) - 90;
+  el("link", "path", { d: `M ${a.x} ${ay} Q ${mx} ${my} ${b.x} ${by}`, fill: "none", stroke: "#f0fbff", "stroke-opacity": 0.45, "stroke-width": 3, "stroke-dasharray": "2 12", "stroke-linecap": "round" });
+  function ring(x, y, color) {
+    el("rings", "circle", { cx: x, cy: y, r: 34, fill: color, "fill-opacity": 0.16, stroke: color, "stroke-width": 8 });
+    el("rings", "circle", { cx: x, cy: y, r: 7, fill: color });
+    el("rings", "line", { x1: x, y1: y + 42, x2: x, y2: y + 64, stroke: color, "stroke-width": 4, "stroke-linecap": "round", "stroke-opacity": 0.7 });
+  }
+  ring(a.x, ay, BLUE);
+  ring(b.x, by, ORANGE);
+</script>
+</body>
+</html>

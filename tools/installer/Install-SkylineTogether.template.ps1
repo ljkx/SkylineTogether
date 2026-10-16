@@ -174,11 +174,24 @@ if ($old.Count -gt 0) {
 } else {
     Write-Ok 'No conflicting multiplayer mod found'
 }
+# a Paradox Mods subscription of Skyline Together next to this local copy: the game loads only one of them
+$subscribed = @()
+if (Test-Path $pdx) {
+    $subscribed = @(Get-ChildItem -Path $pdx -Directory -ErrorAction SilentlyContinue | Where-Object {
+        Test-Path (Join-Path $_.FullName 'SkylineTogether.dll')
+    })
+}
+if ($subscribed.Count -gt 0) {
+    Write-Warn2 'Skyline Together is also subscribed on Paradox Mods. Two copies at once can break the game, and'
+    Write-Host  '        the game loads only one of them (this local copy). Keep one: unsubscribe on Paradox Mods,'
+    Write-Host  '        or uninstall this copy (-Uninstall) and use the subscription. Every player needs the same build.'
+}
 $libs = @('0Harmony', 'Colossal.Mathematics', 'Markdig', 'Reinforced.Typings', 'Extensions', 'External')
 $codeMods = @()
 if (Test-Path $pdx) {
     Get-ChildItem -Path $pdx -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         if ($_.Name -like "$($OldMultiplayerModId)_*") { return }
+        if (Test-Path (Join-Path $_.FullName 'SkylineTogether.dll')) { return }
         $names = Get-ChildItem -Path $_.FullName -Filter '*.dll' -File -Recurse -Depth 1 -ErrorAction SilentlyContinue |
             Where-Object { $_.BaseName -notlike '*_win_x86_64' -and $libs -notcontains $_.BaseName } |
             ForEach-Object { $_.BaseName }
