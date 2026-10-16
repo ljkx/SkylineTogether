@@ -1,3 +1,6 @@
+using System;
+using System.Globalization;
+
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
@@ -59,6 +62,24 @@ namespace SkylineTogether.Core.Session
                 case PresenceTool.Other: return "using a tool";
                 default: return null;
             }
+        }
+
+        /// <summary>
+        /// The tool elevation as the name tag shows it: "+10 m", "-8 m", "+2.5 m", "+1.25 m" (at most two decimals);
+        /// null below 1/32 m (on the ground) or for a value that is not finite.
+        /// </summary>
+        public static string ElevationLabel(float metres)
+        {
+            if (ElevationKey(metres) == 0) return null;
+            double rounded = Math.Round(metres, 2, MidpointRounding.AwayFromZero);
+            return (rounded > 0 ? "+" : "") + rounded.ToString("0.##", CultureInfo.InvariantCulture) + " m";
+        }
+
+        /// <summary>The tool elevation in 1/16 m steps (what the wire carries), 0 for none: a cache key for the label.</summary>
+        public static int ElevationKey(float metres)
+        {
+            if (float.IsNaN(metres) || float.IsInfinity(metres)) return 0;
+            return (int)Math.Round(Math.Max(-1e6, Math.Min(1e6, metres * 16.0)));
         }
     }
 }

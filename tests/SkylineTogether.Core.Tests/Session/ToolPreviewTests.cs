@@ -223,11 +223,180 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void AnotherVersionIsIgnoredNotRejected()
         {
-            byte[] bytes = Encode(Sample());
-            bytes[0] = 2;
-            ToolPreview into = Sample();
-            Assert.False(ToolPreviewCodec.Decode(bytes, 0, bytes.Length, into));
-            Assert.True(into.IsEmpty);
+            foreach (byte version in new byte[] { 1, 3 })
+            {
+                byte[] bytes = Encode(Sample());
+                bytes[0] = version;
+                ToolPreview into = Sample();
+                Assert.False(ToolPreviewCodec.Decode(bytes, 0, bytes.Length, into), "version " + version);
+                Assert.True(into.IsEmpty);
+            }
+        }
+
+        // ================================================================== heights and elevation
+
+        private static ToolPreview Elevated()
+        {
+            var p = new ToolPreview { Elevation = 12.5f };
+            // a bridge rising from the bank (40 m) by two elevation steps, a tunnel 8 m below, the raised node, an elevated object
+            p.AddCurve(ToolPreviewFlags.Elevated, P(2000f, 40f, 3000f), P(2020f, 45f, 3000f), P(2040f, 50f, 3000f), P(2060f, 52.5f, 3000f), 16f);
+            p.AddCurve(ToolPreviewFlags.Underground, P(2060f, 32f, 3000f), P(2080f, 32f, 3010f), P(2100f, 32f, 3020f), P(2120f, 32f, 3030f), 12f);
+            p.AddCircle(ToolPreviewFlags.Elevated | ToolPreviewFlags.Secondary, P(2060f, 52.5f, 3000f), 16f);
+            p.AddRect(ToolPreviewFlags.Elevated | ToolPreviewFlags.Error, P(2200f, 61.25f, 3100f), 8f, 12f, 1f);
+            return p;
+        }
+
+        [Test]
+        public void HeightsElevationFlagsAndTheToolElevationRoundTrip()
+        {
+            ToolPreview p = Elevated();
+            ToolPreview back = RoundTrip(p);
+            Assert.True(back.SameLayout(p));
+            for (int i = 0; i < p.Count; i++) Assert.Equal(p.FlagsAt(i), back.FlagsAt(i), "flags of shape " + i);
+            Assert.Equal(12.5f, back.Elevation, "the tool elevation");
+            float half = ToolPreviewCodec.Quantum(0) / 2;
+            for (int k = 0; k < 4; k++) Assert.Near(p.PointAt(0, k).Y, back.PointAt(0, k).Y, half, "bridge height " + k);
+            Assert.Near(32f, back.PointAt(1, 2).Y, half, "tunnel depth");
+            Assert.Near(52.5f, back.PointAt(2, 0).Y, half, "node height");
+            Assert.Near(61.25f, back.PointAt(3, 0).Y, half, "object height");
+
+            foreach (float elevation in new[] { 1.25f, -8f, 2.5f, -0.0625f, 400f })
+            {
+                p.Elevation = elevation;
+                Assert.Equal(elevation, RoundTrip(p).Elevation, "elevation " + elevation);
+            }
+            p.Elevation = 1e6f;
+            Assert.Equal(ToolPreviewCodec.MaxElevation, RoundTrip(p).Elevation, "clamped");
+            p.Elevation = -1e6f;
+            Assert.Equal(-ToolPreviewCodec.MaxElevation, RoundTrip(p).Elevation, "clamped below");
+            p.Elevation = float.NaN;
+            Assert.Equal(0f, RoundTrip(p).Elevation, "not a number: none");
+            p.Elevation = 0.01f;
+            Assert.Equal(0f, RoundTrip(p).Elevation, "below 1/32 m: none");
+        }
+
+        [Test]
+        public void TheElevationCostsNothingUnlessTheToolHasOne()
+        {
+            // header 16, curve 28, segment 16, circle 10, rect 14, polyline of 3 points 23, zone block with 44 bits 18
+            Assert.Equal(125, Encode(Sample()).Length, "the same size as before heights got their own quantum");
+            ToolPreview flagged = Elevate(Sample());
+            Assert.Equal(125, Encode(flagged).Length, "elevation flags use spare bits");
+            flagged.Elevation = -8f;
+            Assert.Equal(127, Encode(flagged).Length, "a tool elevation adds 2 bytes");
+            Assert.Equal(0, Encode(new ToolPreview { Elevation = 5f }).Length, "no shapes: no preview, whatever the elevation");
+        }
+
+        /// <summary>A copy of <paramref name="p"/> with every shape marked elevated or underground in turn.</summary>
+        private static ToolPreview Elevate(ToolPreview p)
+        {
+            var r = new ToolPreview();
+            float[] d = p.Data;
+            for (int i = 0; i < p.Count; i++)
+            {
+                ToolPreviewFlags f = p.FlagsAt(i) | (i % 2 == 0 ? ToolPreviewFlags.Elevated : ToolPreviewFlags.Underground);
+                int o = p.StartOf(i);
+                switch (p.ShapeAt(i))
+                {
+                    case ToolPreviewShape.Curve: r.AddCurve(f, p.PointAt(i, 0), p.PointAt(i, 1), p.PointAt(i, 2), p.PointAt(i, 3), d[o + 12]); break;
+                    case ToolPreviewShape.Segment: r.AddSegment(f, p.PointAt(i, 0), p.PointAt(i, 1), d[o + 6]); break;
+                    case ToolPreviewShape.Circle: r.AddCircle(f, p.PointAt(i, 0), d[o + 3]); break;
+                    case ToolPreviewShape.Rect: r.AddRect(f, p.PointAt(i, 0), d[o + 3], d[o + 4], d[o + 5]); break;
+                    case ToolPreviewShape.Polyline:
+                        r.BeginPolyline(f, d[o]);
+                        for (int k = 0; k < p.PolylinePointCount(i); k++) r.AddPolylinePoint(p.PointAt(i, k));
+                        r.EndPolyline();
+                        break;
+                    case ToolPreviewShape.ZoneBlock: r.AddZoneBlock(f, p.PointAt(i, 0), d[o + 3], (int)d[o + 4], (int)d[o + 5], p.BitsAt(i)); break;
+                }
+            }
+            return r;
+        }
+
+        [Test]
+        public void HeightsKeepTheirPrecisionAcrossTheMap()
+        {
+            // a line across the whole map: 1/2 m horizontally, but heights keep 1/16 m
+            var wide = new ToolPreview();
+            wide.AddCircle(ToolPreviewFlags.Elevated, P(-7100f, 101.3125f, -7100f), 10f);
+            wide.AddCircle(ToolPreviewFlags.Elevated, P(7100f, 113.8125f, 7100f), 10f);
+            byte[] bytes = Encode(wide);
+            Assert.Equal(3, bytes[2] & 0x0F, "14 km need 1/2 m steps horizontally");
+            Assert.Equal(0, bytes[2] >> 4, "12.5 m of height difference keep 1/16 m");
+            ToolPreview back = RoundTrip(wide);
+            Assert.Equal(101.3125f, back.PointAt(0, 0).Y, "on the 1/16 m grid: exact");
+            Assert.Equal(113.8125f, back.PointAt(1, 0).Y);
+            Assert.Near(7100f, back.PointAt(1, 0).X, ToolPreviewCodec.Quantum(3) / 2);
+
+            // the full height range of a map (terrain heights reach about 4 km) and a deep tunnel: 1/8 m
+            var tall = new ToolPreview();
+            tall.AddCircle(ToolPreviewFlags.None, P(0f, 0f, 0f), 10f);
+            tall.AddCircle(ToolPreviewFlags.Elevated, P(10f, 4000f, 10f), 10f);
+            tall.AddCircle(ToolPreviewFlags.Underground, P(20f, -300f, 20f), 10f);
+            bytes = Encode(tall);
+            Assert.Equal(0, bytes[2] & 0x0F, "a small footprint keeps 1/16 m horizontally");
+            Assert.Equal(1, bytes[2] >> 4, "4 km of height: 1/8 m");
+            back = RoundTrip(tall);
+            Assert.Near(4000f, back.PointAt(1, 0).Y, ToolPreviewCodec.Quantum(1) / 2);
+            Assert.Near(-300f, back.PointAt(2, 0).Y, ToolPreviewCodec.Quantum(1) / 2);
+
+            // every elevation step of the net tool (1.25 m at the finest) stays distinct at any horizontal extent
+            var steps = new ToolPreview();
+            for (int i = 0; i < 40; i++) steps.AddCircle(ToolPreviewFlags.Elevated, P(i * 350f - 7000f, 200f + i * 1.25f, 0f), 4f);
+            back = RoundTrip(steps);
+            for (int i = 1; i < 40; i++) Assert.Near(1.25f, back.PointAt(i, 0).Y - back.PointAt(i - 1, 0).Y, 1e-3, "step " + i);
+        }
+
+        [Test]
+        public void TheNameTagShowsTheToolElevation()
+        {
+            Assert.Equal("+10 m", PresenceToolKind.ElevationLabel(10f));
+            Assert.Equal("-8 m", PresenceToolKind.ElevationLabel(-8f));
+            Assert.Equal("+2.5 m", PresenceToolKind.ElevationLabel(2.5f));
+            Assert.Equal("+1.25 m", PresenceToolKind.ElevationLabel(1.25f));
+            Assert.Equal("-0.06 m", PresenceToolKind.ElevationLabel(-0.0625f));
+            Assert.Equal(null, PresenceToolKind.ElevationLabel(0f), "on the ground: no label");
+            Assert.Equal(null, PresenceToolKind.ElevationLabel(0.01f));
+            Assert.Equal(null, PresenceToolKind.ElevationLabel(float.NaN));
+            Assert.Equal(0, PresenceToolKind.ElevationKey(float.PositiveInfinity));
+            Assert.Equal(160, PresenceToolKind.ElevationKey(10f), "the key is the wire step");
+            var p = Elevated();
+            p.Elevation = -12.5f;
+            Assert.Equal("-12.5 m", PresenceToolKind.ElevationLabel(RoundTrip(p).Elevation), "after the wire");
+        }
+
+        [Test]
+        public void TheWorstCaseWithHeightsAndElevationIsStillOneDatagram()
+        {
+            var random = new DeterministicRandom(77);
+            var p = new ToolPreview { Elevation = -ToolPreviewCodec.MaxElevation };
+            const ToolPreviewFlags all = ToolPreviewFlags.Elevated | ToolPreviewFlags.Underground | ToolPreviewFlags.Error | ToolPreviewFlags.Delete | ToolPreviewFlags.Secondary;
+            for (int i = 0; i < ToolPreview.MaxShapes; i++)
+            {
+                PreviewPoint a = P((float)random.NextDouble() * 14000f - 7000f, (float)random.NextDouble() * 4600f - 500f, (float)random.NextDouble() * 14000f - 7000f);
+                p.AddCurve(all, a, a, a, a, 4000f);
+            }
+            var preview = new ByteWriter();
+            int length = ToolPreviewCodec.Encode(p, preview);
+            Assert.True(length > 0 && length <= PresenceMessage.MaxPreviewBytes, "preview of " + length + " bytes");
+            var back = new ToolPreview();
+            Assert.True(ToolPreviewCodec.Decode(preview.Buffer, 0, length, back));
+            Assert.True(back.Truncated, "128 curves do not fit: the tail is dropped");
+            Assert.Equal(-ToolPreviewCodec.MaxElevation, back.Elevation);
+            Assert.Equal(all, back.FlagsAt(0));
+            var m = new PresenceMessage
+            {
+                From = new PeerId(255), CursorX = 1e30f, ToolKind = 255, Prefab = new PrefabRank(int.MaxValue), Color = uint.MaxValue,
+                Preview = preview.Buffer, PreviewLength = length, BrushRadius = 1e30f
+            };
+            var body = new ByteWriter();
+            PresenceMessage.Write(body, m);
+            foreach (EnvelopeCodec codec in new[] { new EnvelopeCodec(null), new EnvelopeCodec(new ManagedLz4Compressor()) })
+            {
+                var envelope = new ByteWriter();
+                codec.Encode(MessageKind.Presence, body.Buffer, 0, body.Length, envelope);
+                Assert.True(envelope.Length <= Limits.MaxDatagramBytes, "envelope of " + envelope.Length + " bytes");
+            }
         }
 
         [Test]
@@ -236,10 +405,18 @@ namespace SkylineTogether.Core.Tests.Session
             byte[] good = Encode(Sample());
             int shapeStart = 3 + 12 + 1; // header, count of 6 as one byte
 
-            Reject(Patch(good, 1, 0x02), "unknown header flag");
+            Reject(Patch(good, 1, 0x04), "unknown header flag");
             Reject(Patch(good, 2, 5), "quantisation shift above 4");
+            Reject(Patch(good, 2, 0x50), "vertical quantisation shift above 4");
             Reject(Patch(good, shapeStart, 9), "unknown shape kind");
-            Reject(Patch(good, shapeStart + 1, 0x10), "unknown shape flag");
+            Reject(Patch(good, shapeStart + 1, 0x40), "unknown shape flag");
+            byte[] zeroElevation = Concat(Concat(Cut(good, 15), new byte[] { 0, 0 }), Tail(good, 15)); // after the anchor
+            zeroElevation[1] = 0x02;
+            Reject(zeroElevation, "a tool elevation of 0 is never written");
+            zeroElevation[15] = 0x10; // little-endian 16 steps
+            var elevated = new ToolPreview();
+            Assert.True(ToolPreviewCodec.Decode(zeroElevation, 0, zeroElevation.Length, elevated), "the same bytes with 1 m decode");
+            Assert.Equal(1f, elevated.Elevation);
             Reject(Concat(good, new byte[] { 0 }), "trailing byte");
             Reject(Cut(good, good.Length - 1), "cut short");
             var nan = (byte[])good.Clone();
@@ -303,7 +480,8 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void EncodingDecodingAndSmoothingAllocateNothing()
         {
-            ToolPreview p = Sample();
+            ToolPreview p = Elevate(Sample());
+            p.Elevation = 7.5f;
             var w = new ByteWriter(2048);
             var back = new ToolPreview();
             var shown = new ToolPreview();
@@ -361,6 +539,35 @@ namespace SkylineTogether.Core.Tests.Session
             target.Clear();
             Assert.False(ToolPreviewSmoother.Step(shown, target, 0.5f));
             Assert.True(shown.IsEmpty, "an empty keyframe removes the preview at once");
+        }
+
+        [Test]
+        public void SmoothingInterpolatesHeights()
+        {
+            var shown = new ToolPreview();
+            var target = new ToolPreview();
+            target.AddCurve(ToolPreviewFlags.Elevated, P(0, 10, 0), P(10, 10, 0), P(20, 10, 0), P(30, 10, 0), 8f);
+            target.AddRect(ToolPreviewFlags.Elevated, P(50, 30, 0), 8, 8, 0f);
+            target.Elevation = 10f;
+            ToolPreviewSmoother.Step(shown, target, 0.5f);
+
+            target.Clear();
+            target.AddCurve(ToolPreviewFlags.Elevated, P(0, 20, 0), P(10, 20, 0), P(20, 20, 0), P(30, 20, 0), 8f); // one elevation step up
+            target.AddRect(ToolPreviewFlags.Underground, P(50, 10, 0), 8, 8, 0f);
+            target.Elevation = 20f;
+            Assert.True(ToolPreviewSmoother.Step(shown, target, 0.5f), "a height change glides");
+            for (int k = 0; k < 4; k++) Assert.Near(15f, shown.PointAt(0, k).Y, 1e-4, "half way up, point " + k);
+            Assert.Near(20f, shown.PointAt(1, 0).Y, 1e-4, "the object moves down half way");
+            Assert.Equal(ToolPreviewFlags.Underground, shown.FlagsAt(1), "the elevation flags follow at once");
+            Assert.Equal(20f, shown.Elevation, "the tool elevation follows at once");
+            ToolPreviewSmoother.Step(shown, target, 0.5f);
+            Assert.Near(17.5f, shown.PointAt(0, 1).Y, 1e-4);
+
+            target.Clear();
+            target.AddCurve(ToolPreviewFlags.Elevated, P(0, 20 + ToolPreviewSmoother.SnapDistance * 2, 0), P(10, 20, 0), P(20, 20, 0), P(30, 20, 0), 8f);
+            target.AddRect(ToolPreviewFlags.None, P(50, 10, 0), 8, 8, 0f);
+            Assert.False(ToolPreviewSmoother.Step(shown, target, 0.5f), "a vertical jump snaps");
+            Assert.Equal(0f, shown.Elevation, "and takes the elevation of the keyframe");
         }
 
         // ================================================================== throttle, table, relay
@@ -476,6 +683,13 @@ namespace SkylineTogether.Core.Tests.Session
             var r = new byte[a.Length + b.Length];
             Array.Copy(a, r, a.Length);
             Array.Copy(b, 0, r, a.Length, b.Length);
+            return r;
+        }
+
+        private static byte[] Tail(byte[] data, int from)
+        {
+            var r = new byte[data.Length - from];
+            Array.Copy(data, from, r, 0, r.Length);
             return r;
         }
 

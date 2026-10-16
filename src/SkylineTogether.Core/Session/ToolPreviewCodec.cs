@@ -10,18 +10,22 @@ namespace SkylineTogether.Core.Session
     /// <see cref="PresenceMessage"/>. Every message holds the whole preview (a keyframe, never a delta), so one received
     /// message heals any number of lost ones. An empty preview is zero bytes.
     /// <code>
-    /// u8 version (1) | u8 flags (bit 0: truncated) | u8 quantShift (0..4) | f32 anchorX | f32 anchorY | f32 anchorZ
-    /// | varint count (≤ 128) | count × shape
-    /// shape = u8 kind | u8 flags (ToolPreviewFlags) | payload
+    /// u8 version (2) | u8 flags (bit 0: truncated, bit 1: tool elevation follows) | u8 quant (bits 0-3: horizontal
+    /// shift h, bits 4-7: vertical shift v, each 0..4) | f32 anchorX | f32 anchorY | f32 anchorZ
+    /// | [i16 tool elevation in 1/16 m, when flag bit 1] | varint count (≤ 128) | count × shape
+    /// shape = u8 kind | u8 flags (ToolPreviewFlags, bits 0-5) | payload
     ///   Curve     4 × point | u16 width
     ///   Segment   2 × point | u16 width
     ///   Circle    point | u16 diameter
     ///   Rect      point | u16 sizeX | u16 sizeZ | u16 yaw
     ///   Polyline  u8 n (2..64) | u16 width | n × point
     ///   ZoneBlock point | u16 yaw | u8 (cellsX-1) | (cellsZ-1) &lt;&lt; 4 (cellsX × cellsZ ≤ 64) | varint64 cells
-    /// point = 3 × i16, (coordinate - anchor) / q with q = 2^quantShift / 16 m (1/16 m within ±2 km of the anchor,
-    /// 1 m within ±32 km); u16 width/size/diameter in 1/16 m (≤ 4 km); u16 yaw in 1/65536 turn
+    /// point = 3 × i16, (coordinate - anchor) / q with q = 2^shift / 16 m: x and z with the horizontal shift h, y (the
+    /// real height) with its own vertical shift v (1/16 m within ±2 km of the anchor, 1 m within ±32 km), so heights
+    /// keep 1/16 m in a preview that spans the map; u16 width/size/diameter in 1/16 m (≤ 4 km); u16 yaw in 1/65536 turn
     /// </code>
+    /// Version 2 added the vertical shift, the tool elevation and the <see cref="ToolPreviewFlags.Elevated"/> and
+    /// <see cref="ToolPreviewFlags.Underground"/> shape flags; it adds no byte to a preview without a tool elevation.
     /// <see cref="Encode"/> writes the shapes in order and stops before the first one that would exceed the byte
     /// budget (setting the truncated flag), so the sender lists the most important shapes first. A version other than
     /// <see cref="Version"/> is ignored by <see cref="Decode"/> (not an error); a malformed preview throws
@@ -30,7 +34,7 @@ namespace SkylineTogether.Core.Session
     [ThreadAffinity(ThreadKind.Any)]
     public static class ToolPreviewCodec
     {
-        public const byte Version = 1;
+        public const byte Version = 2;
 
         /// <summary>The largest preview, chosen so a full presence message stays one datagram
         /// (<see cref="Limits.MaxDatagramBytes"/>, never fragmented).</summary>
@@ -38,9 +42,14 @@ namespace SkylineTogether.Core.Session
 
         public const int MaxQuantShift = 4;
 
+        /// <summary>The largest tool elevation the wire carries (metres, either sign); larger ones are clamped.</summary>
+        public const float MaxElevation = short.MaxValue / 16f;
+
         private const byte FlagTruncated = 0x01;
-        private const byte KnownShapeFlags = 0x0F;
-        private const int HeaderBytes = 3 + 12 + 2; // count as a 2-byte varint at most (≤ 128)
+        private const byte FlagElevation = 0x02;
+        private const byte KnownFlags = FlagTruncated | FlagElevation;
+        private const byte KnownShapeFlags = 0x3F;
+        private const int HeaderBytes = 3 + 12 + 2 + 2; // the tool elevation; count as a 2-byte varint at most (≤ 128)
         private const int PointBytes = 6;
         private const float SizeScale = 16f;
         private const float TwoPi = (float)(2.0 * Math.PI);
@@ -75,27 +84,29 @@ namespace SkylineTogether.Core.Session
             float[] d = preview.Data;
             PreviewPoint first = preview.PointAt(0, 0);
             float ax = WireFormat.Finite(first.X), ay = WireFormat.Finite(first.Y), az = WireFormat.Finite(first.Z);
-            float extent = 0f;
+            float extent = 0f, extentY = 0f;
             for (int i = 0; i < fit; i++)
             {
                 int points = PointCount(preview, i);
                 for (int k = 0; k < points; k++)
                 {
                     PreviewPoint p = preview.PointAt(i, k);
-                    extent = Math.Max(extent, Math.Max(Dist(p.X, ax), Math.Max(Dist(p.Y, ay), Dist(p.Z, az))));
+                    extent = Math.Max(extent, Math.Max(Dist(p.X, ax), Dist(p.Z, az)));
+                    extentY = Math.Max(extentY, Dist(p.Y, ay));
                 }
             }
-            int shift = 0;
-            while (shift < MaxQuantShift && extent / Quantum(shift) > short.MaxValue) shift++;
-            float q = Quantum(shift);
+            int shift = ShiftFor(extent), shiftY = ShiftFor(extentY);
+            float q = Quantum(shift), qy = Quantum(shiftY);
+            short elevation = ElevationSteps(preview.Elevation);
 
             int start = w.Length;
             w.WriteByte(Version);
-            w.WriteByte(truncated ? FlagTruncated : (byte)0);
-            w.WriteByte((byte)shift);
+            w.WriteByte((byte)((truncated ? FlagTruncated : 0) | (elevation != 0 ? FlagElevation : 0)));
+            w.WriteByte((byte)(shift | (shiftY << 4)));
             w.WriteSingle(ax);
             w.WriteSingle(ay);
             w.WriteSingle(az);
+            if (elevation != 0) w.WriteUInt16(unchecked((ushort)elevation));
             w.WriteVarUInt32((uint)fit);
             for (int i = 0; i < fit; i++)
             {
@@ -106,20 +117,20 @@ namespace SkylineTogether.Core.Session
                 switch (shape)
                 {
                     case ToolPreviewShape.Curve:
-                        for (int k = 0; k < 4; k++) WritePoint(w, d, o + 3 * k, ax, ay, az, q);
+                        for (int k = 0; k < 4; k++) WritePoint(w, d, o + 3 * k, ax, ay, az, q, qy);
                         WriteSize(w, d[o + 12]);
                         break;
                     case ToolPreviewShape.Segment:
-                        WritePoint(w, d, o, ax, ay, az, q);
-                        WritePoint(w, d, o + 3, ax, ay, az, q);
+                        WritePoint(w, d, o, ax, ay, az, q, qy);
+                        WritePoint(w, d, o + 3, ax, ay, az, q, qy);
                         WriteSize(w, d[o + 6]);
                         break;
                     case ToolPreviewShape.Circle:
-                        WritePoint(w, d, o, ax, ay, az, q);
+                        WritePoint(w, d, o, ax, ay, az, q, qy);
                         WriteSize(w, d[o + 3]);
                         break;
                     case ToolPreviewShape.Rect:
-                        WritePoint(w, d, o, ax, ay, az, q);
+                        WritePoint(w, d, o, ax, ay, az, q, qy);
                         WriteSize(w, d[o + 3]);
                         WriteSize(w, d[o + 4]);
                         WriteYaw(w, d[o + 5]);
@@ -129,13 +140,13 @@ namespace SkylineTogether.Core.Session
                         int n = preview.PolylinePointCount(i);
                         w.WriteByte((byte)n);
                         WriteSize(w, d[o]);
-                        for (int k = 0; k < n; k++) WritePoint(w, d, o + 1 + 3 * k, ax, ay, az, q);
+                        for (int k = 0; k < n; k++) WritePoint(w, d, o + 1 + 3 * k, ax, ay, az, q, qy);
                         break;
                     }
                     case ToolPreviewShape.ZoneBlock:
                     {
                         int cx = (int)d[o + 4], cz = (int)d[o + 5];
-                        WritePoint(w, d, o, ax, ay, az, q);
+                        WritePoint(w, d, o, ax, ay, az, q, qy);
                         WriteYaw(w, d[o + 3]);
                         w.WriteByte((byte)((cx - 1) | ((cz - 1) << 4)));
                         w.WriteVarUInt64(preview.BitsAt(i));
@@ -165,13 +176,21 @@ namespace SkylineTogether.Core.Session
                 r.Reset(buffer, offset, count);
                 byte version = r.ReadByte();
                 if (version != Version) return false;
-                byte flags = MessageFields.ReadFlags(r, FlagTruncated, "ToolPreview.Flags");
-                int shift = r.ReadByte();
-                if (shift > MaxQuantShift) throw new DecodeException("ToolPreview: quantisation shift " + shift.ToString(CultureInfo.InvariantCulture) + " exceeds " + MaxQuantShift.ToString(CultureInfo.InvariantCulture));
-                float q = Quantum(shift);
+                byte flags = MessageFields.ReadFlags(r, KnownFlags, "ToolPreview.Flags");
+                int quant = r.ReadByte();
+                int shift = quant & 0x0F, shiftY = quant >> 4;
+                if (shift > MaxQuantShift || shiftY > MaxQuantShift) throw new DecodeException("ToolPreview: quantisation shift " + Math.Max(shift, shiftY).ToString(CultureInfo.InvariantCulture) + " exceeds " + MaxQuantShift.ToString(CultureInfo.InvariantCulture));
+                float q = Quantum(shift), qy = Quantum(shiftY);
                 float ax = MessageFields.ReadFloat(r, "ToolPreview.AnchorX");
                 float ay = MessageFields.ReadFloat(r, "ToolPreview.AnchorY");
                 float az = MessageFields.ReadFloat(r, "ToolPreview.AnchorZ");
+                float elevation = 0f;
+                if ((flags & FlagElevation) != 0)
+                {
+                    short steps = unchecked((short)r.ReadUInt16());
+                    if (steps == 0) throw new DecodeException("ToolPreview: a tool elevation of 0 is never written");
+                    elevation = steps / 16f;
+                }
                 int shapes = MessageFields.ReadCount(r, ToolPreview.MaxShapes, 2 + PointBytes + 2, "ToolPreview.Count");
                 for (int i = 0; i < shapes; i++)
                 {
@@ -182,25 +201,25 @@ namespace SkylineTogether.Core.Session
                     {
                         case ToolPreviewShape.Curve:
                         {
-                            PreviewPoint a = ReadPoint(r, ax, ay, az, q), b = ReadPoint(r, ax, ay, az, q), c = ReadPoint(r, ax, ay, az, q), e = ReadPoint(r, ax, ay, az, q);
+                            PreviewPoint a = ReadPoint(r, ax, ay, az, q, qy), b = ReadPoint(r, ax, ay, az, q, qy), c = ReadPoint(r, ax, ay, az, q, qy), e = ReadPoint(r, ax, ay, az, q, qy);
                             added = into.AddCurve(shapeFlags, a, b, c, e, ReadSize(r));
                             break;
                         }
                         case ToolPreviewShape.Segment:
                         {
-                            PreviewPoint a = ReadPoint(r, ax, ay, az, q), b = ReadPoint(r, ax, ay, az, q);
+                            PreviewPoint a = ReadPoint(r, ax, ay, az, q, qy), b = ReadPoint(r, ax, ay, az, q, qy);
                             added = into.AddSegment(shapeFlags, a, b, ReadSize(r));
                             break;
                         }
                         case ToolPreviewShape.Circle:
                         {
-                            PreviewPoint p = ReadPoint(r, ax, ay, az, q);
+                            PreviewPoint p = ReadPoint(r, ax, ay, az, q, qy);
                             added = into.AddCircle(shapeFlags, p, ReadSize(r));
                             break;
                         }
                         case ToolPreviewShape.Rect:
                         {
-                            PreviewPoint p = ReadPoint(r, ax, ay, az, q);
+                            PreviewPoint p = ReadPoint(r, ax, ay, az, q, qy);
                             float sx = ReadSize(r), sz = ReadSize(r);
                             added = into.AddRect(shapeFlags, p, sx, sz, ReadYaw(r));
                             break;
@@ -210,13 +229,13 @@ namespace SkylineTogether.Core.Session
                             int n = r.ReadByte();
                             if (n < 2 || n > ToolPreview.MaxPolylinePoints) throw new DecodeException("ToolPreview: polyline of " + n.ToString(CultureInfo.InvariantCulture) + " points");
                             added = into.BeginPolyline(shapeFlags, ReadSize(r));
-                            for (int k = 0; k < n && added; k++) added = into.AddPolylinePoint(ReadPoint(r, ax, ay, az, q));
+                            for (int k = 0; k < n && added; k++) added = into.AddPolylinePoint(ReadPoint(r, ax, ay, az, q, qy));
                             if (added) added = into.EndPolyline();
                             break;
                         }
                         case ToolPreviewShape.ZoneBlock:
                         {
-                            PreviewPoint p = ReadPoint(r, ax, ay, az, q);
+                            PreviewPoint p = ReadPoint(r, ax, ay, az, q, qy);
                             float yaw = ReadYaw(r);
                             byte cells = r.ReadByte();
                             int cx = (cells & 0x0F) + 1, cz = (cells >> 4) + 1;
@@ -233,6 +252,7 @@ namespace SkylineTogether.Core.Session
                 }
                 MessageFields.EnsureEnd(r, "ToolPreview");
                 into.Truncated = (flags & FlagTruncated) != 0;
+                into.Elevation = elevation;
                 return true;
             }
             catch (DecodeException)
@@ -276,10 +296,28 @@ namespace SkylineTogether.Core.Session
 
         private static float Dist(float v, float anchor) => WireFormat.IsFinite(v) ? Math.Abs(v - anchor) : 0f;
 
-        private static void WritePoint(ByteWriter w, float[] d, int o, float ax, float ay, float az, float q)
+        /// <summary>The smallest shift whose quantum reaches <paramref name="extent"/> metres from the anchor in an i16.</summary>
+        private static int ShiftFor(float extent)
+        {
+            int shift = 0;
+            while (shift < MaxQuantShift && extent / Quantum(shift) > short.MaxValue) shift++;
+            return shift;
+        }
+
+        /// <summary>The tool elevation in 1/16 m steps, clamped (0 for none or a non-finite value).</summary>
+        private static short ElevationSteps(float elevation)
+        {
+            if (!WireFormat.IsFinite(elevation)) return 0;
+            double steps = Math.Round(elevation * 16.0);
+            if (steps > short.MaxValue) steps = short.MaxValue;
+            if (steps < -short.MaxValue) steps = -short.MaxValue;
+            return (short)steps;
+        }
+
+        private static void WritePoint(ByteWriter w, float[] d, int o, float ax, float ay, float az, float q, float qy)
         {
             WriteCoord(w, d[o], ax, q);
-            WriteCoord(w, d[o + 1], ay, q);
+            WriteCoord(w, d[o + 1], ay, qy);
             WriteCoord(w, d[o + 2], az, q);
         }
 
@@ -291,10 +329,10 @@ namespace SkylineTogether.Core.Session
             w.WriteUInt16(unchecked((ushort)(short)steps));
         }
 
-        private static PreviewPoint ReadPoint(ByteReader r, float ax, float ay, float az, float q)
+        private static PreviewPoint ReadPoint(ByteReader r, float ax, float ay, float az, float q, float qy)
         {
             float x = ax + unchecked((short)r.ReadUInt16()) * q;
-            float y = ay + unchecked((short)r.ReadUInt16()) * q;
+            float y = ay + unchecked((short)r.ReadUInt16()) * qy;
             float z = az + unchecked((short)r.ReadUInt16()) * q;
             return new PreviewPoint(x, y, z);
         }

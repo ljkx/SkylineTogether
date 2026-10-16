@@ -30,6 +30,10 @@ format are refused by version instead of failing half-way through a replay.
   malformed: that refusal is exactly what the version check replaces with a readable message.
 - **What does not**: host-side validation, rate limits, budgets and anything that changes only what a peer decides
   to send, as long as every byte keeps its layout and meaning.
+- **Versioned payloads**: the tool preview inside a presence message is opaque to the message and starts with its own
+  version byte (`ToolPreviewCodec.Version`); a decoder ignores a preview of another version (the player is shown
+  without a preview) instead of failing, so neither a peer nor a replayed recording breaks on it. A change confined to
+  the preview layout bumps that version, not the protocol version.
 - **When**: in the change itself, or at the latest in the commit that merges it to `main` (one increment per merge,
   however many layout changes the branch made). Say "wire change, protocol N" in the commit message.
 - **With it**: update `ProtocolVersion.Current`, the pinned value in `Protocol/LimitsAndTextTests.cs`, and the golden

@@ -45,9 +45,16 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>A sub-element (part of a building, a node, a sub-net): drawn fainter.</summary>
         Secondary = 8,
+
+        /// <summary>Above the ground (an elevated road or bridge, a raised node, an object placed at an elevation): its
+        /// points carry the real height and the shape is drawn there, with drop lines to the terrain.</summary>
+        Elevated = 16,
+
+        /// <summary>Below the ground (a tunnel, a lowered node): drawn on the terrain surface in a dashed, dimmer style.</summary>
+        Underground = 32,
     }
 
-    /// <summary>One point of a <see cref="ToolPreview"/> in world coordinates (metres).</summary>
+    /// <summary>One point of a <see cref="ToolPreview"/> in world coordinates (metres); <see cref="Y"/> is the real height.</summary>
     public struct PreviewPoint
     {
         public float X, Y, Z;
@@ -100,6 +107,12 @@ namespace SkylineTogether.Core.Session
         /// <summary>Something did not fit (here, or in the sender's message): the preview is incomplete.</summary>
         public bool Truncated { get; set; }
 
+        /// <summary>
+        /// The tool's elevation setting in metres (the net tool's elevation steps; negative: underground), 0 when the
+        /// tool has none. Travels with a non-empty preview and is shown next to the player's name tag.
+        /// </summary>
+        public float Elevation { get; set; }
+
         /// <summary>The shapes' floats; shape <c>i</c> uses <c>Data[StartOf(i) .. StartOf(i) + LengthOf(i) - 1]</c>.</summary>
         public float[] Data => _data;
 
@@ -130,6 +143,7 @@ namespace SkylineTogether.Core.Session
             Count = 0;
             FloatCount = 0;
             Truncated = false;
+            Elevation = 0f;
             _openPolyline = false;
         }
 
@@ -239,6 +253,7 @@ namespace SkylineTogether.Core.Session
             Count = n;
             FloatCount = other.FloatCount;
             Truncated = other.Truncated;
+            Elevation = other.Elevation;
             _openPolyline = false;
         }
 
@@ -253,12 +268,14 @@ namespace SkylineTogether.Core.Session
             return true;
         }
 
-        /// <summary>Copies the flags and the zone bits of <paramref name="other"/> (same layout) without touching the floats.</summary>
+        /// <summary>Copies the flags, the zone bits and the tool elevation of <paramref name="other"/> (same layout)
+        /// without touching the floats.</summary>
         internal void CopyFlagsAndBits(ToolPreview other)
         {
             Array.Copy(other._flags, _flags, Count);
             Array.Copy(other._bits, _bits, Count);
             Truncated = other.Truncated;
+            Elevation = other.Elevation;
         }
 
         private bool Begin(ToolPreviewShape shape, ToolPreviewFlags flags, int floats, ulong bits, out int offset)
