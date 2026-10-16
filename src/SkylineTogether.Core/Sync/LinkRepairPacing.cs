@@ -298,4 +298,26 @@ namespace SkylineTogether.Core.Sync
             Dropped = Refused = 0;
         }
     }
+
+    /// <summary>
+    /// Client: whether the holder of a repaired agent link is asked from the host again (ARCHITECTURE.md#reference-audit).
+    /// The host's record replaces the client's clean-up only where it can carry something the client lacks.
+    /// </summary>
+    public static class RepairRequestPolicy
+    {
+        /// <summary>
+        /// A cleared or removed forward link: yes (the holder may have moved on on the host). A reverse list: only an
+        /// agent's (a building's list follows its renters' own records), and only when an element named an entity that was
+        /// destroyed or deleted here (<paramref name="goneElements"/>), which means the list was out of date. Elements naming
+        /// nobody are what a save writes for a member that is already gone: the host's list
+        /// holds the same gone member, so its record would bring nothing, and a join snapshot has many such lists (a real
+        /// session asked for 29 companies within 15 s of going live, each answered with a full record).
+        /// </summary>
+        public static bool AskHolder(bool buffer, bool agentHolder, int goneElements)
+        {
+            if (!buffer) return true;
+            if (!agentHolder) return false;
+            return goneElements > 0;
+        }
+    }
 }

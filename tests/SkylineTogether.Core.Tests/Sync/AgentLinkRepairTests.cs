@@ -87,15 +87,48 @@ namespace SkylineTogether.Core.Tests.Sync
                 }
             }
 
-            /// <summary>Deletes <paramref name="e"/> the way the client does: cascade plan, executor, Deleted tag; destroyed at the end of the frame.</summary>
-            public int Delete(int e, List<AgentLinkOp<int>> ops = null)
+            /// <summary>The referrer index the client keeps (null: the deletion finds holders through the lists only).</summary>
+            public AgentReferrerIndex<int> Index;
+
+            /// <summary>Entities the last deletions took along (citizens and pets of a household).</summary>
+            public readonly List<int> TakenAlong = new List<int>();
+
+            /// <summary>Notes every holder's links in <see cref="Index"/> (what the client does when it goes live).</summary>
+            public void IndexAll()
             {
-                ops = ops ?? new List<AgentLinkOp<int>>();
-                ops.Clear();
-                AgentLinkGraph.PlanCascade(this, e, ops);
+                Index = Index ?? new AgentReferrerIndex<int>(16);
+                foreach (int e in Alive) AgentLinkGraph.IndexHolder(this, e, Index);
+            }
+
+            /// <summary>
+            /// Deletes <paramref name="e"/> the way the client does: deletion plan (with the referrer index when there is one),
+            /// executor, Deleted tags; destroyed at the end of the frame.
+            /// </summary>
+            public int Delete(int e)
+            {
+                var ops = new List<AgentLinkOp<int>>();
+                var deletions = new List<int>();
+                Func<int, IReadOnlyList<int>> referrers = null;
+                if (Index != null)
+                {
+                    referrers = t =>
+                    {
+                        var list = new List<int>();
+                        Index.Get(t, list);
+                        return list;
+                    };
+                }
+                AgentLinkGraph.PlanDeletion(this, e, referrers, ops, deletions);
+                Assert.Equal(e, deletions[0]);
+                Assert.True(ops.All(op => op.Action != LinkCleanup.DeleteHolder && op.Action != LinkCleanup.Keep));
                 int n = 0;
                 foreach (AgentLinkOp<int> op in ops) n += Apply(op);
-                Deleted.Add(e);
+                foreach (int d in deletions)
+                {
+                    if (d != e) TakenAlong.Add(d);
+                    Deleted.Add(d);
+                    Index?.RemoveTarget(d);
+                }
                 return n;
             }
 
@@ -118,9 +151,10 @@ namespace SkylineTogether.Core.Tests.Sync
                 }
                 foreach (var key in Forward.Keys.ToList())
                 {
-                    if (!IsUsable(key.Item1)) continue;
+                    if (!IsUsable(key.Item1) || !Forward.ContainsKey(key)) continue;
                     LinkCleanup action = AgentLinkGraph.Rule(key.Item2).Decide(StateOf(Forward[key]));
-                    n += Clean(key.Item1, key.Item2, action);
+                    if (action == LinkCleanup.DeleteHolder) n += 1 + Delete(key.Item1); // a citizen or pet whose household is gone
+                    else n += Clean(key.Item1, key.Item2, action);
                 }
                 return n;
             }
@@ -232,7 +266,9 @@ namespace SkylineTogether.Core.Tests.Sync
             {
                 AgentLinkRule rule = AgentLinkGraph.Rule(link);
                 Assert.False(rule.IsBuffer, link.ToString());
-                Assert.True(rule.OnGone == LinkCleanup.RemoveComponent || rule.OnGone == LinkCleanup.ClearReference, link.ToString());
+                Assert.True(rule.OnGone == LinkCleanup.RemoveComponent || rule.OnGone == LinkCleanup.ClearReference || rule.OnGone == LinkCleanup.DeleteHolder, link.ToString());
+                // only a household's members are deleted with it
+                if (rule.OnGone == LinkCleanup.DeleteHolder) Assert.True(link == AgentLink.HouseholdMember || link == AgentLink.HouseholdPet, link.ToString());
                 Assert.True(AgentLinkGraph.Rule(rule.Reverse).IsBuffer, link + " reverse");
                 // a cleared reference is only used where the game itself keeps null
                 if (rule.OnGone == LinkCleanup.ClearReference) Assert.True(rule.NullAllowed, link.ToString());
@@ -284,8 +320,10 @@ namespace SkylineTogether.Core.Tests.Sync
             AgentLinkRule hotel = AgentLinkGraph.Rule(AgentLink.TouristHotel);
             Assert.Equal(LinkCleanup.ClearReference, hotel.Decide(LinkTarget.Destroyed));
             Assert.Equal(LinkCleanup.Keep, hotel.Decide(LinkTarget.Null));
-            Assert.Equal(LinkCleanup.RemoveComponent, AgentLinkGraph.Rule(AgentLink.HouseholdMember).Decide(LinkTarget.Destroyed));
-            Assert.Equal(LinkCleanup.RemoveComponent, AgentLinkGraph.Rule(AgentLink.HouseholdMember).Decide(LinkTarget.Null));
+            // the game deletes a citizen or a pet whose household is gone (a pet without HouseholdPet has no update-group marker)
+            Assert.Equal(LinkCleanup.DeleteHolder, AgentLinkGraph.Rule(AgentLink.HouseholdMember).Decide(LinkTarget.Destroyed));
+            Assert.Equal(LinkCleanup.Keep, AgentLinkGraph.Rule(AgentLink.HouseholdMember).Decide(LinkTarget.Null), "the game gives such a citizen a new household itself");
+            Assert.Equal(LinkCleanup.DeleteHolder, AgentLinkGraph.Rule(AgentLink.HouseholdPet).Decide(LinkTarget.Deleted));
             Assert.Equal(LinkCleanup.Keep, AgentLinkGraph.Rule(AgentLink.CurrentBuilding).Decide(LinkTarget.Null));
             Assert.Equal(LinkCleanup.ClearReference, AgentLinkGraph.Rule(AgentLink.HomelessHome).Decide(LinkTarget.Destroyed));
         }
@@ -384,16 +422,23 @@ namespace SkylineTogether.Core.Tests.Sync
         }
 
         [Test]
-        public void ARemovedHouseholdLeavesItsBuildingAndItsMembersLoseTheirLink()
+        public void ARemovedHouseholdLeavesItsBuildingAndTakesItsMembersAndPetsAlong()
         {
             var city = new City();
             Model m = city.M;
             NoneDangling(city.DeleteAndSettle(city.Household));
             Assert.SequenceEqual(new[] { city.Company }, m.Members(city.Building, AgentLink.Renter));
-            // the host deletes the members with it; until their despawns arrive they name no household that is gone
-            Assert.False(m.Has(city.Citizen, AgentLink.HouseholdMember));
-            Assert.False(m.Has(city.Pet, AgentLink.HouseholdPet));
-            Assert.True(m.Has(city.Citizen, AgentLink.Worker), "the rest of a member's links is the host's business");
+            // the game (and the host) deletes the members with it: they are never left without their household link
+            foreach (int member in new[] { city.Citizen, city.Partner, city.Pupil, city.Pet })
+            {
+                Assert.Contains(member, m.TakenAlong);
+                Assert.False(m.Alive.Contains(member), member + " outlived its household");
+            }
+            // and they leave every list they were on: workplace, school, hospital
+            Assert.Equal(0, m.Members(city.Company, AgentLink.Employee).Count);
+            Assert.Equal(0, m.Members(city.Hotel, AgentLink.Employee).Count);
+            Assert.Equal(0, m.Members(city.School, AgentLink.SchoolStudent).Count);
+            Assert.Equal(0, m.Members(city.Hospital, AgentLink.Patient).Count);
         }
 
         [Test]
@@ -427,6 +472,7 @@ namespace SkylineTogether.Core.Tests.Sync
             {
                 var city = new City();
                 Model m = city.M;
+                if (round % 2 == 0) m.IndexAll(); // with and without the referrer index
                 List<int> all = m.Alive.ToList();
                 int deletions = 1 + random.Next(5);
                 for (int i = 0; i < deletions; i++) m.Delete(all[random.Next(all.Count)]);
@@ -436,8 +482,94 @@ namespace SkylineTogether.Core.Tests.Sync
                 m.EndFrame();
                 if (!behindItsBack) NoneDangling(m.Dangling()); // the cascade alone keeps a consistent graph consistent
                 m.Audit();
+                m.EndFrame(); // what the audit deleted (a member of a household destroyed behind its back) is gone now
+                m.Audit();
                 NoneDangling(m.Dangling());
             }
+        }
+
+        // ------------------------------------------------------------------ the referrer index
+
+        [Test]
+        public void ADemolishedBuildingIsLeftByEveryoneInsideItAlthoughNoListNamesThem()
+        {
+            // the real session: the player bulldozed a building and 540 citizens kept CurrentBuilding naming it (only a
+            // hospital's or shelter's list names the citizens inside it)
+            var city = new City();
+            Model m = city.M;
+            var inside = new List<int>();
+            for (int i = 0; i < 50; i++)
+            {
+                int c = m.New();
+                m.Link(c, AgentLink.CurrentBuilding, city.Building);
+                inside.Add(c);
+            }
+            m.Link(city.Citizen, AgentLink.CurrentBuilding, city.Building);
+            var withoutIndex = new City();
+            int visitor = withoutIndex.M.New();
+            withoutIndex.M.Link(visitor, AgentLink.CurrentBuilding, withoutIndex.Building);
+            Assert.Equal(1, withoutIndex.DeleteAndSettle(withoutIndex.Building).Count, "the lists alone miss a visitor");
+            m.IndexAll();
+            NoneDangling(city.DeleteAndSettle(city.Building));
+            foreach (int c in inside) Assert.False(m.Has(c, AgentLink.CurrentBuilding));
+            Assert.True(m.Alive.Contains(city.Citizen) && m.Has(city.Citizen, AgentLink.Worker), "only the link to the building goes");
+        }
+
+        [Test]
+        public void ADeletedHouseholdTakesAlongAMemberItsOwnListDoesNotNameYet()
+        {
+            // the key links travel on a different stream than the lists: the newest crash had citizens whose household was
+            // destroyed while its list did not name them
+            var city = new City();
+            Model m = city.M;
+            int newcomer = m.New();
+            m.Link(newcomer, AgentLink.HouseholdMember, city.Household);
+            m.Link(newcomer, AgentLink.Worker, city.Company);
+            m.List(city.Company, AgentLink.Employee, newcomer);
+            m.IndexAll();
+            NoneDangling(city.DeleteAndSettle(city.Household));
+            Assert.Contains(newcomer, m.TakenAlong);
+            Assert.False(m.Members(city.Company, AgentLink.Employee).Contains(newcomer), "it left its workplace's list too");
+        }
+
+        [Test]
+        public void AStaleListNamingADeletedCitizenIsCleanedThroughTheIndex()
+        {
+            // a school still lists a pupil that moved to another school: the pupil's own link leads elsewhere
+            var city = new City();
+            Model m = city.M;
+            int otherSchool = m.New();
+            m.Link(city.Pupil, AgentLink.CitizenStudent, otherSchool);
+            m.List(otherSchool, AgentLink.SchoolStudent, city.Pupil);
+            m.IndexAll();
+            NoneDangling(city.DeleteAndSettle(city.Pupil));
+            Assert.Equal(0, m.Members(city.School, AgentLink.SchoolStudent).Count);
+            Assert.Equal(0, m.Members(otherSchool, AgentLink.SchoolStudent).Count);
+        }
+
+        [Test]
+        public void PlanningIsLinearInTheReferrersOfALargeWorkplace()
+        {
+            var m = new Model();
+            int company = m.New();
+            var workers = new List<int>();
+            for (int i = 0; i < 20000; i++)
+            {
+                int w = m.New();
+                m.Link(w, AgentLink.Worker, company);
+                workers.Add(w);
+            }
+            m.List(company, AgentLink.Employee, workers.ToArray());
+            m.IndexAll();
+            var referrers = new List<int>();
+            m.Index.Get(company, referrers);
+            Assert.Equal(20000, referrers.Count);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var ops = new List<AgentLinkOp<int>>();
+            var deletions = new List<int>();
+            AgentLinkGraph.PlanDeletion(m, company, t => referrers, ops, deletions);
+            Assert.Equal(20000, ops.Count, "one change per worker, not one per list and referrer");
+            Assert.True(watch.ElapsedMilliseconds < 2000, "planning took " + watch.ElapsedMilliseconds + " ms");
         }
 
         // ------------------------------------------------------------------ pacing and bookkeeping
