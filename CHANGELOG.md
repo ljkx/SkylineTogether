@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-10-16
+
+Second test build: a fix for joining players.
+
 ### Fixed
 
 - Joining players' building markers (schools, police stations, stops ... shown while an info view or a build menu is
@@ -113,5 +117,6 @@ on a copy of a city.
   a list); saving before the first state arrived could store "keep" as the host password; the player list re-rendered
   with every cursor movement.
 
-[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.1.0-alpha.1...main
+[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.1.0-alpha.2...main
+[0.1.0-alpha.2]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.1
