@@ -38,6 +38,19 @@ which checks and applies them for everyone. Differences are detected and repaire
 
 ## Install
 
+Use **one** of the two ways, not both: with a local copy and a subscription at the same time the game loads only one
+of them, and Skyline Together warns at start.
+
+**From Paradox Mods** (once it is published there)
+
+1. In the game's main menu open **Paradox Mods**, search for **Skyline Together** and subscribe (or subscribe on
+   [mods.paradoxplaza.com](https://mods.paradoxplaza.com/games/cities_skylines_2)). Make sure it is enabled in your
+   active playset.
+2. Restart the game. Subscriptions update automatically, so everyone who subscribed has the same version after a
+   restart; the panel's footer shows the build id to compare.
+
+**With the setup from GitHub** (every test build, also before it reaches Paradox Mods)
+
 1. Close the game.
 2. Download `SkylineTogether-Setup.zip` from the latest release on the
    [Releases page](https://github.com/ljkx/SkylineTogether/releases) (not the green "Code" button: that is the source
@@ -45,9 +58,9 @@ which checks and applies them for everyone. Differences are detected and repaire
 3. Unzip it and double-click **`Install.cmd`**. It installs the mod into
    `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether` and prints a **build id**:
    every player must see the same one.
-4. Disable any other multiplayer mod.
 
-Details, manual installation and uninstalling: [Getting started](docs/guide/getting-started.md#install).
+A release published on both has the same build id, so players of both ways can play together. Disable any other
+multiplayer mod. Details, manual installation and uninstalling: [Getting started](docs/guide/getting-started.md#install).
 
 ## Quick start
 
@@ -111,6 +124,7 @@ tools/build.sh                 # Release build, UI checks, tests
 tools/build.sh --deploy        # ... then copy the mod into the local Mods folder
 tools/build.sh --package       # ... then write dist/SkylineTogether-<version>.zip
 python tools/installer/make_installer.py   # then build dist/SkylineTogether-Setup.zip
+python tools/paradox/publish_paradox.py check   # check a Paradox Mods upload (docs/dev/publishing-paradox-mods.md)
 ```
 
 Add `--game-dir "<path>"` if the game is not in the default Steam folder. Core and its tests also build without the

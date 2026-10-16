@@ -59,6 +59,12 @@ responding while joining."
   build. The build id is the start of the DLL's SHA-256: the installer prints it, the panel's footer and the
   diagnostics show it, and a refusal shows both players' ids; compare it before you play. Building the
   mod yourself from the same commit does not guarantee an identical DLL on another PC; share one setup zip instead.
+  A Paradox Mods subscription and the GitHub setup of the same release have the same build id. If the footer shows
+  "(mvid)" after the id, the game could not find the DLL file; please report it with the log.
+- **Installed twice.** The notification "Skyline Together is installed twice" means the game found a copy in the
+  local `Mods` folder and a Paradox Mods subscription (or two of either). Only one is loaded, and it may not be the
+  build you expect. Delete `Mods\SkylineTogether` (or run the installer with `-Uninstall`) or unsubscribe, then
+  restart the game.
 - **Game version.** Compared exactly. Update both games.
 - **Mods.** Only code mods count here (DLC and asset packs have their own check, see
   [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings)). Mods are matched by name

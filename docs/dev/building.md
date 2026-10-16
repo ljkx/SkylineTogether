@@ -110,8 +110,11 @@ python tools/installer/make_installer.py
 - `HOW-TO-TEST.txt`: the two-player checklist from `tools/installer/HOW-TO-TEST.txt`.
 
 The **build id** printed by the installer and written into `HOW-TO-TEST.txt` is the first 12 hex digits of the SHA-256
-of `SkylineTogether.dll`. The game's own join check compares a different value (derived from the assembly's MVID, shown
-as "mod build" in the diagnostics file); both change with every compile. See [releasing.md](releasing.md).
+of `SkylineTogether.dll`. The game computes the same value from the DLL it loaded and compares it when a player joins;
+it changes with every compile. See [releasing.md](releasing.md).
+
+For Paradox Mods, `python tools/paradox/publish_paradox.py` uploads the files of the same release zip with the game's
+ModPublisher; see [publishing-paradox-mods.md](publishing-paradox-mods.md). The default build does not change for it.
 
 ## Line endings and editor settings
 

@@ -12,12 +12,28 @@ All notable changes to this project are documented in this file. The format is b
   behave differently). The host is told who joined with which differences (notification and chat line). New host
   option **Let players join with different mods** (on by default; off makes those refusals final). It never skips a
   different build, game version, missing DLC, the password, bans or a full session.
+- **Paradox Mods publishing**: the page configuration (`src/SkylineTogether/Properties/PublishConfiguration.xml`), a
+  thumbnail and screenshots (`tools/paradox/make_images.py`), and `tools/paradox/publish_paradox.py`, which checks the
+  version, changelog and images, scans the upload for personal data and runs the game's own ModPublisher on the files of
+  the tested release zip (`docs/dev/publishing-paradox-mods.md`). Nothing is uploaded without the maintainer's
+  confirmation; the default build is unchanged.
+- **Installed twice**: when the game finds Skyline Together more than once (the local Mods folder and a Paradox Mods
+  subscription), a notification, the log and the diagnostics name every copy with its build id and say how to keep
+  one. The installer warns when the mod is also subscribed on Paradox Mods.
+- The log and the diagnostics say where the mod was loaded from (local Mods folder or Paradox Mods id and version,
+  never a path).
 
 ### Changed
 
 - Wire change, protocol 4 (the hello carries a join flags byte): earlier builds are refused with "Skyline Together
   versions differ".
 - DLC the joining player lacks is now reported before different code mods.
+
+### Fixed
+
+- The build id in game differed from the installer's ("build ... (mvid)" in the log): the game loads mods from the
+  DLL's bytes, so the DLL's location was empty. The DLL is now found through the game's mod manager, for local and
+  Paradox Mods installs, and the panel shows the installer's id.
 
 ## [0.1.0-alpha.2] - 2026-10-16
 

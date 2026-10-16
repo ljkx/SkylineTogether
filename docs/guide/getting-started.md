@@ -27,7 +27,26 @@ breaking.
 
 ## Install
 
-### With the installer (recommended)
+There are two ways to install Skyline Together: a Paradox Mods subscription or the setup from GitHub. Use **one** of
+them. If the game finds both a local copy and a subscription, it loads only one of them, and Skyline Together shows a
+warning that names both copies and their build ids. Keep one copy and restart the game.
+
+### From Paradox Mods
+
+Once Skyline Together is published on Paradox Mods:
+
+1. In the main menu open **Paradox Mods**, search for **Skyline Together** and subscribe (or subscribe on
+   [mods.paradoxplaza.com](https://mods.paradoxplaza.com/games/cities_skylines_2)).
+2. Make sure it is enabled in your active playset, then restart the game.
+3. Compare the build id in the panel's footer with your friends'. Subscriptions update when the game starts, so after
+   a new version everyone needs a restart.
+
+To uninstall, unsubscribe (or disable it in the playset).
+
+New test builds appear on GitHub first. To test one, unsubscribe (or disable the mod in your playset) and use the
+installer below. Everyone in the session must use the same build.
+
+### With the installer
 
 1. Close Cities: Skylines II.
 2. Get `SkylineTogether-Setup.zip`, either from the
@@ -54,7 +73,8 @@ or delete the `Mods\SkylineTogether` folder.
 ### Manually
 
 Extract `SkylineTogether-<version>.zip` (made by `tools/build.sh --package`) into the `Mods` folder above, so the files
-end up in `Mods\SkylineTogether`. Local mods take precedence over Paradox Mods subscriptions of the same name.
+end up in `Mods\SkylineTogether`. Local mods take precedence over Paradox Mods subscriptions of the same name, but
+don't keep both: see the note at the top of this section.
 
 ## Host a city
 

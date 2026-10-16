@@ -16,6 +16,8 @@ Start with the [architecture](ARCHITECTURE.md) (how the mod works, written from 
 - [Tests](dev/testing.md): unit tests, UI smoke test, repository checks, CI
 - [Debugging in game](dev/debugging.md): logs, diagnostics dump, self-test, status lines
 - [Releasing](dev/releasing.md): versions, build id, installer, release steps
+- [Publishing on Paradox Mods](dev/publishing-paradox-mods.md): ModPublisher, the page config, first upload, new
+  versions, installed twice
 - [Mod integration](MOD-INTEGRATION.md): for authors of other mods
 - [CONTRIBUTING.md](../CONTRIBUTING.md), [SECURITY.md](../SECURITY.md), [CHANGELOG.md](../CHANGELOG.md)
 
