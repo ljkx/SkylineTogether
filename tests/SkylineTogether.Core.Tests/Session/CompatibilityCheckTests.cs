@@ -231,5 +231,129 @@ namespace SkylineTogether.Core.Tests.Session
             // an older reader skips what it does not know; a newer record never breaks the mod lists
             Assert.False(MismatchReport.Decode(System.Text.Encoding.UTF8.GetBytes("kind\tmods\nfuture\tx\n")).HasDifferences);
         }
+
+        // ------------------------------------------------------------------------------------------- join anyway
+
+        private static CompatibilityOptions Options(bool allow, bool joinAnyway, bool sameAssets = false) =>
+            new CompatibilityOptions { RequireSameMods = true, RequireSameAssets = sameAssets, AllowOverride = allow, JoinAnyway = joinAnyway };
+
+        [Test]
+        public void AModRefusalIsOverridableOnlyWhenTheHostAllowsIt()
+        {
+            HandshakeManifest client = Manifest(mods: new List<ModEntry>());
+            CompatibilityResult allowed = CompatibilityCheck.Compare(Manifest(), client, Options(allow: true, joinAnyway: false));
+            Assert.Equal("mods", allowed.Refusal?.Kind);
+            Assert.True(allowed.Refusal.Overridable);
+            Assert.Contains("The host lets you join anyway.", allowed.RefusalDetail);
+            Assert.False(allowed.JoinAnywayIgnored);
+
+            CompatibilityResult required = CompatibilityCheck.Compare(Manifest(), client, Options(allow: false, joinAnyway: false));
+            Assert.False(required.Refusal.Overridable);
+            Assert.DoesNotContain("join anyway", required.RefusalDetail);
+            Assert.False(required.JoinAnywayIgnored, "nothing was asked");
+        }
+
+        [Test]
+        public void JoinAnywayTurnsTheRefusalIntoANotice()
+        {
+            HandshakeManifest client = Manifest(mods: new List<ModEntry> { new ModEntry { Name = "Anarchy", Version = "1.0", PlatformId = "74604" } });
+            CompatibilityResult r = CompatibilityCheck.Compare(Manifest(), client, Options(allow: true, joinAnyway: true));
+            Assert.Null(r.Refusal);
+            Assert.True(r.Notice.JoinedAnyway);
+            Assert.False(r.Notice.Overridable);
+            Assert.Equal("Traffic", r.Notice.Missing[0].Name);
+            Assert.Equal("Anarchy", r.Notice.Extra[0].Name);
+
+            MismatchReport back = MismatchReport.Decode(MismatchReport.Encode(r.Notice));
+            Assert.True(back.JoinedAnyway);
+            Assert.False(back.Overridable);
+            Assert.Equal("Anarchy", back.Extra[0].Name);
+        }
+
+        [Test]
+        public void JoinAnywayIsIgnoredWhenTheHostDoesNotAllowIt()
+        {
+            HandshakeManifest client = Manifest(mods: new List<ModEntry>());
+            CompatibilityResult r = CompatibilityCheck.Compare(Manifest(), client, Options(allow: false, joinAnyway: true));
+            Assert.Equal("mods", r.Refusal?.Kind);
+            Assert.False(r.Refusal.Overridable);
+            Assert.True(r.JoinAnywayIgnored);
+            Assert.Null(r.Notice);
+        }
+
+        [Test]
+        public void JoinAnywayNeverPassesMissingDlc()
+        {
+            HandshakeManifest client = Manifest(content: new List<ContentEntry>(), mods: new List<ModEntry>());
+            foreach (bool joinAnyway in new[] { false, true })
+            {
+                CompatibilityResult r = CompatibilityCheck.Compare(Manifest(), client, Options(allow: true, joinAnyway: joinAnyway));
+                Assert.Equal("content", r.Refusal?.Kind, "DLC first, whether or not the joiner chose to join anyway");
+                Assert.False(r.Refusal.Overridable);
+                Assert.DoesNotContain("join anyway", r.RefusalDetail);
+            }
+        }
+
+        [Test]
+        public void OneJoinAnywayPassesModsAndAssetPacks()
+        {
+            HandshakeManifest client = Manifest(mods: new List<ModEntry>(), packs: new List<ContentEntry> { Pack("75426", "Bus Stops") });
+            CompatibilityResult refused = CompatibilityCheck.Compare(Manifest(), client, Options(allow: true, joinAnyway: false, sameAssets: true));
+            Assert.Equal("mods", refused.Refusal?.Kind, "code mods are reported first");
+            Assert.True(refused.Refusal.Overridable);
+
+            HandshakeManifest assetsOnly = Manifest(packs: new List<ContentEntry> { Pack("75426", "Bus Stops") });
+            CompatibilityResult assets = CompatibilityCheck.Compare(Manifest(), assetsOnly, Options(allow: true, joinAnyway: false, sameAssets: true));
+            Assert.Equal("assets", assets.Refusal?.Kind);
+            Assert.True(assets.Refusal.Overridable);
+            Assert.Contains("The host lets you join anyway.", assets.RefusalDetail);
+
+            CompatibilityResult joined = CompatibilityCheck.Compare(Manifest(), client, Options(allow: true, joinAnyway: true, sameAssets: true));
+            Assert.Null(joined.Refusal);
+            Assert.True(joined.Notice.JoinedAnyway);
+            Assert.Equal("Traffic", joined.Notice.Missing[0].Name);
+            Assert.Equal("Trees", joined.Notice.AssetsMissing[0].Name);
+        }
+
+        [Test]
+        public void JoinAnywayMarksTheNoticeOnlyWhenItPassedARefusal()
+        {
+            // nothing differs: no notice
+            Assert.Null(CompatibilityCheck.Compare(Manifest(), Manifest(), Options(allow: true, joinAnyway: true)).Notice);
+            // asset packs differ, but the host does not require the same: told as before
+            HandshakeManifest packs = Manifest(packs: new List<ContentEntry> { Pack("75426", "Bus Stops") });
+            CompatibilityResult told = CompatibilityCheck.Compare(Manifest(), packs, Options(allow: true, joinAnyway: true));
+            Assert.Null(told.Refusal);
+            Assert.False(told.Notice.JoinedAnyway);
+            // mods differ, not required: told as before
+            var relaxed = new CompatibilityOptions { RequireSameMods = false, AllowOverride = true, JoinAnyway = true };
+            CompatibilityResult mods = CompatibilityCheck.Compare(Manifest(), Manifest(mods: new List<ModEntry>()), relaxed);
+            Assert.False(mods.Notice.JoinedAnyway);
+            Assert.Equal("Traffic", mods.Notice.Missing[0].Name);
+        }
+
+        [Test]
+        public void TheOverridableMarkTravelsInTheReportAndOlderReadersKeepTheLists()
+        {
+            var r = new MismatchReport { Kind = "mods", Overridable = true };
+            r.Missing.Add(new ModEntry { Name = "Traffic", Version = "1.0", PlatformId = "80095" });
+            byte[] encoded = MismatchReport.Encode(r);
+            MismatchReport back = MismatchReport.Decode(encoded);
+            Assert.True(back.Overridable);
+            Assert.False(back.JoinedAnyway);
+            Assert.Equal("Traffic", back.Missing[0].Name);
+            // the mark is a record of its own: without it (what a reader that does not know it sees) the lists are the same
+            string text = System.Text.Encoding.UTF8.GetString(encoded);
+            Assert.Contains("\noverridable\n", text);
+            MismatchReport old = MismatchReport.Decode(System.Text.Encoding.UTF8.GetBytes(text.Replace("overridable\n", "")));
+            Assert.False(old.Overridable);
+            Assert.Equal("Traffic", old.Missing[0].Name);
+            // the refusal around it keeps its layout: the report is the opaque byte field of RefuseMessage
+            var w = new SkylineTogether.Core.Buffers.ByteWriter();
+            SkylineTogether.Core.Protocol.RefuseMessage.Write(w, new SkylineTogether.Core.Protocol.RefuseMessage { Reason = SkylineTogether.Core.Protocol.RefuseReason.Mismatch, Detail = "x", MismatchReport = encoded });
+            byte[] wire = w.ToArray();
+            SkylineTogether.Core.Protocol.RefuseMessage read = SkylineTogether.Core.Protocol.RefuseMessage.Decode(wire, 0, wire.Length);
+            Assert.True(MismatchReport.Decode(read.MismatchReport).Overridable);
+        }
     }
 }

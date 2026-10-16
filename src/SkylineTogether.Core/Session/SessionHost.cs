@@ -38,6 +38,13 @@ namespace SkylineTogether.Core.Session
         /// and objects of packs they lack are left out on their side.
         /// </summary>
         public bool RequireSameAssets;
+        /// <summary>
+        /// Let players join with different mods (read live): a refusal for code mods or asset packs (from
+        /// <see cref="RequireSameMods"/> or <see cref="RequireSameAssets"/>) tells the joiner it may join anyway, and a hello
+        /// with <see cref="HelloJoinFlags.AcceptModMismatch"/> is then admitted with a join notice. Off: the flag is ignored
+        /// and such refusals are final. Never affects the build, game version, DLC, password, bans, join policy or capacity.
+        /// </summary>
+        public bool AllowModMismatchOverride = true;
         public ListenOptions Listen = new ListenOptions();
         public double HandshakeTimeoutSeconds = 30;
         /// <summary>
@@ -163,6 +170,11 @@ namespace SkylineTogether.Core.Session
             public SessionRole Role = SessionRole.Builder;
             /// <summary>The stage timings of this player's join (from its admission).</summary>
             public JoinTimeline Timeline;
+            /// <summary>
+            /// Admitted only because the player chose "join anyway": the mod and asset pack differences the host accepted
+            /// (<see cref="MismatchReport.Describe"/>, shortened), for the diagnostics; null otherwise.
+            /// </summary>
+            public string JoinedAnyway;
             /// <summary>The background pump's registration of this peer's snapshot transfer (null without one).</summary>
             public IDisposable PumpToken;
             /// <summary>When the peer was admitted (join deadline).</summary>
@@ -601,7 +613,8 @@ namespace SkylineTogether.Core.Session
                           + " in=" + (int)c.InBytesPerSecond + "B/s out=" + (int)c.OutBytesPerSecond + "B/s pendingReliable=" + c.PendingReliableBytes
                           + " outboxQueued=" + p.Channel.Outbox.QueuedBytes + " lastHeard=" + (now - p.LastHeard).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s ago"
                           + (p.Sender != null ? " snapshotSent=" + p.Sender.TotalBytesSent + "/" + p.SnapshotSize + " window=" + p.Sender.CurrentWindowBytes : "")
-                          + " sendRate=" + c.SendRateBytesPerSecond + "B/s");
+                          + " sendRate=" + c.SendRateBytesPerSecond + "B/s"
+                          + (p.JoinedAnyway != null ? " joinedAnywayWithDifferentMods=\"" + p.JoinedAnyway + "\"" : ""));
                 if (p.Timeline != null && p.State != PlayerState.Live) lines.Add("    " + p.Timeline.Describe());
             }
             return lines;
@@ -1387,10 +1400,23 @@ namespace SkylineTogether.Core.Session
             // digests differ (the hello's digests are the ones the client computed from these lists)
             HandshakeManifest theirsManifest = p.Manifest;
             theirsManifest.Digests = theirs;
-            CompatibilityResult compat = CompatibilityCheck.Compare(mineManifest, theirsManifest,
-                new CompatibilityOptions { RequireSameMods = _options.RequireSameMods, RequireSameAssets = _options.RequireSameAssets });
+            // "join anyway" (HelloJoinFlags.AcceptModMismatch) only changes the verdict on code mods and asset packs, and
+            // only when the host allows it; everything before (bans, policy, password, build, game) and after (DLC is
+            // compared first inside, capacity below) is unaffected
+            bool joinAnyway = (p.Hello.JoinFlags & HelloJoinFlags.AcceptModMismatch) != 0;
+            CompatibilityResult compat = CompatibilityCheck.Compare(mineManifest, theirsManifest, new CompatibilityOptions
+            {
+                RequireSameMods = _options.RequireSameMods,
+                RequireSameAssets = _options.RequireSameAssets,
+                AllowOverride = _options.AllowModMismatchOverride,
+                JoinAnyway = joinAnyway,
+            });
             if (compat.Refusal != null)
             {
+                if (compat.JoinAnywayIgnored)
+                {
+                    _log.Info(LogCategory.Join, p.Name + " asked to join anyway with different mods, but this host does not let players join with different mods");
+                }
                 // the detail text is cut at 1024 characters; the report carries the complete lists for the UI
                 Refuse(p, RefuseReason.Mismatch, compat.RefusalDetail, compat.Refusal);
                 return;
@@ -1410,7 +1436,17 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         private void SendJoinNotice(Peer p, MismatchReport notice)
         {
-            _log.Info(LogCategory.Join, p.Name + " joins with differences: " + notice.Describe());
+            string differences = notice.Describe();
+            if (notice.JoinedAnyway)
+            {
+                // the mismatch this host accepted, for the log and the diagnostics dump (DescribePeers)
+                p.JoinedAnyway = ProtocolText.Truncate(differences, 500);
+                _log.Info(LogCategory.Join, p.Name + " joins anyway with different mods (the host lets players join with different mods): " + differences);
+            }
+            else
+            {
+                _log.Info(LogCategory.Join, p.Name + " joins with differences: " + differences);
+            }
             byte[] encoded = MismatchReport.Encode(notice);
             if (encoded != null && encoded.Length <= ControlMessage.MaxPayloadBytes)
             {

@@ -25,7 +25,7 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void PlanConstantsArePinned()
         {
-            Assert.Equal(3, ProtocolVersion.Current); // 3: the handshake of the compatibility check (ProtocolVersion history)
+            Assert.Equal(4, ProtocolVersion.Current); // 4: the join flags of the hello (ProtocolVersion history)
             Assert.Equal(512 * 1024, Limits.MaxMessageBytes);
             Assert.Equal(480 * 1024, Limits.FragmentThreshold);
             Assert.Equal(8 * 1024 * 1024, Limits.MaxUncompressedBytes);
@@ -81,7 +81,7 @@ namespace SkylineTogether.Core.Tests.Protocol
                 (MessageKind.Hello, Size<HelloMessage>(HelloMessage.Write, new HelloMessage
                 {
                     Digests = digests, SteamId = ulong.MaxValue, DisplayName = Wide(Limits.MaxNameChars), ClientNonce = new byte[HelloMessage.MaxNonceBytes],
-                    CompressionMask = CompressionNegotiation.DefinedBits
+                    CompressionMask = CompressionNegotiation.DefinedBits, JoinFlags = HelloJoinFlags.DefinedBits
                 }), "Hello"),
                 (MessageKind.Welcome, Size<WelcomeMessage>(WelcomeMessage.Write, new WelcomeMessage
                 {

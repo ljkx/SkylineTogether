@@ -161,7 +161,7 @@ namespace SkylineTogether.Core.Tests.Session
         /// <summary>The transport of each client, in the order of <see cref="Clients"/>.</summary>
         public readonly List<LoopbackTransport> ClientTransports = new List<LoopbackTransport>();
 
-        public (SessionClient Client, FakeLoader Loader, FakeInfo Info) AddClient(string name, string password = "", Action<FakeInfo> tweak = null, Action<FakeLoader> tweakLoader = null, ulong steamId = 0)
+        public (SessionClient Client, FakeLoader Loader, FakeInfo Info) AddClient(string name, string password = "", Action<FakeInfo> tweak = null, Action<FakeLoader> tweakLoader = null, ulong steamId = 0, bool joinAnyway = false)
         {
             var info = new FakeInfo();
             tweak?.Invoke(info);
@@ -169,7 +169,7 @@ namespace SkylineTogether.Core.Tests.Session
             tweakLoader?.Invoke(loader);
             ulong id = steamId != 0 ? steamId : (ulong)(1000 + Clients.Count);
             LoopbackTransport t = HostTransport.CreateClient(new PeerIdentity(id, "loop:" + name, name));
-            var client = new SessionClient(t, info, loader, new ClientOptions { PlayerName = name, Password = password, SteamId = id }, Clock, Log);
+            var client = new SessionClient(t, info, loader, new ClientOptions { PlayerName = name, Password = password, SteamId = id, AcceptModMismatch = joinAnyway }, Clock, Log);
             client.Connect(new Endpoint());
             Clients.Add((client, loader, info));
             ClientTransports.Add(t);

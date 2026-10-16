@@ -32,6 +32,12 @@ namespace SkylineTogether.Core.Session
         public double LiveSilenceTimeoutSeconds = 120;
         /// <summary>The longest the local load of the host's city may take before the join is abandoned.</summary>
         public double LoadTimeoutSeconds = 1200;
+        /// <summary>
+        /// "Join anyway": the player saw that its mods differ from the host's and chose to join
+        /// (<see cref="HelloJoinFlags.AcceptModMismatch"/>). A host that lets players join with different mods admits it with
+        /// a join notice; any other host refuses as before.
+        /// </summary>
+        public bool AcceptModMismatch;
     }
 
     /// <summary>Stages of a client session, in order; Ended is final (why: <see cref="ClientEndKind"/>).</summary>
@@ -479,6 +485,7 @@ namespace SkylineTogether.Core.Session
                 DisplayName = _options.PlayerName,
                 ClientNonce = _clientNonce,
                 CompressionMask = CompressionNegotiation.AlwaysSupported,
+                JoinFlags = _options.AcceptModMismatch ? HelloJoinFlags.AcceptModMismatch : (byte)0,
             });
             _channel.Send(MessageKind.Hello, _body);
             _payload.Reset();
@@ -496,7 +503,8 @@ namespace SkylineTogether.Core.Session
             SendControl(ControlKind.ManifestDetail, _payload);
             _channel.Pump();
             _log.Info(LogCategory.Session, "connected; sent hello (" + (manifest.Mods?.Count ?? 0) + " mods, " + (manifest.Content?.Count ?? 0) + " DLC, "
-                                           + (manifest.AssetPacks != null ? manifest.AssetPacks.Count.ToString(CultureInfo.InvariantCulture) : "too many") + " asset packs)");
+                                           + (manifest.AssetPacks != null ? manifest.AssetPacks.Count.ToString(CultureInfo.InvariantCulture) : "too many") + " asset packs"
+                                           + (_options.AcceptModMismatch ? ", joining anyway with different mods" : "") + ")");
         }
 
         void ITransportEventSink.OnDisconnected(IConnection connection, int reason, string text)

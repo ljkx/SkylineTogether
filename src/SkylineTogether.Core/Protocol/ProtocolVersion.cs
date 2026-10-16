@@ -20,8 +20,9 @@ namespace SkylineTogether.Core.Protocol
         /// The version this build speaks. 1 was the first layout; 2 covers everything added since under one increment (among
         /// others the id ceiling record, the cell-map messages and the mod channel message kind); 3: the handshake digests
         /// and <c>ManifestDetail</c> of the compatibility check (DLC, asset pack and mod setting lists instead of the
-        /// never-filled format-tag, type-catalog and data-file fields) and <see cref="ControlKind.JoinNotice"/>.
+        /// never-filled format-tag, type-catalog and data-file fields) and <see cref="ControlKind.JoinNotice"/>; 4: the join flags
+        /// byte at the end of <see cref="HelloMessage"/> ("join anyway" with different mods, <see cref="HelloJoinFlags"/>).
         /// </summary>
-        public const int Current = 3;
+        public const int Current = 4;
     }
 }

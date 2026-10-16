@@ -288,6 +288,32 @@ namespace SkylineTogether.Core.Tests.Protocol
             Assert.True(allocated < 4000L * 4096 + 64 * sent, "allocated " + allocated + " bytes for " + sent + " bytes of fragments");
         }
 
+        // ------------------------------------------------------------------ hello join flags
+
+        [Test]
+        public void EveryUndefinedHelloJoinFlagBitIsADecodeException()
+        {
+            byte[] hello = Encode<HelloMessage>(HelloMessage.Write, new HelloMessage { Digests = MessageGoldenTests.SampleDigests(), DisplayName = "Ann", ClientNonce = new byte[16] });
+            for (int value = 0; value < 256; value++)
+            {
+                hello[hello.Length - 1] = (byte)value;
+                if ((value & ~HelloJoinFlags.DefinedBits) == 0)
+                {
+                    Assert.Equal((byte)value, HelloMessage.Decode(hello, 0, hello.Length).JoinFlags);
+                }
+                else
+                {
+                    DecodeException e = Assert.Throws<DecodeException>(() => HelloMessage.Decode(hello, 0, hello.Length), "join flags 0x" + value.ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+                    Assert.Contains("Hello.JoinFlags", e.Message);
+                }
+            }
+            // a hello without the byte (the protocol 3 layout) is truncated, and its version is still readable for the refusal
+            byte[] old = new byte[hello.Length - 1];
+            Array.Copy(hello, old, old.Length);
+            Assert.Throws<DecodeException>(() => HelloMessage.Decode(old, 0, old.Length));
+            Assert.Equal(MessageGoldenTests.SampleDigests().ProtocolVersion, HelloMessage.PeekProtocolVersion(old, 0, old.Length));
+        }
+
         // ------------------------------------------------------------------ messages
 
         [Test(TimeoutSeconds = 120)]
@@ -306,7 +332,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             {
                 ("Hello", new[]
                 {
-                    Encode<HelloMessage>(HelloMessage.Write, new HelloMessage { Digests = digests, SteamId = 7, DisplayName = "Ann", ClientNonce = new byte[16], CompressionMask = 7 }),
+                    Encode<HelloMessage>(HelloMessage.Write, new HelloMessage { Digests = digests, SteamId = 7, DisplayName = "Ann", ClientNonce = new byte[16], CompressionMask = 7, JoinFlags = HelloJoinFlags.AcceptModMismatch }),
                     Encode<HelloMessage>(HelloMessage.Write, new HelloMessage { Digests = default(HandshakeDigests) })
                 }, b => HelloMessage.Decode(b, 0, b.Length)),
                 ("Welcome", new[]

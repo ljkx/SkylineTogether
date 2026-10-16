@@ -47,12 +47,15 @@ namespace SkylineTogether.Core.Tests.Session
 
         public byte[] ClientNonce = SessionCrypto.RandomBytes(16);
 
-        public void Hello(FakeInfo info, ushort? protocol = null)
+        public void Hello(FakeInfo info, ushort? protocol = null, byte joinFlags = 0)
         {
             HandshakeDigests d = info.GetDigests();
             if (protocol.HasValue) d.ProtocolVersion = protocol.Value;
             _w.Reset();
-            HelloMessage.Write(_w, new HelloMessage { Digests = d, SteamId = SteamId, DisplayName = Name, ClientNonce = ClientNonce, CompressionMask = CompressionNegotiation.AlwaysSupported });
+            HelloMessage.Write(_w, new HelloMessage
+            {
+                Digests = d, SteamId = SteamId, DisplayName = Name, ClientNonce = ClientNonce, CompressionMask = CompressionNegotiation.AlwaysSupported, JoinFlags = joinFlags
+            });
             Send(MessageKind.Hello, _w);
         }
 

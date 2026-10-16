@@ -12,6 +12,18 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>Refuse joiners whose asset packs differ (otherwise they are only told, and objects of packs they lack are left out).</summary>
         public bool RequireSameAssets;
+
+        /// <summary>
+        /// The host lets players join with different mods: a refusal for code mods or asset packs is marked
+        /// <see cref="MismatchReport.Overridable"/>, and <see cref="JoinAnyway"/> turns it into a notice.
+        /// </summary>
+        public bool AllowOverride;
+
+        /// <summary>
+        /// The joiner chose "join anyway" (<see cref="Protocol.HelloJoinFlags.AcceptModMismatch"/>). Counts only together with
+        /// <see cref="AllowOverride"/>, and only for code mods and asset packs; DLC the joiner lacks still refuses.
+        /// </summary>
+        public bool JoinAnyway;
     }
 
     /// <summary>The outcome of <see cref="CompatibilityCheck.Compare"/>.</summary>
@@ -25,6 +37,12 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>The differences that do not block the join (kind "notice"), null when there are none.</summary>
         public MismatchReport Notice;
+
+        /// <summary>
+        /// The joiner asked to join anyway, but the host does not allow it and its mods or asset packs differ (the refusal is
+        /// not overridable; the host logs that the request was ignored).
+        /// </summary>
+        public bool JoinAnywayIgnored;
     }
 
     /// <summary>
@@ -41,6 +59,11 @@ namespace SkylineTogether.Core.Session
     /// <item>simulation-relevant mod settings: told only; the host's values apply for the session
     /// (<c>Compat.ModSettingsSync</c>).</item>
     /// </list>
+    /// DLC the joiner lacks is checked first: it is a hard incompatibility, so a joiner is never offered "join anyway" for its
+    /// mods only to be refused for its DLC afterwards. A refusal for code mods or asset packs is overridable when the host
+    /// lets players join with different mods (<see cref="CompatibilityOptions.AllowOverride"/>); a joiner that chose
+    /// "join anyway" (<see cref="CompatibilityOptions.JoinAnyway"/>) is then told those differences in the notice
+    /// (<see cref="MismatchReport.JoinedAnyway"/>) instead of being refused. Nothing else depends on the joiner's choice.
     /// Lists in the reports are sorted and capped at <see cref="MaxListed"/> entries each. Pure; thread-safe.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
@@ -56,6 +79,27 @@ namespace SkylineTogether.Core.Session
             options = options ?? new CompatibilityOptions();
             var result = new CompatibilityResult();
             var notice = new MismatchReport { Kind = "notice" };
+            // the joiner's choice counts only when the host allows it
+            bool joinAnyway = options.AllowOverride && options.JoinAnyway;
+            MismatchReport refusal = null;
+            string refusalDetail = null;
+
+            // DLC and content packs first: lacking the host's is never overridable
+            if (Differs(host.Digests.Content, client.Digests.Content) && host.Content != null && client.Content != null)
+            {
+                Diff(host.Content, client.Content, false, out List<ModEntry> missing, out List<ModEntry> extra, out _);
+                if (missing.Count > 0)
+                {
+                    var content = new MismatchReport { Kind = "content" };
+                    content.ContentMissing.AddRange(Cap(missing));
+                    content.ContentExtra.AddRange(Cap(extra));
+                    result.Refusal = content;
+                    result.RefusalDetail = "The host has DLC or content packs you don't have: " + Names(missing)
+                                           + ". The host's city may use them, and your game cannot load it the same way. Get them, or ask the host to host without them.";
+                    return result;
+                }
+                notice.ContentExtra.AddRange(Cap(extra));
+            }
 
             // code mods
             MismatchReport mods = null;
@@ -70,32 +114,18 @@ namespace SkylineTogether.Core.Session
             }
             if (mods != null)
             {
-                if (options.RequireSameMods)
+                if (options.RequireSameMods && !joinAnyway)
                 {
-                    result.Refusal = mods;
-                    result.RefusalDetail = ("Your mods differ from the host's. " + mods.Describe()).Trim();
-                    return result;
+                    refusal = mods;
+                    refusalDetail = ("Your mods differ from the host's. " + mods.Describe()).Trim();
                 }
-                notice.Missing.AddRange(Cap(mods.Missing));
-                notice.Extra.AddRange(Cap(mods.Extra));
-                notice.Versions.AddRange(Cap(mods.Versions));
-            }
-
-            // DLC and content packs
-            if (Differs(host.Digests.Content, client.Digests.Content) && host.Content != null && client.Content != null)
-            {
-                Diff(host.Content, client.Content, false, out List<ModEntry> missing, out List<ModEntry> extra, out _);
-                if (missing.Count > 0)
+                else
                 {
-                    var refusal = new MismatchReport { Kind = "content" };
-                    refusal.ContentMissing.AddRange(Cap(missing));
-                    refusal.ContentExtra.AddRange(Cap(extra));
-                    result.Refusal = refusal;
-                    result.RefusalDetail = "The host has DLC or content packs you don't have: " + Names(missing)
-                                           + ". The host's city may use them, and your game cannot load it the same way. Get them, or ask the host to host without them.";
-                    return result;
+                    if (options.RequireSameMods) notice.JoinedAnyway = true;
+                    notice.Missing.AddRange(Cap(mods.Missing));
+                    notice.Extra.AddRange(Cap(mods.Extra));
+                    notice.Versions.AddRange(Cap(mods.Versions));
                 }
-                notice.ContentExtra.AddRange(Cap(extra));
             }
 
             // asset packs
@@ -116,17 +146,33 @@ namespace SkylineTogether.Core.Session
                 }
                 if (assets.HasAssetDifferences)
                 {
-                    if (options.RequireSameAssets)
+                    if (options.RequireSameAssets && !joinAnyway)
                     {
-                        result.Refusal = assets;
-                        result.RefusalDetail = "The host requires the same asset packs. " + assets.Describe();
-                        return result;
+                        if (refusal == null)
+                        {
+                            refusal = assets;
+                            refusalDetail = "The host requires the same asset packs. " + assets.Describe();
+                        }
                     }
-                    notice.AssetsMissing.AddRange(assets.AssetsMissing);
-                    notice.AssetsExtra.AddRange(assets.AssetsExtra);
-                    notice.AssetVersions.AddRange(assets.AssetVersions);
-                    notice.AssetsUnknown = assets.AssetsUnknown;
+                    else
+                    {
+                        if (options.RequireSameAssets) notice.JoinedAnyway = true;
+                        notice.AssetsMissing.AddRange(assets.AssetsMissing);
+                        notice.AssetsExtra.AddRange(assets.AssetsExtra);
+                        notice.AssetVersions.AddRange(assets.AssetVersions);
+                        notice.AssetsUnknown = assets.AssetsUnknown;
+                    }
                 }
+            }
+
+            if (refusal != null)
+            {
+                // code mods before asset packs; one "join anyway" passes both
+                refusal.Overridable = options.AllowOverride;
+                result.Refusal = refusal;
+                result.RefusalDetail = options.AllowOverride ? refusalDetail + " The host lets you join anyway." : refusalDetail;
+                result.JoinAnywayIgnored = options.JoinAnyway && !options.AllowOverride;
+                return result;
             }
 
             // simulation-relevant mod settings: the host's values win

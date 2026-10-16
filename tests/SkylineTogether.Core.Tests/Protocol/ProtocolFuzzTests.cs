@@ -176,7 +176,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             HandshakeDigests digests = MessageGoldenTests.SampleDigests();
             var hello = new List<byte[]>
             {
-                Encode<HelloMessage>(HelloMessage.Write, new HelloMessage { Digests = digests, SteamId = 7, DisplayName = "Ann", ClientNonce = new byte[16], CompressionMask = 7 }),
+                Encode<HelloMessage>(HelloMessage.Write, new HelloMessage { Digests = digests, SteamId = 7, DisplayName = "Ann", ClientNonce = new byte[16], CompressionMask = 7, JoinFlags = HelloJoinFlags.AcceptModMismatch }),
                 Encode<HelloMessage>(HelloMessage.Write, new HelloMessage { Digests = default(HandshakeDigests) })
             };
             Fuzz("Hello", hello, 5000, 401, (b, o, c) => HelloMessage.Decode(b, o, c));

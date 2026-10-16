@@ -85,7 +85,7 @@ namespace SkylineTogether.Core.Tests.Protocol
                         Locale = RandomText(random, 10)
                     },
                     SteamId = random.NextULong(), DisplayName = RandomText(random, 64), ClientNonce = RandomBytes(random, 64),
-                    CompressionMask = (byte)random.Next(16)
+                    CompressionMask = (byte)random.Next(16), JoinFlags = (byte)random.Next(HelloJoinFlags.DefinedBits + 1)
                 };
                 byte[] bytes = Encode<HelloMessage>(HelloMessage.Write, m);
                 HelloMessage read = HelloMessage.Decode(bytes, 0, bytes.Length);
@@ -94,6 +94,7 @@ namespace SkylineTogether.Core.Tests.Protocol
                 Assert.Equal(m.DisplayName, read.DisplayName);
                 Assert.SequenceEqual(m.ClientNonce, read.ClientNonce);
                 Assert.Equal(m.CompressionMask, read.CompressionMask);
+                Assert.Equal(m.JoinFlags, read.JoinFlags);
                 Assert.Equal(m.Digests.ProtocolVersion, HelloMessage.PeekProtocolVersion(bytes, 0, bytes.Length));
                 if (round == 0)
                 {
@@ -113,16 +114,28 @@ namespace SkylineTogether.Core.Tests.Protocol
             encoded = Encode<HelloMessage>(HelloMessage.Write, hello);
             Assert.Equal("", HelloMessage.Decode(encoded, 0, encoded.Length).DisplayName);
 
-            // undefined compression bits, oversized nonce
+            // undefined compression bits, undefined join flags, oversized nonce
             hello.CompressionMask = 0x10;
             Assert.Throws<ArgumentException>(() => Encode<HelloMessage>(HelloMessage.Write, hello));
             hello.CompressionMask = 0;
+            hello.JoinFlags = 0x02;
+            Assert.Throws<ArgumentException>(() => Encode<HelloMessage>(HelloMessage.Write, hello));
+            hello.JoinFlags = 0;
             hello.ClientNonce = new byte[HelloMessage.MaxNonceBytes + 1];
             Assert.Throws<ArgumentException>(() => Encode<HelloMessage>(HelloMessage.Write, hello));
             hello.ClientNonce = null;
             encoded = Encode<HelloMessage>(HelloMessage.Write, hello);
-            encoded[encoded.Length - 1] = 0x10;
+            encoded[encoded.Length - 2] = 0x10;
             Assert.Throws<DecodeException>(() => HelloMessage.Decode(encoded, 0, encoded.Length), "undefined mask bit");
+            encoded[encoded.Length - 2] = 0;
+            Assert.Equal((byte)0, HelloMessage.Decode(encoded, 0, encoded.Length).JoinFlags);
+            for (int bit = 1; bit < 8; bit++)
+            {
+                encoded[encoded.Length - 1] = (byte)(1 << bit);
+                Assert.Throws<DecodeException>(() => HelloMessage.Decode(encoded, 0, encoded.Length), "undefined join flag bit " + bit);
+            }
+            encoded[encoded.Length - 1] = HelloJoinFlags.AcceptModMismatch;
+            Assert.Equal(HelloJoinFlags.AcceptModMismatch, HelloMessage.Decode(encoded, 0, encoded.Length).JoinFlags);
 
             // a display name above 64 characters (only a hostile peer writes one) is rejected
             var w = new ByteWriter();

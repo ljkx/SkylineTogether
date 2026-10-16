@@ -29,7 +29,9 @@ namespace SkylineTogether.Core.Session
     /// so the joiner's UI can show lists (mods to enable, disable or update) instead of one truncated sentence, and the
     /// differences an admitted joiner is told about (<see cref="Protocol.ControlKind.JoinNotice"/>, kind "notice"). The
     /// encoding is UTF-8 text, one tab-separated record per line; unknown records are skipped when read, so the format
-    /// can grow without breaking older readers.
+    /// can grow without breaking older readers. The "overridable" and "joined-anyway" records were added that way: a
+    /// refusal the joiner may pass with "join anyway" carries the first, the notice of a joiner that did the second; the
+    /// <see cref="Protocol.RefuseMessage"/> around the report keeps its layout (docs/dev/releasing.md).
     /// </summary>
     public sealed class MismatchReport
     {
@@ -69,6 +71,18 @@ namespace SkylineTogether.Core.Session
         public bool AssetsUnknown;
         /// <summary>Mod settings whose values differ; the host's values apply for the session.</summary>
         public readonly List<SettingDifference> Settings = new List<SettingDifference>();
+
+        /// <summary>
+        /// A refusal (kind "mods" or "assets") the joiner may pass: the host lets players join with different mods, and a
+        /// hello with <see cref="Protocol.HelloJoinFlags.AcceptModMismatch"/> is admitted despite these differences.
+        /// </summary>
+        public bool Overridable;
+
+        /// <summary>
+        /// A notice (kind "notice") of a joiner the host admitted only because it chose "join anyway": the mod or asset pack
+        /// differences in it would have refused the join otherwise.
+        /// </summary>
+        public bool JoinedAnyway;
 
         public bool HasModDifferences => Missing.Count > 0 || Extra.Count > 0 || Versions.Count > 0;
 
@@ -183,6 +197,8 @@ namespace SkylineTogether.Core.Session
             foreach (ModVersionDifference v in r.AssetVersions) Line(sb, "asset-version", v.Name, v.HostVersion, v.ClientVersion, v.PlatformId);
             if (r.AssetsUnknown) Line(sb, "assets-unknown");
             foreach (SettingDifference d in r.Settings) Line(sb, "setting", d.Mod, d.Key, d.HostValue, d.ClientValue);
+            if (r.Overridable) Line(sb, "overridable");
+            if (r.JoinedAnyway) Line(sb, "joined-anyway");
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
@@ -222,6 +238,8 @@ namespace SkylineTogether.Core.Session
                     case "asset-version": r.AssetVersions.Add(new ModVersionDifference { Name = Field(f, 1), HostVersion = Field(f, 2), ClientVersion = Field(f, 3), PlatformId = Field(f, 4) }); break;
                     case "assets-unknown": r.AssetsUnknown = true; break;
                     case "setting": r.Settings.Add(new SettingDifference { Mod = Field(f, 1), Key = Field(f, 2), HostValue = Field(f, 3), ClientValue = Field(f, 4) }); break;
+                    case "overridable": r.Overridable = true; break;
+                    case "joined-anyway": r.JoinedAnyway = true; break;
                 }
             }
             return r;

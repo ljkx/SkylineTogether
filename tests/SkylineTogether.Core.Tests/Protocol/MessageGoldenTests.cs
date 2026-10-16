@@ -23,13 +23,13 @@ namespace SkylineTogether.Core.Tests.Protocol
 
         internal static HandshakeDigests SampleDigests() => new HandshakeDigests
         {
-            ProtocolVersion = 3, ModBuild = 0x0102030405060708UL, GameVersion = "1.2", GameFullVersion = "1.2.3f1",
+            ProtocolVersion = 4, ModBuild = 0x0102030405060708UL, GameVersion = "1.2", GameFullVersion = "1.2.3f1",
             Mods = 0x44, Content = 0x55, AssetPacks = 0x66, ModSettings = 0x77, Locale = "en-US"
         };
 
-        // varint 3 | u64 modBuild | "1.2" | "1.2.3f1" | u64 mods, content, assetPacks, modSettings | "en-US"
+        // varint 4 | u64 modBuild | "1.2" | "1.2.3f1" | u64 mods, content, assetPacks, modSettings | "en-US"
         private const string DigestsHex =
-            "03 | 0807060504030201 | 03 312e32 | 07 312e322e336631 | 4400000000000000 5500000000000000 6600000000000000 7700000000000000 | 05 656e2d5553";
+            "04 | 0807060504030201 | 03 312e32 | 07 312e322e336631 | 4400000000000000 5500000000000000 6600000000000000 7700000000000000 | 05 656e2d5553";
 
         internal static void AssertDigests(HandshakeDigests expected, HandshakeDigests actual)
         {
@@ -47,12 +47,12 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void Hello()
         {
-            // digests | u64 steamId | "Ann" | nonce aa bb | compression mask {None, ManagedLz4, Zstd}
-            string hex = DigestsHex + " | 0100000001001001 | 03 416e6e | 02 aabb | 07";
+            // digests | u64 steamId | "Ann" | nonce aa bb | compression mask {None, ManagedLz4, Zstd} | join flags {AcceptModMismatch}
+            string hex = DigestsHex + " | 0100000001001001 | 03 416e6e | 02 aabb | 07 | 01";
             var m = new HelloMessage
             {
                 Digests = SampleDigests(), SteamId = 0x0110000100000001UL, DisplayName = "Ann", ClientNonce = new byte[] { 0xAA, 0xBB },
-                CompressionMask = CompressionNegotiation.LocalMask(true, false)
+                CompressionMask = CompressionNegotiation.LocalMask(true, false), JoinFlags = HelloJoinFlags.AcceptModMismatch
             };
             AssertBytes(hex, Write<HelloMessage>(HelloMessage.Write, m));
             byte[] bytes = Hex(hex);
@@ -62,7 +62,9 @@ namespace SkylineTogether.Core.Tests.Protocol
             Assert.Equal("Ann", read.DisplayName);
             Assert.SequenceEqual(m.ClientNonce, read.ClientNonce);
             Assert.Equal((byte)7, read.CompressionMask);
-            Assert.Equal(3, HelloMessage.PeekProtocolVersion(bytes, 0, bytes.Length));
+            Assert.Equal(HelloJoinFlags.AcceptModMismatch, read.JoinFlags);
+            Assert.Equal(4, HelloMessage.PeekProtocolVersion(bytes, 0, bytes.Length));
+            Assert.Equal((byte)0x01, HelloJoinFlags.AcceptModMismatch, "the bit is pinned on the wire");
         }
 
         [Test]

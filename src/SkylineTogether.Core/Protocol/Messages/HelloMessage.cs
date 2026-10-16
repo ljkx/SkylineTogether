@@ -6,10 +6,11 @@ namespace SkylineTogether.Core.Protocol
     /// <summary>
     /// <c>Hello</c> (client → host, the first message, ARCHITECTURE.md#handshake-and-admission): the handshake digests, the client's Steam
     /// identity and display name, its nonce for the direct-IP password challenge (ARCHITECTURE.md#security-model) and the codecs it can
-    /// decompress (ARCHITECTURE.md#fragmentation-and-compression, <see cref="CompressionNegotiation"/>).
+    /// decompress (ARCHITECTURE.md#fragmentation-and-compression, <see cref="CompressionNegotiation"/>) and its join flags
+    /// (<see cref="HelloJoinFlags"/>: "join anyway" with different mods).
     /// <code>
     /// digests (see below; starts with varint protocolVersion) | u64 steamId | text displayName (≤ 64 chars) | bytes clientNonce (≤ 64)
-    /// | u8 compressionMask (bits of CompressionNegotiation.DefinedBits)
+    /// | u8 compressionMask (bits of CompressionNegotiation.DefinedBits) | u8 joinFlags (bits of HelloJoinFlags.DefinedBits)
     /// digests = varint protocolVersion | u64 modBuild | string gameVersion | string gameFullVersion | u64 mods | u64 content
     ///         | u64 assetPacks | u64 modSettings | string locale
     /// </code>
@@ -33,6 +34,11 @@ namespace SkylineTogether.Core.Protocol
         /// what every peer decodes (uncompressed and LZ4). Readers reject undefined bits.
         /// </summary>
         public byte CompressionMask;
+        /// <summary>
+        /// <see cref="HelloJoinFlags"/> bits (0: nothing asked). Readers reject undefined bits. The host trusts
+        /// <see cref="HelloJoinFlags.AcceptModMismatch"/> only for the mod and asset pack verdict, and only when its options allow it.
+        /// </summary>
+        public byte JoinFlags;
 
         public static void Write(ByteWriter w, HelloMessage m)
         {
@@ -42,11 +48,16 @@ namespace SkylineTogether.Core.Protocol
             {
                 throw new System.ArgumentException("undefined compression mask bits", nameof(m));
             }
+            if ((m.JoinFlags & ~HelloJoinFlags.DefinedBits) != 0)
+            {
+                throw new System.ArgumentException("undefined join flag bits", nameof(m));
+            }
             HandshakeCodec.WriteDigests(w, m.Digests);
             w.WriteUInt64(m.SteamId);
             MessageFields.WriteText(w, m.DisplayName, Limits.MaxNameChars);
             MessageFields.WriteBytes(w, m.ClientNonce, MaxNonceBytes, "ClientNonce");
             w.WriteByte(m.CompressionMask);
+            w.WriteByte(m.JoinFlags);
         }
 
         public static HelloMessage Read(ByteReader r)
@@ -58,7 +69,8 @@ namespace SkylineTogether.Core.Protocol
                 SteamId = r.ReadUInt64(),
                 DisplayName = MessageFields.ReadText(r, Limits.MaxNameChars, "Hello.DisplayName"),
                 ClientNonce = MessageFields.ReadBytes(r, MaxNonceBytes, "Hello.ClientNonce"),
-                CompressionMask = MessageFields.ReadFlags(r, CompressionNegotiation.DefinedBits, "Hello.CompressionMask")
+                CompressionMask = MessageFields.ReadFlags(r, CompressionNegotiation.DefinedBits, "Hello.CompressionMask"),
+                JoinFlags = MessageFields.ReadFlags(r, HelloJoinFlags.DefinedBits, "Hello.JoinFlags")
             };
         }
 
