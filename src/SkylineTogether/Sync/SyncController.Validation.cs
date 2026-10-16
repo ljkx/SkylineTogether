@@ -180,11 +180,17 @@ namespace SkylineTogether.Sync
                                                + (_rejectDetail != null ? ": " + _rejectDetail : ""));
             _rejectDetail = null;
             SendRollback(peer, seq, reason, ids, zones);
-            CountViolation(peer, reason);
+            // an inconsistent structure change usually comes from a capture gap in our own client code, not from a
+            // tampered client: it is refused and rolled back, but never counts towards a kick
+            if (!_rejectStructural) CountViolation(peer, reason);
+            _rejectStructural = false;
         }
 
         /// <summary>What the last validation refused, for the refusal's log line (null: the reason says it all).</summary>
         private string _rejectDetail;
+
+        /// <summary>The last refusal came from the referential-integrity check (<see cref="CheckStructure"/>).</summary>
+        private bool _rejectStructural;
 
         private readonly StructureIntegrity _structure = new StructureIntegrity();
         private readonly List<StructureChange> _structureChanges = new List<StructureChange>();
@@ -209,6 +215,7 @@ namespace SkylineTogether.Sync
             if (reason == RejectReason.None) return reason;
             Perf.Counters.Count("proposals refused by referential integrity");
             _rejectDetail = "would leave dangling references: " + StructureIntegrity.Summarize(_structureProblems, _structure.ProblemCount);
+            _rejectStructural = true;
             return reason;
         }
 
