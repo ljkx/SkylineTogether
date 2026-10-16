@@ -427,6 +427,9 @@ namespace SkylineTogether.Sync
                 if (!IsHost) lines.Add(_audit.Describe());
             }
             _agents.Describe(lines);
+            MoverSync movers = MoverSync.Instance;
+            if (movers != null && IsHost) movers.Host.Describe(lines);
+            else if (movers != null && _sessions.Client != null) movers.Client.Describe(lines);
             Perf.Budget.Describe(lines); // the shared frame budget, per feature avg/p95/max
             Perf.Counters.Describe(Perf.Now, lines);
         }

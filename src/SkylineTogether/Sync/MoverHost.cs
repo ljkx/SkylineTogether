@@ -31,7 +31,9 @@ namespace SkylineTogether.Sync
     /// the movers whose <c>UpdateFrame</c> matches the tick are sampled (exactly how the movers slice their work,
     /// <c>CarMoveSystem.cs:420-423</c>) and those inside a client's region stream their <c>TransformFrame</c> slot through
     /// <see cref="MotionHostEncoder"/> within a byte budget. Movers leaving the region are released with a pin.
-    /// Out-of-interest movers get a rare pose refresh, so they stay roughly in place on every client.
+    /// Out-of-interest movers get a rare pose refresh, so they stay roughly in place on every client. Movers seen from far
+    /// away have a wider reach (<see cref="MoverReach"/>): aircraft stream everywhere on the map, ships and mainline trains in
+    /// a region three times as wide; outside the client's own region their frames are far-field, every second sample.
     /// Runs right before <c>SaveGameSystem</c>, so a join snapshot taken this frame already carries the new ids.
     /// Main thread only.
     /// </summary>
@@ -64,6 +66,8 @@ namespace SkylineTogether.Sync
             public readonly ViewReport Report = new ViewReport();
             public bool HasReport;
             public MotionInterestRegion Region;
+            /// <summary>The regions of the wider reach classes (<see cref="MotionReach.RegionFor"/>), kept with <see cref="Region"/>.</summary>
+            public MotionInterestRegion WideRegion, GlobalRegion;
             public float Scale = 1f;
             public readonly Dictionary<uint, uint> Interest = new Dictionary<uint, uint>();
             /// <summary>The keys of <see cref="Interest"/> as an array-backed set (the sampling loop tests it per mover).</summary>
@@ -110,6 +114,14 @@ namespace SkylineTogether.Sync
         private uint _lastSampled;
         private int _refreshCursor;
         private bool _warnedSlots;
+        // reach classes (ARCHITECTURE.md#movers): per chunk by component, trains per prefab (track type)
+        private readonly Dictionary<Entity, MoverReach> _prefabReach = new Dictionary<Entity, MoverReach>();
+        private ComponentTypeHandle<Aircraft> _aircraftType;
+        private ComponentTypeHandle<Watercraft> _watercraftType;
+        private ComponentTypeHandle<Train> _trainType;
+        private ComponentTypeHandle<Unspawned> _unspawnedType;
+        private ComponentTypeHandle<PrefabRef> _prefabRefType;
+        private long _wideFrames, _farSkipped;
 
         public MoverHost(SessionManager sessions, ILog log)
         {
@@ -127,6 +139,8 @@ namespace SkylineTogether.Sync
             _encoder = new MotionHostEncoder(_log);
             _movers.Clear();
             _peers.Clear();
+            _prefabReach.Clear();
+            _wideFrames = _farSkipped = 0;
             _bindAll = true;
             _sampleInit = false;
             _active = true;
@@ -180,6 +194,8 @@ namespace SkylineTogether.Sync
             float zoom = v.Report.Zoom > 0f ? v.Report.Zoom : MinRadius;
             float radius = Math.Max(MinRadius, Math.Min(MaxRadius, zoom * RadiusPerZoom) * v.Scale);
             v.Region = new MotionInterestRegion { CenterX = v.Report.PivotX, CenterZ = v.Report.PivotZ, Radius = radius, LeaveRadius = radius * LeaveFactor };
+            v.WideRegion = MotionReach.RegionFor(v.Region, MoverReach.Wide);
+            v.GlobalRegion = MotionReach.RegionFor(v.Region, MoverReach.Global);
         }
 
         private bool EnsureWorld()
@@ -188,6 +204,7 @@ namespace SkylineTogether.Sync
             if (world == null) return false;
             if (_world == world) return true;
             _world = world;
+            _prefabReach.Clear();
             _ids = world.GetOrCreateSystemManaged<NetIdSystem>();
             _simulation = world.GetOrCreateSystemManaged<SimulationSystem>();
             EntityManager em = world.EntityManager;
@@ -584,6 +601,11 @@ namespace SkylineTogether.Sync
                 EntityTypeHandle entityType = em.GetEntityTypeHandle();
                 ComponentTypeHandle<Transform> transformType = em.GetComponentTypeHandle<Transform>(true);
                 BufferTypeHandle<TransformFrame> frameType = em.GetBufferTypeHandle<TransformFrame>(true);
+                _aircraftType = em.GetComponentTypeHandle<Aircraft>(true);
+                _watercraftType = em.GetComponentTypeHandle<Watercraft>(true);
+                _trainType = em.GetComponentTypeHandle<Train>(true);
+                _unspawnedType = em.GetComponentTypeHandle<Unspawned>(true);
+                _prefabRefType = em.GetComponentTypeHandle<PrefabRef>(true);
                 // views with a report, once per frame (not a dictionary walk per mover), and a time budget with
                 // carry-over: a tick not sampled this frame is sampled next frame (the frame ring keeps 4 x 16 ticks)
                 _views.Clear();
@@ -634,6 +656,13 @@ namespace SkylineTogether.Sync
                     NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
                     NativeArray<Transform> transforms = chunk.GetNativeArray(ref transformType);
                     BufferAccessor<TransformFrame> frames = chunk.GetBufferAccessor(ref frameType);
+                    // hidden movers (off the map on an outside connection) never need more than the normal region
+                    bool hidden = chunk.Has(ref _unspawnedType);
+                    MoverReach chunkReach = hidden ? MoverReach.Normal
+                        : chunk.Has(ref _aircraftType) ? MoverReach.Global
+                        : chunk.Has(ref _watercraftType) ? MoverReach.Wide : MoverReach.Normal;
+                    bool trains = !hidden && chunkReach == MoverReach.Normal && chunk.Has(ref _trainType) && chunk.Has(ref _prefabRefType);
+                    NativeArray<PrefabRef> prefabs = trains ? chunk.GetNativeArray(ref _prefabRefType) : default;
                     for (int i = 0; i < entities.Length; i++)
                     {
                         uint id = _ids.GetNetId(entities[i]);
@@ -645,11 +674,13 @@ namespace SkylineTogether.Sync
                             continue;
                         }
                         float3 p = transforms[i].m_Position;
+                        MoverReach reach = trains ? TrainReach(em, prefabs[i].m_Prefab) : chunkReach;
                         for (int vi = 0; vi < _views.Count; vi++)
                         {
                             PeerView v = _views[vi];
                             bool inside = v.Members.Contains(id);
-                            if (!v.Region.Contains(p.x, p.z, inside))
+                            MotionInterestRegion region = reach == MoverReach.Global ? v.GlobalRegion : reach == MoverReach.Wide ? v.WideRegion : v.Region;
+                            if (!region.Contains(p.x, p.z, inside))
                             {
                                 if (inside)
                                 {
@@ -672,9 +703,20 @@ namespace SkylineTogether.Sync
                             }
                             else
                             {
-                                float dx = p.x - v.Region.CenterX, dz = p.z - v.Region.CenterZ;
-                                bool near = dx * dx + dz * dz <= v.Region.Radius * v.Region.Radius * 0.25f;
-                                _encoder.AddFrame(v.Peer, tick, new NetSlot(id), ToMotion(ring[slot]), near, false);
+                                MotionField field = MotionReach.FieldOf(v.Region, p.x, p.z);
+                                if (field == MotionField.Far)
+                                {
+                                    // kept by its wider reach: far-field priority and every second sample (the client
+                                    // interpolates between them)
+                                    if (!MotionReach.SendsFarSample(tick, id))
+                                    {
+                                        _farSkipped++;
+                                        v.Enter(id, tick);
+                                        continue;
+                                    }
+                                    _wideFrames++;
+                                }
+                                _encoder.AddFrame(v.Peer, tick, new NetSlot(id), ToMotion(ring[slot]), field == MotionField.Near, false);
                             }
                             v.Enter(id, tick);
                         }
@@ -685,6 +727,28 @@ namespace SkylineTogether.Sync
             {
                 chunks.Dispose();
             }
+        }
+
+        /// <summary>A train's reach by its prefab's track type: mainline trains are wide, trams and subways normal.</summary>
+        private MoverReach TrainReach(EntityManager em, Entity prefab)
+        {
+            if (_prefabReach.TryGetValue(prefab, out MoverReach reach)) return reach;
+            reach = MoverReach.Normal;
+            if (prefab != Entity.Null && em.Exists(prefab) && em.HasComponent<TrainData>(prefab)
+                && (em.GetComponentData<TrainData>(prefab).m_TrackType & Game.Net.TrackTypes.Train) != 0)
+            {
+                reach = MoverReach.Wide;
+            }
+            _prefabReach[prefab] = reach;
+            return reach;
+        }
+
+        /// <summary>Diagnostics dump lines.</summary>
+        public void Describe(List<string> lines)
+        {
+            if (!_active) return;
+            lines.Add("movers: " + _movers.Count + " tracked, " + _peers.Count + " motion streams; " + _wideFrames + " far-field frames of aircraft, ships and trains ("
+                      + _farSkipped + " samples thinned), " + _sampleCarryOvers + " sampling carry-overs");
         }
 
         private static int TickDiff(uint a, uint b) => unchecked((int)(a - b));

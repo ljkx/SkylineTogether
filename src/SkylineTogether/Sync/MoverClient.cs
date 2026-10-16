@@ -1138,6 +1138,13 @@ namespace SkylineTogether.Sync
 
         private static float Finite(float v) => float.IsNaN(v) || float.IsInfinity(v) ? 0f : v;
 
+        /// <summary>Diagnostics dump lines.</summary>
+        public void Describe(List<string> lines)
+        {
+            if (!_active) return;
+            lines.Add("movers: " + Status + "; motion frames accepted " + _stager.FramesAccepted + ", dropped " + _stager.FramesDropped);
+        }
+
         /// <summary>One line for diagnostics.</summary>
         public string Status => _active ? "movers +" + _spawned + " -" + _despawned + ", " + _stager.AssignedCount + " in motion" + (_linksApplied > 0 ? ", " + _linksApplied + " agent links" : "")
                                           + (_recordFailures + _motionDropped + _ridersReleased > 0 ? ", " + _recordFailures + " failures, " + _familyMismatches + " family mismatches, "

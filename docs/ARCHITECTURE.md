@@ -902,7 +902,15 @@ parked, entering or leaving a vehicle) are mover records in batches of their own
 [`MoverHost`](../src/SkylineTogether/Sync/MoverHost.cs) samples, per simulated tick, the movers whose update frame
 matches and streams those within a client's radius (200-1000 m, at most 2500) as unreliable `Motion` datagrams
 ([`MotionHostEncoder`](../src/SkylineTogether.Core/Motion/MotionHostEncoder.cs)); movers leaving interest are pinned
-with a rare pose refresh. [`MoverClient`](../src/SkylineTogether/Sync/MoverClient.cs) applies the records after the
+with a rare pose refresh. Movers seen from far away have a wider **reach**
+([`MotionReach`](../src/SkylineTogether.Core/Motion/MotionReach.cs), decided per chunk and, for trains, per prefab):
+aircraft (airplanes, helicopters, rockets) are in every client's interest anywhere on the map, ships and mainline trains
+within three times the client's radius (1.5-4 km); trams, subways, cars, pedestrians and animals keep the normal
+radius, and hidden (`Unspawned`) movers never get more. Outside the client's own radius such a mover's frames are
+far-field and only every second sample is sent (phase spread by id); the client interpolates between them. Every mover
+class has its own move system in the game (cars and trailers, humans and animals every tick by `UpdateFrame` slice;
+aircraft, ships and trains all at once every 16 ticks at their prefab's fixed `UpdateFrame`, 10, 8 and 3), and all of
+them are gated on clients, so a mover outside every interest region does not move there. [`MoverClient`](../src/SkylineTogether/Sync/MoverClient.cs) applies the records after the
 structure apply, stages motion and writes the transform frames the interpolation reads just in time before
 `PreCullingSystem`. Movers are never tagged `Updated` for motion.
 

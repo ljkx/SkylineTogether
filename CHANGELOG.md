@@ -39,6 +39,11 @@ All notable changes to this project are documented in this file. The format is b
   be and ran across the map in straight lines. Joining players now see no traffic routes for a selection; the host's
   are unchanged.
 - The log names the reason when a joining player's route tool closes and the host re-sends its transport lines.
+- **Planes stuck in the sky on joining players**: vehicles and pedestrians move on clients only inside the motion
+  interest around the camera (at most 1 km); everything farther away stays where it was until a rare position refresh.
+  An airplane far away is still in plain view, so it hung in mid-air where the host's plane had long left. Aircraft
+  (airplanes, helicopters, rockets) now move on every client anywhere on the map, ships and mainline trains up to 4 km
+  from the camera; beyond the normal interest they are updated at half rate.
 - **Households repaired over and over**: the integrity check kept re-sending households (and whole buckets of agents)
   in an active city. Citizens move between households without the game tagging anything (students moving out, couples
   moving together, divorces), and the host found such moves only when its rolling agent scan reached them, which in a
