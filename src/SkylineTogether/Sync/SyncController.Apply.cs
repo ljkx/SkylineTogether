@@ -344,7 +344,11 @@ namespace SkylineTogether.Sync
                     return true;
                 };
             }
+            // the host's batch judged by the same referential-integrity rule as a proposal on this world; what would
+            // dangle here is not kept dangling by the apply (not created, or deleted cleanly) and is asked for again
+            CheckHostBatch(records, data);
             ApplyResult r = _codec.Apply(records, data, 0, data.Length, null, skip);
+            if (_structureRepairs.Count > 0 || r.DanglingIds.Count > 0) RequestStructureRepairs(r);
             // mod compatibility: tell the player once that objects of missing assets are left out (details in the log)
             if (!_missingNotified && _codec.MissingAssets.Count > 0)
             {
@@ -370,6 +374,91 @@ namespace SkylineTogether.Sync
                     Guard.Report(Features.Integrity, "integrity (host batch)", ex);
                 }
             }
+        }
+
+        private readonly List<StructureChange> _batchChanges = new List<StructureChange>();
+        private readonly List<StructureProblem> _batchProblems = new List<StructureProblem>();
+        private readonly StructureIntegrity _batchIntegrity = new StructureIntegrity();
+        private readonly List<uint> _structureRepairs = new List<uint>();
+        private StructureFacts _batchFacts;
+        private double _lastBatchProblemLog = double.NegativeInfinity;
+        private int _batchProblemsSuppressed;
+
+        /// <summary>
+        /// Client (ARCHITECTURE.md#client-apply): a host batch that deletes or writes nodes and edges is judged by
+        /// <see cref="StructureIntegrity"/> on this client's world before it is applied, like a proposal on the host. The
+        /// host's world is consistent, so a problem means this client differs (an edge of its own prediction at a node the
+        /// host deleted, a node it lacks): the apply then creates nothing dangling and deletes what would dangle
+        /// (<see cref="EntityCodec"/>), and the ids involved are asked for again.
+        /// </summary>
+        private void CheckHostBatch(List<SyncRecord> records, byte[] data)
+        {
+            _structureRepairs.Clear();
+            // only batches that touch nets: written nodes or edges, or a despawn of a node or edge bound here (agent and
+            // event despawns arrive every frame)
+            bool nets = false;
+            foreach (SyncRecord rec in records)
+            {
+                Family family = rec.Kind == SyncRecordKind.Despawn ? _ids.GetFamily(rec.NetId)
+                                : rec.Kind == SyncRecordKind.Spawn || rec.Kind == SyncRecordKind.Upsert ? rec.Family : Family.Generic;
+                if (family == Family.NetEdge || family == Family.NetNode)
+                {
+                    nets = true;
+                    break;
+                }
+            }
+            if (!nets) return;
+            try
+            {
+                _codec.BeginPeek(data, 0, data.Length);
+                _codec.PeekStructure(records, _batchChanges);
+                _batchProblems.Clear();
+                if (_batchFacts == null) _batchFacts = new StructureFacts(_ids);
+                RejectReason reason = _batchIntegrity.Check(_batchChanges, _batchFacts.Use(_codec.EntityManager, false), _batchProblems, 4);
+                if (reason == RejectReason.None) return;
+                Perf.Counters.Count("host batches with dangling references here");
+                foreach (StructureProblem p in _batchProblems)
+                {
+                    if (p.Subject != 0) _structureRepairs.Add(p.Subject);
+                    if (p.Other != 0) _structureRepairs.Add(p.Other);
+                }
+                double now = _sessions.Clock.Seconds;
+                if (now - _lastBatchProblemLog < 10.0)
+                {
+                    _batchProblemsSuppressed++;
+                    return;
+                }
+                _lastBatchProblemLog = now;
+                _log.Info(LogCategory.Replication, "host batch would leave dangling references here (" + _batchIntegrity.ProblemCount + "): "
+                                                   + StructureIntegrity.Summarize(_batchProblems, _batchIntegrity.ProblemCount)
+                                                   + "; not kept dangling (not created, or deleted) and asked for again"
+                                                   + (_batchProblemsSuppressed > 0 ? " (" + _batchProblemsSuppressed + " earlier such batch(es) not logged)" : ""));
+                _batchProblemsSuppressed = 0;
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Replication, "checking a host batch failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>Client: asks the host again for what a batch would have left dangling here (integrity repair).</summary>
+        private void RequestStructureRepairs(ApplyResult r)
+        {
+            if (!Features.Integrity.IsAvailable)
+            {
+                _structureRepairs.Clear();
+                return;
+            }
+            try
+            {
+                foreach (uint id in _structureRepairs) Integrity.RequestRepair(id);
+                foreach (uint id in r.DanglingIds) Integrity.RequestRepair(id);
+            }
+            catch (Exception ex)
+            {
+                Guard.Report(Features.Integrity, "repair requests after a host batch", ex);
+            }
+            _structureRepairs.Clear();
         }
 
         /// <summary>

@@ -80,122 +80,209 @@ namespace SkylineTogether.Sync
                     chunks.Dispose();
                 }
             }
+            // the proposal's entities in two passes: every new entity of the frame gets its id first, then the records are
+            // written. Written in chunk order, a new edge whose new node came in a later chunk could not name it, and its
+            // Edge value travelled as presence only (the host then created an edge with null nodes: a native crash).
+            List<PendingWrite> writes = _clientWrites;
+            List<uint> deletions = _clientDeletions;
+            writes.Clear();
+            deletions.Clear();
+            uint nextSeq = _seq + 1;
             try
             {
-                foreach (Entity e in changed)
+                try
                 {
-                    bool isDeleted = em.HasComponent<Game.Common.Deleted>(e);
-                    // an entity the applier touched and the local game then deleted is still a deletion to handle
-                    if (_appliedThisFrame.Contains(e) && !isDeleted) continue;
-                    if (!toolPath && !isDeleted) continue;
-                    Family family = _codec.Families.Classify(em, e);
-                    // mod compatibility: vehicles, cims and animals a mod tool deleted (Better Bulldozer)
-                    if (family == Family.Mover && localTool && em.HasComponent<Game.Common.Deleted>(e))
+                    foreach (Entity e in changed)
                     {
-                        uint mover = _ids.GetNetId(e);
-                        if (mover != 0 && _ids.GetFamily(mover) == Family.Mover) _batch.Despawn(mover);
-                        continue;
-                    }
-                    if (family == Family.ZoneBlock)
-                    {
-                        if (_toolApplied && !em.HasComponent<Game.Common.Deleted>(e)) WriteZoneBlock(_batch, e, false);
-                        continue;
-                    }
-                    if (_subElementFrame && (family == Family.PrefabSubObject || family == Family.Lane) && em.HasComponent<Game.Common.Deleted>(e))
-                    {
-                        _actions.NoteSubElementDeleted(e); // sent as derived keys (intent)
-                        continue;
-                    }
-                    if (!FamilyClassifier.IsReplicated(family)) continue;
-                    // events, chirps and journal entries are the host simulation's alone (a local like is per player)
-                    if (FamilyClassifier.IsHostOnly(family)) continue;
-                    uint id = _ids.GetNetId(e);
-                    if (em.HasComponent<Game.Common.Deleted>(e))
-                    {
-                        if (id == 0) continue;
-                        if (!toolPath)
+                        bool isDeleted = em.HasComponent<Game.Common.Deleted>(e);
+                        // an entity the applier touched and the local game then deleted is still a deletion to handle
+                        if (_appliedThisFrame.Contains(e) && !isDeleted) continue;
+                        if (!toolPath && !isDeleted) continue;
+                        Family family = _codec.Families.Classify(em, e);
+                        // mod compatibility: vehicles, cims and animals a mod tool deleted (Better Bulldozer)
+                        if (family == Family.Mover && localTool && em.HasComponent<Game.Common.Deleted>(e))
                         {
-                            if (!IsUiDeletion(em, e, family))
-                            {
-                                // a cascade of the local game (the owner was despawned: sub-nets, sub-areas,
-                                // upgrades) destroys the entity at the end of this frame. Its binding must not outlive it:
-                                // a later record naming the id would otherwise resolve to a destroyed entity (a dangling
-                                // reference the game's jobs follow unchecked). Not proposed: the host deletes it itself.
-                                _ids.Unbind(id);
-                                ForgetShadow(id);
-                                Integrity.OnLocalDelete(id);
-                                _cascadeUnbinds++;
-                                continue;
-                            }
-                            flags |= ProposalFlags.UiDelete;
-                        }
-                        _batch.Despawn(id);
-                        _ids.Unbind(id);
-                        ForgetShadow(id);
-                        // until the host's despawn (or its rollback) arrives, records the host sent before it
-                        // applied this deletion must not bring the entity back (in-flight repairs, upserts)
-                        _localDeletes[id] = new LocalDelete { Seq = _seq + 1, Until = _sessions.Clock.Seconds + LocalDeleteSeconds };
-                        Integrity.OnLocalDelete(id);
-                        continue;
-                    }
-                    bool authored = em.HasComponent<Game.Common.Applied>(e) || _toolOriginals.Contains(e) || (localTool && !_toolApplied);
-                    if (!authored) continue;
-                    SyncRecordKind kind = SyncRecordKind.Upsert;
-                    ulong hash = _codec.HashEntity(e, false);
-                    if (id == 0)
-                    {
-                        if (!_pool.TryTake(out id))
-                        {
-                            _log.Warn(LogCategory.Replication, "out of net ids; an edit could not be sent (it will be corrected by the host)");
+                            uint mover = _ids.GetNetId(e);
+                            if (mover != 0 && _ids.GetFamily(mover) == Family.Mover) _batch.Despawn(mover);
                             continue;
                         }
-                        _ids.Bind(e, id, family);
-                        kind = SyncRecordKind.Spawn;
+                        if (family == Family.ZoneBlock)
+                        {
+                            if (_toolApplied && !em.HasComponent<Game.Common.Deleted>(e)) WriteZoneBlock(_batch, e, false);
+                            continue;
+                        }
+                        if (_subElementFrame && (family == Family.PrefabSubObject || family == Family.Lane) && em.HasComponent<Game.Common.Deleted>(e))
+                        {
+                            _actions.NoteSubElementDeleted(e); // sent as derived keys (intent)
+                            continue;
+                        }
+                        if (!FamilyClassifier.IsReplicated(family)) continue;
+                        // events, chirps and journal entries are the host simulation's alone (a local like is per player)
+                        if (FamilyClassifier.IsHostOnly(family)) continue;
+                        uint id = _ids.GetNetId(e);
+                        if (em.HasComponent<Game.Common.Deleted>(e))
+                        {
+                            if (id == 0) continue;
+                            if (!toolPath)
+                            {
+                                if (!IsUiDeletion(em, e, family))
+                                {
+                                    // a cascade of the local game (the owner was despawned: sub-nets, sub-areas,
+                                    // upgrades) destroys the entity at the end of this frame. Its binding must not outlive it:
+                                    // a later record naming the id would otherwise resolve to a destroyed entity (a dangling
+                                    // reference the game's jobs follow unchecked). Not proposed: the host deletes it itself.
+                                    _ids.Unbind(id);
+                                    ForgetShadow(id);
+                                    Integrity.OnLocalDelete(id);
+                                    _cascadeUnbinds++;
+                                    continue;
+                                }
+                                flags |= ProposalFlags.UiDelete;
+                            }
+                            // the id stays bound until the proposal is written and checked (FinishDeletions), so the
+                            // check sees what a kept record still names
+                            _batch.Despawn(id);
+                            deletions.Add(id);
+                            continue;
+                        }
+                        bool authored = em.HasComponent<Game.Common.Applied>(e) || _toolOriginals.Contains(e) || (localTool && !_toolApplied);
+                        if (!authored) continue;
+                        bool created = false;
+                        if (id == 0)
+                        {
+                            if (!_pool.TryTake(out id))
+                            {
+                                _log.Warn(LogCategory.Replication, "out of net ids; an edit could not be sent (it will be corrected by the host)");
+                                continue;
+                            }
+                            _ids.Bind(e, id, family);
+                            created = true;
+                        }
+                        writes.Add(new PendingWrite { Entity = e, Id = id, Family = family, Created = created });
                     }
-                    else if (_shadow.TryGetValue(id, out ulong old) && old == hash)
+                    foreach (PendingWrite w in writes)
                     {
-                        continue;
+                        if (!em.Exists(w.Entity)) continue;
+                        ulong hash = _codec.HashEntity(w.Entity, false);
+                        if (!w.Created && _shadow.TryGetValue(w.Id, out ulong old) && old == hash) continue;
+                        SetShadow(w.Id, hash);
+                        _codec.WriteEntity(_batch, w.Created ? SyncRecordKind.Spawn : SyncRecordKind.Upsert, w.Id, w.Family, w.Entity);
+                        written.Add(w.Entity);
+                        proposed.Add(w.Id);
                     }
-                    SetShadow(id, hash);
-                    _codec.WriteEntity(_batch, kind, id, family, e);
-                    written.Add(e);
-                    proposed.Add(id);
+                }
+                finally
+                {
+                    changed.Clear();
+                    writes.Clear();
+                }
+                // mod compatibility: untagged mod state the player changed (components tool, info-panel toggles, Better
+                // Bulldozer's removal records), then the dependencies of everything proposed
+                WriteDependencies(written, proposed);
+                int before = proposed.Count;
+                _callNow = now;
+                SafeCall("mod state capture", _clientModStateCall); // written/proposed are _clientWritten/_clientProposed
+                if (proposed.Count > before) flags |= ProposalFlags.DirectTool;
+                WriteDependencies(written, proposed);
+                _codec.DependencyBinder = null;
+                // a direct-write tool's edits are held against the host's echoes while the player keeps editing
+                if ((localTool && !_toolApplied) || proposed.Count > before)
+                {
+                    foreach (uint id in proposed)
+                    {
+                        _holds.TryGetValue(id, out EditHold hold);
+                        hold.Until = now + HoldSeconds;
+                        _holds[id] = hold;
+                    }
+                }
+                if (_toolCost != 0) _batch.Cost(_toolCost);
+                // sequence, base ledger epoch and kind of the proposal (host validation, rollback)
+                if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
+                if (_pool.ShouldRequestMore(_sessions.Clock.Seconds)) _batch.Request(SyncRequest.MoreIds); // retried with backoff
+                if (!_batch.IsEmpty)
+                {
+                    ArraySegment<byte> bytes = _batch.Finish();
+                    if (proposed.Count > 0 || deletions.Count > 0) CheckOwnProposal(bytes, nextSeq, now);
+                    _sessions.Client?.SendToHost(MessageKind.Proposal, bytes.Array, bytes.Offset, bytes.Count);
+                    Perf.Counters.AddBytes(Perf.ProposalBytes, bytes.Count, now);
                 }
             }
             finally
             {
-                changed.Clear();
-            }
-            // mod compatibility: untagged mod state the player changed (components tool, info-panel toggles, Better
-            // Bulldozer's removal records), then the dependencies of everything proposed
-            WriteDependencies(written, proposed);
-            int before = proposed.Count;
-            _callNow = now;
-            SafeCall("mod state capture", _clientModStateCall); // written/proposed are _clientWritten/_clientProposed
-            if (proposed.Count > before) flags |= ProposalFlags.DirectTool;
-            WriteDependencies(written, proposed);
-            _codec.DependencyBinder = null;
-            // a direct-write tool's edits are held against the host's echoes while the player keeps editing
-            if ((localTool && !_toolApplied) || proposed.Count > before)
-            {
-                foreach (uint id in proposed)
-                {
-                    _holds.TryGetValue(id, out EditHold hold);
-                    hold.Until = now + HoldSeconds;
-                    _holds[id] = hold;
-                }
-            }
-            if (_toolCost != 0) _batch.Cost(_toolCost);
-            // sequence, base ledger epoch and kind of the proposal (host validation, rollback)
-            if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
-            if (_pool.ShouldRequestMore(_sessions.Clock.Seconds)) _batch.Request(SyncRequest.MoreIds); // retried with backoff
-            if (!_batch.IsEmpty)
-            {
-                ArraySegment<byte> bytes = _batch.Finish();
-                _sessions.Client?.SendToHost(MessageKind.Proposal, bytes.Array, bytes.Offset, bytes.Count);
-                Perf.Counters.AddBytes(Perf.ProposalBytes, bytes.Count, now);
+                FinishDeletions(deletions, nextSeq);
             }
             HashBaselines(false); // a budgeted slice of the applier's entities (all of them before a tool can edit)
+        }
+
+        /// <summary>An entity the client's capture proposes (written in the second pass, after every new id is bound).</summary>
+        private struct PendingWrite
+        {
+            public Entity Entity;
+            public uint Id;
+            public Family Family;
+            public bool Created;
+        }
+
+        private readonly List<PendingWrite> _clientWrites = new List<PendingWrite>();
+        private readonly List<uint> _clientDeletions = new List<uint>();
+
+        /// <summary>
+        /// Client: the ids this proposal deletes are unbound once it is written and checked: until the host's despawn (or
+        /// its rollback) arrives, records the host sent before it applied the deletion must not bring them back.
+        /// </summary>
+        private void FinishDeletions(List<uint> deletions, uint seq)
+        {
+            double until = _sessions.Clock.Seconds + LocalDeleteSeconds;
+            foreach (uint id in deletions)
+            {
+                _ids.Unbind(id);
+                ForgetShadow(id);
+                _localDeletes[id] = new LocalDelete { Seq = seq, Until = until };
+                Integrity.OnLocalDelete(id);
+            }
+            deletions.Clear();
+        }
+
+        private readonly List<StructureChange> _ownChanges = new List<StructureChange>();
+        private readonly List<StructureProblem> _ownProblems = new List<StructureProblem>();
+        private readonly StructureIntegrity _ownIntegrity = new StructureIntegrity();
+        private StructureFacts _ownFacts;
+        private double _lastOwnProblemLog = double.NegativeInfinity;
+        private int _ownProblemsSuppressed;
+
+        /// <summary>
+        /// Client: its own proposal judged by the host's rule (<see cref="StructureIntegrity"/>, ARCHITECTURE.md#client-proposals)
+        /// on its own world, where the change is already applied (deleted entities still carry <c>Deleted</c>). A proposal
+        /// that would leave a dangling reference on the host is still sent: the host refuses it and its rollback restores
+        /// the host's state here; the log line names what was wrong (the capture's own diagnostics).
+        /// </summary>
+        private void CheckOwnProposal(ArraySegment<byte> bytes, uint seq, double now)
+        {
+            try
+            {
+                List<SyncRecord> records = SyncBatch.Read(bytes.Array, bytes.Offset, bytes.Count);
+                _codec.BeginPeek(bytes.Array, bytes.Offset, bytes.Count);
+                _codec.PeekStructure(records, _ownChanges);
+                _ownProblems.Clear();
+                if (_ownFacts == null) _ownFacts = new StructureFacts(_ids);
+                RejectReason reason = _ownIntegrity.Check(_ownChanges, _ownFacts.Use(_codec.EntityManager, true), _ownProblems, 4, worldIncludesChanges: true);
+                if (reason == RejectReason.None) return;
+                Perf.Counters.Count("own proposals with dangling references");
+                if (now - _lastOwnProblemLog < 2.0)
+                {
+                    _ownProblemsSuppressed++;
+                    return;
+                }
+                _lastOwnProblemLog = now;
+                _log.Warn(LogCategory.Replication, "own change " + seq + " would leave dangling references on the host (" + reason + "; the host will refuse it and roll it back): "
+                                                   + StructureIntegrity.Summarize(_ownProblems, _ownIntegrity.ProblemCount)
+                                                   + (_ownProblemsSuppressed > 0 ? " (" + _ownProblemsSuppressed + " earlier such change(s) not logged)" : ""));
+                _ownProblemsSuppressed = 0;
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Replication, "checking the own proposal failed: " + ex.Message);
+            }
         }
 
         /// <summary>Client: entities the applier wrote whose converged state is not hashed yet (<see cref="PendingBaselines"/>).</summary>

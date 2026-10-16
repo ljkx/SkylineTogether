@@ -113,6 +113,89 @@ namespace SkylineTogether.Sync
             }
         }
 
+        private readonly List<StructureChange> _structurePool = new List<StructureChange>();
+        private readonly List<int> _structureRefs = new List<int>(4);
+
+        /// <summary>
+        /// Referential integrity (ARCHITECTURE.md#host-validation-and-commit, #client-apply): every entity record of the
+        /// batch loaded by <see cref="BeginPeek"/> reduced to a <see cref="StructureChange"/> for Core's
+        /// <see cref="StructureIntegrity"/>: kind, id, node or edge, the edge's nodes and the owner as written (a
+        /// component sent as presence only is <see cref="StructureRef.Unnamed"/>: the sender could not name the entity).
+        /// The changes are reused by the next call.
+        /// </summary>
+        public void PeekStructure(List<SyncRecord> records, List<StructureChange> into)
+        {
+            into.Clear();
+            TypeHandler edge = TypeHandlers.Get<Game.Net.Edge>(), node = TypeHandlers.Get<Game.Net.Node>(), owner = TypeHandlers.Get<Game.Common.Owner>();
+            int used = 0;
+            foreach (SyncRecord r in records)
+            {
+                if (r.Kind != SyncRecordKind.Spawn && r.Kind != SyncRecordKind.Upsert && r.Kind != SyncRecordKind.Values && r.Kind != SyncRecordKind.Despawn) continue;
+                if (used == _structurePool.Count) _structurePool.Add(new StructureChange());
+                StructureChange c = _structurePool[used++];
+                c.Kind = r.Kind;
+                c.NetId = r.NetId;
+                c.IsNode = c.IsEdge = false;
+                c.Start = c.End = c.Owner = StructureRef.Absent;
+                if (r.Kind != SyncRecordKind.Despawn)
+                {
+                    c.IsNode = r.Family == Family.NetNode || Carries(r, node);
+                    c.IsEdge = r.Family == Family.NetEdge || Carries(r, edge);
+                    switch (RefsOf<Game.Net.Edge>(r, edge))
+                    {
+                        case StructureRefKind.Id:
+                            if (_structureRefs.Count >= 2)
+                            {
+                                c.Start = StructureRef.FromRaw(_structureRefs[0]);
+                                c.End = StructureRef.FromRaw(_structureRefs[1]);
+                            }
+                            else
+                            {
+                                c.Start = c.End = StructureRef.Unnamed;
+                            }
+                            break;
+                        case StructureRefKind.Unnamed:
+                            c.Start = c.End = StructureRef.Unnamed;
+                            break;
+                    }
+                    switch (RefsOf<Game.Common.Owner>(r, owner))
+                    {
+                        case StructureRefKind.Id:
+                            c.Owner = _structureRefs.Count >= 1 ? StructureRef.FromRaw(_structureRefs[0]) : StructureRef.Unnamed;
+                            break;
+                        case StructureRefKind.Unnamed:
+                            c.Owner = StructureRef.Unnamed;
+                            break;
+                    }
+                }
+                into.Add(c);
+            }
+            _structureRefs.Clear();
+        }
+
+        private static bool Carries(SyncRecord r, TypeHandler h)
+        {
+            if (h == null) return false;
+            for (int i = 0; i < r.Components.Count; i++)
+            {
+                if (r.Components[i].TypeHash == h.Hash) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Whether the record carries the component: <see cref="StructureRefKind.Absent"/>, as presence only
+        /// (<see cref="StructureRefKind.Unnamed"/>, also when its value cannot be decoded) or as a value
+        /// (<see cref="StructureRefKind.Id"/>, its raw references in <see cref="_structureRefs"/>).
+        /// </summary>
+        private StructureRefKind RefsOf<T>(SyncRecord r, TypeHandler h) where T : unmanaged, IComponentData, ISerializable
+        {
+            _structureRefs.Clear();
+            if (h == null || !Carries(r, h)) return StructureRefKind.Absent;
+            if (!Find(r, h, out _)) return StructureRefKind.Unnamed; // presence only
+            return TryPeekRefs<T>(r, _structureRefs) ? StructureRefKind.Id : StructureRefKind.Unnamed;
+        }
+
         private static bool Find(SyncRecord r, TypeHandler h, out SyncComponent component)
         {
             component = default(SyncComponent);

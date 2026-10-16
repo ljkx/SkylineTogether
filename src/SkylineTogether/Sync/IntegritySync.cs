@@ -779,6 +779,16 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>
+        /// Client: asks the host for the entity again (with the next repair requests), for example after the applier
+        /// deleted it instead of keeping it dangling (ARCHITECTURE.md#client-apply).
+        /// </summary>
+        public void RequestRepair(uint id)
+        {
+            if (id == 0 || _codec == null) return;
+            if (_pendingRepairs.Count < MaxPendingRepairs && _pendingRepairSet.Add(id)) _pendingRepairs.Add(id);
+        }
+
         /// <summary>Client: this player deleted the entity (or its owner's cascade did): nothing to verify or repair.</summary>
         public void OnLocalDelete(uint id)
         {

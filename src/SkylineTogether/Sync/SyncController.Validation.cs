@@ -61,6 +61,7 @@ namespace SkylineTogether.Sync
         /// </summary>
         private RejectReason Validate(PeerId peer, List<SyncRecord> records, in ProposalFacts facts, byte[] data)
         {
+            _rejectDetail = null;
             RejectReason header = ProposalRules.CheckHeader(facts);
             if (header != RejectReason.None)
             {
@@ -133,6 +134,10 @@ namespace SkylineTogether.Sync
                     }
                 }
             }
+            // referential integrity of the world after the proposal: no edge without its nodes, no node deleted under a
+            // kept edge, no kept entity without its owner (a partial or sanitized apply still crashed the game)
+            RejectReason integrity = CheckStructure(records, data);
+            if (integrity != RejectReason.None) return integrity;
             // placement: unlocks, owned map tiles, geometry (vanilla tools never produce what these refuse)
             RejectReason placement = CheckPlacement(peer, records, facts, data, spawned);
             if (placement != RejectReason.None) return placement;
@@ -171,9 +176,40 @@ namespace SkylineTogether.Sync
                         break;
                 }
             }
-            _log.Info(LogCategory.Replication, peer + ": refused proposal " + seq + " (" + reason + "; " + ids.Count + " entities, " + zones.Count + " zone blocks)");
+            _log.Info(LogCategory.Replication, peer + ": refused proposal " + seq + " (" + reason + "; " + ids.Count + " entities, " + zones.Count + " zone blocks)"
+                                               + (_rejectDetail != null ? ": " + _rejectDetail : ""));
+            _rejectDetail = null;
             SendRollback(peer, seq, reason, ids, zones);
             CountViolation(peer, reason);
+        }
+
+        /// <summary>What the last validation refused, for the refusal's log line (null: the reason says it all).</summary>
+        private string _rejectDetail;
+
+        private readonly StructureIntegrity _structure = new StructureIntegrity();
+        private readonly List<StructureChange> _structureChanges = new List<StructureChange>();
+        private readonly List<StructureProblem> _structureProblems = new List<StructureProblem>();
+        private StructureFacts _structureFacts;
+
+        /// <summary>
+        /// ARCHITECTURE.md#host-validation-and-commit, referential integrity: the proposal's spawns, edits and deletions
+        /// judged on the host's world after them (<see cref="StructureIntegrity"/>). A proposal that would leave an edge
+        /// without a node, delete a node under an edge it keeps or keep an entity without its owner is refused as a whole
+        /// (<see cref="RejectReason.Invalid"/> when it contradicts itself, <see cref="RejectReason.Conflict"/> when the
+        /// host's world differs from the client's), and the client's prediction is rolled back.
+        /// </summary>
+        private RejectReason CheckStructure(List<SyncRecord> records, byte[] data)
+        {
+            EntityManager em = _codec.EntityManager;
+            _codec.BeginPeek(data, 0, data.Length);
+            _codec.PeekStructure(records, _structureChanges);
+            _structureProblems.Clear();
+            if (_structureFacts == null) _structureFacts = new StructureFacts(_ids);
+            RejectReason reason = _structure.Check(_structureChanges, _structureFacts.Use(em, false), _structureProblems, 4);
+            if (reason == RejectReason.None) return reason;
+            Perf.Counters.Count("proposals refused by referential integrity");
+            _rejectDetail = "would leave dangling references: " + StructureIntegrity.Summarize(_structureProblems, _structure.ProblemCount);
+            return reason;
         }
 
         /// <summary>Host: refuses an intent or global-state edit (rollback of its targets; seq 0).</summary>

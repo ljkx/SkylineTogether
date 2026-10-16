@@ -419,8 +419,8 @@ namespace SkylineTogether.Sync
             if (_codec != null)
             {
                 // reference safety of the applier and the client's deletion bookkeeping
-                lines.Add("reference safety: " + _codec.UnresolvedSpawnsTotal + " new objects not created (owner/node/parent missing), " + _codec.UnsafeTotal
-                          + " untagged or sanitized for broken net references, " + _codec.DeadReferencesTotal + " references to destroyed/deleted entities dropped; "
+                lines.Add("reference safety: " + _codec.UnresolvedSpawnsTotal + " new objects not created (owner/node/parent missing), " + _codec.DanglingTotal
+                          + " deleted instead of left dangling, " + _codec.UnsafeTotal + " references made safe, " + _codec.DeadReferencesTotal + " references to destroyed/deleted entities dropped; "
                           + _localDeletes.Count + " local deletions awaiting the host, " + _localDeleteSkips + " stale host records skipped, " + _cascadeUnbinds + " cascade unbinds");
                 // decode-boundary validation and the client's removal clean-up
                 lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal

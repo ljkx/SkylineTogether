@@ -22,8 +22,16 @@ namespace SkylineTogether.Sync
         public int UnresolvedSpawns;
         /// <summary>Components that kept (existing entity) or nulled (new entity) a reference that did not resolve.</summary>
         public int UnresolvedComponents;
-        /// <summary>Entities left untagged or sanitized because their net or owner references are broken.</summary>
+        /// <summary>
+        /// References made safe on entities that stay or are about to be deleted: a dead owner or edge node of a
+        /// despawned entity, a middle connection of a kept edge to a node that is gone.
+        /// </summary>
         public int UnsafeSkipped;
+        /// <summary>
+        /// Entities deleted because they would dangle (an edge whose node is gone or deleted, an entity whose owner is
+        /// gone): never kept, never tagged for re-derivation (ARCHITECTURE.md#client-apply).
+        /// </summary>
+        public int DanglingDeleted;
         /// <summary>Client: references to despawned entities removed by <see cref="DeletionCascade"/>.</summary>
         public int Cascaded;
         public long Cost;
@@ -37,12 +45,14 @@ namespace SkylineTogether.Sync
         /// <summary>The entities this apply created (host: build-order re-base of committed edges).</summary>
         public readonly List<Entity> SpawnedEntities = new List<Entity>();
         public readonly List<string> Problems = new List<string>();
+        /// <summary>Net ids of the entities deleted because they would dangle (a client asks the host for them again).</summary>
+        public readonly List<uint> DanglingIds = new List<uint>();
 
         /// <summary>Clears the result for the next apply (the codec reuses one instance).</summary>
         public void Reset()
         {
             Spawned = Upserted = Values = Despawned = Skipped = ZoneBlocks = 0;
-            UnresolvedSpawns = UnresolvedComponents = UnsafeSkipped = Cascaded = 0;
+            UnresolvedSpawns = UnresolvedComponents = UnsafeSkipped = DanglingDeleted = Cascaded = 0;
             Cost = 0;
             HasCost = false;
             Clock = null;
@@ -50,11 +60,12 @@ namespace SkylineTogether.Sync
             IdRanges.Clear();
             Touched.Clear();
             Problems.Clear();
+            DanglingIds.Clear();
             SpawnedEntities.Clear();
         }
 
         public override string ToString() => "+" + Spawned + " ~" + Upserted + " v" + Values + " -" + Despawned + (Skipped > 0 ? " skipped " + Skipped : "") + (ZoneBlocks > 0 ? " zones " + ZoneBlocks : "")
-                                             + (UnresolvedSpawns > 0 ? " unresolved spawns " + UnresolvedSpawns : "") + (UnsafeSkipped > 0 ? " unsafe " + UnsafeSkipped : "") + (Cascaded > 0 ? " cascaded " + Cascaded : "");
+                                             + (UnresolvedSpawns > 0 ? " unresolved spawns " + UnresolvedSpawns : "") + (DanglingDeleted > 0 ? " dangling deleted " + DanglingDeleted : "") + (UnsafeSkipped > 0 ? " sanitized " + UnsafeSkipped : "") + (Cascaded > 0 ? " cascaded " + Cascaded : "");
     }
 
     /// <summary>
@@ -1196,21 +1207,25 @@ namespace SkylineTogether.Sync
                 Despawn(r, proposal, result);
             }
 
+            // an entity that would dangle once this batch is applied (an edge whose node is gone or being deleted, an
+            // entity whose owner is gone) is deleted cleanly instead of kept: the game's Burst jobs follow Edge,
+            // ConnectedEdge and Owner unchecked whether the entity is tagged or not (a kept, untagged edge still crashed
+            // the host). Deleting one adds its surviving node's closure, which is checked again.
+            DeleteDangling(proposal, result);
             foreach (Entity e in _touch)
             {
                 if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                // Net.ReferencesSystem indexes an Updated edge's nodes and connected nodes unchecked; an edge whose
-                // node is missing here is left untagged (and reported) instead of crashing the game
-                if (!IsNetSafe(em, e))
+                // Net.ReferencesSystem indexes an Updated edge's middle connections unchecked; one to a node that is gone
+                // is dropped (the edge itself stays valid)
+                if (DropDeadMiddleConnections(em, e))
                 {
                     result.UnsafeSkipped++;
-                    result.Problems.Add("not re-derived (an edge node is missing): " + e);
-                    continue;
+                    result.Problems.Add("dropped a middle connection to a node missing here: " + Describe(e));
                 }
                 if (!em.HasComponent<Game.Common.Updated>(e)) em.AddComponent<Game.Common.Updated>(e);
                 result.Touched.Add(e);
             }
-            if (result.UnresolvedSpawns > 0 || result.UnsafeSkipped > 0) NoteUnsafe(result);
+            if (result.UnresolvedSpawns > 0 || result.UnsafeSkipped > 0 || result.DanglingDeleted > 0) NoteUnsafe(result);
             for (int i = 0; i < _pathUpdated.Count; i++) SynthesizePathUpdated(_pathUpdated[i]);
         }
 
@@ -1234,6 +1249,10 @@ namespace SkylineTogether.Sync
             {
                 Family family = _families.Classify(em, e);
                 if (family == Family.NetEdge || family == Family.NetNode) Closure(e, _touch);
+                // a node goes with every edge that still ends at it: the records normally delete them too (the host
+                // refuses a proposal that does not, StructureIntegrity), but an edge this peer has and the sender did not
+                // know of (a client's own prediction in flight) would end at a destroyed node after this frame
+                if (em.HasComponent<Game.Net.Node>(e)) CollectEdgesLeftAt(em, e);
                 // the game's reference systems process a Deleted entity's owner and edge nodes unchecked
                 if (SanitizeForDelete(em, e)) result.UnsafeSkipped++;
                 // client: what the gated removal systems would do to the entity's renters, workers, pupils and
@@ -1253,11 +1272,147 @@ namespace SkylineTogether.Sync
                 _touch.Remove(e);
                 result.Touched.Add(e);
                 result.Despawned++;
+                for (int i = 0; i < _leftAtNode.Count; i++) DeleteDangling(_leftAtNode[i], proposal, result, "it ends at node #" + r.NetId + ", which was deleted");
             }
             catch (Exception ex)
             {
                 result.Problems.Add("despawn of #" + r.NetId + ": " + ex.Message);
             }
+            finally
+            {
+                _leftAtNode.Clear();
+            }
+        }
+
+        /// <summary>Edges that end at a node being despawned and that this batch does not despawn itself.</summary>
+        private readonly List<Entity> _leftAtNode = new List<Entity>();
+
+        private void CollectEdgesLeftAt(EntityManager em, Entity node)
+        {
+            _leftAtNode.Clear();
+            if (!em.HasBuffer<Game.Net.ConnectedEdge>(node)) return;
+            DynamicBuffer<Game.Net.ConnectedEdge> edges = em.GetBuffer<Game.Net.ConnectedEdge>(node, true);
+            for (int i = 0; i < edges.Length; i++)
+            {
+                Entity edge = edges[i].m_Edge;
+                if (edge == Entity.Null || !em.Exists(edge) || !em.HasComponent<Game.Net.Edge>(edge)) continue;
+                if (em.HasComponent<Game.Common.Deleted>(edge) || em.HasComponent<Game.Tools.Temp>(edge)) continue;
+                Game.Net.Edge ends = em.GetComponentData<Game.Net.Edge>(edge);
+                if (ends.m_Start != node && ends.m_End != node) continue; // a middle connection: dropped by the game
+                uint id = _ids.GetNetId(edge);
+                if (id != 0 && _despawnAt.ContainsKey(id)) continue; // despawned by its own record of this batch
+                if (!_leftAtNode.Contains(edge)) _leftAtNode.Add(edge);
+            }
+        }
+
+        private readonly List<(Entity Entity, string Why)> _dangling = new List<(Entity, string)>();
+
+        /// <summary>Deletes every entity of the touch set that would dangle (see <see cref="DanglingReason"/>), repeatedly.</summary>
+        private void DeleteDangling(bool proposal, ApplyResult result)
+        {
+            EntityManager em = EntityManager;
+            for (int round = 0; round < 8; round++)
+            {
+                _dangling.Clear();
+                foreach (Entity e in _touch)
+                {
+                    // tool previews belong to the local tool, which regenerates them every frame
+                    if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e) || em.HasComponent<Game.Tools.Temp>(e)) continue;
+                    string why = DanglingReason(em, e);
+                    if (why != null) _dangling.Add((e, why));
+                }
+                if (_dangling.Count == 0) return;
+                foreach ((Entity e, string why) in _dangling) DeleteDangling(e, proposal, result, why);
+            }
+            // never tagged: whatever still dangles after eight rounds leaves the touch set and is reported
+            _dangling.Clear();
+            foreach (Entity e in _touch)
+            {
+                if (em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e) && !em.HasComponent<Game.Tools.Temp>(e) && DanglingReason(em, e) != null) _dangling.Add((e, null));
+            }
+            foreach ((Entity e, string _) in _dangling)
+            {
+                _touch.Remove(e);
+                result.Problems.Add("still dangling after repeated clean-up, not re-derived: " + Describe(e));
+            }
+            _dangling.Clear();
+        }
+
+        /// <summary>
+        /// Why an entity that stays would dangle once this batch is applied, or null: an edge whose start or end node does
+        /// not exist here, is no node, or is being deleted (it is destroyed at the end of the frame); an entity whose owner
+        /// no longer exists.
+        /// </summary>
+        internal static string DanglingReason(EntityManager em, Entity e)
+        {
+            if (em.HasComponent<Game.Net.Edge>(e))
+            {
+                Game.Net.Edge edge = em.GetComponentData<Game.Net.Edge>(e);
+                string start = NodeProblem(em, edge.m_Start), end = NodeProblem(em, edge.m_End);
+                if (start != null) return "its start node " + start;
+                if (end != null) return "its end node " + end;
+            }
+            if (em.HasComponent<Game.Common.Owner>(e))
+            {
+                Entity owner = em.GetComponentData<Game.Common.Owner>(e).m_Owner;
+                if (owner != Entity.Null && !em.Exists(owner)) return "its owner is missing here";
+            }
+            return null;
+        }
+
+        private static string NodeProblem(EntityManager em, Entity node)
+        {
+            if (node == Entity.Null) return "is null";
+            if (!em.Exists(node)) return "is missing here";
+            if (!em.HasBuffer<Game.Net.ConnectedEdge>(node)) return "is not a node";
+            if (em.HasComponent<Game.Common.Deleted>(node)) return "is being deleted";
+            return null;
+        }
+
+        /// <summary>
+        /// Deletes an entity that would dangle, the way a despawn does: its references are made safe for the game's
+        /// reference systems, a client removes what points at it (<see cref="DeletionCascade"/>) and unbinds its id (the
+        /// integrity check asks the host for it again); the host keeps the binding, so its capture broadcasts the despawn.
+        /// </summary>
+        private void DeleteDangling(Entity e, bool proposal, ApplyResult result, string why)
+        {
+            EntityManager em = EntityManager;
+            if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return;
+            uint id = _ids.GetNetId(e);
+            try
+            {
+                if (em.HasComponent<Game.Net.Edge>(e) || em.HasComponent<Game.Net.Node>(e)) Closure(e, _touch);
+                SanitizeForDelete(em, e);
+                if (!proposal)
+                {
+                    try
+                    {
+                        result.Cascaded += DeletionCascade.Apply(em, e, result.Touched);
+                    }
+                    catch (Exception ex)
+                    {
+                        result.Problems.Add("removal clean-up of " + Describe(e) + ": " + ex.Message);
+                    }
+                    if (id != 0) _ids.Unbind(id);
+                }
+                em.AddComponent<Game.Common.Deleted>(e);
+                _touch.Remove(e);
+                result.Touched.Add(e);
+                result.DanglingDeleted++;
+                _danglingTotal++;
+                if (id != 0) result.DanglingIds.Add(id);
+                result.Problems.Add("deleted " + (id != 0 ? "#" + id + " " : "") + e + " instead of keeping it dangling: " + why);
+            }
+            catch (Exception ex)
+            {
+                result.Problems.Add("deleting the dangling " + e + " failed: " + ex.Message);
+            }
+        }
+
+        private string Describe(Entity e)
+        {
+            uint id = _ids.GetNetId(e);
+            return id != 0 ? "#" + id + " " + e : e.ToString();
         }
 
         private void Reconcile(SyncRecord r, Entity e, bool proposal)
@@ -1334,7 +1489,7 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<Entity, List<Entity>> _spawnRefs = new Dictionary<Entity, List<Entity>>();
         private readonly Stack<List<Entity>> _refLists = new Stack<List<Entity>>();
         private readonly HashSet<Entity> _badSpawns = new HashSet<Entity>();
-        private long _unresolvedSpawnsTotal, _unsafeTotal;
+        private long _unresolvedSpawnsTotal, _unsafeTotal, _danglingTotal;
         private double _lastUnsafeLog = double.NegativeInfinity;
 
         private string _probeFailure;
@@ -1349,8 +1504,11 @@ namespace SkylineTogether.Sync
         /// <summary>Spawns skipped because a structural reference did not resolve (session total).</summary>
         public long UnresolvedSpawnsTotal => _unresolvedSpawnsTotal;
 
-        /// <summary>Entities left untagged or sanitized because of broken net references (session total).</summary>
+        /// <summary>References made safe (dead owners or nodes of despawned entities, dead middle connections), session total.</summary>
         public long UnsafeTotal => _unsafeTotal;
+
+        /// <summary>Entities deleted because they would have dangled (session total).</summary>
+        public long DanglingTotal => _danglingTotal;
 
         /// <summary>References the reader dropped because their entity was destroyed or deleted (session total).</summary>
         public long DeadReferencesTotal => _rs.DeadReferences;
@@ -1385,6 +1543,8 @@ namespace SkylineTogether.Sync
             _spawnRefs.Clear();
             try
             {
+                EntityManager em0 = EntityManager;
+                TypeHandler edgeType = TypeHandlers.Get<Game.Net.Edge>(), ownerType = TypeHandlers.Get<Game.Common.Owner>();
                 for (int t = 0; t < _targets.Count; t++)
                 {
                     (SyncRecord r, Entity e) = _targets[t];
@@ -1392,6 +1552,19 @@ namespace SkylineTogether.Sync
                     List<Entity> refs = _refLists.Count > 0 ? _refLists.Pop() : new List<Entity>();
                     refs.Clear();
                     _spawnRefs[e] = refs;
+                    // a structural value the sender could not name travels as presence only, and the new entity would
+                    // get a null owner or null edge nodes: a new edge needs its Edge value, an owner must be named
+                    bool isEdge = em0.HasComponent<Game.Net.Edge>(e);
+                    if (isEdge && !CarriesData(r, edgeType))
+                    {
+                        _badSpawns.Add(e);
+                        result.Problems.Add("#" + r.NetId + " (" + r.Family + ") not created: its Game.Net.Edge value was not sent (the sender could not name a node)");
+                    }
+                    if (CarriesPresenceOnly(r, ownerType))
+                    {
+                        _badSpawns.Add(e);
+                        result.Problems.Add("#" + r.NetId + " (" + r.Family + ") not created: its owner was not sent (the sender could not name it)");
+                    }
                     for (int c = 0; c < r.Components.Count; c++)
                     {
                         SyncComponent comp = r.Components[c];
@@ -1403,6 +1576,7 @@ namespace SkylineTogether.Sync
                         if (!structural && !h.ChecksFloats) continue;
                         _probeFailure = null;
                         _rs.Collect = refs;
+                        int before = refs.Count;
                         bool unresolved;
                         try
                         {
@@ -1418,6 +1592,19 @@ namespace SkylineTogether.Sync
                             result.Problems.Add("#" + r.NetId + " (" + r.Family + ") not created: its " + h.Name
                                                 + (_probeFailure != null ? " is malformed (" + _probeFailure + ")" : " references something missing here"));
                             if (_probeFailure != null) _malformedTotal++;
+                        }
+                        else if (h == edgeType && !unresolved)
+                        {
+                            // both ends must be nodes that stay: a null end resolves without being unresolved, and an id may
+                            // name something that is no node here
+                            int named = refs.Count - before;
+                            bool nodes = named >= 2;
+                            for (int k = before; nodes && k < refs.Count; k++) nodes = NodeProblem(em0, refs[k]) == null;
+                            if (!nodes)
+                            {
+                                _badSpawns.Add(e);
+                                result.Problems.Add("#" + r.NetId + " (" + r.Family + ") not created: its Game.Net.Edge does not name two nodes that exist here");
+                            }
                         }
                     }
                 }
@@ -1463,6 +1650,28 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>True when the record carries the component's value (not only its presence).</summary>
+        private static bool CarriesData(SyncRecord r, TypeHandler h)
+        {
+            if (h == null) return true; // the type does not replicate: nothing to require
+            for (int i = 0; i < r.Components.Count; i++)
+            {
+                if (r.Components[i].TypeHash == h.Hash && r.Components[i].Kind == h.Kind) return true;
+            }
+            return false;
+        }
+
+        /// <summary>True when the record carries the component as presence only although this game has its value.</summary>
+        private static bool CarriesPresenceOnly(SyncRecord r, TypeHandler h)
+        {
+            if (h == null || h.Kind == SyncComponentKind.Presence) return false;
+            for (int i = 0; i < r.Components.Count; i++)
+            {
+                if (r.Components[i].TypeHash == h.Hash) return r.Components[i].Kind == SyncComponentKind.Presence;
+            }
+            return false;
+        }
+
         /// <summary>A node an edge may reference: it exists, is not being deleted and has its connected-edge list.</summary>
         private static bool IsUsableNode(EntityManager em, Entity node)
         {
@@ -1470,21 +1679,24 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// False for an edge whose start, end or connected node is missing here: tagging it would make
-        /// <c>Net.ReferencesSystem</c> index the missing node's <c>ConnectedEdge</c> buffer (a native crash).
+        /// Drops the middle connections (<c>ConnectedNode</c>) of a kept edge to nodes that are gone here: tagging the edge
+        /// makes <c>Net.ReferencesSystem</c> index each connected node's <c>ConnectedEdge</c> buffer (a native crash for a
+        /// missing one). True when something was dropped.
         /// </summary>
-        internal static bool IsNetSafe(EntityManager em, Entity e)
+        internal static bool DropDeadMiddleConnections(EntityManager em, Entity e)
         {
-            if (!em.HasComponent<Game.Net.Edge>(e)) return true;
-            Game.Net.Edge edge = em.GetComponentData<Game.Net.Edge>(e);
-            if (!IsUsableNode(em, edge.m_Start) || !IsUsableNode(em, edge.m_End)) return false;
-            if (em.HasBuffer<Game.Net.ConnectedNode>(e))
+            if (!em.HasComponent<Game.Net.Edge>(e) || !em.HasBuffer<Game.Net.ConnectedNode>(e)) return false;
+            DynamicBuffer<Game.Net.ConnectedNode> nodes = em.GetBuffer<Game.Net.ConnectedNode>(e, true);
+            int dead = 0;
+            for (int i = 0; i < nodes.Length; i++)
             {
-                DynamicBuffer<Game.Net.ConnectedNode> nodes = em.GetBuffer<Game.Net.ConnectedNode>(e, true);
-                for (int i = 0; i < nodes.Length; i++)
-                {
-                    if (!IsUsableNode(em, nodes[i].m_Node)) return false;
-                }
+                if (!IsUsableNode(em, nodes[i].m_Node)) dead++;
+            }
+            if (dead == 0) return false;
+            nodes = em.GetBuffer<Game.Net.ConnectedNode>(e);
+            for (int i = nodes.Length - 1; i >= 0; i--)
+            {
+                if (!IsUsableNode(em, nodes[i].m_Node)) nodes.RemoveAt(i);
             }
             return true;
         }
@@ -1545,11 +1757,12 @@ namespace SkylineTogether.Sync
             foreach (string p in result.Problems)
             {
                 if (sample.Count >= 4) break;
-                if (p.Contains("not created") || p.Contains("not re-derived")) sample.Add(p);
+                if (p.Contains("not created") || p.Contains("instead of keeping it dangling") || p.Contains("middle connection") || p.Contains("still dangling")) sample.Add(p);
             }
             _log.Info(LogCategory.Replication, "reference safety: " + result.UnresolvedSpawns + " new object(s) not created (owner/node/parent missing here), "
-                                               + result.UnsafeSkipped + " left untagged or sanitized (session: " + _unresolvedSpawnsTotal + " not created, "
-                                               + _unsafeTotal + " unsafe, " + _rs.DeadReferences + " dead references dropped)"
+                                               + result.DanglingDeleted + " deleted instead of left dangling, " + result.UnsafeSkipped + " reference(s) made safe (session: "
+                                               + _unresolvedSpawnsTotal + " not created, " + _danglingTotal + " deleted, " + _unsafeTotal + " made safe, "
+                                               + _rs.DeadReferences + " dead references dropped)"
                                                + (sample.Count > 0 ? ": " + string.Join("; ", sample) : ""));
         }
 
