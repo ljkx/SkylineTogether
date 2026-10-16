@@ -56,6 +56,21 @@ namespace SkylineTogether.Core.Tests.Identity
             ExpectForAllFacts(Family.ToolLocal, 1, M.Temp | M.LivePath | M.NullPrefab | M.AdapterLocal);
         }
 
+        /// <summary>
+        /// The selected object's traffic routes (TrafficRoutesSystem): the route, its waypoints and its segments all carry
+        /// LivePath (LivePathPrefab), segments also Owner, and the route the components of every route. They are local
+        /// presentation on every peer: never bound, captured, hashed, proposed or re-sent as lines.
+        /// </summary>
+        [Test]
+        public void Rule01_TrafficRoutesAreToolLocal()
+        {
+            ExpectForAllFacts(Family.ToolLocal, 1, M.LivePath | M.Route, "the live path route");
+            ExpectForAllFacts(Family.ToolLocal, 1, M.LivePath | M.Route | M.Owner, "not a gate bypass route either");
+            ExpectForAllFacts(Family.ToolLocal, 1, M.LivePath | M.Segment | M.Owner, "a live path segment");
+            ExpectForAllFacts(Family.ToolLocal, 1, M.LivePath | M.Waypoint | M.Owner, "a live path waypoint");
+            Assert.Equal(Family.Route, FamilyRules.Classify(M.Route, NoFacts, out _), "a transport line stays a line");
+        }
+
         [Test]
         public void Rule02_Prefab()
         {

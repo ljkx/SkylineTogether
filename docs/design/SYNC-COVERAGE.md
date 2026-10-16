@@ -109,6 +109,7 @@ again on the client from host data. The statuses:
 | Object wetness, dirt and snow, wind, snow cover | cosmetic, simulated locally | slight visual differences of weather effects |
 | Per-player state (camera, selection, info views, tools, radio, chirp likes, palette, tutorials, victory pop-up seen) | by design | none |
 | Achievements | inert in modded cities | none |
+| Selected object's traffic routes (the info panel's routes button: `TrafficRoutesSystem` live paths) | built every frame from each vehicle's and citizen's path, current lane and navigation lanes, which only the host's simulation advances; a client's copies are frozen at the join (snapshot movers) or empty (movers spawned later). The live path entities are tool-local on every peer (`FamilyRules` rule 1) and `TrafficRoutesSystem` is off on clients (`ClientGate`) | joining players see no traffic routes for a selection; the host sees them as in single player |
 
 ## Risks and limits
 

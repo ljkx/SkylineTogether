@@ -34,6 +34,10 @@ All notable changes to this project are documented in this file. The format is b
 - The build id in game differed from the installer's ("build ... (mvid)" in the log): the game loads mods from the
   DLL's bytes, so the DLL's location was empty. The DLL is now found through the game's mod manager, for local and
   Paradox Mods installs, and the panel shows the installer's id.
+- Joining players no longer see wrong traffic routes after selecting a building or vehicle (the info panel's routes
+  button): the routes were built from the path data of the moment they joined, so they started where a vehicle used to
+  be and ran across the map in straight lines. Joining players now see no traffic routes for a selection; the host's
+  are unchanged.
 
 ## [0.1.0-alpha.2] - 2026-10-16
 

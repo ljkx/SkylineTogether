@@ -825,8 +825,13 @@ are tolerated. When a probe fails (registration lists, frame setter) the clock s
 systems outside `GameSimulation` that would overwrite, append to or randomise host data: initializers of agents,
 routes, events and buildings, progression writers (XP, milestones, dev tree), `AutoSaveSystem`, connection warnings,
 the reference cleanup systems (replaced by `DeletionCascade`), `GroundHeightSystem` (it re-sampled heights from each
-peer's own terrain cascade and fought the host's values), and the line systems `RoutePathSystem` and
-`WaypointConnectionSystem` (on only inside the route preview window). [`SystemSwitch`](../src/SkylineTogether/Sync/SystemSwitch.cs)
+peer's own terrain cascade and fought the host's values), `TrafficRoutesSystem` (the selected object's traffic routes:
+`SegmentCurveSystem` draws them every frame from each source's path, current lane and navigation lanes, which a
+follower never advances, so they started where a vehicle was at the join and joined rebuilt lanes with straight lines
+across the map; the gate marks the live path entities that exist when it closes `Deleted`, and clients show no traffic
+routes), and the line systems `RoutePathSystem` and `WaypointConnectionSystem` (on only inside the route preview
+window). Live path routes, waypoints and segments carry `LivePath` and are `ToolLocal` on every peer
+([families](#families)): never bound, captured, hashed or re-sent. [`SystemSwitch`](../src/SkylineTogether/Sync/SystemSwitch.cs)
 counts holders, so the gate, the follower clock, the mover client and the recovery hold restore the original state in
 any order. Everything is restored when the session ends.
 

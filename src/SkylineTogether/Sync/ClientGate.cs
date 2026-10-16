@@ -56,6 +56,16 @@ namespace SkylineTogether.Sync
             // write threshold 1 cm). It overwrote the host's values a few frames after every repair ("differs in:
             // Game.Net.Curve (value)", repaired again and again). The host's own results replicate with Updated tags.
             "Game.Simulation.GroundHeightSystem",
+            // Modification2, not GameSimulation. The selected object's "traffic routes" (a building's arriving
+            // vehicles and citizens, a vehicle's own route) are LivePath route entities whose segment curves
+            // SegmentCurveSystem rebuilds every frame from each source's PathOwner/PathElement, *CurrentLane and
+            // *NavigationLane data (TrafficRoutesSystem.FindPathSourcesJob, SegmentCurveSystem.UpdateSegmentCurvesJob).
+            // A follower never advances that data: movers from the snapshot keep their path and target of the join
+            // moment while motion moves them elsewhere, movers spawned later have none, so the routes started where a
+            // vehicle used to be, led to places it no longer heads for, and lanes rebuilt since were skipped and joined
+            // by straight connectors across the map. Off on clients (no route is better than a wrong one); the
+            // LivePath entities that exist when the gate closes are removed (RemoveLivePaths).
+            "Game.Tools.TrafficRoutesSystem",
         };
 
         /// <summary>Line systems: off on clients except inside a route-tool preview window.</summary>
@@ -121,7 +131,37 @@ namespace SkylineTogether.Sync
             int found = 0;
             foreach (string name in Gated) found += Disable(world, name, false) ? 1 : 0;
             foreach (string name in RouteSystems) found += Disable(world, name, true) ? 1 : 0;
-            _log.Info(LogCategory.Gate, "follower gate closed: " + found + " of " + (Gated.Length + RouteSystems.Length) + " systems off");
+            int livePaths = RemoveLivePaths(world);
+            _log.Info(LogCategory.Gate, "follower gate closed: " + found + " of " + (Gated.Length + RouteSystems.Length) + " systems off"
+                                        + (livePaths > 0 ? ", " + livePaths + " traffic route entities removed" : ""));
+        }
+
+        /// <summary>
+        /// Marks every selected-object traffic route entity (route, waypoints, segments: all carry <c>LivePath</c>,
+        /// <c>LivePathPrefab.GetArchetypeComponents</c>) <c>Deleted</c>, as <c>TrafficRoutesSystem</c> itself does when
+        /// nothing is selected; with that system off on the client nothing else would ever remove them.
+        /// </summary>
+        private int RemoveLivePaths(World world)
+        {
+            try
+            {
+                EntityManager em = world.EntityManager;
+                using (EntityQuery live = em.CreateEntityQuery(new EntityQueryDesc
+                {
+                    All = new[] { ComponentType.ReadOnly<Game.Routes.LivePath>() },
+                    None = new[] { ComponentType.ReadOnly<Game.Common.Deleted>() },
+                }))
+                {
+                    int count = live.CalculateEntityCount();
+                    if (count > 0) em.AddComponent(live, ComponentType.ReadWrite<Game.Common.Deleted>());
+                    return count;
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Gate, "removing the traffic route entities failed: " + ex.Message);
+                return 0;
+            }
         }
 
         /// <summary>Restores every system to its previous state (session ended).</summary>
