@@ -78,7 +78,10 @@ platform accepts patterns such as `1.6.*` and `1.6.2*`).
 
 ## First upload
 
-1. Do the steps of [Before every upload](#before-every-upload). Leave `ModId` empty.
+1. Do the steps of [Before every upload](#before-every-upload). Leave `ModId` empty. The release you upload must
+   contain the build id fix and the installed-twice check (CHANGELOG, Unreleased after 0.1.0-alpha.2): with older
+   builds a subscribed copy shows an "(mvid)" build id that differs from the GitHub setup's. So upload the next
+   release, not 0.1.0-alpha.2 or older.
 2. Optional: set `AccessLevel` to `Unlisted` for the first upload, check the page, and switch to `Public` later with
    `Update`.
 3. Start the game and log in to your Paradox account in the main menu. Leave the game running.
