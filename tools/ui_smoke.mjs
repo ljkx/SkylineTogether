@@ -3,6 +3,7 @@
 //  - an exception while importing, registering, rendering or running an event handler,
 //  - a binding or trigger name the C# side (src/SkylineTogether/UI/*UISystem.cs) does not declare,
 //  - a text key that renders raw (missing from the module's English table),
+//  - a state whose English render lacks a text it must show, or shows one it must not (EXPECT below),
 //  - English texts that differ from src/SkylineTogether/Data/locale.en-US.json, keys missing in another locale table
 //    or in locale-keys.generated.json,
 //  - a main menu entry, top-left button or root that was not registered,
@@ -46,7 +47,7 @@ const csBindings = new Set([...cs.matchAll(/GetterValueBinding<[^>]+>\(Group, "(
 const csTriggers = new Set([...cs.matchAll(/TriggerBinding(?:<[^>]*>)?\(Group, "([^"]+)"/g)].map((m) => m[1]));
 for (const b of ["state", "join", "net", "presence", "perf"]) if (!csBindings.has(b)) fail("SessionUISystem lost the binding " + b);
 for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "writeDiagnostics", "toggleNetHud", "togglePerfHud", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends",
-  "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync"]) {
+  "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync", "joinAnyway", "setAllowJoinWithDifferentMods"]) {
   if (!csTriggers.has(t)) fail("SessionUISystem lost the trigger " + t);
 }
 // the invite contract the panel consumes
@@ -157,10 +158,13 @@ if (!smoke.store) fail("the smoke hook is missing");
 // ---------------------------------------------------------------------------------------------- renderer
 const rawKeys = new Set();
 let renderLabel = "";
+// every text rendered for the current state (EXPECT)
+let caseTexts = new Set();
 function render(node) {
   if (node == null || typeof node === "boolean") return 0;
   if (typeof node === "string" || typeof node === "number") {
     if (/^st\.(ui|toast|chat|options)\./.test(String(node))) rawKeys.add(String(node));
+    caseTexts.add(String(node));
     return 0;
   }
   if (Array.isArray(node)) return node.reduce((n, c) => n + render(c), 0);
@@ -198,7 +202,7 @@ function runHandlers(label) {
 const base = { steam: true, steamId: "76561190000000000", players: [], chat: [], canHost: true, canJoin: true, keepPassword: "\u0001keep",
   playerName: "Me", sessionNameSetting: "", hasPassword: false, joinTarget: "", lastEnd: "", status: "", sync: "", speed: "", sessionName: "", progress: 0, directPort: 0,
   inGame: true, maxPlayers: 8, allowDirect: false, requireSameMods: true, requireSameAssets: false, portSetting: 27015, canInvite: false, inviteSteamId: "", hold: false, stage: "",
-  speedValue: 1, speedPaused: false, speedHeld: false, end: null, build: "2f076aad4234", friendsOnly: false, localRole: "", resync: "", bans: [] };
+  speedValue: 1, speedPaused: false, speedHeld: false, end: null, build: "2f076aad4234", friendsOnly: false, localRole: "", resync: "", bans: [], allowModOverride: true };
 // bans, co-hosts, removal after loading, resync offers
 const bans = [{ key: "steam:76561190000000007", name: "Griefer", kind: "steam", id: "76561190000000007" }, { key: "ip:203.0.113.9", name: "", kind: "ip", id: "203.0.113.9" }];
 const coPlayers = [{ id: 0, name: "Host", host: true, you: false, state: "Live", ping: 40, progress: 1, color: "#f2b84b", role: "host" },
@@ -243,6 +247,22 @@ const cases = {
     sync: "12,345 objects in sync, terrain: 4 tiles applied; verified 9,000 objects, 0 repairs; icons match; movers +10 -2, 140 in motion; clock follows the host",
     players: [{ id: 0, name: "Host", host: true, you: false, state: "Live", ping: 40, progress: 1, color: "#f2b84b", role: "host" }, { id: 1, name: "Me", host: false, you: true, state: "Live", ping: 0, progress: 1, color: "#3fb6e8", role: "builder" }], chat }, net, presence: tags },
   endMods: { state: { ...base, mode: "None", end: mods } },
+  // "join anyway": the host lets players join with different mods (the lists stay, plus the button and the warning)
+  endModsOverridable: { state: { ...base, mode: "None", end: Object.assign({}, mods, { overridable: true }) } },
+  endModsRequired: { state: { ...base, mode: "None", end: Object.assign({}, mods, { overridable: false }) } },
+  endAssetsOverridable: { state: { ...base, mode: "None", requireSameAssets: true, end: end("refused", "Mismatch", { reportKind: "assets", overridable: true, missing: [{ name: "Bus Stops", version: "1.0", id: "75426" }],
+    extra: [{ name: "Fences", version: "", id: "90001" }], versions: [{ name: "Trees", id: "80010", host: "2.1", you: "2.2" }] }) } },
+  endLongModsOverridable: { state: { ...base, mode: "None", end: Object.assign({}, mods, { overridable: true, text: "Your mods differ from the host's. ".repeat(40),
+    missing: Array.from({ length: 200 }, (_, i) => ({ name: "A missing mod with a very long display name number " + i + " and a suffix that does not end", version: "1.2.3-beta+" + "x".repeat(20), id: String(1000 + i) })),
+    extra: Array.from({ length: 120 }, (_, i) => ({ name: "Extra_mod_without_any_spaces_in_its_name_" + i + "_".repeat(30), version: "", id: "" })),
+    versions: Array.from({ length: 80 }, (_, i) => ({ name: "Version mod " + i, host: "10.20.30." + i, you: "9.9.9-" + "rc".repeat(10) })) }) } },
+  // never a button for DLC, for a non-mismatch refusal or for a value that is not exactly true
+  endContentOverridable: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "content", overridable: true, missing: [{ name: "Beach Properties", version: "", id: "" }] }) } },
+  endFullOverridable: { state: { ...base, mode: "None", end: end("refused", "Full", { overridable: true }) } },
+  endOverridableHostile: { state: { ...base, mode: "None", end: Object.assign({}, mods, { overridable: "yes" }) } },
+  lobbyNoOverride: { state: { ...base, mode: "None", allowModOverride: false } },
+  lobbyNothingRequired: { state: { ...base, mode: "None", inGame: false, requireSameMods: false, requireSameAssets: false } },
+  hostingNoOverride: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", allowModOverride: false, requireSameAssets: true, players, chat } },
   // the compatibility check: DLC the joiner lacks, asset packs the host requires (lists with Paradox Mods ids)
   endContent: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "content", missing: [{ name: "Beach Properties", version: "", id: "" }], extra: [{ name: "Modern Architecture", version: "", id: "" }] }) } },
   endAssets: { state: { ...base, mode: "None", requireSameAssets: true, end: end("refused", "Mismatch", { reportKind: "assets", missing: [{ name: "Bus Stops", version: "1.0", id: "75426" }],
@@ -331,6 +351,24 @@ const cases = {
   empty: { state: "{}" },
   arrayState: { state: "[1,2,3]", presence: "[]", join: "\"text\"", replay: "42" },
 };
+// texts an English render of a state must show (has) or must not show (lacks)
+const JOIN_ANYWAY = "Join anyway";
+const WARNING = "Different mods can make your cities drift apart or behave differently. The host's city is authoritative; differences are repaired where possible.";
+const EXPECT = {
+  endMods: { has: ["The host requires the same code mods. Change these, restart the game and join again.", "Anarchy"], lacks: [JOIN_ANYWAY, WARNING] },
+  endModsRequired: { has: ["The host requires the same code mods. Change these, restart the game and join again."], lacks: [JOIN_ANYWAY, WARNING] },
+  endModsOverridable: { has: [JOIN_ANYWAY, WARNING, "Your code mods differ from the host's. Best: change these, restart the game and join again. The host also lets you join anyway.", "Anarchy", "Traffic", "Move It", "Back"] },
+  endAssetsOverridable: { has: [JOIN_ANYWAY, WARNING, "Bus Stops"], lacks: ["The host requires the same asset packs."] },
+  endLongModsOverridable: { has: [JOIN_ANYWAY, WARNING, "Version mod 79"] },
+  endAssets: { lacks: [JOIN_ANYWAY] },
+  endContentOverridable: { lacks: [JOIN_ANYWAY, WARNING] },
+  endFullOverridable: { lacks: [JOIN_ANYWAY] },
+  endOverridableHostile: { lacks: [JOIN_ANYWAY] },
+  lobbyGame: { has: ["Let players join with different mods"] },
+  lobbyMenu: { has: ["Let players join with different mods"] },
+  lobbyNoOverride: { has: ["Let players join with different mods"] },
+};
+for (const name of Object.keys(EXPECT)) if (!cases[name]) fail("EXPECT names an unknown state " + name);
 const passes = [
   { name: "vanilla", ui: vanillaUi, locale: null, forceTrue: false, effects: true },
   { name: "vanilla-de-forced", ui: vanillaUi, locale: de, forceTrue: true, effects: false },
@@ -362,6 +400,7 @@ for (const pass of passes) {
   forceTrue = pass.forceTrue;
   runEffects = pass.effects;
   for (const [name, c] of Object.entries(cases)) {
+    caseTexts = new Set();
     values = {};
     for (const k of Object.keys(c)) values[k] = typeof c[k] === "string" || typeof c[k] === "boolean" ? c[k] : JSON.stringify(c[k]);
     for (const tab of ["host", "join", "solo"]) {
@@ -391,6 +430,12 @@ for (const pass of passes) {
     catch (e) { fail(pass.name + " " + name + " main menu: " + (e && e.stack)); }
     settle(renderLabel);
     runHandlers(pass.name + " " + name + " main menu");
+    // English passes: the state shows what it must (texts are whole rendered strings)
+    const want = EXPECT[name];
+    if (want && pass.locale === null) {
+      for (const text of want.has || []) if (!caseTexts.has(text)) fail(pass.name + " " + name + ": does not show " + JSON.stringify(text));
+      for (const text of want.lacks || []) if (caseTexts.has(text)) fail(pass.name + " " + name + ": shows " + JSON.stringify(text));
+    }
   }
   console.log("ok pass " + pass.name);
 }
@@ -403,7 +448,7 @@ for (const t of triggerNames) if (!csTriggers.has(t)) fail("trigger the C# side 
 for (const t of triggers) if (t[0] !== "skylineTogether" && !(t[0] === "menu" && t[1] === "setActiveScreen")) fail("trigger outside the group: " + t[0] + "." + t[1]);
 console.log("triggers used: " + [...triggerNames].sort().join(", "));
 for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends", "toggleNetHud", "writeDiagnostics", "toggleRole",
-  "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync",
+  "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync", "joinAnyway", "setAllowJoinWithDifferentMods",
   "inviteFriend", "openInviteOverlay", "refreshFriends", "recordStart", "recordStop", "replayStart", "replayStop", "replayRefresh", "reconnect", "cancelReconnect", "stayOffline", "mainMenu"]) {
   if (!triggerNames.has(t)) fail("no UI path fires the trigger " + t);
 }

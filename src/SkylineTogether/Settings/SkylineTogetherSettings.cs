@@ -23,7 +23,7 @@ namespace SkylineTogether.Settings
         /// <summary>Every option shown on the Options page (texts: <c>st.options.&lt;name&gt;.label/.desc</c>).</summary>
         public static readonly string[] OptionNames =
         {
-            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(RequireSameAssets), nameof(FriendsOnly), nameof(EnforcePlacementChecks), nameof(AllowDirectConnections),
+            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(RequireSameAssets), nameof(AllowJoinWithDifferentMods), nameof(FriendsOnly), nameof(EnforcePlacementChecks), nameof(AllowDirectConnections),
             nameof(DirectPort), nameof(JoinTarget), nameof(JoinPassword), nameof(HostButton), nameof(JoinButton), nameof(LeaveButton), nameof(ShowNetworkHud),
             nameof(WriteDiagnosticsButton),
         };
@@ -72,6 +72,15 @@ namespace SkylineTogether.Settings
         /// </summary>
         [SettingsUISection(MainSection, HostGroup)]
         public bool RequireSameAssets { get; set; }
+
+        /// <summary>
+        /// Let players join with different mods (ARCHITECTURE.md#handshake-and-admission, <c>HostOptions.AllowModMismatchOverride</c>):
+        /// a player refused for its code mods or asset packs sees what differs and may choose "Join anyway". On by default;
+        /// it matters only while the same mods or asset packs are required.
+        /// </summary>
+        [SettingsUISection(MainSection, HostGroup)]
+        [SettingsUIDisableByCondition(typeof(SkylineTogetherSettings), nameof(NothingRequired))]
+        public bool AllowJoinWithDifferentMods { get; set; }
 
         /// <summary>Only the host's Steam friends and players invited from the panel may join (others: "not invited").</summary>
         [SettingsUISection(MainSection, HostGroup)]
@@ -162,6 +171,9 @@ namespace SkylineTogether.Settings
 
         public bool NoHostPassword() => string.IsNullOrEmpty(HostPassword);
 
+        /// <summary>Neither the same mods nor the same asset packs are required (nothing for "join anyway" to skip).</summary>
+        public bool NothingRequired() => !RequireSameMods && !RequireSameAssets;
+
         public override void SetDefaults()
         {
             PlayerName = "";
@@ -170,6 +182,7 @@ namespace SkylineTogether.Settings
             MaxPlayers = 8;
             RequireSameMods = true;
             RequireSameAssets = false;
+            AllowJoinWithDifferentMods = true;
             AllowDirectConnections = false;
             FriendsOnly = false;
             EnforcePlacementChecks = false;

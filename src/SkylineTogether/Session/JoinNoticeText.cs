@@ -20,6 +20,8 @@ namespace SkylineTogether.Session
         {
             var lines = new List<string>();
             if (r == null) return lines;
+            // admitted only because the player chose "join anyway": say so first, with the honest warning
+            if (r.JoinedAnyway) lines.Add(LocaleSource.Resolve("st.notice.joinedAnyway", "LIST", Differences(r)));
             if (r.AssetsMissing.Count > 0) lines.Add(LocaleSource.Resolve("st.notice.assetsMissing", "LIST", Packs(r.AssetsMissing)));
             if (r.AssetVersions.Count > 0)
             {
@@ -30,7 +32,7 @@ namespace SkylineTogether.Session
             if (r.AssetsUnknown) lines.Add(LocaleSource.Resolve("st.notice.assetsUnknown"));
             if (r.AssetsExtra.Count > 0) lines.Add(LocaleSource.Resolve("st.notice.assetsExtra", "LIST", Packs(r.AssetsExtra)));
             if (r.ContentExtra.Count > 0) lines.Add(LocaleSource.Resolve("st.notice.contentExtra", "LIST", Packs(r.ContentExtra)));
-            if (r.HasModDifferences)
+            if (r.HasModDifferences && !r.JoinedAnyway)
             {
                 var names = new List<string>();
                 foreach (ModEntry m in r.Missing) names.Add(m.Name ?? "?");
@@ -53,12 +55,26 @@ namespace SkylineTogether.Session
         /// <summary>The host's line about a joiner, or null when there is nothing the host needs to know.</summary>
         public static string ForHost(string name, MismatchReport r)
         {
-            if (r == null || !r.HasDifferences) return null;
+            if (r == null || (!r.HasDifferences && !r.JoinedAnyway)) return null;
+            if (r.JoinedAnyway) return LocaleSource.Resolve("st.notice.hostJoinedAnyway", "NAME", name ?? "?", "LIST", Differences(r));
             if (r.AssetsMissing.Count > 0)
             {
                 return LocaleSource.Resolve("st.notice.hostAssets", "NAME", name ?? "?", "N", r.AssetsMissing.Count.ToString(CultureInfo.InvariantCulture));
             }
             return LocaleSource.Resolve("st.notice.hostDiffers", "NAME", name ?? "?");
+        }
+
+        /// <summary>The code mods and asset packs that differ, by name (a list too long to send has no names).</summary>
+        private static string Differences(MismatchReport r)
+        {
+            var names = new List<string>();
+            foreach (ModEntry m in r.Missing) names.Add(m.Name ?? "?");
+            foreach (ModEntry m in r.Extra) names.Add(m.Name ?? "?");
+            foreach (ModVersionDifference v in r.Versions) names.Add(v.Name ?? "?");
+            foreach (ModEntry e in r.AssetsMissing) names.Add(MismatchReport.Named(e.Name, e.PlatformId));
+            foreach (ModEntry e in r.AssetsExtra) names.Add(MismatchReport.Named(e.Name, e.PlatformId));
+            foreach (ModVersionDifference v in r.AssetVersions) names.Add(MismatchReport.Named(v.Name, v.PlatformId));
+            return names.Count > 0 ? Join(names) : LocaleSource.Resolve("st.notice.unnamed");
         }
 
         private static string Packs(List<ModEntry> entries)

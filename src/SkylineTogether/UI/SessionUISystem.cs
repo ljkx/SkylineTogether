@@ -138,6 +138,15 @@ namespace SkylineTogether.UI
                 if (host != null) host.Options.RequireSameAssets = on;
                 Mod.Settings.ApplyAndSave();
             })));
+            // the host's "let players join with different mods" (read live by a running host)
+            AddBinding(new TriggerBinding<bool>(Group, "setAllowJoinWithDifferentMods", on => Trigger("setAllowJoinWithDifferentMods", () =>
+            {
+                if (Mod.Settings == null) return;
+                Mod.Settings.AllowJoinWithDifferentMods = on;
+                SessionHost host = Mod.Sessions?.Host;
+                if (host != null) host.Options.AllowModMismatchOverride = on;
+                Mod.Settings.ApplyAndSave();
+            })));
             AddBinding(new TriggerBinding(Group, "resync", () => Trigger("resync", () =>
             {
                 Mod.Sync?.Integrity.AcceptResync();
@@ -180,6 +189,8 @@ namespace SkylineTogether.UI
             })));
             AddBinding(new TriggerBinding<string>(Group, "retryJoin", password => Trigger("retryJoin", () => Mod.Sessions?.RetryJoin(password, KeepPassword))));
             AddBinding(new TriggerBinding(Group, "dismissEnd", () => Trigger("dismissEnd", () => Mod.Sessions?.ClearLastEnd())));
+            // the error screen's "Join anyway" (an overridable mod or asset pack refusal)
+            AddBinding(new TriggerBinding(Group, "joinAnyway", () => Trigger("joinAnyway", () => Mod.Sessions?.JoinAnyway())));
             AddBinding(new TriggerBinding(Group, "copySteamId", () => Trigger("copySteamId", () =>
             {
                 ulong id = Mod.Invites != null && Mod.Invites.InviteTarget != 0 ? Mod.Invites.InviteTarget : Mod.Sessions?.LocalSteamId ?? 0;
@@ -540,6 +551,7 @@ namespace SkylineTogether.UI
             Prop(sb, "allowDirect", settings != null && settings.AllowDirectConnections).Append(',');
             Prop(sb, "requireSameMods", settings == null || settings.RequireSameMods).Append(',');
             Prop(sb, "requireSameAssets", settings != null && settings.RequireSameAssets).Append(',');
+            Prop(sb, "allowModOverride", settings == null || settings.AllowJoinWithDifferentMods).Append(',');
             Prop(sb, "portSetting", settings?.DirectPort ?? SessionManager.DefaultDirectPort).Append(',');
             // the build id (as the installer prints it), the join policy, this player's role, the ban list
             Prop(sb, "build", GameInfoProvider.BuildText).Append(',');
@@ -683,9 +695,11 @@ namespace SkylineTogether.UI
         }
 
         /// <summary>
-        /// The error screen's model: <c>{seq, kind, refuse, text, target, reportKind, missing, extra, versions, hostGame,
-        /// yourGame, hostProto, yourProto, hostBuild, yourBuild}</c>, or null. The three lists are the report kind's: code mods,
-        /// DLC ("content": missing and extra) or asset packs ("assets"), each entry with name, version and Paradox Mods id.
+        /// The error screen's model: <c>{seq, kind, refuse, text, target, reportKind, overridable, missing, extra, versions,
+        /// hostGame, yourGame, hostProto, yourProto, hostBuild, yourBuild}</c>, or null. <c>overridable</c>: a refusal for code
+        /// mods or asset packs the player may pass with "Join anyway" (the host lets players join with different mods). The
+        /// three lists are the report kind's: code mods, DLC ("content": missing and extra) or asset packs ("assets"), each
+        /// entry with name, version and Paradox Mods id.
         /// </summary>
         private static void WriteEnd(StringBuilder sb, SessionEndInfo end)
         {
@@ -703,6 +717,8 @@ namespace SkylineTogether.UI
             Prop(sb, "target", end.Target ?? "").Append(',');
             MismatchReport r = end.Report;
             Prop(sb, "reportKind", r?.Kind ?? "").Append(',');
+            Prop(sb, "overridable", end.Kind == ClientEndKind.Refused && end.Refuse == Core.Protocol.RefuseReason.Mismatch && r != null && r.Overridable
+                                    && (r.Kind == "mods" || r.Kind == "assets")).Append(',');
             Prop(sb, "hostGame", r?.HostGameVersion ?? "").Append(',');
             Prop(sb, "yourGame", r?.ClientGameVersion ?? "").Append(',');
             Prop(sb, "hostProto", r?.HostProtocol ?? "").Append(',');

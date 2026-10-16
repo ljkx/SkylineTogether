@@ -88,6 +88,9 @@ namespace SkylineTogether.Session
         private int _recoveryVersion;
         private Endpoint _lastEndpoint;
         private string _lastPassword = "";
+        // the host (Endpoint.ToString) this player chose "join anyway" for: every later join and rejoin of this game
+        // session to the same host says so in its hello, so automatic reconnects do not stop at the error screen again
+        private string _joinAnywayTarget;
         private IReadOnlyList<PlayerInfo> _lastPlayers = new PlayerInfo[0];
         private ComponentSystemBase _heldAutoSave;
         private bool _holdingCity;
@@ -305,6 +308,7 @@ namespace SkylineTogether.Session
                     MaxPlayers = Math.Max(2, Math.Min(16, _settings.MaxPlayers)),
                     RequireSameMods = _settings.RequireSameMods,
                     RequireSameAssets = _settings.RequireSameAssets,
+                    AllowModMismatchOverride = _settings.AllowJoinWithDifferentMods,
                     Listen = new ListenOptions { VirtualPort = VirtualPort, AllowIp = direct, IpPort = _settings.DirectPort, MaxConnections = Math.Max(2, _settings.MaxPlayers) },
                     // snapshot chunks are pumped between frames too (Steam connections are thread-safe)
                     BackgroundPump = true,
@@ -320,11 +324,14 @@ namespace SkylineTogether.Session
                 host.ChatReceived += AddChat;
                 host.PlayersChanged += () => _playersVersion++;
                 host.BansChanged += () => SaveBans(host);
-                // a joiner admitted with other asset packs, DLC, mods or mod settings (the details are in the log)
+                // a joiner admitted with other asset packs, DLC, mods or mod settings (the details are in the log); one that
+                // chose "join anyway" is also named in the chat with what differs
                 host.JoinerDiffers += (peer, who, report) =>
                 {
                     string line = JoinNoticeText.ForHost(who, report);
-                    if (line != null) Notify(line, ProgressState.Warning, null, 10f);
+                    if (line == null) return;
+                    Notify(line, ProgressState.Warning, null, 10f);
+                    if (report.JoinedAnyway) AddChat(new ChatEntry { IsSystem = true, Text = line });
                 };
                 host.SpeedRequested += (peer, speed) =>
                 {
@@ -554,7 +561,11 @@ namespace SkylineTogether.Session
             {
                 Features.Registry.RearmAll();
                 transport = new SteamSocketsTransport(endpoint.SteamId != 0 ? TransportKind.SteamP2P : TransportKind.SteamIp, _log);
-                var client = new SessionClient(transport, _info, _loader, new ClientOptions { PlayerName = PlayerName, SteamId = LocalSteamId, Password = _lastPassword }, _clock, _log);
+                bool joinAnyway = _joinAnywayTarget != null && string.Equals(_joinAnywayTarget, endpoint.ToString(), StringComparison.Ordinal);
+                var client = new SessionClient(transport, _info, _loader, new ClientOptions
+                {
+                    PlayerName = PlayerName, SteamId = LocalSteamId, Password = _lastPassword, AcceptModMismatch = joinAnyway,
+                }, _clock, _log);
                 transport = null; // the client owns it
                 client.ChatReceived += AddChat;
                 client.PlayersChanged += () => _playersVersion++;
@@ -697,6 +708,21 @@ namespace SkylineTogether.Session
                 _settings.JoinPassword = password ?? "";
                 _settings.ApplyAndSave();
             }
+            LastEnd = null;
+            StartJoining();
+        }
+
+        /// <summary>
+        /// The error screen's "Join anyway": the host refused this player's different mods or asset packs, but lets players
+        /// join with them (<see cref="MismatchReport.Overridable"/>). Joins the same target again saying so, and remembers the
+        /// choice for this host for the rest of the game session (rejoins included). Nothing happens for any other end.
+        /// </summary>
+        public void JoinAnyway()
+        {
+            SessionEndInfo end = LastEnd;
+            if (end == null || end.Kind != ClientEndKind.Refused || end.Refuse != RefuseReason.Mismatch || end.Report == null || !end.Report.Overridable || _lastEndpoint == null) return;
+            _joinAnywayTarget = _lastEndpoint.ToString();
+            _log.Info(LogCategory.Session, "joining anyway with different mods (the host allows it): " + end.Report.Describe());
             LastEnd = null;
             StartJoining();
         }

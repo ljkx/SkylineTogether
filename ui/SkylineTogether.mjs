@@ -192,6 +192,8 @@ const EN = {
   "st.ui.host.requireModsHint": "Refuse players whose code mods differ from yours. They get a list of what to enable, disable or update.",
   "st.ui.host.requireAssets": "Require the same asset packs",
   "st.ui.host.requireAssetsHint": "Refuse players whose asset packs differ from yours. When off, they join, are told which packs differ, and objects from packs they don't have are left out in their game.",
+  "st.ui.host.allowModOverride": "Let players join with different mods",
+  "st.ui.host.allowModOverrideHint": "When a player's mods or asset packs don't match what you require, they see what differs and can still choose \"Join anyway\". Their game may then behave differently; your city stays authoritative. DLC, version and password checks always apply.",
   "st.ui.host.allowDirect": "Allow direct IP connections",
   "st.ui.host.allowDirectHint": "Also accept connections on a UDP port (needs port forwarding and a host password). Steam connections always work.",
   "st.ui.host.allowDirectNextTime": "Applies the next time you host.",
@@ -258,6 +260,8 @@ const EN = {
   "st.ui.time.minutes": "{M}:{S} min",
   "st.ui.end.retry": "Try again",
   "st.ui.end.retryPassword": "Join with this password",
+  "st.ui.end.joinAnyway": "Join anyway",
+  "st.ui.end.joinAnywayWarning": "Different mods can make your cities drift apart or behave differently. The host's city is authoritative; differences are repaired where possible.",
   "st.ui.end.back": "Back",
   "st.ui.end.copy": "Copy details",
   "st.ui.end.copied": "Copied",
@@ -268,6 +272,7 @@ const EN = {
   "st.ui.end.text.passwordRequired": "Ask the host for the password and enter it below.",
   "st.ui.end.title.mods": "Your mods don't match the host's",
   "st.ui.end.text.mods": "The host requires the same code mods. Change these, restart the game and join again.",
+  "st.ui.end.text.modsOverridable": "Your code mods differ from the host's. Best: change these, restart the game and join again. The host also lets you join anyway.",
   "st.ui.end.mods.missing": "Enable or subscribe",
   "st.ui.end.mods.extra": "Disable",
   "st.ui.end.mods.versions": "Update to the host's version",
@@ -284,6 +289,7 @@ const EN = {
   "st.ui.end.content.extra": "Only you have these",
   "st.ui.end.title.assets": "Your asset packs don't match the host's",
   "st.ui.end.text.assets": "The host requires the same asset packs. Subscribe to the missing ones, disable the ones the host doesn't have, update the others, restart the game and join again.",
+  "st.ui.end.text.assetsOverridable": "Your asset packs differ from the host's. Best: subscribe to the missing ones, disable the ones the host doesn't have, update the others, restart the game and join again. The host also lets you join anyway.",
   "st.ui.end.assets.missing": "Subscribe",
   "st.ui.end.assets.extra": "Disable (the host doesn't have them)",
   "st.ui.end.assets.versions": "Update to the host's version",
@@ -1976,6 +1982,7 @@ function useHostOptions(s) {
   const [allowDirect, setAllowDirect] = React.useState(!!s.allowDirect);
   const [requireMods, setRequireMods] = React.useState(s.requireSameMods !== false);
   const [requireAssets, setRequireAssets] = React.useState(s.requireSameAssets === true);
+  const [allowOverride, setAllowOverride] = React.useState(s.allowModOverride !== false);
   const [port, setPortText] = React.useState(String(Math.round(num(s.portSetting, 27015))));
   const save = function (next) {
     const v = merge({ maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, port: port }, next);
@@ -1983,7 +1990,9 @@ function useHostOptions(s) {
     send("saveHostOptions", v.maxPlayers, !!v.allowDirect, !!v.requireMods, portOf(v.port));
   };
   return {
-    maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, requireAssets: requireAssets, port: port, save: save,
+    maxPlayers: maxPlayers, allowDirect: allowDirect, requireMods: requireMods, requireAssets: requireAssets, allowOverride: allowOverride, port: port, save: save,
+    // "join anyway" only skips what is required: nothing to allow while neither mods nor asset packs are
+    overrideApplies: requireMods || requireAssets,
     portInvalid: portOf(port) === 0,
     // digits only (a pasted "27015 " or "port 27015" keeps its number)
     setPort: function (v) { setPortText(str(v).replace(/[^0-9]/g, "").slice(0, 5)); },
@@ -1991,6 +2000,7 @@ function useHostOptions(s) {
     setDirect: function (v) { setAllowDirect(v); save({ allowDirect: v }); },
     setMods: function (v) { setRequireMods(v); save({ requireMods: v }); },
     setAssets: function (v) { setRequireAssets(!!v); send("setRequireSameAssets", !!v); },
+    setOverride: function (v) { setAllowOverride(!!v); send("setAllowJoinWithDifferentMods", !!v); },
   };
 }
 
@@ -2032,6 +2042,7 @@ function HostOptions(p) {
     h(GameRow, { label: t("st.ui.host.maxPlayers"), hint: t("st.ui.host.maxPlayersHint") }, h(Stepper, { value: o.maxPlayers, min: 2, max: 16, onChange: o.setMax })),
     h(GameRow, { label: t("st.ui.host.requireMods"), hint: t("st.ui.host.requireModsHint") }, h(Check, { checked: o.requireMods, onChange: o.setMods })),
     h(GameRow, { label: t("st.ui.host.requireAssets"), hint: t("st.ui.host.requireAssetsHint") }, h(Check, { checked: o.requireAssets, onChange: o.setAssets })),
+    h(GameRow, { label: t("st.ui.host.allowModOverride"), hint: t("st.ui.host.allowModOverrideHint") }, h(Check, { checked: o.allowOverride, disabled: !o.overrideApplies, onChange: o.setOverride })),
     h(GameRow, { label: t("st.ui.host.friendsOnly"), hint: t("st.ui.host.friendsOnlyHint") }, h(Check, { checked: friendsOnly, onChange: function (v) { setFriendsOnly(v); send("setFriendsOnly", !!v); } })),
     h(
       GameRow,
@@ -2450,6 +2461,11 @@ function MenuHostPage(p) {
     h(MenuRow, { label: t("st.ui.host.maxPlayers"), info: t("st.ui.host.maxPlayersHint"), onInfo: setHoverInfo }, h(Stepper, { menu: true, value: o.maxPlayers, min: 2, max: 16, onChange: o.setMax })),
     h(MenuRow, { label: t("st.ui.host.requireMods"), info: t("st.ui.host.requireModsHint"), onInfo: setHoverInfo, onClick: function () { o.setMods(!o.requireMods); } }, h(Check, { menu: true, checked: o.requireMods, onChange: o.setMods })),
     h(MenuRow, { label: t("st.ui.host.requireAssets"), info: t("st.ui.host.requireAssetsHint"), onInfo: setHoverInfo, onClick: function () { o.setAssets(!o.requireAssets); } }, h(Check, { menu: true, checked: o.requireAssets, onChange: o.setAssets })),
+    h(
+      MenuRow,
+      { label: t("st.ui.host.allowModOverride"), info: t("st.ui.host.allowModOverrideHint"), onInfo: setHoverInfo, onClick: o.overrideApplies ? function () { o.setOverride(!o.allowOverride); } : undefined },
+      h(Check, { menu: true, checked: o.allowOverride, disabled: !o.overrideApplies, onChange: o.setOverride })
+    ),
     h(MenuRow, { label: t("st.ui.host.friendsOnly"), info: t("st.ui.host.friendsOnlyHint"), onInfo: setHoverInfo, onClick: function () { setFriendsOnly(!friendsOnly); send("setFriendsOnly", !friendsOnly); } },
       h(Check, { menu: true, checked: friendsOnly, onChange: function (v) { setFriendsOnly(v); send("setFriendsOnly", !!v); } })),
     h(
@@ -2815,6 +2831,7 @@ function reportText(e, title, text) {
   objs(e.versions).forEach(function (m) { lines.push("~ " + str(m.name) + " (host " + (str(m.host) || "?") + ", you " + (str(m.you) || "?") + ")"); });
   if (str(e.hostGame)) lines.push("game: host " + str(e.hostGame) + ", you " + (str(e.yourGame) || "?"));
   if (str(e.hostBuild)) lines.push("build: host " + str(e.hostBuild) + ", you " + (str(e.yourBuild) || "?"));
+  if (e.overridable === true) lines.push("the host lets players join anyway");
   if (str(e.target)) lines.push("host: " + str(e.target));
   return lines.join("\n");
 }
@@ -2833,9 +2850,16 @@ function EndOverlay(p) {
   const shown = !!copy && st.dismissedEnd !== e.seq;
   const needsPassword = copy === "badPassword" || copy === "passwordRequired";
   const canRetry = !!copy && !NO_RETRY[copy];
+  // the host refused different mods or asset packs but lets players join anyway (the lists stay; the choice is the player's)
+  const canJoinAnyway = (copy === "mods" || copy === "assets") && e.overridable === true;
   const dismiss = function () {
     setStore({ dismissedEnd: e.seq });
     send("dismissEnd");
+  };
+  const joinAnyway = function () {
+    if (!canJoinAnyway) return;
+    setStore({ dismissedEnd: e.seq });
+    send("joinAnyway");
   };
   const retry = function () {
     if (!canRetry || (needsPassword && password.length === 0)) return;
@@ -2846,7 +2870,7 @@ function EndOverlay(p) {
   useWindowKeys({ Escape: dismiss, Enter: canRetry && !needsPassword ? retry : undefined }, shown, true);
   if (!shown) return null;
   const title = t("st.ui.end.title." + copy);
-  const text = t("st.ui.end.text." + copy);
+  const text = canJoinAnyway ? t(copy === "assets" ? "st.ui.end.text.assetsOverridable" : "st.ui.end.text.modsOverridable") : t("st.ui.end.text." + copy);
   const missing = objs(e.missing);
   const extra = objs(e.extra);
   const versions = objs(e.versions);
@@ -2877,6 +2901,14 @@ function EndOverlay(p) {
           h(Field, { look: "overlay", value: password, onChange: setPassword, onEnter: retry, onEscape: dismiss, password: true, placeholder: t("st.ui.join.passwordPlaceholder"), title: t("st.ui.join.password"), max: 64 })
         )
       : null,
+    canJoinAnyway
+      ? h(
+          "div",
+          { style: merge(S.row, { alignItems: "flex-start", marginTop: "4rem", padding: "10rem 12rem", borderRadius: "4rem", backgroundColor: OV.well }, border("1rem", OV.warn, ["Left"])) },
+          h(Glyph, { src: G.warning, size: 14, color: OV.warn, style: { marginRight: "8rem", marginTop: "2rem", flexShrink: 0 } }),
+          h("div", { style: { flex: 1, minWidth: 0, fontSize: "14rem", color: OV.text, lineHeight: 1.4, overflowWrap: "break-word", wordBreak: "break-word" } }, t("st.ui.end.joinAnywayWarning"))
+        )
+      : null,
     str(e.text) && !isMods
       ? h(
           "div",
@@ -2891,6 +2923,7 @@ function EndOverlay(p) {
       h(LinkText, { color: OV.accent, style: merge(S.row, { fontSize: "14rem" }), onClick: function () { send("copyText", reportText(e, title, text)); flash.fire(); } }, h(Glyph, { src: flash.on ? G.check : G.copy, size: 14, color: OV.accent, style: { marginRight: "6rem" } }), flash.on ? t("st.ui.end.copied") : t("st.ui.end.copy")),
       h("div", { style: { flex: 1 } }),
       h(OvButton, { onClick: dismiss }, t("st.ui.end.back")),
+      canJoinAnyway ? h(OvButton, { onClick: joinAnyway, style: merge({ marginLeft: "10rem" }, border("2rem", OV.warn)) }, t("st.ui.end.joinAnyway")) : null,
       canRetry ? h(OvButton, { kind: "primary", disabled: needsPassword && password.length === 0, onClick: retry, style: { marginLeft: "10rem" } }, needsPassword ? t("st.ui.end.retryPassword") : t("st.ui.end.retry")) : null
     )
   );
