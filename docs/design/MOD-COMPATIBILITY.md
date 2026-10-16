@@ -104,7 +104,8 @@ updated and the adapter as a whole is turned off (half of its rules could contra
 line (`Traffic 1.2.3: adapter disabled, 2 of 14 names not found in this version (type ..., system ...); the generic
 analysis applies instead`) and the same text in the diagnostics. The mod then gets exactly the generic treatment of
 §6, and the rest of Skyline Together keeps working. Host and joiner run the same mod version (join check), so they
-decide the same. Pure logic and texts: Core `AdapterCheck` (tests in `Modding/IlScannerAndAdapterCheckTests.cs`).
+decide the same, unless the host let the joiner in with different mods ("join anyway"); each side then applies its own
+decision to its own game, and the host's decides what replicates. Pure logic and texts: Core `AdapterCheck` (tests in `Modding/IlScannerAndAdapterCheckTests.cs`).
 
 ## 6. Any other mod: automatic analysis
 
@@ -146,7 +147,8 @@ same mod (it only adds generic and declared rules).
   Never a file path.
 - **Join notice.** Right after admission the joiner is told which of the host's asset packs it lacks or has in
   another version (by Paradox Mods id and the digest of each pack's prefab ids), independent of the city; the host
-  option "require the same asset packs" refuses such a joiner instead.
+  option "require the same asset packs" refuses such a joiner instead (overridable with "join anyway" when the host lets
+  players join with different mods).
 - **Join message.** The join snapshot's manifest lists the city's asset sources with prefab counts. Before loading, the
   joiner compares them with its own (packages by Paradox Mods id among its loaded prefabs, runtime prefabs by the
   creating mod being loaded, the host's local assets by prefab name, which also finds DLC content without a package id;

@@ -229,7 +229,7 @@ Core's [`SessionHost`](../src/SkylineTogether.Core/Session/SessionHost.cs) and
 `SessionManager.StartHosting` (only in a loaded city, with Steam logged in) creates a `SteamSocketsTransport` wrapped
 in a `CompositeTransport` (the solo-test recorder attaches there) and a `SessionHost` with `HostOptions` from the
 settings: session name, password, max players (2-16, counting the host), "require the same mods", "require the same
-asset packs" (off by default), join policy
+asset packs" (off by default), "let players join with different mods" (on by default), join policy
 (open, or Steam friends and invited players only), the persisted ban list, and the optional direct-IP socket, which
 opens only while a host password is set. A friends-only Steam lobby and rich presence carry the invitation
 ([`SteamInvites`](../src/SkylineTogether/Session/SteamInvites.cs)); the session itself always runs over a P2P
@@ -248,7 +248,7 @@ bans, the join policy and the password.
 sequenceDiagram
   participant C as Client
   participant H as Host
-  C->>H: Hello (protocol version, build id, game version, name)
+  C->>H: Hello (protocol version, build id, game version, name, join flags)
   C->>H: Control ManifestDetail (mods, DLC, asset packs, mod settings)
   Note over H: protocol version differs: Refuse (no host version<br/>while a password is still owed)
   Note over H: Screen: ban list, join policy (transport identity)<br/>Duplicate Steam ID: replace or refuse
@@ -256,7 +256,7 @@ sequenceDiagram
     H->>C: Control PasswordChallenge (host nonce, salt, session id)
     C->>H: Control PasswordResponse (client nonce, HMAC)
   end
-  Note over H: TryAdmit: build id, game version, mods (if required),<br/>DLC, asset packs (if required), session full
+  Note over H: TryAdmit: build id, game version, DLC, mods (if required),<br/>asset packs (if required), session full;<br/>"join anyway" passes only mods and asset packs
   H->>C: Welcome (peer id, role, permissions, session info)
   H->>C: Control JoinNotice (differences that do not block, if any)
   H->>C: Epoch batch: prefab table, id range, ledger epoch
@@ -292,11 +292,12 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
 
   | Category | Listed | On a difference |
   |---|---|---|
-  | Code mods | name, version (`ModManager`) | refused with "require the same mods" ([`MismatchReport.CompareMods`](../src/SkylineTogether.Core/Session/MismatchReport.cs); client-local mods never count), otherwise told |
+  | Code mods | name, version (`ModManager`) | refused with "require the same mods" ([`MismatchReport.CompareMods`](../src/SkylineTogether.Core/Session/MismatchReport.cs); client-local mods never count; overridable, see below), otherwise told |
   | DLC and content packs | DLC id and name of every available `ContentPrefab` with a `DlcRequirement` (or a Paradox login requirement) | refused when the joiner lacks one the host has (the host's city can contain its objects); content only the joiner has is told |
-  | Asset packs | every Paradox Mods id among the loaded prefabs with package name, version, prefab count and the digest of its prefab ids ([`AssetSources.Packages`](../src/SkylineTogether/Compat/AssetSources.cs)) | told (objects of packs the joiner lacks are left out on its side, as before); refused with "require the same asset packs" |
+  | Asset packs | every Paradox Mods id among the loaded prefabs with package name, version, prefab count and the digest of its prefab ids ([`AssetSources.Packages`](../src/SkylineTogether/Compat/AssetSources.cs)) | told (objects of packs the joiner lacks are left out on its side, as before); refused with "require the same asset packs" (overridable) |
   | Mod settings | current values of the settings the host pushes ([`ModSettingsSync.CurrentValues`](../src/SkylineTogether/Compat/ModSettingsSync.cs)) | told; the host's values apply for the session |
 
+  DLC is compared first, so a joiner is never offered "join anyway" for its mods only to be refused for its DLC next.
   A refusal carries a `MismatchReport` (kind `mods`, `content` or `assets`) whose lists the joiner's error screen
   shows. Differences that do not block go to the admitted joiner right after `Welcome` as `Control JoinNotice` (a
   report of kind `notice`): one notification and one chat line per category
@@ -305,6 +306,25 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   asset packs sends that list as null, and the host reports "the asset packs differ" without names. Local assets
   (unpublished) and runtime prefabs of mods are not compared here; the snapshot's per-city check names the ones the
   city uses ([missing assets](#mod-compatibility)).
+- **Join anyway.** With `HostOptions.AllowModMismatchOverride` (setting "let players join with different mods", on by
+  default, read live) a refusal for code mods or asset packs is overridable: its report carries an `overridable` record
+  (`MismatchReport.Overridable`) and the detail text says so. The joiner's error screen keeps the lists and adds
+  **Join anyway**; that reconnects at once with `HelloJoinFlags.AcceptModMismatch` in the hello's join flags byte, and
+  `SessionManager` remembers the host (`Endpoint`) for the rest of the game session, so rejoins send it too. The host
+  then admits the joiner with a join notice marked `joined-anyway` (`MismatchReport.JoinedAnyway`): the joiner's
+  notification and chat line say it joined with different mods, the host gets a notification and a chat line naming
+  the player and the differences, and the host logs the accepted mismatch and lists it per peer in the diagnostics
+  (`DescribePeers`). The flag changes nothing but the code mod and asset pack verdict of
+  [`CompatibilityCheck`](../src/SkylineTogether.Core/Session/CompatibilityCheck.cs): protocol version, bans, join
+  policy and password come before it, build id, game version and DLC are refused whatever it says, and capacity is
+  checked after it. With the option off the flag is ignored (logged) and the refusal is final. Nothing after the
+  admission assumes identical mods: records of prefabs or component types the joiner lacks are skipped, the
+  `ModSettings` channel only touches settings of loaded adapters, mod channel messages for a mod the receiver lacks are
+  dropped and counted, and integrity repair works as for any other divergence. A rejoin from the recovery hold that is
+  refused for different mods (the host changed its options meanwhile, so no choice was remembered) is not offered
+  "join anyway": the recovery panel asks as for any other refusal.
+  Wire: `Refuse` keeps its layout (the mark is a report record, which readers of every version skip when unknown); the
+  hello's join flags byte (protocol 4) is rejected when it has undefined bits.
 - Refuse reasons: `Mismatch`, `Full`, `Banned`, `BadPassword`, `NotInvited`, `HostShuttingDown`, `ProtocolVersion`,
   `HostPreparing`. Before admission a connection may send bodies of at most 1 MiB, and the handshake must finish within
   30 s.
@@ -1059,7 +1079,8 @@ computed with the UI's own functions; clients compare their own rows and re-send
   listed settings on clients for the session and restores the player's own values afterwards.
 - **Join check.** Mods, DLC, asset packs and mod settings are compared at admission
   ([handshake](#handshake-and-admission)); client-local mods never block, asset packs and settings are told rather than
-  refused unless the host requires the same asset packs.
+  refused unless the host requires the same asset packs, and a host that lets players join with different mods admits
+  a joiner that chose "join anyway" despite different code mods or asset packs.
 - **Missing assets.** Records whose prefab a client lacks are never applied; the player is told which package or mod
   is missing ([`AssetSources`](../src/SkylineTogether/Compat/AssetSources.cs)). The host refuses proposals naming
   prefabs it lacks.
@@ -1177,7 +1198,8 @@ the most ids alive at once plus the quarantine and are released at session end.
   rules, and owned entities, direct-write mod tools and mods that relax them are not checked
   ([placement checks](#placement-checks), [known gaps](#known-gaps)). Within those limits the host still trusts the
   client's vanilla tool.
-- The mod, DLC, asset pack and setting lists a client reports are a compatibility check, not a security barrier.
+- The mod, DLC, asset pack and setting lists a client reports are a compatibility check, not a security barrier. The
+  hello's "join anyway" flag is trusted only for the code mod and asset pack verdict, and only when the host allows it.
 - Passwords are stored in plain text in each player's settings file.
 
 ## Known limitations

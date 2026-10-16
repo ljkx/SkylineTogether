@@ -64,7 +64,9 @@ responding while joining."
   [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings)). Mods are matched by name
   and compared by version. Mods that only
   affect a player's own screen never block a join; see [Mods](getting-started.md#mods). If a mod is reported that you
-  believe is local-only, report it with its name so it can be classified.
+  believe is local-only, report it with its name so it can be classified. If the host lets players join with different
+  mods (the default), the refusal screen also offers **Join anyway**; see
+  [Joining anyway with different mods](#joining-anyway-with-different-mods).
 - For the first test, the simplest setup is an empty playset on both PCs.
 - Disable any other multiplayer mod; the installer warns about a known conflicting one.
 
@@ -96,6 +98,30 @@ lists behind it:
   you leave."
 - **Code mods** when the host turned **Require the same mods** off: "Your code mods differ from the host's (the host
   allows it): … Parts of the city may look or behave differently for you."
+
+## Joining anyway with different mods
+
+When the host requires the same mods (or the same asset packs) and has **Let players join with different mods** on
+(the default), the refusal screen still lists what differs (what to enable, disable or update), says that the host
+also lets you join anyway, and shows a **Join anyway** button next to **Back** with the warning "Different mods can make
+your cities drift apart or behave differently. The host's city is authoritative; differences are repaired where
+possible." The best fix is still to match the host's mods and restart the game.
+
+- **Join anyway** connects again at once. You are told "You joined with different mods: …" as a notification and a chat
+  line, plus the usual asset pack lines. The host gets "&lt;name&gt; joined with different mods: …" as a notification and
+  a chat line; the host's log and diagnostics file list the accepted differences.
+- Your game remembers the choice for that host until you quit the game, so an automatic reconnect or a rejoin does not
+  stop at the screen again.
+- One **Join anyway** covers code mods and asset packs. The screen shows the code mods first; asset packs that differ as
+  well are listed in the notice after joining.
+- What it means in play: the host's city stays authoritative. Objects whose asset or mod you lack are left out in your
+  game, data of a mod you don't have is skipped (the log names it), the host's mod settings apply to the mods you both
+  have, messages of a mod you don't have are ignored, and the integrity check repairs objects that differ. What a mod
+  does only on one PC (its own simulation, tools, overlays) can still differ. If the cities drift apart, match the mods
+  and rejoin.
+- It never skips: a different Skyline Together build or protocol version, a different game version, DLC or content
+  packs you lack (those are checked first), the password, bans, the friends-only policy or a full session.
+- With the option off, the screen has no button and says that the host requires the same mods.
 
 ## Connection: Steam relay, direct IP and firewalls
 

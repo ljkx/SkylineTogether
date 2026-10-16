@@ -72,6 +72,9 @@ Hosting always starts from inside a loaded city.
    - **Require the same mods**: on by default. See [Mods](#mods).
    - **Require the same asset packs**: off by default. When on, players whose asset packs (Paradox Mods packages
      that add objects) differ from yours are refused with a list; when off, they join and are told which packs differ.
+   - **Let players join with different mods**: on by default. A player refused by one of the two settings above still
+     sees the list of differences and may click **Join anyway**. Turn it off to make those refusals final. See
+     [Mods](#mods).
    - **Friends and invited only**: off by default. When on, only your Steam friends and players you invite from the
      panel can join through Steam; others are told they are not invited.
    - **Allow direct IP connections**: off by default, and only available while a password is set (Steam does not check
@@ -192,6 +195,7 @@ Options → **Skyline Together**, tab **Multiplayer**:
 | Hosting | Max players (2-16, including you) | 8 |
 | Hosting | Require the same mods | on |
 | Hosting | Require the same asset packs | off |
+| Hosting | Let players join with different mods | on |
 | Hosting | Allow direct IP connections | off |
 | Hosting | Direct connection port (1024-65535) | 27015 |
 | Joining | Host's Steam ID or IP:port, Password | empty |
@@ -211,9 +215,16 @@ world when it defines saved components, saved systems, prefabs (also created at 
 UI and rendering, or patches game code outside the UI with Harmony. The diagnostics file explains the decision for
 every mod.
 
-Gameplay mods such as Traffic, Move It or Anarchy must be enabled on every PC in the same version. Turning **Require
+Gameplay mods such as Traffic, Move It or Anarchy should be enabled on every PC in the same version. Turning **Require
 the same mods** off lets players with different mods join, but the city can then look or behave differently for them.
 See [docs/design/MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md) for the per-mod details.
+
+With **Let players join with different mods** on (the default), a player whose mods differ can decide for themselves:
+the refusal screen keeps the list of what to enable, disable or update and adds **Join anyway**, with the warning that
+different mods can make the cities drift apart or behave differently. The host's city stays authoritative and
+differences are repaired where possible; the host sees who joined with which differences. **Join anyway** never skips
+a different Skyline Together build or game version, missing DLC, the password, bans or a full session; see
+[Troubleshooting](troubleshooting.md#joining-anyway-with-different-mods).
 
 DLC, asset packs and the mod settings the host pushes are checked when a player joins as well: a player without one of
 the host's DLC or content packs is refused; different asset packs and mod settings are told to the joining player (the

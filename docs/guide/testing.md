@@ -44,6 +44,10 @@ Do each step, then both players look at the same spot and compare.
 13. The friend leaves and joins again; it works and the city is identical.
 14. Later: enable the same gameplay mods on both PCs (Traffic, Move It, Anarchy, ...) and repeat steps 2-8 with them
     (Move It: move a building; Traffic: lane connections).
+15. **Different mods:** the friend enables one extra gameplay mod and joins. The refusal screen lists it and offers
+    **Join anyway** (host option **Let players join with different mods**, on by default); after clicking it the
+    friend joins, both see the "joined with different mods" line in the chat, and steps 2-4 still work. With the option
+    off, the screen has no **Join anyway** button.
 
 ### If something is wrong
 

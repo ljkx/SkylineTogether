@@ -69,6 +69,15 @@ joining, the player is told which of the host's asset packs are missing (the hos
 instead). A player without one of the host's DLC or content packs cannot join; see
 [Troubleshooting](troubleshooting.md#different-dlc-asset-packs-or-mod-settings).
 
+### Can I play with friends who have different mods?
+
+Yes, if the host allows it. With **Let players join with different mods** on (the default), a player refused for
+different code mods or asset packs sees the list of differences and can click **Join anyway**. The host's city stays
+authoritative and differences are repaired where possible, but parts of the city can look or behave differently, and
+the cities can drift apart where a mod runs on one PC only. Missing DLC, another game version or another Skyline
+Together build still refuse the join. See
+[Troubleshooting](troubleshooting.md#joining-anyway-with-different-mods).
+
 ### Can I use it together with another multiplayer mod?
 
 No. Disable other multiplayer mods; two at once conflict.

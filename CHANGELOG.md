@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+
+- **Join anyway with different mods**: when the host requires the same mods or asset packs, a player whose mods differ
+  still sees the list of differences and can choose **Join anyway** (with a warning that the cities can drift apart or
+  behave differently). The host is told who joined with which differences (notification and chat line). New host
+  option **Let players join with different mods** (on by default; off makes those refusals final). It never skips a
+  different build, game version, missing DLC, the password, bans or a full session.
+
+### Changed
+
+- Wire change, protocol 4 (the hello carries a join flags byte): earlier builds are refused with "Skyline Together
+  versions differ".
+- DLC the joining player lacks is now reported before different code mods.
+
 ## [0.1.0-alpha.2] - 2026-10-16
 
 Second test build: a fix for joining players.
