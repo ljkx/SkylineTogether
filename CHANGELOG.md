@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] - 2026-10-16
+
+Fourth test build: fixes the joining player's crashes when buildings are bulldozed and when citizens, households and
+companies come and go. Everyone in a session must install this build.
+
 ### Fixed
 
 - **Joining players crashed when they bulldozed something, and a few minutes into a session.** Deleting an entity on a
@@ -243,7 +248,8 @@ on a copy of a city.
   a list); saving before the first state arrived could store "keep" as the host password; the player list re-rendered
   with every cursor movement.
 
-[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.1.0-alpha.3...main
+[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.1.0-alpha.4...main
+[0.1.0-alpha.4]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.1

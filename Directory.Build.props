@@ -28,7 +28,7 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>0.1.0-alpha.3</Version>
+    <Version>0.1.0-alpha.4</Version>
     <Company>Skyline Together</Company>
     <Product>Skyline Together</Product>
     <!-- never restore or reference NuGet packages implicitly -->
