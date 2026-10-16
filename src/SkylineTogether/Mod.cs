@@ -139,6 +139,8 @@ namespace SkylineTogether
                 updateSystem.UpdateBefore<ChirpDrainSystem, Game.Triggers.CreateChirpSystem>(SystemUpdatePhase.ModificationEnd);
                 // clients: the reference clean-up of local deletions (the game's removal systems are off on clients)
                 updateSystem.UpdateAt<RemovalCascadeSystem>(SystemUpdatePhase.ModificationEnd);
+                // no created entity reaches the game's update-group system without its marker
+                updateSystem.UpdateBefore<UpdateFrameGuardSystem, Game.Simulation.UpdateGroupSystem>(SystemUpdatePhase.Modification5);
             });
             Step(log, "mover systems", () =>
             {

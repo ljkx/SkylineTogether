@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Fixed
+
+- **Joining players crashed when they bulldozed something, and a few minutes into a session.** Deleting an entity on a
+  joining player's game (its own bulldozing, a despawn from the host, a household moving away) left references to it
+  behind that the game follows without a check once the entity is gone: the hundreds of citizens inside a demolished
+  building kept it as their current building, workers kept a workplace and pupils a school that a list did not lead to,
+  passengers kept riding a vehicle the game deleted with its building, a mover kept its deleted owner, and owned or
+  attached objects kept their deleted owner or parent. Every deletion on a joining player's game now cleans every
+  reference to the entity in the same frame, found through a new index of who refers to whom (built when the player
+  goes live, kept up to date by every apply and the background audit); the vehicles and creatures of a deleted owner,
+  citizen or pet are removed with it, riders leave a deleted vehicle the way the game lets them out, and owned and
+  attached objects whose owner or parent is gone are deleted (or detached and asked from the host) before the next
+  frame's game systems run.
+- **"UpdateFrame added to unsupported type" before a crash**: the clean-up of a removed household took the household
+  link away from its pets, which is the component the game sorts pets by; a pet without it broke the game's update
+  groups. Citizens and pets are now deleted with their household, as the game does. A new spawn without its marker
+  (an agent whose household is not here yet, a record missing its defining component) is no longer created and is
+  asked from the host again, and a last check right before the game's update-group system deletes any new entity
+  without its marker and names its components in the log.
+- **Companies and citizens asked from the host over and over after joining**: the host sent agent lists with workers
+  that are gone and workplaces that are gone, which the joining player removed and then asked for again. Records and
+  integrity hashes now leave out list members and links whose target is gone, on both sides, so a repaired player
+  agrees with the host; a list that only named nobody is not asked for at all.
+
 ## [0.1.0-alpha.3] - 2026-10-16
 
 Third test build: crash fixes from the first real sessions (bulldozing elevated roads, households and companies on

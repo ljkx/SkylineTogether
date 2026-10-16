@@ -50,6 +50,9 @@ namespace SkylineTogether.Sync
 
             /// <summary>Checks one chunk; adds (holder, target) of every dangling reference to <paramref name="found"/>.</summary>
             public abstract void Run(EntityManager em, ArchetypeChunk chunk, EntityTypeHandle entities, List<(Entity Holder, Entity Target)> found);
+
+            /// <summary>Notes every reference of the chunk's holders in the referrer index (<see cref="DeletionCascade.Index"/>).</summary>
+            public abstract void Index(EntityManager em, ArchetypeChunk chunk, EntityTypeHandle entities, AgentReferrerIndex<Entity> index, Func<Entity, bool> alive);
         }
 
         private sealed class DataCheck<T> : Check where T : unmanaged, IComponentData
@@ -74,6 +77,21 @@ namespace SkylineTogether.Sync
                     {
                         Entity target = get(values[i]);
                         if (target == Entity.Null ? _nullIsDangling : !IsLive(em, target)) found.Add((holders[i], target));
+                    }
+                }
+            }
+
+            public override void Index(EntityManager em, ArchetypeChunk chunk, EntityTypeHandle entities, AgentReferrerIndex<Entity> index, Func<Entity, bool> alive)
+            {
+                ComponentTypeHandle<T> handle = em.GetComponentTypeHandle<T>(true);
+                NativeArray<T> values = chunk.GetNativeArray(ref handle);
+                NativeArray<Entity> holders = chunk.GetNativeArray(entities);
+                for (int i = 0; i < values.Length; i++)
+                {
+                    foreach (Func<T, Entity> get in _refs)
+                    {
+                        Entity target = get(values[i]);
+                        if (target != Entity.Null) index.Add(target, holders[i], alive);
                     }
                 }
             }
@@ -103,6 +121,22 @@ namespace SkylineTogether.Sync
                     }
                 }
             }
+
+            public override void Index(EntityManager em, ArchetypeChunk chunk, EntityTypeHandle entities, AgentReferrerIndex<Entity> index, Func<Entity, bool> alive)
+            {
+                BufferTypeHandle<T> handle = em.GetBufferTypeHandle<T>(true);
+                BufferAccessor<T> buffers = chunk.GetBufferAccessor(ref handle);
+                NativeArray<Entity> holders = chunk.GetNativeArray(entities);
+                for (int i = 0; i < buffers.Length; i++)
+                {
+                    DynamicBuffer<T> b = buffers[i];
+                    for (int k = 0; k < b.Length; k++)
+                    {
+                        Entity target = _ref(b[k]);
+                        if (target != Entity.Null) index.Add(target, holders[i], alive);
+                    }
+                }
+            }
         }
 
         /// <summary>Exists and is not being deleted (a deleted target is gone at the end of this frame).</summary>
@@ -122,6 +156,9 @@ namespace SkylineTogether.Sync
         private readonly Func<uint, bool> _isBound, _isUnbound;
         private readonly Func<int, string> _linkName = i => AgentLinkGraph.Rule((AgentLink)i).Name;
         private AgentLinkAccess _access;
+        private AgentReferrerIndex<Entity> _index;
+        private bool _indexBuilt;
+        private Func<Entity, bool> _alive;
         private NativeArray<ArchetypeChunk> _chunks;
         private int _check, _chunk = -1;
         private int _lapChunks, _lapVisited;
@@ -163,7 +200,9 @@ namespace SkylineTogether.Sync
                    + _pacer.LongestLapSeconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " s), " + Total + " dangling references"
                    + (parts.Count > 0 ? " (" + string.Join(", ", parts) + ")" : "") + "; repaired " + _stats.Repaired + " (" + _stats.RepairedAfterApply + " right after an apply), "
                    + _stats.Requested + " objects asked from the host, " + _missingRequests.Refused + " missing ids not asked again; removal clean-up of local deletions "
-                   + DeletionCascade.LocalDeletions + "; link elements naming nobody dropped on read " + AgentLinkAccess.WireNullsDropped;
+                   + DeletionCascade.LocalDeletions + ", " + DeletionCascade.HoldersDeleted + " citizens and pets deleted with their household, " + DeletionCascade.MoversDeleted
+                   + " movers deleted with their owner; link elements naming nobody dropped on read " + AgentLinkAccess.WireNullsDropped
+                   + (_index != null ? "; referrer index " + _index.Count + " links to " + _index.Targets + " entities (" + _index.LargeTargets + " large, " + _index.Pruned + " pruned)" : "");
         }
 
         private void Build(World world)
@@ -172,6 +211,10 @@ namespace SkylineTogether.Sync
             _ids = world.GetOrCreateSystemManaged<NetIdSystem>();
             EntityManager em = world.EntityManager;
             _access = new AgentLinkAccess(em);
+            _index = new AgentReferrerIndex<Entity>(1 << 16);
+            _indexBuilt = false;
+            DeletionCascade.Index = _index;
+            _alive = e => _world != null && _world.EntityManager.Exists(e);
             _linkMasks.Clear();
             ComponentType[] none = { ComponentType.ReadOnly<Game.Common.Deleted>(), ComponentType.ReadOnly<Game.Tools.Temp>() };
             EntityQuery QueryOf<T>() => em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<T>() }, None = none });
@@ -251,7 +294,12 @@ namespace SkylineTogether.Sync
             {
                 EntityManager em = _world.EntityManager;
                 _access.EntityManager = em;
-                foreach (Entity e in entities) RepairLinksOf(em, e, now);
+                foreach (Entity e in entities)
+                {
+                    RepairLinksOf(em, e, now);
+                    // every holder whose links the apply wrote is noted again, so a later deletion finds it
+                    if (_index != null && em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e)) AgentLinkGraph.IndexHolder(_access, e, _index, _alive);
+                }
             }
             catch (Exception ex)
             {
@@ -311,8 +359,10 @@ namespace SkylineTogether.Sync
             AgentLinkRule rule = AgentLinkGraph.Rule(link);
             Entity target;
             LinkTarget state;
-            int dead = 0;
+            int dead = 0, gone = 0;
             int n;
+            // read first: deleting a holder unbinds its id
+            uint id = _ids != null ? _ids.GetNetId(holder) : 0;
             if (rule.IsBuffer)
             {
                 _members.Clear();
@@ -323,6 +373,7 @@ namespace SkylineTogether.Sync
                 {
                     LinkTarget s = _access.StateOf(m);
                     if (s == LinkTarget.Live) continue;
+                    if (s != LinkTarget.Null) gone++;
                     if (dead++ == 0)
                     {
                         target = m;
@@ -339,22 +390,26 @@ namespace SkylineTogether.Sync
                 LinkCleanup action = rule.Decide(state);
                 if (action == LinkCleanup.Keep) return 0;
                 dead = 1;
-                n = _access.CleanForward(holder, link, action);
+                n = action == LinkCleanup.DeleteHolder
+                    ? DeletionCascade.DeleteWithCascade(_world.EntityManager, holder, null) // the game deletes a citizen or pet whose household is gone
+                    : _access.CleanForward(holder, link, action);
             }
             if (n == 0) return 0;
             Total += dead;
-            uint id = _ids != null ? _ids.GetNetId(holder) : 0;
             if (_stats.Note((int)link, dead, true, afterApply, now))
             {
                 string who = id != 0 ? "#" + id + " (" + _ids.GetFamily(id) + ")" : holder + " (unbound)";
                 string what = state == LinkTarget.Null ? "null" : target + (state == LinkTarget.Deleted ? " (deleted)" : " (destroyed)");
-                string fix = rule.IsBuffer ? (dead == 1 ? "element dropped" : dead + " elements dropped") : (rule.Decide(state) == LinkCleanup.ClearReference ? "reference cleared" : "component removed");
+                string fix = rule.IsBuffer ? (dead == 1 ? "element dropped" : dead + " elements dropped") : Fix(rule.Decide(state));
                 _log.Warn(LogCategory.Integrity, "repaired dangling reference" + (afterApply ? " after an apply" : "") + ": " + rule.Name + " of " + who + " -> " + what + " (" + fix
                                                  + "); session total for this reference " + _stats.RepairedOf((int)link));
             }
             // the host's own state replaces the clean-up: a cleared or removed link (the holder may have moved on there),
             // or an agent's list (a full agent record re-derives nothing); a building's list only lost members that are gone
-            if (id != 0 && (!rule.IsBuffer || _ids.GetFamily(id) == Family.Agent)) _holderRequests.Add(id, now);
+            // (a deleted holder is unbound and asked for by the cascade; a list that only named nobody is what the host's own
+            // normalised record carries as well, so asking brings nothing: RepairRequestPolicy)
+            if (id != 0 && !rule.IsBuffer && rule.Decide(state) == LinkCleanup.DeleteHolder) return n;
+            if (id != 0 && RepairRequestPolicy.AskHolder(rule.IsBuffer, _ids.GetFamily(id) == Family.Agent, gone)) _holderRequests.Add(id, now);
             return n;
         }
 
@@ -366,6 +421,22 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>Queues the ids <see cref="MissingIds"/> collected during the last apply for a request, and clears the list.</summary>
+        /// <summary>Asks the host for <paramref name="id"/> after the request delay (an entity this client deleted on its own).</summary>
+        public void RequestLater(uint id, double now)
+        {
+            if (id != 0) _missingRequests.Add(id, now);
+        }
+
+        private static string Fix(LinkCleanup action)
+        {
+            switch (action)
+            {
+                case LinkCleanup.ClearReference: return "reference cleared";
+                case LinkCleanup.DeleteHolder: return "deleted with its household, as the game does";
+                default: return "component removed";
+            }
+        }
+
         public void NoteMissing(double now)
         {
             if (MissingIds.Count == 0) return;
@@ -395,6 +466,7 @@ namespace SkylineTogether.Sync
             long perf = Perf.Start();
             try
             {
+                if (!_indexBuilt) BuildIndex(em);
                 if (!_pacer.InLap) StartLap(now);
                 double progress = _lapChunks > 0 ? (double)_lapVisited / _lapChunks : 1.0;
                 long budget = (long)(_pacer.BudgetMs(now, progress) * Stopwatch.Frequency / 1000.0);
@@ -430,13 +502,16 @@ namespace SkylineTogether.Sync
                         ArchetypeChunk chunk = _chunks[_chunk++];
                         _lapVisited++;
                         _found.Clear();
-                        c.Run(em, chunk, em.GetEntityTypeHandle(), _found);
+                        EntityTypeHandle entityType = em.GetEntityTypeHandle();
+                        c.Run(em, chunk, entityType, _found);
+                        if (c.Link.HasValue && _index != null) c.Index(em, chunk, entityType, _index, _alive);
                         if (_found.Count == 0) continue;
                         if (c.Link.HasValue)
                         {
-                            long structural = _access.StructuralChanges;
+                            long structural = _access.StructuralChanges, deletions = DeletionCascade.HoldersDeleted + DeletionCascade.MoversDeleted;
                             RepairFound(c, now);
-                            if (_access.StructuralChanges != structural) fetchedFor = -1; // refetch before the next chunk
+                            // refetch before the next chunk (a removed component or a deleted holder moved entities between chunks)
+                            if (_access.StructuralChanges != structural || DeletionCascade.HoldersDeleted + DeletionCascade.MoversDeleted != deletions) fetchedFor = -1;
                         }
                         else
                         {
@@ -459,6 +534,53 @@ namespace SkylineTogether.Sync
             {
                 Perf.Stop(Perf.ReferenceRepair, perf);
             }
+        }
+
+        /// <summary>
+        /// Client, once when it goes live: notes every agent link and every mover's owner, citizen and pet in the referrer
+        /// index (<see cref="DeletionCascade.Index"/>), so the first deletion already finds every holder. The sweep and every
+        /// apply keep it up to date afterwards.
+        /// </summary>
+        private void BuildIndex(EntityManager em)
+        {
+            _indexBuilt = true;
+            if (_index == null) return;
+            long start = Stopwatch.GetTimestamp();
+            EntityTypeHandle entityType = em.GetEntityTypeHandle();
+            foreach (Check c in _checks)
+            {
+                if (!c.Link.HasValue) continue;
+                c.Query.CompleteDependency();
+                NativeArray<ArchetypeChunk> chunks = c.Query.ToArchetypeChunkArray(Allocator.Temp);
+                try
+                {
+                    foreach (ArchetypeChunk chunk in chunks) c.Index(em, chunk, entityType, _index, null);
+                }
+                finally
+                {
+                    chunks.Dispose();
+                }
+            }
+            int movers = 0;
+            using (EntityQuery q = em.CreateEntityQuery(new EntityQueryDesc
+            {
+                Any = new[] { ComponentType.ReadOnly<Game.Vehicles.Vehicle>(), ComponentType.ReadOnly<Game.Creatures.Creature>() },
+                None = new[] { ComponentType.ReadOnly<Game.Common.Deleted>(), ComponentType.ReadOnly<Game.Tools.Temp>() },
+            }))
+            {
+                NativeArray<Entity> entities = q.ToEntityArray(Allocator.Temp);
+                try
+                {
+                    foreach (Entity e in entities) movers += DeletionCascade.IndexMover(em, e);
+                }
+                finally
+                {
+                    entities.Dispose();
+                }
+            }
+            double ms = (Stopwatch.GetTimestamp() - start) * 1000.0 / Stopwatch.Frequency;
+            _log.Info(LogCategory.Integrity, "referrer index built: " + _index.Count + " links to " + _index.Targets + " entities (" + movers + " of movers) in "
+                                             + ms.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + " ms; every deletion on this client now cleans its referrers in the same frame");
         }
 
         private void StartLap(double now)
@@ -541,6 +663,8 @@ namespace SkylineTogether.Sync
             _missingRequests.Clear();
             MissingIds.Clear();
             DeletionCascade.ResetSession();
+            _index = null;
+            _indexBuilt = false;
         }
     }
 }

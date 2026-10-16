@@ -156,6 +156,7 @@ namespace SkylineTogether.Sync
             SafeCall("mod gates", () => Compat.ModCompat.OnSessionEnded(_log));
             _watcher?.Stop();
             _audit.Reset();
+            Orphans.Reset();
             _modSettings.Reset();
             _holds.Clear();
             _localDeletes.Clear();

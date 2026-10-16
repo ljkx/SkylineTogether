@@ -127,13 +127,32 @@ namespace SkylineTogether.Sync
         public override void Write(EntityManager em, Entity e, NetWriter w)
         {
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e, true);
-            w.Write(buffer.Length);
+            if (Link == null)
+            {
+                w.Write(buffer.Length);
+                for (int i = 0; i < buffer.Length; i++)
+                {
+                    T element = buffer[i];
+                    element.Serialize(w);
+                }
+                return;
+            }
+            // an agent list never sends a member that is nobody or gone (AgentLinkNormalization): the reader drops it, and
+            // a list that differed only by such members was asked for again and again
+            int live = 0;
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                if (IsLiveMember(em, Link(buffer[i]))) live++;
+            }
+            w.Write(live);
             for (int i = 0; i < buffer.Length; i++)
             {
                 T element = buffer[i];
-                element.Serialize(w);
+                if (IsLiveMember(em, Link(element))) element.Serialize(w);
             }
         }
+
+        internal static bool IsLiveMember(EntityManager em, Entity member) => member != Entity.Null && em.Exists(member) && !em.HasComponent<Game.Common.Deleted>(member);
 
         public override void Read(EntityManager em, Entity e, NetReader r)
         {
@@ -265,9 +284,31 @@ namespace SkylineTogether.Sync
 
         public override void Write(EntityManager em, Entity e, NetWriter w)
         {
+            // members that are nobody or gone are left out (AgentLinkNormalization; the reader would drop them anyway, and
+            // one such member made the whole list travel as presence only)
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e, true);
-            w.Write(buffer.Length);
-            for (int i = 0; i < buffer.Length; i++) w.Write(Get(buffer[i]));
+            int live = 0;
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                if (IsLive(em, Get(buffer[i]))) live++;
+            }
+            w.Write(live);
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                Entity member = Get(buffer[i]);
+                if (IsLive(em, member)) w.Write(member);
+            }
+        }
+
+        private static readonly List<Entity> Members = new List<Entity>(); // main thread only
+
+        private static bool IsLive(EntityManager em, Entity member) => member != Entity.Null && em.Exists(member) && !em.HasComponent<Game.Common.Deleted>(member);
+
+        private static LinkTarget StateOf(EntityManager em, Entity member)
+        {
+            if (member == Entity.Null) return LinkTarget.Null;
+            if (!em.Exists(member)) return LinkTarget.Destroyed;
+            return em.HasComponent<Game.Common.Deleted>(member) ? LinkTarget.Deleted : LinkTarget.Live;
         }
 
         public override void Read(EntityManager em, Entity e, NetReader r)
@@ -290,17 +331,12 @@ namespace SkylineTogether.Sync
             hash = 0;
             if (!em.HasBuffer<T>(e)) return false;
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e, true);
-            var acc = new Core.Hashing.SetHash.Accumulator();
-            for (int i = 0; i < buffer.Length; i++)
-            {
-                Entity member = Get(buffer[i]);
-                if (member == Entity.Null) continue;
-                uint id = ids.GetNetId(member);
-                if (id == 0) return false; // not nameable on the other peer: presence only, exactly as the codec sends it
-                acc.Add(id);
-            }
-            hash = acc.Value;
-            return true;
+            List<Entity> members = Members;
+            members.Clear();
+            for (int i = 0; i < buffer.Length; i++) members.Add(Get(buffer[i]));
+            // the live members only, on host and client alike (the client has dropped the gone ones); a live member that
+            // cannot be named on the other peer: presence only, exactly as the codec sends it
+            return AgentLinkNormalization.TryHashMembers(members, m => StateOf(em, m), ids.GetNetId, out hash);
         }
     }
 

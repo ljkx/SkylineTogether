@@ -206,7 +206,8 @@ The registrations in [`Mod.OnLoad`](../src/SkylineTogether/Mod.cs) are authorita
 | `SyncToolApplySystem` | first in ApplyTool | Records the tool's `Temp` originals and cost before vanilla consumes them; terrain and resource brush stamps |
 | `IconAuthorityFilterSystem` | ModificationEnd, before `IconCommandSystem` | Client: drops local icon decisions, reconciles host icon sets |
 | `ChirpDrainSystem` | ModificationEnd, before `CreateChirpSystem` | Client: empties the local chirp queue |
-| `RemovalCascadeSystem` | ModificationEnd | Client: the reference clean-up of entities deleted on this client this frame ([reference safety](#reference-safety)) |
+| `UpdateFrameGuardSystem` | Modification5, before `UpdateGroupSystem` | No created entity reaches the game's update groups without its marker ([client apply](#client-apply)) |
+| `RemovalCascadeSystem` | ModificationEnd | Client: the reference clean-up of entities deleted on this client this frame, riders out of deleted vehicles, deleted owners noted for the next frame's orphan sweep ([reference safety](#reference-safety)) |
 | `SyncBindSystem` | MainLoop, before `SaveGameSystem` | Host: binds entities created this frame (a snapshot taken now carries them); client: warns about local saves |
 | `MoverCaptureSystem` | MainLoop, before `SaveGameSystem` | Host: mover existence and motion |
 | `SyncCaptureSystem` | MainLoop, before `PrepareCleanUpSystem` | `SyncController.CaptureOutgoing`: every tag of the frame is still visible |
@@ -658,8 +659,19 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
 3. drops new entities whose structural references (owner, edge nodes, parent) do not resolve here, a new edge whose
    `Edge` value is missing or presence only (the sender could not name a node) or does not name two nodes that exist and
    are not being deleted, and a new entity whose owner travelled as presence only; new entities that reference a dropped
-   one go too;
-4. reconciles the replicated component set (complete records remove components the host no longer has);
+   one go too. An agent is created only with its marker (citizen, household, pet or company, as a value) and, for a
+   citizen or pet, with its household here ([`AgentSpawnRules`](../src/SkylineTogether.Core/Sync/SpawnCompleteness.cs));
+   otherwise it is asked for again, after its household;
+4. reconciles the replicated component set (complete records remove components the host no longer has). A new entity
+   that has `UpdateFrame` but none of the update-group markers afterwards is not kept (destroyed before any value names
+   it, logged with its family, prefab and component types, asked for again): the game's `UpdateGroupSystem`
+   (Modification5) picks a table of group sizes by marker (`Moving`, `Stopped`, `CurrentVehicle`, `Plant`, `Building`,
+   `Extension`, `Node`, `Edge`, `Lane`, `CompanyData`, `Household`, `Citizen`, `HouseholdPet`:
+   [`UpdateGroupMarkers`](../src/SkylineTogether.Core/Sync/SpawnCompleteness.cs)), logs "UpdateFrame added to unsupported
+   type" when there is none, gives a created entity an update frame out of range and indexes its Burst job with it.
+   `UpdateFrameGuardSystem` checks every created entity once more right before that system (any source: the applier,
+   the mover channel, the player's tools): it deletes such an entity (a client releases the id and asks the host) and
+   logs each archetype once with its component type names;
 5. writes the values; enabled bits of enableable components;
 6. applies despawns with `Deleted`, and on clients
    [`DeletionCascade`](../src/SkylineTogether/Sync/DeletionCascade.cs) removes references to the despawned entity
@@ -714,24 +726,54 @@ graph, each with the clean-up the game applies when its target goes:
 | `Worker.m_Workplace`, `Citizens.Student.m_School` | citizens | component removed with the work or school `TravelPurpose` |
 | `TouristHousehold.m_Hotel`, `HomelessHousehold.m_TempHome` | households | reference cleared |
 | `CurrentBuilding` | citizens | component removed (null is normal) |
-| `HouseholdMember`, `HouseholdPet` | citizens, pets | component removed (the host deletes them with the household) |
+| `HouseholdMember`, `HouseholdPet` | citizens, pets | the holder is deleted with its household, as the game does (null is a passing state the game repairs itself) |
 
-The client applies these rules in four places, all through
-[`AgentLinkAccess`](../src/SkylineTogether/Sync/AgentLinkAccess.cs):
+A citizen or pet is never left without its household link: removing it (as earlier builds did) left a pet without
+`HouseholdPet`, its update-group marker, and the game logged "UpdateFrame added to unsupported type" for it before the
+crashes of a real session. The game deletes the members of a removed household (`HouseholdAndCitizenRemoveSystem`,
+`HouseholdPetRemoveSystem`) and a citizen whose household is gone (`CitizenBehaviorSystem`); the client does the same
+and releases their ids, which it asks from the host again unless the batch despawns them anyway.
 
-- **Despawns** ([`DeletionCascade`](../src/SkylineTogether/Sync/DeletionCascade.cs), `AgentLinkGraph.PlanCascade`):
+**Referrers.** The lists do not lead to every link: a citizen inside a building has `CurrentBuilding` and no list names
+it (a building the player demolished was named by 540 citizens in a real session, found only by the sweep seconds later),
+and on a client a household's list, a workplace's list and the members' own links travel on different streams. So the
+client keeps a [`AgentReferrerIndex`](../src/SkylineTogether.Core/Sync/AgentReferrerIndex.cs): for every entity, the
+entities that may name it through an agent link (both ways) and the movers whose owner, citizen or pet it is. It is built
+when the client goes live (`ReferenceAudit`, one pass over every link type and mover, logged as `referrer index built:
+...`), and every holder the apply writes, every chunk the sweep visits and every mover the mover channel links is noted
+again. The index is a superset (entries are pruned when their referrer is gone, never when a link changes): the cascade
+reads each referrer's real link before it changes anything. A target with many referrers (a large workplace) has a hash
+set, so noting a referrer again costs one lookup.
+
+The client deletes cleanly in these places, all through [`AgentLinkAccess`](../src/SkylineTogether/Sync/AgentLinkAccess.cs):
+
+- **Despawns** ([`DeletionCascade`](../src/SkylineTogether/Sync/DeletionCascade.cs), `AgentLinkGraph.PlanDeletion`):
   as an owner, every member its lists name loses its link to it (a renter its `PropertyRenter`, a worker its `Worker`,
-  a guest its hotel, a member its household link) unless the member names another live owner (a list out of date
-  here); as a member, it leaves the lists of the owners its links name (a tourist its hotel's renters, a citizen its
-  household, workplace, school and hospital, a company its building). This includes what the game only prunes later
-  (`WorkProviderSystem` for employees, `LodgingProviderSystem` for hotel guests, `HouseholdBehaviorSystem` for the
-  hotel of a closed hotel). It never deletes or creates an entity and raises no trigger or icon.
+  a guest its hotel) unless the member names another live owner (a list out of date here), and a household's members
+  are deleted with it; as a member, it leaves the lists of the owners its links name (a tourist its hotel's renters, a
+  citizen its household, workplace, school and hospital, a company its building); every referrer of the index loses the
+  links that really name it. This includes what the game only prunes later (`WorkProviderSystem` for employees,
+  `LodgingProviderSystem` for hotel guests, `HouseholdBehaviorSystem` for the hotel of a closed hotel). The movers that
+  name a deleted entity go too: a vehicle it owns (`SubElementDeleteSystem`), the creature of a deleted citizen or pet
+  (`HouseholdAndCitizenRemoveSystem`), through the mover channel (riders released, trailers along, id released; the
+  roster asks for a mover the host still has); a personal car loses a deleted keeper. It raises no trigger or icon. The
+  planning is linear in the lists, links and referrers read.
 - **Local deletions** (`RemovalCascadeSystem`, ModificationEnd, where `RemovedSystem` runs on the host): the same for
-  every household, citizen, pet, company and building deleted on this client in the frame and not already handled by
-  the applier: the player's own bulldozing, snapshot agents without a host id, mod tools.
+  every agent, building and holder of an agent list deleted on this client in the frame and not already handled by the
+  applier: the player's own bulldozing, snapshot agents without a host id, mod tools. A vehicle the game deleted here
+  (the vehicles of a demolished building, `SubElementDeleteSystem`) lets its riders out the way the game's
+  `ObjectEmergeSystem` (off on clients) does: without it they kept `CurrentVehicle` and `Relative` naming the destroyed
+  vehicle, which `RelativeObjectSystem` indexes unchecked; a creature that leaves a vehicle gets its moving state back
+  (without `CurrentVehicle` and `Moving` it had no update-group marker). Every building, net, area and owner of sub-objects or vehicles deleted in the frame
+  is noted for the orphan sweep.
+- **Orphan sweep** ([`OrphanSweep`](../src/SkylineTogether/Sync/OrphanSweep.cs), the start of the next frame, before
+  any game system): an owned object (lanes excepted, the game regenerates them) whose `Owner` is one of them and no
+  longer exists is made safe and deleted with it, an owned vehicle through the mover channel; an object whose
+  `Attached.m_Parent` is gone is deleted, or, when it is replicated, detached and asked from the host. The game deletes
+  children through their owner's lists, which on a client can be out of step with the children's own `Owner`.
 - **After every apply** (`ReferenceAudit.AfterApply`): the agent links of the entities the batch or agent value message
   wrote, tagged or cascaded are checked and repaired (an existing entity kept its old link while the new one did not
-  resolve; a new entity got a null; a despawn missed a list that was out of date here).
+  resolve; a new entity got a null; a despawn missed a list that was out of date here), and noted in the referrer index.
 - **Background sweep** ([reference audit](#reference-audit)): every link type, chunk by chunk, within a bounded lap.
 
 The wire never brings a null into these lists: `Renter`, `Student`, `HouseholdCitizen` and `HouseholdAnimal` travel as
@@ -739,8 +781,21 @@ id lists that drop nulls, and the generic buffer handler drops an `Employee`, `P
 nobody (a save writes a worker that is already gone as null, so the join snapshot can carry such elements; the sweep
 removes them). References to ids this client has no entity for are collected while it applies host data
 (`NetReaderState.MissingIds`); every holder whose link was cleared or removed, every agent whose list lost an element
-and every id still missing after 3 s (once nothing is queued for apply) is asked from the host with the integrity check's repair request (`IntegritySync.RequestRepair`; at most three
-times per id in five minutes), so the host's own state replaces the clean-up.
+that named an entity that is gone (`RepairRequestPolicy`: a list that only named nobody is what the host's record carries
+as well) and every id still missing after 3 s (once nothing is queued for apply) is asked from the host with the
+integrity check's repair request (`IntegritySync.RequestRepair`; at most three times per id in five minutes), so the
+host's own state replaces the clean-up.
+
+**Normalised links** ([`AgentLinkNormalization`](../src/SkylineTogether.Core/Sync/SpawnCompleteness.cs)). The host's own
+state may still hold agent links to targets that are gone (a save writes a worker that is gone as nobody; the game prunes
+some lists lazily). Sent and hashed as they were, they made a repaired client differ from the host forever: every repair
+asked the host, which sent the same record again (a repair loop of a real session, the same companies on every join).
+Both sides therefore leave the same things out: agent lists (`Employee`, `Patient`, `Occupant` and the id lists) never
+write a member that is nobody or gone, and their integrity hash covers live members only; an agent's forward link whose
+target is gone or cannot be named travels the way the reader's repair leaves it (a workplace, school, property or
+current building that is gone: the component is left out of the record and of the agent's values, so the reader
+removes it; a hotel or temporary home: nobody), and a household link to a household that is gone is hashed as presence
+on both sides.
 
 ### Client proposals
 

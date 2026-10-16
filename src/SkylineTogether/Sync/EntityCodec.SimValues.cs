@@ -193,6 +193,8 @@ namespace SkylineTogether.Sync
             {
                 if (n >= SimValueMessage.MaxComponents) break;
                 if (h == skip) continue;
+                // an agent link to something gone is not sent as nobody (the reader would only repair it and ask again)
+                if (family == Family.Agent && OmitsAgentLink(h, e)) continue;
                 if (!TrySerializeSim(h, e, out int length)) continue;
                 SimValueMessage.AddComponent(w, h.Hash, h.Kind, _managedScratch, 0, length);
                 n++;

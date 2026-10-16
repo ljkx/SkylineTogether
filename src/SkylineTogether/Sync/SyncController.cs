@@ -72,6 +72,29 @@ namespace SkylineTogether.Sync
         // faster than the host applies, or whose applied frame stops advancing, is dropped with a rejoin offer
         private readonly InboundQuota _hostInboxQuota = new InboundQuota(4096, 64L << 20);
         private ReferenceAudit _audit;
+
+        /// <summary>Client: the owned and attached objects of entities deleted last frame (<see cref="OrphanSweep"/>).</summary>
+        internal OrphanSweep Orphans { get; } = new OrphanSweep();
+
+        private Action _orphanCall;
+
+        /// <summary>
+        /// Client: an entity the deletion cascade deleted on its own (a citizen or pet with its household, ARCHITECTURE.md#reference-safety):
+        /// its id is released, and the host is asked for it unless the batch being applied despawns it anyway (the host
+        /// answers with the entity, or with its despawn when it deleted it too). Movers are the mover channel's (its roster
+        /// asks for a mover the host still has).
+        /// </summary>
+        private void OnCascadeDeleted(Entity e)
+        {
+            if (IsHost || _ids == null || _codec == null) return;
+            uint id = _ids.GetNetId(e);
+            if (id == 0 || _ids.GetFamily(id) == Family.Mover) return;
+            bool despawning = _codec.IsDespawning(id);
+            _ids.Unbind(id);
+            ForgetShadow(id);
+            Integrity?.OnLocalDelete(id);
+            if (!despawning) _audit.RequestLater(id, Perf.Now);
+        }
         private readonly AckStallWatch _ackStall = new AckStallWatch(AckStallSeconds);
         private readonly List<(PeerId Peer, string Log, string Reason)> _kicks = new List<(PeerId, string, string)>();
         private readonly List<byte> _livePeerScratch = new List<byte>();
@@ -281,6 +304,13 @@ namespace SkylineTogether.Sync
             // reference safety (ARCHITECTURE.md#reference-safety): repaired holders and missing ids are asked from the host;
             // agent values get the same targeted repair as structure batches
             _audit.RequestRepair = Integrity.RequestRepair;
+            DeletionCascade.CascadeDeleted = OnCascadeDeleted;
+            Orphans.Request = id => _audit.RequestLater(id, Perf.Now);
+            _orphanCall = () =>
+            {
+                Orphans.Ids = _ids;
+                Orphans.Run(_codec.EntityManager, _log);
+            };
             _agents.MissingIds = _audit.MissingIds;
             _agents.ValuesApplied = written =>
             {
@@ -436,6 +466,7 @@ namespace SkylineTogether.Sync
                 lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal
                           + " reads past a payload stopped; removal clean-up: " + DeletionCascade.Removed + " references to deleted entities removed");
                 if (!IsHost) lines.Add(_audit.Describe());
+                if (!IsHost) lines.Add(Orphans.Describe());
             }
             _agents.Describe(lines);
             MoverSync movers = MoverSync.Instance;

@@ -140,6 +140,8 @@ namespace SkylineTogether.Sync
         {
             _sessions = sessions;
             _log = log;
+            // the deletion cascade removes a mover whose owner, citizen or pet it deletes the way this channel does
+            DeletionCascade.DeleteMover = DeleteLocally;
         }
 
         public int InInterest => _stager.AssignedCount;
@@ -660,6 +662,7 @@ namespace SkylineTogether.Sync
                 }
             }
             if (complete) _linksApplied++;
+            DeletionCascade.IndexMover(em, e); // a later deletion of its owner, citizen or pet finds it
             return complete;
         }
 
@@ -816,8 +819,11 @@ namespace SkylineTogether.Sync
             {
                 if (rider == Entity.Null || !em.Exists(rider) || em.HasComponent<Deleted>(rider)) continue;
                 if (em.HasComponent<CurrentVehicle>(rider) && em.GetComponentData<CurrentVehicle>(rider).m_Vehicle != vehicle) continue;
+                Transform at = em.HasComponent<Transform>(vehicle) ? em.GetComponentData<Transform>(vehicle)
+                               : em.HasComponent<Transform>(rider) ? em.GetComponentData<Transform>(rider) : default;
                 if (em.HasComponent<Relative>(rider)) em.RemoveComponent<Relative>(rider);
                 if (em.HasComponent<CurrentVehicle>(rider)) em.RemoveComponent<CurrentVehicle>(rider);
+                ExitVehicle(em, rider, at);
                 if (!em.HasComponent<Unspawned>(rider))
                 {
                     em.AddComponent<Unspawned>(rider);
@@ -825,6 +831,87 @@ namespace SkylineTogether.Sync
                 }
                 _ridersReleased++;
             }
+        }
+
+        /// <summary>
+        /// A creature that left its vehicle gets the components of its moving state back, as the game's
+        /// <c>ObjectEmergeSystem</c> does (off on clients): without <c>CurrentVehicle</c> and without <c>Moving</c> it had no
+        /// update-group marker at all (ARCHITECTURE.md#client-apply), and its frames and navigation were missing. It stays
+        /// hidden (<c>Unspawned</c>) at the vehicle's position until the host's next state for it arrives.
+        /// </summary>
+        private void ExitVehicle(EntityManager em, Entity rider, Transform at)
+        {
+            Entity prefab = em.HasComponent<PrefabRef>(rider) ? em.GetComponentData<PrefabRef>(rider).m_Prefab : Entity.Null;
+            Archetypes types = prefab != Entity.Null && em.Exists(prefab) ? TypesOf(em, prefab, false) : null;
+            if (types == null)
+            {
+                if (!em.HasComponent<Moving>(rider) && !em.HasComponent<Stopped>(rider)) em.AddComponent<Stopped>(rider);
+                return;
+            }
+            if (em.HasComponent<Stopped>(rider) || em.HasComponent<Moving>(rider)) return;
+            foreach (ComponentType t in types.Moving)
+            {
+                if (em.HasComponent(rider, t)) continue;
+                em.AddComponent(rider, t);
+                if (t == ComponentType.ReadWrite<TransformFrame>()) Pin(em, rider, new TransformFrame(at), at);
+                else if (t == ComponentType.ReadWrite<InterpolatedTransform>()) em.SetComponentData(rider, new InterpolatedTransform(at));
+            }
+            if (em.HasComponent<Transform>(rider)) em.SetComponentData(rider, at);
+            if (!em.HasComponent<Updated>(rider)) em.AddComponent<Updated>(rider);
+        }
+
+        /// <summary>
+        /// Removes a mover on this client the way a host despawn does (<see cref="DeletionCascade.DeleteMover"/>): its id is
+        /// released (the roster asks the host for it again if the host still has it), its riders leave it, a creature leaves
+        /// its vehicle's passenger list, the trailers of a vehicle go with it (the game's <c>VehicleUtils.DeleteVehicle</c>).
+        /// </summary>
+        public bool DeleteLocally(EntityManager em, Entity e)
+        {
+            if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) return false;
+            ForgetLocal(em, e);
+            if (em.HasBuffer<LayoutElement>(e))
+            {
+                DynamicBuffer<LayoutElement> layout = em.GetBuffer<LayoutElement>(e, true);
+                var members = new Entity[layout.Length];
+                for (int i = 0; i < layout.Length; i++) members[i] = layout[i].m_Vehicle;
+                foreach (Entity member in members)
+                {
+                    if (member == e || member == Entity.Null || !em.Exists(member) || em.HasComponent<Deleted>(member)) continue;
+                    ForgetLocal(em, member);
+                    ReleasePassengers(em, member);
+                    em.AddComponent<Deleted>(member);
+                    _despawned++;
+                }
+            }
+            ReleaseRiders(em, e);
+            em.AddComponent<Deleted>(e);
+            _despawned++;
+            return true;
+        }
+
+        /// <summary>
+        /// The part of a mover deletion the game's systems that are off on clients would do (<see cref="RemovalCascadeSystem"/>:
+        /// a vehicle the player's bulldozing deleted with its building, <c>SubElementDeleteSystem</c>): its riders leave it
+        /// (<c>ObjectEmergeSystem</c>; a rider kept pointing at the destroyed vehicle, which <c>RelativeObjectSystem</c> indexes
+        /// unchecked), and a creature leaves its vehicle's passenger list. The id stays bound until the capture proposed it.
+        /// </summary>
+        public void OnDeletedLocally(EntityManager em, Entity e)
+        {
+            if (e == Entity.Null || !em.Exists(e)) return;
+            if (em.HasComponent<Vehicle>(e)) ReleaseRiders(em, e);
+            if (em.HasComponent<CurrentVehicle>(e)) SetPassenger(em, em.GetComponentData<CurrentVehicle>(e).m_Vehicle, e, false);
+        }
+
+        private void ForgetLocal(EntityManager em, Entity e)
+        {
+            uint id = _ids != null ? _ids.GetNetId(e) : 0;
+            if (id != 0 && _ids.GetFamily(id) == Family.Mover)
+            {
+                _ids.Unbind(id);
+                _force.Remove(id);
+                _pendingLinks.Remove(id);
+            }
+            if (em.HasComponent<CurrentVehicle>(e)) SetPassenger(em, em.GetComponentData<CurrentVehicle>(e).m_Vehicle, e, false);
         }
 
         /// <summary>

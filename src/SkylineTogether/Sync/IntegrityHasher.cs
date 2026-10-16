@@ -155,6 +155,8 @@ namespace SkylineTogether.Sync
             {
                 TypeHandler h = members[i];
                 if (derived != null && h == derived) output.Add(new ComponentHash(h.Hash, 0, ComponentHashState.Presence));
+                // a household link to a household that is gone: presence on both sides (the client deletes such a member)
+                else if (agent && _codec.LinkStateOf(h, e) != LinkTarget.Live) output.Add(new ComponentHash(h.Hash, 0, ComponentHashState.Presence));
                 else output.Add(Member(h, e, mask));
             }
         }

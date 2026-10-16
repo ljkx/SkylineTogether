@@ -92,6 +92,9 @@ namespace SkylineTogether.Sync
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
+                // the children of what was deleted last frame (bulldozing, despawns) whose owner or parent is gone now go
+                // first, before any game system of this frame follows their Owner or Attached (ARCHITECTURE.md#reference-safety)
+                if (Orphans.HasWork) SafeCall("orphan sweep", _orphanCall);
                 // a selected tool (other than the default one) may edit the world this frame: edit baselines first
                 if (_tools.activeTool != null && !(_tools.activeTool is DefaultToolSystem)) HashBaselines(true);
                 SafeCall("action detection", _actionDetectCall); // dev tree, map tiles

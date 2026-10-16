@@ -343,6 +343,9 @@ namespace SkylineTogether.Sync
                         if (kind != SyncRecordKind.Values) w.AddComponent(h.Hash, SyncComponentKind.Presence, null, 0, 0);
                         continue;
                     }
+                    // an agent link to something gone travels the way the reader's repair leaves it (left out: the reader
+                    // removes the component), so a repaired client and the host agree (AgentLinkNormalization)
+                    if (lenient && OmitsAgentLink(h, e)) continue;
                     int length;
                     bool ok = lenient && h.Kind == SyncComponentKind.Data ? TrySerializeSim(h, e, out length) : TrySerialize(h, e, out length);
                     if (ok)
@@ -365,6 +368,45 @@ namespace SkylineTogether.Sync
             // decoration mode, Tree Controller's LumberResource)
             if (_bits.Count > 0) w.EnabledBits(netId, _bits);
             return valueHash;
+        }
+
+        private Dictionary<int, AgentLink> _forwardLinks;
+        private AgentLinkAccess _linkView;
+
+        /// <summary>The forward agent link a component type is (<see cref="AgentLinkGraph.Forward"/>), if any.</summary>
+        internal bool TryGetForwardLink(TypeHandler h, out AgentLink link)
+        {
+            if (_forwardLinks == null)
+            {
+                _forwardLinks = new Dictionary<int, AgentLink>();
+                foreach (AgentLink f in AgentLinkGraph.Forward) _forwardLinks[AgentLinkAccess.TypeOf(f).TypeIndex.Value] = f;
+            }
+            return _forwardLinks.TryGetValue(h.Index.Value, out link);
+        }
+
+        /// <summary>
+        /// True when an agent's forward link component is left out of its record (<see cref="AgentLinkNormalization.ForwardLink"/>):
+        /// its target is gone or cannot be named, and the reader's repair would remove the component (a workplace, a school,
+        /// a property that is gone).
+        /// </summary>
+        internal bool OmitsAgentLink(TypeHandler h, Entity e)
+        {
+            if (!TryGetForwardLink(h, out AgentLink link)) return false;
+            AgentLinkAccess view = _linkView ?? (_linkView = new AgentLinkAccess(EntityManager));
+            view.EntityManager = EntityManager;
+            if (!view.TryGetForward(e, link, out Entity target)) return false;
+            LinkTarget state = view.StateOf(target);
+            bool nameable = target != Entity.Null && _ids.GetNetId(target) != 0;
+            return AgentLinkNormalization.ForwardLink(link, state, nameable) == ForwardInRecord.Omit;
+        }
+
+        /// <summary>The state of an agent link's target as the integrity hash sees it.</summary>
+        internal LinkTarget LinkStateOf(TypeHandler h, Entity e)
+        {
+            if (!TryGetForwardLink(h, out AgentLink link)) return LinkTarget.Live;
+            AgentLinkAccess view = _linkView ?? (_linkView = new AgentLinkAccess(EntityManager));
+            view.EntityManager = EntityManager;
+            return view.TryGetForward(e, link, out Entity target) ? view.StateOf(target) : LinkTarget.Live;
         }
 
         private const ulong HashSeed = 1469598103934665603UL;
@@ -1025,6 +1067,9 @@ namespace SkylineTogether.Sync
         /// <summary>Ids despawned by the batch being applied, with the index of their first despawn record.</summary>
         private readonly Dictionary<uint, int> _despawnAt = new Dictionary<uint, int>();
 
+        /// <summary>True when the batch being applied (or the last one applied) despawns <paramref name="id"/>.</summary>
+        public bool IsDespawning(uint id) => _despawnAt.ContainsKey(id);
+
         /// <summary>Despawn records already applied before the entity steps (id reuse within one batch).</summary>
         private readonly HashSet<int> _earlyDespawns = new HashSet<int>();
 
@@ -1140,6 +1185,10 @@ namespace SkylineTogether.Sync
                     result.Problems.Add("#" + r.NetId + " component set: " + ex.Message); // one record never stops the batch
                 }
             }
+
+            // 2b: no new entity keeps UpdateFrame without an update-group marker (the game's UpdateGroupSystem indexes
+            // its Burst job with a table it does not have for it)
+            if (_spawned.Count > 0) DropIncompleteSpawns(result);
 
             // 3: values
             for (int t = 0; t < _targets.Count; t++)
@@ -1575,6 +1624,12 @@ namespace SkylineTogether.Sync
                         _badSpawns.Add(e);
                         result.Problems.Add("#" + r.NetId + " (" + r.Family + ") not created: its owner was not sent (the sender could not name it)");
                     }
+                    // an agent needs its marker and its household here (a pet's household link is its update-group marker)
+                    if (r.Family == Family.Agent && !AgentSpawnAllowed(r, offset, data, result))
+                    {
+                        _badSpawns.Add(e);
+                        _rs.MissingIds?.Add(r.NetId); // asked for again once its household is here
+                    }
                     for (int c = 0; c < r.Components.Count; c++)
                     {
                         SyncComponent comp = r.Components[c];
@@ -1657,6 +1712,133 @@ namespace SkylineTogether.Sync
                 foreach (List<Entity> refs in _spawnRefs.Values) _refLists.Push(refs);
                 _spawnRefs.Clear();
                 _badSpawns.Clear();
+            }
+        }
+
+        private readonly List<SpawnComponent> _spawnComponents = new List<SpawnComponent>();
+        private readonly Dictionary<EntityArchetype, bool> _completeArchetypes = new Dictionary<EntityArchetype, bool>();
+        private ComponentType[] _markerTypes;
+        private long _incompleteSpawnsTotal;
+
+        /// <summary>New entities not kept because they had UpdateFrame and no update-group marker (diagnostics).</summary>
+        public long IncompleteSpawnsTotal => _incompleteSpawnsTotal;
+
+        /// <summary>
+        /// The agent spawn rule (<see cref="AgentSpawnRules"/>): the record carries an agent marker as data, and a citizen's
+        /// or pet's household resolves here. False (with the reason in the problems) when the agent is not created.
+        /// </summary>
+        private bool AgentSpawnAllowed(SyncRecord r, int offset, byte[] data, ApplyResult result)
+        {
+            _spawnComponents.Clear();
+            for (int c = 0; c < r.Components.Count; c++)
+            {
+                SyncComponent comp = r.Components[c];
+                TypeHandler h = TypeHandlers.GetByHash(comp.TypeHash);
+                if (h == null) continue;
+                bool isData = comp.Kind != SyncComponentKind.Presence && h.Kind == comp.Kind;
+                bool resolved = true;
+                if (isData && h.CanProbe && IsDefiningLink(h.Name))
+                {
+                    _probeFailure = null;
+                    resolved = !ProbeComponent(h, comp, offset, data, result);
+                }
+                _spawnComponents.Add(new SpawnComponent(h.Name, isData, resolved));
+            }
+            AgentSpawnVerdict verdict = AgentSpawnRules.Check(_spawnComponents, out string type);
+            _spawnComponents.Clear();
+            if (verdict == AgentSpawnVerdict.Create) return true;
+            string why = verdict == AgentSpawnVerdict.DefiningLinkMissing ? "its " + type + " names a household missing here"
+                       : verdict == AgentSpawnVerdict.MarkerWithoutValue ? "its " + type + " was sent as presence only"
+                       : "the record names no citizen, household, pet or company";
+            result.Problems.Add("#" + r.NetId + " (Agent) not created: " + why);
+            return false;
+        }
+
+        private static bool IsDefiningLink(string name)
+        {
+            foreach (string link in AgentSpawnRules.DefiningLinks)
+            {
+                if (link == name) return true;
+            }
+            return false;
+        }
+
+        /// <summary>True when the archetype has no UpdateFrame or one of the update-group markers (cached per archetype).</summary>
+        internal bool IsUpdateGroupComplete(EntityArchetype archetype)
+        {
+            if (_completeArchetypes.TryGetValue(archetype, out bool complete)) return complete;
+            if (_markerTypes == null)
+            {
+                var markers = new List<ComponentType>();
+                foreach (string name in UpdateGroupMarkers.TypeNames)
+                {
+                    Type t = FamilyClassifier.FindType(name);
+                    if (t != null) markers.Add(ComponentType.ReadOnly(t));
+                }
+                _markerTypes = markers.ToArray();
+            }
+            NativeArray<ComponentType> types = archetype.GetComponentTypes(Allocator.Temp);
+            try
+            {
+                TypeIndex updateFrame = ComponentType.ReadOnly<Game.Simulation.UpdateFrame>().TypeIndex;
+                bool hasFrame = false, hasMarker = false;
+                foreach (ComponentType t in types)
+                {
+                    if (t.TypeIndex == updateFrame) hasFrame = true;
+                    foreach (ComponentType m in _markerTypes)
+                    {
+                        if (m.TypeIndex == t.TypeIndex) hasMarker = true;
+                    }
+                }
+                complete = !hasFrame || hasMarker;
+            }
+            finally
+            {
+                types.Dispose();
+            }
+            _completeArchetypes[archetype] = complete;
+            return complete;
+        }
+
+        /// <summary>
+        /// Step 2b: a new entity whose component set, after the reconcile, has UpdateFrame but no update-group marker is not
+        /// kept (destroyed before any value refers to it; its id is released and asked for again), and named in the log
+        /// with its record family, prefab and component types.
+        /// </summary>
+        private void DropIncompleteSpawns(ApplyResult result)
+        {
+            EntityManager em = EntityManager;
+            for (int t = _targets.Count - 1; t >= 0; t--)
+            {
+                (SyncRecord r, Entity e) = _targets[t];
+                if (!_spawned.Contains(e) || !em.Exists(e)) continue;
+                EntityArchetype archetype = em.GetChunk(e).Archetype;
+                if (IsUpdateGroupComplete(archetype)) continue;
+                var names = new List<string>();
+                NativeArray<ComponentType> types = archetype.GetComponentTypes(Allocator.Temp);
+                try
+                {
+                    foreach (ComponentType c in types) names.Add(TypeManager.GetType(c.TypeIndex)?.Name ?? c.TypeIndex.ToString());
+                }
+                finally
+                {
+                    types.Dispose();
+                }
+                names.Sort(StringComparer.Ordinal);
+                Entity prefab = em.HasComponent<PrefabRef>(e) ? em.GetComponentData<PrefabRef>(e).m_Prefab : Entity.Null;
+                string prefabName = prefab != Entity.Null && em.Exists(prefab) ? _prefabs.GetPrefabName(prefab) : "none";
+                _log.Warn(LogCategory.Replication, "spawn of #" + r.NetId + " (" + r.Family + ", prefab " + prefabName + ") not kept: UpdateFrame without an update-group marker; components "
+                                                   + string.Join(", ", names) + "; asked for again");
+                _targets.RemoveAt(t);
+                _spawned.Remove(e);
+                result.SpawnedEntities.Remove(e);
+                result.Spawned--;
+                result.Skipped++;
+                result.UnresolvedSpawns++;
+                _incompleteSpawnsTotal++;
+                if (_ids.GetEntity(r.NetId) == e) _ids.Unbind(r.NetId);
+                _rs.MissingIds?.Add(r.NetId);
+                em.DestroyEntity(e); // created by this apply; no value refers to it yet
             }
         }
 

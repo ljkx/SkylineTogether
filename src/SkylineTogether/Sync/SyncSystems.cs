@@ -113,10 +113,18 @@ namespace SkylineTogether.Sync
     }
     /// <summary>
     /// Client, in ModificationEnd (where the game's own removal systems run on the host, which the client switches off):
-    /// the reference clean-up of every household, citizen, pet, company and building deleted on this client this frame
-    /// that the applier did not already clean up after: the player's own bulldozing, the snapshot agents without a host id,
-    /// a mod tool's deletions (<see cref="DeletionCascade"/>, ARCHITECTURE.md#reference-safety). It runs before the game
-    /// destroys them at the end of the frame, so nothing keeps naming them.
+    /// the clean-up of every entity deleted on this client this frame that the applier did not already clean up after:
+    /// the player's own bulldozing and the objects the game deletes with it (vehicles of a demolished building, sub-objects),
+    /// the snapshot agents without a host id, a mod tool's deletions (<see cref="DeletionCascade"/>, ARCHITECTURE.md#reference-safety).
+    /// <list type="bullet">
+    /// <item>agents and buildings: every agent link that names them, found through the lists and the referrer index (a
+    /// demolished building is named by the <c>CurrentBuilding</c> of every citizen inside it, which no list leads to);</item>
+    /// <item>vehicles: their riders leave them (the game's <c>ObjectEmergeSystem</c> is off on clients; a rider kept pointing
+    /// at the destroyed vehicle); a creature leaves its vehicle's passenger list;</item>
+    /// <item>buildings, nets, areas and owners of sub-objects or vehicles: noted for the next frame's <see cref="OrphanSweep"/> (children whose owner or parent is
+    /// then gone).</item>
+    /// </list>
+    /// It runs before the game destroys them at the end of the frame, so nothing keeps naming them.
     /// </summary>
     public sealed class RemovalCascadeSystem : GameSystemBase
     {
@@ -133,6 +141,9 @@ namespace SkylineTogether.Sync
                     ComponentType.ReadOnly<Game.Citizens.Citizen>(), ComponentType.ReadOnly<Game.Citizens.Household>(), ComponentType.ReadOnly<Game.Citizens.HouseholdPet>(),
                     ComponentType.ReadOnly<Game.Companies.CompanyData>(), ComponentType.ReadOnly<Game.Buildings.Renter>(), ComponentType.ReadOnly<Game.Companies.Employee>(),
                     ComponentType.ReadOnly<Game.Buildings.Student>(), ComponentType.ReadOnly<Game.Buildings.Patient>(), ComponentType.ReadOnly<Game.Buildings.Occupant>(),
+                    ComponentType.ReadOnly<Game.Buildings.Building>(), ComponentType.ReadOnly<Game.Vehicles.Vehicle>(), ComponentType.ReadOnly<Game.Creatures.Creature>(),
+                    ComponentType.ReadOnly<Game.Objects.Object>(), ComponentType.ReadOnly<Game.Net.Node>(), ComponentType.ReadOnly<Game.Net.Edge>(),
+                    ComponentType.ReadOnly<Game.Areas.Area>(),
                 },
                 None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>() },
             });
@@ -156,11 +167,24 @@ namespace SkylineTogether.Sync
             try
             {
                 EntityManager em = EntityManager;
+                MoverClient movers = MoverSync.Instance?.Client;
                 foreach (Entity e in entities)
                 {
-                    if (DeletionCascade.DoneThisFrame.Contains(e)) continue;
-                    DeletionCascade.Apply(em, e, null);
-                    DeletionCascade.LocalDeletions++;
+                    if (!em.Exists(e)) continue;
+                    bool done = DeletionCascade.DoneThisFrame.Contains(e);
+                    bool mover = em.HasComponent<Game.Vehicles.Vehicle>(e) || em.HasComponent<Game.Creatures.Creature>(e);
+                    if (mover)
+                    {
+                        // riders out of a vehicle the game deleted here (idempotent for the channel's own despawns)
+                        movers?.OnDeletedLocally(em, e);
+                    }
+                    else
+                    {
+                        if (MayHaveChildren(em, e)) sync.Orphans.NoteDeleted(e);
+                        if (done || !HasLinks(em, e)) continue;
+                        DeletionCascade.Apply(em, e, null);
+                        DeletionCascade.LocalDeletions++;
+                    }
                 }
             }
             catch (Exception ex)
@@ -172,6 +196,85 @@ namespace SkylineTogether.Sync
                 entities.Dispose();
                 DeletionCascade.DoneThisFrame.Clear();
                 Perf.Stop(Perf.ReferenceRepair, start);
+            }
+        }
+
+        /// <summary>
+        /// What can own or carry other objects: buildings, nets, areas, anything with sub-objects, sub-nets, sub-areas or
+        /// owned vehicles (a tree or a prop has nothing for the orphan sweep to look for).
+        /// </summary>
+        private static bool MayHaveChildren(EntityManager em, Entity e)
+        {
+            return em.HasComponent<Game.Buildings.Building>(e) || em.HasComponent<Game.Net.Node>(e) || em.HasComponent<Game.Net.Edge>(e) || em.HasComponent<Game.Areas.Area>(e)
+                   || em.HasBuffer<Game.Objects.SubObject>(e) || em.HasBuffer<Game.Net.SubNet>(e) || em.HasBuffer<Game.Areas.SubArea>(e)
+                   || em.HasBuffer<Game.Vehicles.OwnedVehicle>(e);
+        }
+
+        /// <summary>Agents, buildings and holders of an agent list (a tree or a road has no agent link to clean).</summary>
+        private static bool HasLinks(EntityManager em, Entity e)
+        {
+            return em.HasComponent<Game.Buildings.Building>(e) || em.HasComponent<Game.Citizens.Citizen>(e) || em.HasComponent<Game.Citizens.Household>(e)
+                   || em.HasComponent<Game.Citizens.HouseholdPet>(e) || em.HasComponent<Game.Companies.CompanyData>(e) || em.HasBuffer<Game.Buildings.Renter>(e)
+                   || em.HasBuffer<Game.Companies.Employee>(e) || em.HasBuffer<Game.Buildings.Student>(e) || em.HasBuffer<Game.Buildings.Patient>(e)
+                   || em.HasBuffer<Game.Buildings.Occupant>(e);
+        }
+    }
+
+    /// <summary>
+    /// Modification5, right before the game's <c>UpdateGroupSystem</c> (ARCHITECTURE.md#client-apply): no entity with
+    /// <c>UpdateFrame</c> and <c>Created</c> reaches it without one of the update-group markers
+    /// (<see cref="Core.Sync.UpdateGroupMarkers"/>). The game logs "UpdateFrame added to unsupported type" for such a chunk,
+    /// gives a created entity an update frame out of range and indexes its Burst job with it. The applier never creates such
+    /// an entity (<see cref="EntityCodec"/> checks every spawn), so this is the last line: each such chunk is named once per
+    /// archetype in the log with its component types, family and prefab, a created entity of it is deleted (its id released
+    /// and asked from the host again), and a deleted one (harmless to the game, but a sign of a link removed from it) is
+    /// reported. During a session only.
+    /// </summary>
+    public sealed class UpdateFrameGuardSystem : GameSystemBase
+    {
+        private EntityQuery _unsupported;
+        private readonly System.Collections.Generic.HashSet<EntityArchetype> _logged = new System.Collections.Generic.HashSet<EntityArchetype>();
+        private World _sessionWorld;
+
+        /// <summary>Created entities without a marker deleted this session (diagnostics).</summary>
+        public static long Deleted;
+
+        /// <summary>Deleted entities without a marker seen this session (diagnostics).</summary>
+        public static long SeenDeleted;
+
+        protected override void OnCreate()
+        {
+            base.OnCreate();
+            var none = new System.Collections.Generic.List<ComponentType>();
+            foreach (string name in Core.Sync.UpdateGroupMarkers.TypeNames)
+            {
+                Type t = FamilyClassifier.FindType(name);
+                if (t != null) none.Add(ComponentType.ReadOnly(t));
+            }
+            _unsupported = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Game.Simulation.UpdateFrame>() },
+                Any = new[] { ComponentType.ReadOnly<Game.Common.Created>(), ComponentType.ReadOnly<Game.Common.Deleted>() },
+                None = none.ToArray(),
+            });
+        }
+
+        protected override void OnUpdate()
+        {
+            SyncController sync = Mod.Sync;
+            if (sync == null || !SyncController.SessionActive || _unsupported.IsEmptyIgnoreFilter) return;
+            if (_sessionWorld != World)
+            {
+                _sessionWorld = World;
+                _logged.Clear();
+            }
+            try
+            {
+                sync.GuardUnsupported(EntityManager, _unsupported, _logged);
+            }
+            catch (Exception ex)
+            {
+                Guard.Report(Features.Replication, "update-group guard", ex);
             }
         }
     }
