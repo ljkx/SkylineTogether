@@ -50,6 +50,10 @@ Do each step, then both players look at the same spot and compare.
     **Join anyway** (host option **Let players join with different mods**, on by default); after clicking it the
     friend joins, both see the "joined with different mods" line in the chat, and steps 2-4 still work. With the option
     off, the screen has no **Join anyway** button.
+16. **Mods with city data:** the host enables Zoning Toolkit and builds a road with it; the friend joins without it. The
+    screen says **Mods required for this city**, lists Zoning Toolkit with "This city contains its data …" and has no
+    **Join anyway** (also with **Require the same mods** off); the host gets the "can't join" chat line. The friend's
+    game does not load the city.
 
 ### If something is wrong
 

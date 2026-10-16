@@ -39,6 +39,20 @@ All notable changes to this project are documented in this file. The format is b
 
 ### Fixed
 
+- **Crash when joining without a mod that stores data in the city**: a player who lacked one of the host's mods that
+  save their own data in the city (observed with Zoning Toolkit: "Not serializable type:
+  ZoningToolkit.Components.ZoningInfo" in Player.log) was admitted when the host did not require the same mods or the
+  player chose **Join anyway**, and the game crashed while loading the city. Such a player is now always refused, whatever the host's
+  options say, with the screen **Mods required for this city** ("Enable these mods to join: ZoningToolkit (this city
+  contains its data – loading it without the mod would crash the game)") and no **Join anyway**; other differences
+  stay overridable and are listed below. The host decides from its own mods (saved component types and saved system
+  state found by the mod analysis, a failed scan, or a built-in list) and counts the entities in the city that carry
+  each mod's data for the wording. The joining player's game checks the host's list again right before it loads the
+  city and stops instead of loading. The host is told who could not join and why, and its log lists the mods every
+  joiner needs.
+- The old "CS2 Multiplayer Mod" (by name or Paradox Mods id) on either PC now refuses the join with "Disable the 'CS2
+  Multiplayer Mod' – two multiplayer mods at once conflict" on the side that has it; a host that runs it sees a
+  warning in the panel and a notification when hosting starts.
 - The build id in game differed from the installer's ("build ... (mvid)" in the log): the game loads mods from the
   DLL's bytes, so the DLL's location was empty. The DLL is now found through the game's mod manager, for local and
   Paradox Mods installs, and the panel shows the installer's id.

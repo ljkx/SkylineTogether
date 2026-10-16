@@ -3,6 +3,8 @@
 - [Join refused](#join-refused)
 - [Join fails or times out](#join-fails-or-times-out)
 - [Different builds, game versions or mods](#different-builds-game-versions-or-mods)
+- [Mods required for this city](#mods-required-for-this-city)
+- [Two multiplayer mods at once](#two-multiplayer-mods-at-once)
 - [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings)
 - [Connection: Steam relay, direct IP and firewalls](#connection-steam-relay-direct-ip-and-firewalls)
 - [Hosting and joining are unavailable](#hosting-and-joining-are-unavailable)
@@ -18,14 +20,17 @@ When the host's game refuses a join, the joining player sees a screen with a tit
 reasons, a box **Details** with the host's own text. **Copy details** copies everything for a bug report.
 
 The host checks, in this order: bans, **Friends and invited only**, protocol version, a second connection of the same
-player, password (always for direct IP joiners), and only then build, game version, mods (only with **Require the same
-mods** on), DLC and content packs, asset packs (only with **Require the same asset packs** on) and the player limit. A
+player, password (always for direct IP joiners), and only then build, game version, the old "CS2 Multiplayer Mod" on
+either side, DLC and content packs, mods that store data in the host's city (always), the other mods (only with
+**Require the same mods** on), asset packs (only with **Require the same asset packs** on) and the player limit. A
 player who has not passed the password learns nothing about versions, mods, DLC or assets.
 
 | Screen title | Cause | What to do |
 |---|---|---|
 | **Skyline Together versions differ** | The protocol versions differ, or the two DLLs are different builds. Every compile is a different build, even with the same version number. The screen shows "Host build … · Your build …". | Install the same `SkylineTogether-Setup.zip` on every PC and compare the build id the installer prints (also in the panel's footer). |
 | **Game versions differ** | The game versions differ (shown as "Host: … · You: …"). | Update the game on both PCs (Steam may hold back an update until the game restarts). |
+| **Mods required for this city** | The host's city stores data of mods you don't have. Loading the city without them would crash your game, so the join is refused whatever the host's options say, and there is no **Join anyway**. The screen lists them under **Enable these mods to join**, each with "This city contains its data" or "It can store data in a city"; other differences are listed below them. | Enable or subscribe to the listed mods, restart the game and join again. See [Mods required for this city](#mods-required-for-this-city). |
+| **Two multiplayer mods at once** | You, or the host, have the old "CS2 Multiplayer Mod" enabled. | Disable it on the PC that has it, restart the game and join again. See [Two multiplayer mods at once](#two-multiplayer-mods-at-once). |
 | **Your mods don't match the host's** | The host requires the same code mods and yours differ. The screen lists what to **Enable or subscribe**, **Disable** and **Update to the host's version**. | Change the mods as listed, restart the game, join again. See [Different builds, game versions or mods](#different-builds-game-versions-or-mods). |
 | **You're missing DLC or content packs the host has** | The host owns DLC or content packs that you don't; the host's city can contain objects from them, which your game can't load. The screen lists them under **Get these** (and, for information, what only you have). | Get the listed DLC (Steam or the Paradox launcher), restart the game and join again. See [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings). |
 | **Your asset packs don't match the host's** | The host turned on **Require the same asset packs** and yours differ. The screen lists what to **Subscribe**, **Disable (the host doesn't have them)** and **Update to the host's version**, each with its Paradox Mods id. "The asset packs differ (too many to list)" in the details means one side has too many packs to compare one by one. | Change the asset packs as listed, restart the game, join again; or ask the host to turn the option off. |
@@ -74,7 +79,47 @@ responding while joining."
   mods (the default), the refusal screen also offers **Join anyway**; see
   [Joining anyway with different mods](#joining-anyway-with-different-mods).
 - For the first test, the simplest setup is an empty playset on both PCs.
-- Disable any other multiplayer mod; the installer warns about a known conflicting one.
+- Disable any other multiplayer mod; the installer warns about a known conflicting one, and the game refuses joins
+  while the old "CS2 Multiplayer Mod" is enabled on either PC (see
+  [Two multiplayer mods at once](#two-multiplayer-mods-at-once)).
+
+## Mods required for this city
+
+Some mods save their own data in the city (for example Zoning Toolkit's zoning settings on roads, Traffic's lane
+connections). The game cannot load a city that contains data of a mod it does not have: it crashes while loading
+(Player.log ends with "Not serializable type: …"). So a player who lacks one of the host's mods that store city data
+is always refused, even when the host turned **Require the same mods** off or lets players join with different mods,
+and the refusal screen has no **Join anyway** for them:
+
+- The title is **Mods required for this city**. Under **Enable these mods to join** each mod says why: "This city
+  contains its data – loading it without the mod would crash the game." (the host's city holds its data right now) or
+  "It can store data in a city – loading the city without the mod can crash the game." (the mod can save data, but
+  none was found in this city; it is required anyway, because nothing proves the save has no trace of it).
+- Other differences (mods without city data, extra mods only you have, other versions) are listed below under **Other
+  differences**. If the host lets players join with different mods, the text says that those can be passed with **Join
+  anyway** once the required mods are enabled.
+- The host sees "&lt;name&gt; can't join: they don't have …, which store data in this city." as a notification and a chat
+  line.
+- How the host's game decides: every loaded mod is scanned (saved component types and saved system state count; a scan
+  that fails counts too), and a built-in list knows mods that save data (Traffic, Anarchy, Better Bulldozer, Water
+  Features, Zoning Toolkit, Plop the Growables, Tree Controller). The host's log lists them when hosting starts
+  ("joiners must have these mods …"), and the diagnostics file marks each one with "stores city data".
+- Your own game checks again right before it loads the city: if the host's notice names a mod that stores city data and
+  your game lacks it, the join stops with the same screen instead of loading.
+- A mod only you have is not a problem for loading (it is like adding a mod to a save); it stays a normal difference.
+
+## Two multiplayer mods at once
+
+Skyline Together does not work together with the old "CS2 Multiplayer Mod" (found by its name or its Paradox Mods id).
+While it is enabled:
+
+- on a joining player's PC: the join is refused with "Disable the 'CS2 Multiplayer Mod' – two multiplayer mods at once
+  conflict." Disable it in your playset or unsubscribe, restart the game and join again;
+- on the host's PC: every player is refused ("The host has the 'CS2 Multiplayer Mod' enabled …"). The host's panel keeps
+  a red warning while it is enabled, a notification says so when hosting starts, and each refused player is named in
+  the chat. Disable it and restart the game.
+
+No option or **Join anyway** skips this. The installer warns about it as well.
 
 ## Different DLC, asset packs or mod settings
 
@@ -103,7 +148,8 @@ lists behind it:
   joining player is told "While you play together, the host's values apply to these mod settings: … Yours come back when
   you leave."
 - **Code mods** when the host turned **Require the same mods** off: "Your code mods differ from the host's (the host
-  allows it): … Parts of the city may look or behave differently for you."
+  allows it): … Parts of the city may look or behave differently for you." Mods that store data in the host's city are
+  still required ([Mods required for this city](#mods-required-for-this-city)).
 
 ## Joining anyway with different mods
 
@@ -126,7 +172,10 @@ possible." The best fix is still to match the host's mods and restart the game.
   does only on one PC (its own simulation, tools, overlays) can still differ. If the cities drift apart, match the mods
   and rejoin.
 - It never skips: a different Skyline Together build or protocol version, a different game version, DLC or content
-  packs you lack (those are checked first), the password, bans, the friends-only policy or a full session.
+  packs you lack (those are checked first), mods that store data in the host's city
+  ([Mods required for this city](#mods-required-for-this-city)), the old "CS2 Multiplayer Mod"
+  ([Two multiplayer mods at once](#two-multiplayer-mods-at-once)), the password, bans, the friends-only policy or a full
+  session.
 - With the option off, the screen has no button and says that the host requires the same mods.
 
 ## Connection: Steam relay, direct IP and firewalls

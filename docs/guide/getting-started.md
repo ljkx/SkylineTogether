@@ -245,8 +245,10 @@ With **Let players join with different mods** on (the default), a player whose m
 the refusal screen keeps the list of what to enable, disable or update and adds **Join anyway**, with the warning that
 different mods can make the cities drift apart or behave differently. The host's city stays authoritative and
 differences are repaired where possible; the host sees who joined with which differences. **Join anyway** never skips
-a different Skyline Together build or game version, missing DLC, the password, bans or a full session; see
-[Troubleshooting](troubleshooting.md#joining-anyway-with-different-mods).
+a different Skyline Together build or game version, missing DLC, mods that store data in the host's city (the game
+would crash loading the city without them; see
+[Mods required for this city](troubleshooting.md#mods-required-for-this-city)), the old "CS2 Multiplayer Mod", the
+password, bans or a full session; see [Troubleshooting](troubleshooting.md#joining-anyway-with-different-mods).
 
 DLC, asset packs and the mod settings the host pushes are checked when a player joins as well: a player without one of
 the host's DLC or content packs is refused; different asset packs and mod settings are told to the joining player (the

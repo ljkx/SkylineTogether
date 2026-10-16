@@ -78,9 +78,16 @@ the cities can drift apart where a mod runs on one PC only. Missing DLC, another
 Together build still refuse the join. See
 [Troubleshooting](troubleshooting.md#joining-anyway-with-different-mods).
 
+The exception are mods that save their own data in the city (Zoning Toolkit, Traffic and others): the game crashes
+loading a city with data of a mod it does not have, so a player without such a mod of the host's is always refused,
+with no **Join anyway**, and the screen lists them under **Enable these mods to join**. Mods only the joining player has
+are fine. See [Mods required for this city](troubleshooting.md#mods-required-for-this-city).
+
 ### Can I use it together with another multiplayer mod?
 
-No. Disable other multiplayer mods; two at once conflict.
+No. Disable other multiplayer mods; two at once conflict. While the old "CS2 Multiplayer Mod" is enabled on the host's
+or the joining player's PC, the join is refused and the host's panel shows a warning; see
+[Two multiplayer mods at once](troubleshooting.md#two-multiplayer-mods-at-once).
 
 ### Is the connection encrypted? Is my password sent?
 

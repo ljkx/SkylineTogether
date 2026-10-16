@@ -29,6 +29,7 @@ without any reference to Skyline Together (§8, [`../MOD-INTEGRATION.md`](../MOD
 | **Client gates** | Mod systems that derive host-owned state are off on live clients (`ClientOffSystems`); load-time mutators driven by the player's own settings are off from the start of the join (`JoinOffSystems`, incl. the game's `PostDeserialize<T>` wrapper). Restored exactly at session end (`SystemSwitch`). Mod simulation systems are already off on clients (follower clock); adapters may keep ones that write no replicated state (`ClientSimulationSystems`). | `Compat/ModCompat` |
 | **Mod settings channel** | Simulation-relevant `ModSetting` properties are the host's for everyone (`SyncRecordKind.ModSettings = 111`, host → clients, changes polled 1/s, everything on join). Clients write through the property setter (mods that react to a change do), call `Setting.Apply()`, and restore + re-save their own values at session end. Only bool/int/long/float/double/enum/string properties listed by an adapter are touched; buttons never. | `Compat/ModSettingsSync`, Core `SettingValueText`, `HostSettingsTracker`, `ClientSettingsTracker` |
 | **Missing assets** | A record whose `PrefabRef` cannot be resolved (asset pack or runtime prefab missing) is never applied (an entity without its prefab breaks game systems); binding is retried lazily (runtime prefabs created after the join's prefab table), with a name fallback for runtime prefabs (§7). The host says where each non-base-game prefab comes from (`PrefabSource` record), so the joiner's message names the package and Paradox Mods id or the mod and what to do; the snapshot manifest lists the city's asset sources, checked before the load. The status line, one toast and the diagnostics dump list the missing assets. A client proposal of an object whose prefab the host lacks is refused (rollback). | `EntityCodec.MissingPrefab/NamesUnknownPrefab/NameFallback`, `Compat/AssetSources`, `SyncController.Validate`, Core `Modding/AssetSource` |
+| **City data is required** | A joiner without one of the host's mods that store data in the city is refused, never overridable: the game's loader crashes on saved types of a mod it does not have ("Not serializable type: ..." in Player.log, observed with Zoning Toolkit). Evidence: saved component types and saved system state of the host's own scan, a failed scan, or the built-in list; the city's entity count per saved type only changes the wording. The joiner repeats the check before it loads the city. The old multiplayer mod (assembly `CS2MultiplayerMod`, Paradox Mods id 150432, detected by name and id only) refuses on either side. (§10) | Core `Session/CityDataRule`, `Modding/CityDataEvidence`, `Compat/CityDataProbe`, `SessionClient.StopForCityData` |
 | **Join classification** | Mods that only affect their own player never block a join (missing on either side or another version). Built-in lists of known client-local and known world-affecting mods (by assembly name and Paradox id), then each peer's analysis of its own copy (§6): a mod that is client-local by its declaration or by the scan gets `ClientLocalHint` (manifest flag bit 2); otherwise `RegistersTypesOrSystemsOrPrefabs`. Unknown without a hint: world-affecting (fail closed). The structured `MismatchReport` and its one-line text simply leave the local mods out. | Core `Session/ModCompatibility`, `MismatchReport.CompareMods`, `Compat/ModAssemblyScanner`, Core `Modding/ModClassifier` |
 | **Join check of DLC, asset packs and settings** | After the password the host compares, per category whose handshake digest differs, the joiner's DLC (refused when one of the host's is missing), asset packs by Paradox Mods id and contents (told; refused with the host option "require the same asset packs") and the current values of the settings of §3 (told; the host's values apply). Admitted joiners get the differences as a join notice ([handshake](../ARCHITECTURE.md#handshake-and-admission)). | Core `Session/CompatibilityCheck`, `CompatibilityDigests`, `Session/GameInfoProvider`, `AssetSources.Packages`, `ModSettingsSync.CurrentValues` |
 | **Adapter version check** | Every name a built-in adapter relies on is resolved when the mod is detected; any missing name turns the whole adapter off with one log line and a diagnostics entry, and the mod gets the generic treatment (§5). | `ModCompat.Check`, Core `Modding/AdapterCheck` |
@@ -77,7 +78,9 @@ registry (mods register a second "defaults" instance there).
 
 - Record kinds 110 (`EnabledBits`, accepted from clients), 111 (`ModSettings`, host only) and 112 (`PrefabSource`, host
   only, written right before the `Prefab` record of a non-base-game prefab); manifest mod flag bit 2
-  (`ClientLocalHint`). Message kind 110 (`ModChannel`, both directions, the host relays; branch range 110-114). The
+  (`ClientLocalHint`). Mismatch report records `city-data`, `host-city-data`, `city-data-checked`, `rest-overridable`,
+  `conflict-host`, `conflict-you` and the report kind `conflict` (text records that older readers skip; no layout
+  change, §10). Message kind 110 (`ModChannel`, both directions, the host relays; branch range 110-114). The
   snapshot manifest has an optional trailing list of asset sources (written only when non-empty, so manifests of cities
   with base game prefabs only keep their bytes).
 - `EntityCodec.Apply` gained an optional `skip` filter (edit hold); `WriteEntity` appends an `EnabledBits` record when
@@ -135,7 +138,9 @@ Checked offline against all installed mods: runtime prefab creation is found in 
 | Which settings are the host's? | Only declared `host-setting` properties (validated); a heuristic cannot tell a UI setting from a rule. |
 
 Systems that save state or run after load, and saved components named like tool data, get hints for the mod's author
-in the dump; they change nothing. The result becomes a `GenericModAdapter` that runs next to a built-in adapter of the
+in the dump; they change nothing. Separately from all of these decisions, the scan's saved component types and saved
+system states make the mod one that stores data in the city (`ModReport.CityData`, §10): a joiner without it is always
+refused, whatever the mod declares. The result becomes a `GenericModAdapter` that runs next to a built-in adapter of the
 same mod (it only adds generic and declared rules).
 
 ## 7. Missing assets and runtime prefabs
@@ -196,6 +201,13 @@ Documented for mod authors in [`../MOD-INTEGRATION.md`](../MOD-INTEGRATION.md). 
 
 ## 9. Residual risks
 
+- Mods that store data in the city (§10): a mod whose saved types are not on any entity of this city, and that has no
+  saved system, is still required, because the save may carry its trace anyway; Employment Tracker (client-local,
+  with an unused saved type) is therefore required when only the host has it. Whether the game really crashes for
+  every kind of missing saved type (a tag, a managed or shared component, a saved system) was not verified in the game;
+  the rule treats them all alike. A mod that stores data only through means the scan cannot see (for example its own
+  files next to the save) is not covered.
+
 - Nothing here could be run in the game; names and behaviour were verified against the decompiled installed versions,
   and the scan was run offline (outside the game, without system phases and Harmony) against every installed mod. The
   phase lists and Harmony's patch list are only available in the game.
@@ -213,3 +225,50 @@ Documented for mod authors in [`../MOD-INTEGRATION.md`](../MOD-INTEGRATION.md). 
   the systems known to do so are gated or host-only.
 - Missing local assets of the host cannot be fixed by the joiner; packages are detected by Paradox Mods id only (a
   package without an id counts as present).
+
+## 10. Mods that store data in the city
+
+**Why.** The game saves the component data of every `ISerializable`/`IEmptySerializable` component type with the
+city, mods' types included, and the state of systems that implement `ISerializable`. Its loader cannot read a city that
+contains a saved type of a mod it does not have: in a real session a joiner without Zoning Toolkit was admitted (the
+host did not require the same mods), the snapshot downloaded fine, and the game crashed natively while loading, right
+after Player.log printed "Not serializable type: ZoningToolkit.Components.ZoningInfo, ZoningToolkit, ...". Admitting
+such a joiner is never safe, so no option relaxes this rule.
+
+**The rule** (Core `Session/CityDataRule`, checked first inside `CompatibilityCheck.Compare`):
+
+| Case | Decision |
+|---|---|
+| The old multiplayer mod (`CS2MultiplayerMod` / Paradox Mods id 150432) in the host's or the joiner's list | refused, kind `conflict`, "Disable the 'CS2 Multiplayer Mod' – two multiplayer mods at once conflict" for the side that has it; the host's panel warns while it is loaded |
+| A host mod that stores city data, missing on the joiner | refused, never overridable (`RequireSameMods`, `AllowModMismatchOverride` and "join anyway" do not matter); "Enable these mods to join: ZoningToolkit (this city contains its data – loading it without the mod would crash the game)" |
+| The same, but none of the mod's data is in the current city | refused all the same, worded "it can store data in a city – loading the city without the mod can crash the game": nothing proves the save carries no trace of it (saved system state is always written; the save's type table was not verified) |
+| A mod with city data only the joiner has | no difference for this rule (like adding a mod to a save); the usual mod comparison applies |
+| Mods without city data, other versions, asset packs | unchanged: refused, told or overridable as the options say |
+
+**Stores city data** means, on the host, for each loaded code mod: the scan (§6) found a component type the game saves
+(any storage kind) or a system that saves state (`ISerializable`, `IDefaultSerializable`), or the scan failed, or the
+built-in list knows the mod (Traffic, Anarchy, Better Bulldozer, Water Features, Zoning Toolkit, Plop the Growables,
+Tree Controller: class D in §2 or per-city settings). Declarations (`never-replicate`, `client-local`) never change it,
+and neither does the join class: a client-local mod with a saved type is required too. The evidence is
+`ModReport.CityData` (Core `Modding/CityDataEvidence`, shown as "city data: ..." per mod in the dump);
+`Compat/CityDataProbe` fills the host-local fields of the handshake entry and, in a loaded city, counts the entities
+that carry each saved type (one `EntityQuery` per type, prefabs excluded, disabled entities included) and the mod's
+saved systems in the world. The host logs the required mods when hosting starts; the dump marks each one.
+
+**On the wire** nothing changed layout: the refusal is a `mods` report with `city-data` records (name, version, id,
+in-city flag; each also in `missing` for readers that do not know the record), `overridable` never set and
+`rest-overridable` when the other differences could be passed with "join anyway" afterwards; the old mod is a
+`conflict` report. When the mods differ and the joiner is admitted, the join notice carries `city-data-checked` and a
+`host-city-data` record per host mod with city data. Unknown records are skipped by every reader, so no protocol
+version was needed.
+
+**The joiner's own check** (`SessionClient.StopForCityData`): when the join notice arrives, and again right before the
+game's load is called, the client compares the host's `host-city-data` list with the mods its game has loaded (read
+again; by Paradox Mods id or name). A notice of an older host (no `city-data-checked`) counts every mod the host has and
+the joiner lacks. The joiner's own old multiplayer mod counts too. Any hit ends the join as refused with the same report
+and screen, and the city is never loaded.
+
+**UI.** The refusal screen **Mods required for this city** lists the required mods under "Enable these mods to join",
+each with its reason, then the other differences under "Other differences"; there is no **Join anyway** button (also
+not when a report claims to be overridable). The host gets "&lt;name&gt; can't join: they don't have ..., which store
+data in this city" as a notification and a chat line (`SessionHost.JoinerBlocked`).

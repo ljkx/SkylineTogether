@@ -87,7 +87,7 @@ namespace MyMod
 | `direct-write` | tool | The default for every tool: changes made while it is active are proposed as direct writes. |
 | `pipeline` | tool | The tool changes the world only through the game's Temp/apply pipeline; its applies are captured like vanilla ones. |
 | `host-setting` | setting property | The host's value is used by everyone during a session; each player's own value comes back afterwards. bool, int, long, float, double, enum and string properties with a public getter and setter. |
-| `client-local` | assembly | Your mod only affects its own player (UI, tooltips, overlays); it never blocks a join. Takes precedence over the scan. |
+| `client-local` | assembly | Your mod only affects its own player (UI, tooltips, overlays); it never blocks a join. Takes precedence over the scan, with one exception: if your mod saves component types or system state with the city, a player without it cannot load the host's city (the game crashes), so a joiner that lacks it is always refused, whatever you declare ([mods that store data in the city](design/MOD-COMPATIBILITY.md#10-mods-that-store-data-in-the-city)). |
 | `world` | assembly | Your mod must be on every machine in the same version. |
 | `viewer-message` | assembly, with a target: a message kind `0` ... `255` (decimal or `0x` hex), or `*` | Viewers may send mod channel messages whose first payload byte is that kind (`*`: every message). Without it a viewer only receives (see [4](#4-the-mod-channel)). |
 

@@ -256,7 +256,7 @@ sequenceDiagram
     H->>C: Control PasswordChallenge (host nonce, salt, session id)
     C->>H: Control PasswordResponse (client nonce, HMAC)
   end
-  Note over H: TryAdmit: build id, game version, DLC, mods (if required),<br/>asset packs (if required), session full;<br/>"join anyway" passes only mods and asset packs
+  Note over H: TryAdmit: build id, game version, old multiplayer mod, DLC,<br/>mods with city data (always), mods (if required),<br/>asset packs (if required), session full;<br/>"join anyway" passes only the other mods and asset packs
   H->>C: Welcome (peer id, role, permissions, session info)
   H->>C: Control JoinNotice (differences that do not block, if any)
   H->>C: Epoch batch: prefab table, id range, ledger epoch
@@ -292,12 +292,40 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
 
   | Category | Listed | On a difference |
   |---|---|---|
-  | Code mods | name, version (`ModManager`) | refused with "require the same mods" ([`MismatchReport.CompareMods`](../src/SkylineTogether.Core/Session/MismatchReport.cs); client-local mods never count; overridable, see below), otherwise told |
+  | Code mods | name, version (`ModManager`) | a host mod that stores data in the city and the joiner lacks: always refused (below); otherwise refused with "require the same mods" ([`MismatchReport.CompareMods`](../src/SkylineTogether.Core/Session/MismatchReport.cs); client-local mods never count; overridable, see below), otherwise told |
   | DLC and content packs | DLC id and name of every available `ContentPrefab` with a `DlcRequirement` (or a Paradox login requirement) | refused when the joiner lacks one the host has (the host's city can contain its objects); content only the joiner has is told |
   | Asset packs | every Paradox Mods id among the loaded prefabs with package name, version, prefab count and the digest of its prefab ids ([`AssetSources.Packages`](../src/SkylineTogether/Compat/AssetSources.cs)) | told (objects of packs the joiner lacks are left out on its side, as before); refused with "require the same asset packs" (overridable) |
   | Mod settings | current values of the settings the host pushes ([`ModSettingsSync.CurrentValues`](../src/SkylineTogether/Compat/ModSettingsSync.cs)) | told; the host's values apply for the session |
 
   DLC is compared first, so a joiner is never offered "join anyway" for its mods only to be refused for its DLC next.
+- **Rules no option relaxes** ([`CityDataRule`](../src/SkylineTogether.Core/Session/CityDataRule.cs), checked inside
+  `CompatibilityCheck` before every option):
+  - *The old multiplayer mod.* An assembly named `CS2MultiplayerMod` or Paradox Mods id 150432 in either side's mod
+    list (detected by name and id only) refuses with a report of kind `conflict` (`conflict-host` / `conflict-you`
+    records): "Disable the 'CS2 Multiplayer Mod' – two multiplayer mods at once conflict" for the side that has it.
+    The host's panel shows a warning while it is loaded (`GameInfoProvider.ConflictingMod`).
+  - *Mods that store data in the city.* The game's loader cannot read a save whose saved types belong to a mod it lacks
+    (observed: "Not serializable type: ZoningToolkit.Components.ZoningInfo …", then a native crash). So when the mod
+    lists differ, every host mod that stores city data must be in the joiner's list (by Paradox Mods id or name),
+    whatever "require the same mods", "let players join with different mods" and the joiner's "join anyway" say. The
+    host decides from its own mods: the analysis of each loaded mod ([`CityDataEvidence`](../src/SkylineTogether.Core/Modding/CityDataEvidence.cs):
+    component types saved with entities, `ISerializable`/`IEmptySerializable` of any storage kind, and systems that
+    save state, `ISerializable`/`IDefaultSerializable`; a failed scan counts; declarations never hide it) or the
+    built-in list (Traffic, Anarchy, Better Bulldozer, Water Features, Zoning Toolkit, Plop the Growables, Tree
+    Controller). [`CityDataProbe`](../src/SkylineTogether/Compat/CityDataProbe.cs) also counts, when the manifest is
+    built, the city's entities with each saved type (one entity query per type) and the mod's saved systems in the
+    world: that only changes the wording ("this city contains its data" or "it can store data in a city"), because a
+    mod without data in this city cannot be proven harmless (its saved systems, the save's type table). These facts
+    are local to the host (`ModEntry.StoresCityData`, `CityDataInCity`, `CityDataDetail`), never sent. The refusal is
+    a `mods` report whose `city-data` records name the required mods (each also in `missing`, so readers without the
+    record still list it) with `overridable` never set; `rest-overridable` says that the other differences could be
+    passed with "join anyway" once those are enabled. The joiner's screen is **Mods required for this city** with the
+    list "Enable these mods to join" and no **Join anyway**; the host raises `SessionHost.JoinerBlocked` (notification
+    and chat line). A joiner whose mod list was too long to send cannot show that it has them and is refused too. A
+    city-data mod only the joiner has is no difference to this rule.
+  - When the mods differ and the joiner is admitted, the join notice carries `city-data-checked` and one
+    `host-city-data` record per host mod with city data, for the joiner's own check before the load
+    ([snapshot join](#snapshot-join)).
   A refusal carries a `MismatchReport` (kind `mods`, `content` or `assets`) whose lists the joiner's error screen
   shows. Differences that do not block go to the admitted joiner right after `Welcome` as `Control JoinNotice` (a
   report of kind `notice`): one notification and one chat line per category
@@ -316,15 +344,16 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   the player and the differences, and the host logs the accepted mismatch and lists it per peer in the diagnostics
   (`DescribePeers`). The flag changes nothing but the code mod and asset pack verdict of
   [`CompatibilityCheck`](../src/SkylineTogether.Core/Session/CompatibilityCheck.cs): protocol version, bans, join
-  policy and password come before it, build id, game version and DLC are refused whatever it says, and capacity is
-  checked after it. With the option off the flag is ignored (logged) and the refusal is final. Nothing after the
+  policy and password come before it, build id, game version, the old multiplayer mod, DLC and mods that store city
+  data are refused whatever it says, and capacity is checked after it. With the option off the flag is ignored (logged) and the refusal is final. Nothing after the
   admission assumes identical mods: records of prefabs or component types the joiner lacks are skipped, the
   `ModSettings` channel only touches settings of loaded adapters, mod channel messages for a mod the receiver lacks are
   dropped and counted, and integrity repair works as for any other divergence. A rejoin from the recovery hold that is
   refused for different mods (the host changed its options meanwhile, so no choice was remembered) is not offered
   "join anyway": the recovery panel asks as for any other refusal.
   Wire: `Refuse` keeps its layout (the mark is a report record, which readers of every version skip when unknown); the
-  hello's join flags byte (protocol 4) is rejected when it has undefined bits.
+  hello's join flags byte (protocol 4) is rejected when it has undefined bits. The city-data and conflict records were
+  added to the report the same way, so they changed no layout and need no protocol version.
 - Refuse reasons: `Mismatch`, `Full`, `Banned`, `BadPassword`, `NotInvited`, `HostShuttingDown`, `ProtocolVersion`,
   `HostPreparing`. Before admission a connection may send bodies of at most 1 MiB, and the handshake must finish within
   30 s.
@@ -356,7 +385,13 @@ A joiner receives the host's city as a save game and loads it through the game's
    manifest over first, but with Steam lanes (and in the network simulator) lanes are ordered independently, so a
    resent manifest can arrive after chunks; those are kept (up to 16 MiB) and fed in once the receiver exists. The
    download is verified against the digest.
-4. **Load.** [`SnapshotLoader`](../src/SkylineTogether/Session/SnapshotLoader.cs) imports the join assets, then loads
+4. **Load.** First the client repeats the city-data check
+   ([`CityDataRule.CheckBeforeLoad`](../src/SkylineTogether.Core/Session/CityDataRule.cs)): when the join notice
+   names a host mod that stores city data and this game has not loaded it (its mods are read again), or this game
+   runs the old multiplayer mod, the join ends as refused with the same report the host would have sent, instead of
+   loading a city the game cannot read. A notice of an older host without `city-data-checked` counts every mod the
+   host has and the joiner lacks (fail closed). The same check already runs when the notice arrives, so normally
+   nothing is downloaded. [`SnapshotLoader`](../src/SkylineTogether/Session/SnapshotLoader.cs) imports the join assets, then loads
    the save from a transient asset database with the host's game mode and city options, achievements off and the
    simulation paused. `ModCompat.OnClientStarted` switches off mod systems that must not run during a joiner's load.
 5. **Live.** The client reports `LoadDone`; the host marks it live and sends the current speed and `Live`.
@@ -1176,7 +1211,10 @@ computed with the UI's own functions; clients compare their own rows and re-send
 - **Join check.** Mods, DLC, asset packs and mod settings are compared at admission
   ([handshake](#handshake-and-admission)); client-local mods never block, asset packs and settings are told rather than
   refused unless the host requires the same asset packs, and a host that lets players join with different mods admits
-  a joiner that chose "join anyway" despite different code mods or asset packs.
+  a joiner that chose "join anyway" despite different code mods or asset packs. Two rules come first and are never
+  overridable: a joiner without one of the host's mods that store data in the city is refused (the game's loader would
+  crash), and so is any join while the old multiplayer mod runs on either side; the joiner checks the first again
+  before it loads the city.
 - **Missing assets.** Records whose prefab a client lacks are never applied; the player is told which package or mod
   is missing ([`AssetSources`](../src/SkylineTogether/Compat/AssetSources.cs)). The host refuses proposals naming
   prefabs it lacks.
