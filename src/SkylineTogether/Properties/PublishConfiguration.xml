@@ -57,7 +57,7 @@ Open source under the MIT licence. Not affiliated with or endorsed by Paradox In
 	<Tag Value="Code Mod" />
 	<ForumLink Value="https://github.com/ljkx/SkylineTogether/issues" />
 	<!--The release version: <Version> of Directory.Build.props (tools/publish_paradox.py checks that they match)-->
-	<ModVersion Value="0.1.0-alpha.2" />
+	<ModVersion Value="0.1.0-alpha.3" />
 	<!--The game version the build was compiled and tested against (1.6.2f1); another game version may switch features off-->
 	<GameVersion Value="1.6.2*" />
 	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened-->

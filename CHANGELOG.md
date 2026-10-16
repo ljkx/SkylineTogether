@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-10-16
+
+Third test build: crash fixes from the first real sessions (bulldozing elevated roads, households and companies on
+joining players, joining without a mod whose data is in the city), join anyway, moving planes, elevation in building
+previews. Protocol 5: everyone must install this build.
+
 ### Added
 
 - **Join anyway with different mods**: when the host requires the same mods or asset packs, a player whose mods differ
@@ -213,6 +219,7 @@ on a copy of a city.
   a list); saving before the first state arrived could store "keep" as the host password; the player list re-rendered
   with every cursor movement.
 
-[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.1.0-alpha.2...main
+[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.1.0-alpha.3...main
+[0.1.0-alpha.3]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.1
