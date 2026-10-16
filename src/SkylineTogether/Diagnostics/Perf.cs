@@ -38,6 +38,7 @@ namespace SkylineTogether.Diagnostics
         public const string Bind = "bind";                     // host: new entities bound before the save system
         public const string Network = "network";               // both: session tick (receive, decode, dispatch, send)
         public const string Presence = "presence";             // both: cursors and name tags
+        public const string ReferenceRepair = "reference repair"; // client: reference sweep and clean-up of local deletions
 
         // channel names (bytes per second, host: summed over the peers it was sent to)
         public const string StructureBytes = "structure";

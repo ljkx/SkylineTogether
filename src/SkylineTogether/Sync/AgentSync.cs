@@ -1321,6 +1321,7 @@ namespace SkylineTogether.Sync
                             _log.Info(LogCategory.Replication, "agents: " + orphans.Length + " of " + entities.Length + " have no host id; kept (the host does not replicate agents?)");
                             return;
                         }
+                        // their households, workplaces and buildings drop them before the game destroys them (RemovalCascadeSystem)
                         em.AddComponent(orphans.AsArray(), ComponentType.ReadWrite<Game.Common.Deleted>());
                         _orphans = orphans.Length;
                         _log.Info(LogCategory.Replication, "agents: " + orphans.Length + " snapshot agents without a host id removed (" + bound + " bound)");

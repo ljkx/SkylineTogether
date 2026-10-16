@@ -137,6 +137,8 @@ namespace SkylineTogether
                 updateSystem.UpdateBefore<IconAuthorityFilterSystem, Game.Notifications.IconCommandSystem>(SystemUpdatePhase.ModificationEnd);
                 // clients: local chirps dropped right before CreateChirpSystem consumes its queue (it stays enabled)
                 updateSystem.UpdateBefore<ChirpDrainSystem, Game.Triggers.CreateChirpSystem>(SystemUpdatePhase.ModificationEnd);
+                // clients: the reference clean-up of local deletions (the game's removal systems are off on clients)
+                updateSystem.UpdateAt<RemovalCascadeSystem>(SystemUpdatePhase.ModificationEnd);
             });
             Step(log, "mover systems", () =>
             {

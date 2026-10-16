@@ -1,6 +1,8 @@
 using System;
 using Game;
 using SkylineTogether.Diagnostics;
+using Unity.Collections;
+using Unity.Entities;
 
 namespace SkylineTogether.Sync
 {
@@ -106,6 +108,70 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 Guard.Report(Features.Replication, "tool hook", ex);
+            }
+        }
+    }
+    /// <summary>
+    /// Client, in ModificationEnd (where the game's own removal systems run on the host, which the client switches off):
+    /// the reference clean-up of every household, citizen, pet, company and building deleted on this client this frame
+    /// that the applier did not already clean up after: the player's own bulldozing, the snapshot agents without a host id,
+    /// a mod tool's deletions (<see cref="DeletionCascade"/>, ARCHITECTURE.md#reference-safety). It runs before the game
+    /// destroys them at the end of the frame, so nothing keeps naming them.
+    /// </summary>
+    public sealed class RemovalCascadeSystem : GameSystemBase
+    {
+        private EntityQuery _deleted;
+
+        protected override void OnCreate()
+        {
+            base.OnCreate();
+            _deleted = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Game.Common.Deleted>() },
+                Any = new[]
+                {
+                    ComponentType.ReadOnly<Game.Citizens.Citizen>(), ComponentType.ReadOnly<Game.Citizens.Household>(), ComponentType.ReadOnly<Game.Citizens.HouseholdPet>(),
+                    ComponentType.ReadOnly<Game.Companies.CompanyData>(), ComponentType.ReadOnly<Game.Buildings.Renter>(), ComponentType.ReadOnly<Game.Companies.Employee>(),
+                    ComponentType.ReadOnly<Game.Buildings.Student>(), ComponentType.ReadOnly<Game.Buildings.Patient>(), ComponentType.ReadOnly<Game.Buildings.Occupant>(),
+                },
+                None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>() },
+            });
+        }
+
+        protected override void OnUpdate()
+        {
+            SyncController sync = Mod.Sync;
+            if (sync == null || !SyncController.SessionActive || sync.IsHost || !Features.Replication.IsAvailable)
+            {
+                DeletionCascade.DoneThisFrame.Clear();
+                return;
+            }
+            if (_deleted.IsEmptyIgnoreFilter)
+            {
+                DeletionCascade.DoneThisFrame.Clear();
+                return;
+            }
+            long start = Perf.Start();
+            NativeArray<Entity> entities = _deleted.ToEntityArray(Allocator.Temp);
+            try
+            {
+                EntityManager em = EntityManager;
+                foreach (Entity e in entities)
+                {
+                    if (DeletionCascade.DoneThisFrame.Contains(e)) continue;
+                    DeletionCascade.Apply(em, e, null);
+                    DeletionCascade.LocalDeletions++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Guard.Report(Features.Replication, "removal clean-up of local deletions", ex);
+            }
+            finally
+            {
+                entities.Dispose();
+                DeletionCascade.DoneThisFrame.Clear();
+                Perf.Stop(Perf.ReferenceRepair, start);
             }
         }
     }

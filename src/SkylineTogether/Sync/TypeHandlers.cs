@@ -120,6 +120,10 @@ namespace SkylineTogether.Sync
 
         public override bool ChecksFloats => Floats != null;
 
+        // agent link buffers (Employee, Patient, Occupant: ARCHITECTURE.md#reference-safety): an element naming nobody is
+        // left out like an unresolved one (null: every other type)
+        private static readonly Func<T, Entity> Link = AgentLinkAccess.WireElementRef<T>();
+
         public override void Write(EntityManager em, Entity e, NetWriter w)
         {
             DynamicBuffer<T> buffer = em.GetBuffer<T>(e, true);
@@ -152,6 +156,12 @@ namespace SkylineTogether.Sync
                 if (r.TakeUnresolved())
                 {
                     anyUnresolved = true;
+                    continue;
+                }
+                // the game never lists nobody in a reverse buffer; its jobs index the member unchecked
+                if (Link != null && Link(element) == Entity.Null)
+                {
+                    AgentLinkAccess.WireNullsDropped++;
                     continue;
                 }
                 elements[kept++] = element;

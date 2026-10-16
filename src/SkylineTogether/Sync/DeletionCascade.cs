@@ -1,246 +1,112 @@
-using System;
+using System.Collections.Generic;
 using Game.Buildings;
-using Game.Citizens;
 using Game.Companies;
+using SkylineTogether.Core.Sync;
 using Unity.Entities;
 
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// The reference clean-up the game does when an entity is deleted, done on a client
-    /// at the moment the host's despawn is applied.
+    /// The reference clean-up the game does when an entity is deleted, done on a client at the moment the host's
+    /// despawn is applied, and for every entity deleted locally (<see cref="RemovalCascadeSystem"/>), ARCHITECTURE.md#reference-safety.
     ///
     /// On the host, deleting a building runs <c>Game.Simulation.RemovedSystem</c> (Modification5): every renter loses its
-    /// <c>PropertyRenter</c>, tourists of a hotel lose <c>TouristHousehold.m_Hotel</c>, every employee loses
-    /// <c>Worker</c> and a work <c>TravelPurpose</c>. <c>SchoolUpdatedSystem</c> removes <c>Student</c> from the pupils of a
-    /// deleted school, <c>HouseholdAndCitizenRemoveSystem</c> and <c>HouseholdPetRemoveSystem</c> take a deleted
-    /// household, citizen or pet out of the reverse lists (<c>Renter</c>, <c>HouseholdCitizen</c>, <c>HouseholdAnimal</c>,
-    /// school <c>Student</c>, <c>Patient</c>, <c>Occupant</c>). Clients gate these systems (<see cref="ClientGate"/>):
-    /// they also delete and create entities and raise triggers, which is host business, and the host sends the result.
-    /// But the result arrives later than the despawn (agents travel in a budgeted value stream), and until then the
-    /// client's households, companies and workers referenced a building that no longer exists. Game code reads such
-    /// references unchecked (for example the workplaces info view indexes <c>m_PrefabRefFromEntity[propertyRenter.m_Property]</c>
-    /// in a Burst job: a native crash once the entity is gone).
+    /// <c>PropertyRenter</c>, tourists of a hotel lose <c>TouristHousehold.m_Hotel</c>, every employee loses <c>Worker</c>
+    /// and a work <c>TravelPurpose</c>. <c>SchoolUpdatedSystem</c> removes <c>Student</c> from the pupils of a deleted school;
+    /// <c>HouseholdAndCitizenRemoveSystem</c> and <c>HouseholdPetRemoveSystem</c> take a deleted household, citizen or pet
+    /// out of the reverse lists (<c>Renter</c>, <c>HouseholdCitizen</c>, <c>HouseholdAnimal</c>, school <c>Student</c>,
+    /// <c>Patient</c>, <c>Occupant</c>). Other lists the game only prunes later in its simulation: a dead worker stays in
+    /// its company's <c>Employee</c> list until <c>WorkProviderSystem</c> refreshes it, a departed tourist in its hotel's
+    /// <c>Renter</c> list until <c>LodgingProviderSystem</c> does, and the guests of a deleted hotel company keep their hotel
+    /// until <c>HouseholdBehaviorSystem</c> clears it. Clients switch all of these off (<see cref="ClientGate"/>; the
+    /// follower clock stops the simulation): they also delete and create entities and raise triggers, which is host
+    /// business, and the host sends the result. But the result arrives later than the despawn (agents travel in a budgeted
+    /// value stream; owner lists after the batch), and the lazy prunes never come, so a client's buildings, companies and
+    /// households kept naming entities that no longer exist. Game code reads such references unchecked (the extractor
+    /// vehicle panel reads its building's first renter, the citizen panel the citizen's household; Burst jobs index
+    /// lookups with them: a native crash once the entity is gone).
     ///
-    /// This class does only the reference part, with the same rules: it removes components and list entries that point
-    /// at the deleted entity, never deletes or creates an entity, never raises a trigger or an icon. The host's later
-    /// records carry the same values, so the replica converges either way; integrity hashes agree as soon as the host's
-    /// own cascade (the same removals) has been captured.
+    /// This class does the reference part of all of them at once, with the same end state (<see cref="AgentLinkGraph"/>):
+    /// it removes list entries naming the deleted entity, clears or removes the members' links to it, never deletes or
+    /// creates an entity, never raises a trigger or an icon. The host's later records carry the same values, so the
+    /// replica converges either way; integrity hashes agree as soon as the host's own clean-up has been captured.
     /// </summary>
     internal static class DeletionCascade
     {
         /// <summary>Clean-ups made this session (diagnostics: <c>SyncController.Describe</c>).</summary>
         public static long Removed;
 
+        /// <summary>Entities cascaded by locally deleted entities this session (<see cref="RemovalCascadeSystem"/>).</summary>
+        public static long LocalDeletions;
+
+        private static readonly List<AgentLinkOp<Entity>> Ops = new List<AgentLinkOp<Entity>>();
+        private static readonly List<Entity> Members = new List<Entity>();
+        private static AgentLinkAccess _access;
+
         /// <summary>
-        /// Applies the client-safe clean-up for <paramref name="deleted"/>, which is about to receive <c>Deleted</c>.
-        /// Returns the number of components and list entries removed; the entities changed are added to
-        /// <paramref name="touched"/> (the applier's set: the client never proposes them back).
+        /// Entities already cascaded this frame (by the applier), so the frame's local-deletion pass skips them; cleared by
+        /// <see cref="RemovalCascadeSystem"/>. Main thread only.
         /// </summary>
-        public static int Apply(EntityManager em, Entity deleted, System.Collections.Generic.HashSet<Entity> touched)
+        public static readonly HashSet<Entity> DoneThisFrame = new HashSet<Entity>();
+
+        /// <summary>
+        /// Applies the client-safe clean-up for <paramref name="deleted"/>, which is about to receive (or just received)
+        /// <c>Deleted</c>. Returns the number of components and list entries removed; the entities changed are added to
+        /// <paramref name="touched"/> (the applier's set: the client never proposes them back; may be null).
+        /// </summary>
+        public static int Apply(EntityManager em, Entity deleted, HashSet<Entity> touched)
         {
-            _touched = touched; // main thread only (the applier)
+            if (deleted == Entity.Null || !em.Exists(deleted)) return 0;
+            AgentLinkAccess access = _access ?? (_access = new AgentLinkAccess(em));
+            access.EntityManager = em;
+            access.Touched = touched;
             try
             {
+                DoneThisFrame.Add(deleted);
                 int n = 0;
-                // a building (or any property): its renters, its hotel guests, its employees, its pupils
-                if (em.HasBuffer<Renter>(deleted)) n += ReleaseRenters(em, deleted);
-                if (em.HasBuffer<Employee>(deleted)) n += ReleaseEmployees(em, deleted);
-                if (em.HasBuffer<Game.Buildings.Student>(deleted) && em.HasComponent<School>(deleted)) n += ReleaseStudents(em, deleted);
-                // a renter (household or company): out of its property's renter list
-                n += LeaveProperty(em, deleted);
-                // a citizen: out of its household, school, workplace and the building it is in
-                if (em.HasComponent<Citizen>(deleted)) n += LeaveCitizenLists(em, deleted);
-                // a pet: out of its household's animal list
-                if (em.HasComponent<HouseholdPet>(deleted))
-                {
-                    Entity household = em.GetComponentData<HouseholdPet>(deleted).m_Household;
-                    if (Usable(em, household) && em.HasBuffer<HouseholdAnimal>(household))
-                    {
-                        n += RemoveAll(household, em.GetBuffer<HouseholdAnimal>(household), deleted, x => x.m_HouseholdPet);
-                    }
-                }
+                Ops.Clear();
+                AgentLinkGraph.PlanCascade(access, deleted, Ops);
+                // a hotel company renting in the deleted building: its guests have no hotel any more (the host deletes the
+                // hotel company itself; RemovedSystem clears the guests in the same pass)
+                if (em.HasBuffer<Renter>(deleted)) n += ReleaseHotelGuests(em, access, deleted);
+                for (int i = 0; i < Ops.Count; i++) n += access.Apply(Ops[i]);
                 Removed += n;
                 return n;
             }
             finally
             {
-                _touched = null;
+                access.Touched = null;
+                Ops.Clear();
             }
         }
 
-        private static System.Collections.Generic.HashSet<Entity> _touched;
-
-        private static void Touch(Entity e)
-        {
-            _touched?.Add(e);
-        }
-
-        private static int ReleaseRenters(EntityManager em, Entity property)
+        private static int ReleaseHotelGuests(EntityManager em, AgentLinkAccess access, Entity property)
         {
             int n = 0;
-            // copy first: removing components moves entities between chunks and invalidates buffer handles
-            Entity[] renters = Members(em.GetBuffer<Renter>(property, true), x => x.m_Renter);
+            Members.Clear();
+            access.GetMembers(property, AgentLink.Renter, Members);
+            Entity[] renters = Members.ToArray(); // the guest lists below reuse the scratch list
             foreach (Entity renter in renters)
             {
-                if (!Usable(em, renter)) continue;
-                if (em.HasComponent<PropertyRenter>(renter))
+                if (!access.IsUsable(renter) || !em.HasComponent<LodgingProvider>(renter) || !em.HasBuffer<Renter>(renter)) continue;
+                Members.Clear();
+                access.GetMembers(renter, AgentLink.Renter, Members);
+                foreach (Entity guest in Members)
                 {
-                    Entity at = em.GetComponentData<PropertyRenter>(renter).m_Property;
-                    if (at == property || at == Entity.Null || !em.Exists(at))
-                    {
-                        em.RemoveComponent<PropertyRenter>(renter);
-                        Touch(renter);
-                        n++;
-                    }
-                }
-                // a hotel in the building: its guests have no hotel any more (the host deletes the hotel company itself)
-                if (em.HasComponent<LodgingProvider>(renter) && em.HasBuffer<Renter>(renter))
-                {
-                    Entity[] guests = Members(em.GetBuffer<Renter>(renter, true), x => x.m_Renter);
-                    foreach (Entity guest in guests)
-                    {
-                        if (!Usable(em, guest) || !em.HasComponent<TouristHousehold>(guest)) continue;
-                        TouristHousehold tourist = em.GetComponentData<TouristHousehold>(guest);
-                        if (tourist.m_Hotel == Entity.Null) continue;
-                        tourist.m_Hotel = Entity.Null;
-                        em.SetComponentData(guest, tourist);
-                        Touch(guest);
-                        n++;
-                    }
+                    if (!access.IsUsable(guest) || !access.TryGetForward(guest, AgentLink.TouristHotel, out Entity hotel) || hotel != renter) continue;
+                    n += access.CleanForward(guest, AgentLink.TouristHotel, LinkCleanup.ClearReference);
                 }
             }
+            Members.Clear();
             return n;
         }
 
-        private static int ReleaseEmployees(EntityManager em, Entity workplace)
+        public static void ResetSession()
         {
-            int n = 0;
-            Entity[] workers = Members(em.GetBuffer<Employee>(workplace, true), x => x.m_Worker);
-            foreach (Entity worker in workers)
-            {
-                if (!Usable(em, worker)) continue;
-                if (em.HasComponent<TravelPurpose>(worker))
-                {
-                    Purpose p = em.GetComponentData<TravelPurpose>(worker).m_Purpose;
-                    if (p == Purpose.GoingToWork || p == Purpose.Working)
-                    {
-                        em.RemoveComponent<TravelPurpose>(worker);
-                        Touch(worker);
-                        n++;
-                    }
-                }
-                if (em.HasComponent<Worker>(worker))
-                {
-                    Entity at = em.GetComponentData<Worker>(worker).m_Workplace;
-                    if (at == workplace || at == Entity.Null || !em.Exists(at))
-                    {
-                        em.RemoveComponent<Worker>(worker);
-                        Touch(worker);
-                        n++;
-                    }
-                }
-            }
-            return n;
-        }
-
-        private static int ReleaseStudents(EntityManager em, Entity school)
-        {
-            int n = 0;
-            Entity[] students = Members(em.GetBuffer<Game.Buildings.Student>(school, true), x => x.m_Student);
-            foreach (Entity student in students)
-            {
-                if (!Usable(em, student) || !em.HasComponent<Game.Citizens.Student>(student)) continue;
-                if (em.GetComponentData<Game.Citizens.Student>(student).m_School != school) continue;
-                if (em.HasComponent<TravelPurpose>(student))
-                {
-                    Purpose p = em.GetComponentData<TravelPurpose>(student).m_Purpose;
-                    if (p == Purpose.GoingToSchool || p == Purpose.Studying)
-                    {
-                        em.RemoveComponent<TravelPurpose>(student);
-                        Touch(student);
-                        n++;
-                    }
-                }
-                em.RemoveComponent<Game.Citizens.Student>(student);
-                Touch(student);
-                n++;
-            }
-            return n;
-        }
-
-        private static int LeaveProperty(EntityManager em, Entity renter)
-        {
-            Entity property = Entity.Null;
-            if (em.HasComponent<PropertyRenter>(renter)) property = em.GetComponentData<PropertyRenter>(renter).m_Property;
-            else if (em.HasComponent<HomelessHousehold>(renter)) property = em.GetComponentData<HomelessHousehold>(renter).m_TempHome;
-            if (!Usable(em, property) || !em.HasBuffer<Renter>(property)) return 0;
-            return RemoveAll(property, em.GetBuffer<Renter>(property), renter, x => x.m_Renter);
-        }
-
-        private static int LeaveCitizenLists(EntityManager em, Entity citizen)
-        {
-            int n = 0;
-            if (em.HasComponent<HouseholdMember>(citizen))
-            {
-                Entity household = em.GetComponentData<HouseholdMember>(citizen).m_Household;
-                if (Usable(em, household) && em.HasBuffer<HouseholdCitizen>(household))
-                {
-                    n += RemoveAll(household, em.GetBuffer<HouseholdCitizen>(household), citizen, x => x.m_Citizen);
-                }
-            }
-            if (em.HasComponent<Game.Citizens.Student>(citizen))
-            {
-                Entity school = em.GetComponentData<Game.Citizens.Student>(citizen).m_School;
-                if (Usable(em, school) && em.HasBuffer<Game.Buildings.Student>(school))
-                {
-                    n += RemoveAll(school, em.GetBuffer<Game.Buildings.Student>(school), citizen, x => x.m_Student);
-                }
-            }
-            if (em.HasComponent<Worker>(citizen))
-            {
-                Entity workplace = em.GetComponentData<Worker>(citizen).m_Workplace;
-                if (Usable(em, workplace) && em.HasBuffer<Employee>(workplace))
-                {
-                    n += RemoveAll(workplace, em.GetBuffer<Employee>(workplace), citizen, x => x.m_Worker);
-                }
-            }
-            if (em.HasComponent<CurrentBuilding>(citizen))
-            {
-                Entity building = em.GetComponentData<CurrentBuilding>(citizen).m_CurrentBuilding;
-                if (Usable(em, building))
-                {
-                    if (em.HasBuffer<Patient>(building)) n += RemoveAll(building, em.GetBuffer<Patient>(building), citizen, x => x.m_Patient);
-                    if (em.HasBuffer<Occupant>(building)) n += RemoveAll(building, em.GetBuffer<Occupant>(building), citizen, x => x.m_Occupant);
-                }
-            }
-            return n;
-        }
-
-        /// <summary>An entity whose components may be changed: it exists and is not itself being deleted.</summary>
-        private static bool Usable(EntityManager em, Entity e)
-        {
-            return e != Entity.Null && em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e);
-        }
-
-        private static Entity[] Members<T>(DynamicBuffer<T> buffer, Func<T, Entity> get) where T : unmanaged, IBufferElementData
-        {
-            var result = new Entity[buffer.Length];
-            for (int i = 0; i < buffer.Length; i++) result[i] = get(buffer[i]);
-            return result;
-        }
-
-        private static int RemoveAll<T>(Entity owner, DynamicBuffer<T> buffer, Entity member, Func<T, Entity> get) where T : unmanaged, IBufferElementData
-        {
-            int n = 0;
-            if (buffer.Length > 0) Touch(owner);
-            for (int i = buffer.Length - 1; i >= 0; i--)
-            {
-                if (get(buffer[i]) != member) continue;
-                buffer.RemoveAt(i);
-                n++;
-            }
-            return n;
+            Removed = 0;
+            LocalDeletions = 0;
+            DoneThisFrame.Clear();
+            _access = null;
         }
     }
 }
