@@ -881,9 +881,15 @@ clients except in the route preview window, and proposals never write host-owned
 Citizens, households, pets and companies ([`AgentSync`](../src/SkylineTogether/Sync/AgentSync.cs)). **Existence**
 is part of the structure stream: bound at session start and in the snapshot; births, arrivals, new companies, deaths
 and departures are spawn and despawn records; clients create agents from the prefab's `ArchetypeData`. **Key links**
-(household membership, property) are promoted to the structure stream together with the reverse buffers of the old
-and new owner, which are replicated as data (`Renter`, `HouseholdCitizen`, `Student`, ...) because their maintainers
-are off on clients. **Values** are found by a rolling hash scan and sent per peer by
+(household membership both ways: a citizen's or pet's household and a household's member multiset; property) are
+promoted to the structure stream together with the reverse buffers of the old and new owner, which are replicated as
+data (`Renter`, `HouseholdCitizen`, `Student`, ...) because their maintainers are off on clients. The game moves
+citizens between households without update tags (students moving out, couples moving together, divorces), so a **key
+watch** reads the chunk change versions of `HouseholdMember`, `HouseholdPet`, `HouseholdCitizen` and `HouseholdAnimal`
+every frame (at most 8192 agents compared per frame, laps carry over) and moves the agents whose links differ from the
+scan's last observation to the front of the scan; a new household's members are moved there as well. A move therefore
+reaches clients within a frame or two instead of a whole scan pass, which in a large city is longer than the integrity
+check's agent confirmation window (45 s). **Values** are found by a rolling hash scan and sent per peer by
 [`AgentPlanner`](../src/SkylineTogether.Core/Scheduling/AgentPlanner.cs) as `AgentValues`: the closure of the peer's
 selected or followed entity first, then agents around its camera, then the rest oldest first. Clients request agents
 whose values referenced something unknown (`AgentRefresh`). Clients never propose agents.

@@ -33,11 +33,15 @@ namespace SkylineTogether.Sync
     /// clients never propose them (<see cref="FamilyClassifier.IsHostReplicated"/>).
     /// </para>
     /// <para>
-    /// <b>Key links</b> (household membership, property) are promoted to the structure stream: a change found by the scan
-    /// becomes an upsert in the next broadcast, together with the reverse buffers of the old and the new owner (co-capture,
-    /// ARCHITECTURE.md#agents): households as full records, buildings as their reverse buffers on this channel. The same happens for
-    /// every owner of a spawned or despawned agent, so a client never keeps a renter, member, student or employee that is
-    /// gone.
+    /// <b>Key links</b> (household membership both ways, property) are promoted to the structure stream: a change found by
+    /// the scan becomes an upsert in the next broadcast, together with the reverse buffers of the old and the new owner
+    /// (co-capture, ARCHITECTURE.md#agents): households as full records, buildings as their reverse buffers on this channel.
+    /// The same happens for every owner of a spawned or despawned agent, so a client never keeps a renter, member, student
+    /// or employee that is gone. The game moves citizens between households without update tags (a student moving out, a
+    /// couple moving together, a divorce), so a <b>key watch</b> reads the chunk change versions of the membership
+    /// components every frame and moves the agents whose links really changed to the front of the scan: a move reaches
+    /// clients within a frame or two instead of a whole scan pass (a minute and more in a large city, longer than the
+    /// integrity check waits for an agent before it repairs it).
     /// </para>
     /// <para>
     /// <b>Values</b> change constantly without tags. A rolling, time-sliced scan (<see cref="RollingScan"/>, about 0.8 ms
@@ -80,6 +84,8 @@ namespace SkylineTogether.Sync
         private const int MaxOwnerBytes = 48 * 1024;
         private const int MaxOwnerRecordsPerFrame = 256; // agent owners written in full per frame at most
         private const double PanelRefreshInterval = 0.5;
+        /// <summary>Agents the key watch compares per frame at most (the rest of its lap continues next frame).</summary>
+        private const int KeyWatchPerFrame = 8192;
 
         /// <summary>Types the agent sync needs (probed at startup, <see cref="Probes"/>).</summary>
         public static readonly string[] TypeNames =
@@ -169,7 +175,11 @@ namespace SkylineTogether.Sync
         private readonly Stopwatch _watch = new Stopwatch();
         private List<TypeHandler> _ownerHandlers;
         private double _lastStream = -1;
-        private long _changes, _structural, _keyUpserts, _ownerRecords, _bytesSent, _requests;
+        private long _changes, _structural, _keyUpserts, _ownerRecords, _bytesSent, _requests, _keyWatchTouches;
+        // key watch (host): membership components whose chunks changed since the last lap
+        private EntityQuery _citizenKeys, _petKeys, _householdKeys;
+        private readonly ChunkLap _citizenLap = new ChunkLap(), _petLap = new ChunkLap(), _householdLap = new ChunkLap();
+        private bool _keyWatchReady;
 
         // client
         private readonly Queue<byte[]> _inbox = new Queue<byte[]>();
@@ -228,7 +238,8 @@ namespace SkylineTogether.Sync
             {
                 lines.Add("agents: replicated " + FamilyClassifier.AgentsReplicated + ", " + _ids.CountOf(Family.Agent) + " bound, " + _states.Count + " scanned, pass "
                           + _scan.Passes + " (" + _scan.Remaining + " left of " + _scan.PassLength + ", " + _scan.HotCount + " hot), " + _changes + " value changes, "
-                          + _structural + " component-set changes, " + _keyUpserts + " key-link upserts, " + _ownerRecords + " owner records, " + _requests + " refresh requests");
+                          + _structural + " component-set changes, " + _keyUpserts + " key-link upserts (" + _keyWatchTouches + " agents found by the key watch), "
+                          + _ownerRecords + " owner records, " + _requests + " refresh requests");
                 foreach (HostPeer p in _peers.Values)
                 {
                     _planner.GetSent(p.Peer, out long agents, out long bytes);
@@ -254,6 +265,20 @@ namespace SkylineTogether.Sync
             _selectedInfo = world.GetOrCreateSystemManaged<SelectedInfoUISystem>();
             _camera = world.GetOrCreateSystemManaged<CameraUpdateSystem>();
             _ownerHandlers = null;
+            _keyWatchReady = false;
+            try
+            {
+                EntityManager em = world.EntityManager;
+                ComponentType[] none = { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>() };
+                _citizenKeys = em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<HouseholdMember>() }, None = none });
+                _petKeys = em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<HouseholdPet>() }, None = none });
+                _householdKeys = em.CreateEntityQuery(new EntityQueryDesc { All = new[] { ComponentType.ReadOnly<Household>(), ComponentType.ReadOnly<HouseholdCitizen>() }, None = none });
+                _keyWatchReady = true;
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Replication, "agents: key watch unavailable (household moves follow the rolling scan): " + ex.Message);
+            }
         }
 
         // ================================================================== lifecycle
@@ -314,7 +339,10 @@ namespace SkylineTogether.Sync
             _inbox.Clear();
             _throttle.Clear();
             _lastStream = -1;
-            _changes = _structural = _keyUpserts = _ownerRecords = _bytesSent = _requests = 0;
+            _changes = _structural = _keyUpserts = _ownerRecords = _bytesSent = _requests = _keyWatchTouches = 0;
+            _citizenLap.Reset();
+            _petLap.Reset();
+            _householdLap.Reset();
             _valuesApplied = _messagesApplied = _orphans = 0;
             _warnedApply = false;
         }
@@ -409,7 +437,39 @@ namespace SkylineTogether.Sync
             if (em.HasComponent<Game.Citizens.Student>(e)) r.School = _ids.GetNetId(em.GetComponentData<Game.Citizens.Student>(e).m_School);
             if (em.HasComponent<Worker>(e)) r.Workplace = _ids.GetNetId(em.GetComponentData<Worker>(e).m_Workplace);
             if (em.HasComponent<CurrentBuilding>(e)) r.Building = _ids.GetNetId(em.GetComponentData<CurrentBuilding>(e).m_CurrentBuilding);
+            if (em.HasBuffer<HouseholdCitizen>(e))
+            {
+                DynamicBuffer<HouseholdCitizen> citizens = em.GetBuffer<HouseholdCitizen>(e, true);
+                for (int i = 0; i < citizens.Length; i++) r.Members = AgentRefs.AddMember(r.Members, _ids.GetNetId(citizens[i].m_Citizen));
+            }
+            if (em.HasBuffer<HouseholdAnimal>(e))
+            {
+                DynamicBuffer<HouseholdAnimal> animals = em.GetBuffer<HouseholdAnimal>(e, true);
+                for (int i = 0; i < animals.Length; i++) r.Members = AgentRefs.AddMember(r.Members, _ids.GetNetId(animals[i].m_HouseholdPet));
+            }
             return r;
+        }
+
+        /// <summary>
+        /// Host: the members a household lists go to the front of the scan. Their <c>HouseholdMember</c> now names this
+        /// household, but each client still has them in their old one until the scan promotes their own key change.
+        /// </summary>
+        private void TouchMembers(EntityManager em, Entity household)
+        {
+            if (!em.HasBuffer<HouseholdCitizen>(household)) return;
+            DynamicBuffer<HouseholdCitizen> citizens = em.GetBuffer<HouseholdCitizen>(household, true);
+            for (int i = 0; i < citizens.Length && i < 32; i++)
+            {
+                uint member = _ids.GetNetId(citizens[i].m_Citizen);
+                if (member != 0) _scan.Touch(member);
+            }
+            if (!em.HasBuffer<HouseholdAnimal>(household)) return;
+            DynamicBuffer<HouseholdAnimal> animals = em.GetBuffer<HouseholdAnimal>(household, true);
+            for (int i = 0; i < animals.Length && i < 8; i++)
+            {
+                uint pet = _ids.GetNetId(animals[i].m_HouseholdPet);
+                if (pet != 0) _scan.Touch(pet);
+            }
         }
 
         /// <summary>Host: an agent's spawn record is in this frame's batch; its owners' reverse buffers go with it.</summary>
@@ -424,6 +484,8 @@ namespace SkylineTogether.Sync
                 _states[id] = s;
                 _planner.MarkSentToAll(id);
                 UpdateGrid(em, id, e);
+                // a new household (a student moving out, a divorce): its members left their old household untagged
+                if (s.Refs.Members != 0) TouchMembers(em, e);
             }
             catch (Exception ex)
             {
@@ -509,6 +571,7 @@ namespace SkylineTogether.Sync
             long start = Perf.Start();
             try
             {
+                WatchKeys();
                 Scan();
                 EntityManager em = _codec.EntityManager;
                 foreach (uint id in _keyChanged)
@@ -584,9 +647,10 @@ namespace SkylineTogether.Sync
             _states[id] = now;
             if (now.Key != old.Key)
             {
-                // household membership or property changed: promoted to the broadcast stream with both owners
+                // household membership (either side) or property changed: promoted to the broadcast stream with both owners
                 _keyChanged.Add(id);
                 AgentRefs.CollectOwners(old.Refs, now.Refs, _owners);
+                if (now.Refs.Members != old.Refs.Members) TouchMembers(em, e); // members that joined it changed household too
                 UpdateGrid(em, id, e);
                 return;
             }
@@ -607,6 +671,158 @@ namespace SkylineTogether.Sync
                 _planner.MarkChanged(id);
                 _changes++;
             }
+        }
+
+        /// <summary>
+        /// One lap of a chunk-change watch over a query: chunks whose watched component changed since the lap started are
+        /// visited in order; a lap that runs out of the frame's allowance continues next frame, and the next lap looks for
+        /// changes since this lap began (nothing written meanwhile is missed).
+        /// </summary>
+        private sealed class ChunkLap
+        {
+            public uint Since;
+            public uint LapVersion;
+            public int Cursor = -1;
+
+            public void Reset()
+            {
+                Since = 0;
+                LapVersion = 0;
+                Cursor = -1;
+            }
+        }
+
+        /// <summary>
+        /// Host, before the scan slice (ARCHITECTURE.md#agents): the key watch. The game writes household membership
+        /// (<c>HouseholdMember</c>, <c>HouseholdPet</c>, a household's <c>HouseholdCitizen</c>/<c>HouseholdAnimal</c>) without
+        /// update tags, but every write bumps the chunk's change version. Agents in changed chunks whose links differ from
+        /// what the scan last observed are touched, so the scan promotes them (with both households) in the next slice.
+        /// The first lap after the session start only takes the versions (the baseline is the snapshot).
+        /// </summary>
+        private void WatchKeys()
+        {
+            if (!_keyWatchReady) return;
+            EntityManager em = _codec.EntityManager;
+            int allowance = KeyWatchPerFrame;
+            try
+            {
+                // handles are taken fresh every frame (they are only valid until the next structural change)
+                _entityType = em.GetEntityTypeHandle();
+                _memberType = em.GetComponentTypeHandle<HouseholdMember>(true);
+                _petType = em.GetComponentTypeHandle<HouseholdPet>(true);
+                _citizenType = em.GetBufferTypeHandle<HouseholdCitizen>(true);
+                _animalType = em.GetBufferTypeHandle<HouseholdAnimal>(true);
+                allowance -= WatchLap(em, _citizenKeys, _citizenLap, allowance, KeyKind.Citizen);
+                allowance -= WatchLap(em, _petKeys, _petLap, allowance, KeyKind.Pet);
+                WatchLap(em, _householdKeys, _householdLap, allowance, KeyKind.Household);
+            }
+            catch (Exception ex)
+            {
+                _keyWatchReady = false; // the rolling scan still finds every change, only later
+                _log.Warn(LogCategory.Replication, "agents: key watch failed and is off for this session (household moves follow the rolling scan): " + ex.Message);
+            }
+        }
+
+        private enum KeyKind
+        {
+            Citizen,
+            Pet,
+            Household,
+        }
+
+        private EntityTypeHandle _entityType;
+        private ComponentTypeHandle<HouseholdMember> _memberType;
+        private ComponentTypeHandle<HouseholdPet> _petType;
+        private BufferTypeHandle<HouseholdCitizen> _citizenType;
+        private BufferTypeHandle<HouseholdAnimal> _animalType;
+
+        /// <summary>Walks one lap of <paramref name="lap"/> within <paramref name="allowance"/> agents; returns the agents visited.</summary>
+        private int WatchLap(EntityManager em, EntityQuery query, ChunkLap lap, int allowance, KeyKind kind)
+        {
+            if (lap.Cursor < 0)
+            {
+                // a new lap: changes since the previous lap began; the very first lap only takes the version (the scan's
+                // own first observation of every agent is the baseline)
+                lap.Since = lap.LapVersion;
+                lap.LapVersion = em.GlobalSystemVersion;
+                if (lap.Since == 0) return 0;
+                lap.Cursor = 0;
+            }
+            if (allowance <= 0) return 0;
+            query.CompleteDependency();
+            NativeArray<ArchetypeChunk> chunks = query.ToArchetypeChunkArray(Allocator.Temp);
+            int visited = 0;
+            try
+            {
+                for (; lap.Cursor < chunks.Length; lap.Cursor++)
+                {
+                    if (visited >= allowance) return visited; // the lap continues next frame
+                    visited += VisitChunk(chunks[lap.Cursor], lap.Since, kind);
+                }
+                lap.Cursor = -1; // lap complete
+                return visited;
+            }
+            finally
+            {
+                chunks.Dispose();
+            }
+        }
+
+        /// <summary>Compares the agents of one chunk whose membership component changed since <paramref name="since"/>; returns how many.</summary>
+        private int VisitChunk(ArchetypeChunk chunk, uint since, KeyKind kind)
+        {
+            NativeArray<Entity> entities;
+            switch (kind)
+            {
+                case KeyKind.Citizen:
+                {
+                    if (!chunk.DidChange(ref _memberType, since)) return 0;
+                    entities = chunk.GetNativeArray(_entityType);
+                    NativeArray<HouseholdMember> members = chunk.GetNativeArray(ref _memberType);
+                    for (int i = 0; i < entities.Length; i++) CheckKey(entities[i], _ids.GetNetId(members[i].m_Household), 0, false);
+                    return entities.Length;
+                }
+                case KeyKind.Pet:
+                {
+                    if (!chunk.DidChange(ref _petType, since)) return 0;
+                    entities = chunk.GetNativeArray(_entityType);
+                    NativeArray<HouseholdPet> pets = chunk.GetNativeArray(ref _petType);
+                    for (int i = 0; i < entities.Length; i++) CheckKey(entities[i], _ids.GetNetId(pets[i].m_Household), 0, false);
+                    return entities.Length;
+                }
+                default:
+                {
+                    bool animals = chunk.Has(ref _animalType);
+                    if (!chunk.DidChange(ref _citizenType, since) && !(animals && chunk.DidChange(ref _animalType, since))) return 0;
+                    entities = chunk.GetNativeArray(_entityType);
+                    BufferAccessor<HouseholdCitizen> citizens = chunk.GetBufferAccessor(ref _citizenType);
+                    BufferAccessor<HouseholdAnimal> pets = animals ? chunk.GetBufferAccessor(ref _animalType) : default;
+                    for (int i = 0; i < entities.Length; i++)
+                    {
+                        ulong hash = 0;
+                        DynamicBuffer<HouseholdCitizen> list = citizens[i];
+                        for (int k = 0; k < list.Length; k++) hash = AgentRefs.AddMember(hash, _ids.GetNetId(list[k].m_Citizen));
+                        if (animals)
+                        {
+                            DynamicBuffer<HouseholdAnimal> animalList = pets[i];
+                            for (int k = 0; k < animalList.Length; k++) hash = AgentRefs.AddMember(hash, _ids.GetNetId(animalList[k].m_HouseholdPet));
+                        }
+                        CheckKey(entities[i], 0, hash, true);
+                    }
+                    return entities.Length;
+                }
+            }
+        }
+
+        /// <summary>Touches an agent whose household link (or, for a household, member set) differs from the scan's last observation.</summary>
+        private void CheckKey(Entity e, uint household, ulong members, bool isHousehold)
+        {
+            uint id = _ids.GetNetId(e);
+            if (id == 0 || !_states.TryGetValue(id, out AgentState s) || s.Entity != e) return;
+            bool changed = isHousehold ? s.Refs.Members != members : s.Refs.Household != household;
+            if (!changed) return;
+            _scan.Touch(id);
+            _keyWatchTouches++;
         }
 
         private void MarkAgentOwner(uint owner)

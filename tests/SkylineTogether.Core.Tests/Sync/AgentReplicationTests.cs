@@ -324,6 +324,31 @@ namespace SkylineTogether.Core.Tests.Sync
         }
 
         [Test]
+        public void HouseholdMembersAreAKeyLinkInAnyOrder()
+        {
+            // a household's member list is the reverse side of membership: the game moves citizens without tags, and the
+            // integrity check compares the lists, so a changed list must promote the household like a changed link
+            ulong abc = AgentRefs.AddMember(AgentRefs.AddMember(AgentRefs.AddMember(0, 11), 12), 13);
+            ulong cba = AgentRefs.AddMember(AgentRefs.AddMember(AgentRefs.AddMember(0, 13), 12), 11);
+            ulong ab = AgentRefs.AddMember(AgentRefs.AddMember(0, 11), 12);
+            ulong aab = AgentRefs.AddMember(AgentRefs.AddMember(AgentRefs.AddMember(0, 11), 11), 12);
+            Assert.Equal(abc, cba);
+            Assert.NotEqual(abc, ab);
+            Assert.NotEqual(ab, aab);
+            Assert.NotEqual(0UL, AgentRefs.AddMember(0, 0)); // an unbound member still counts
+
+            var household = new AgentRefs { Property = 6, Members = abc };
+            Assert.Equal(household.KeyHash(), new AgentRefs { Property = 6, Members = cba }.KeyHash());
+            Assert.NotEqual(household.KeyHash(), new AgentRefs { Property = 6, Members = ab }.KeyHash());
+            Assert.False(household.Equals(new AgentRefs { Property = 6, Members = ab }));
+            Assert.False(new AgentRefs { Members = ab }.IsEmpty);
+            // members are not owners: a changed list co-captures nobody else
+            var owners = new List<uint>();
+            AgentRefs.CollectOwners(household, new AgentRefs { Property = 6, Members = ab }, owners);
+            Assert.Equal(0, owners.Count);
+        }
+
+        [Test]
         public void SetHashIgnoresOrderButCountsDuplicates()
         {
             ulong a = SetHash.Of(new uint[] { 1, 2, 3 });

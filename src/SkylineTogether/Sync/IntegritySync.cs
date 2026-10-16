@@ -52,10 +52,11 @@ namespace SkylineTogether.Sync
         private const double SweepInterval = 30;
         private const double ToleranceLogInterval = 60;
         /// <summary>
-        /// Agents mismatch for a while after every key-link change on the host (household moves, births, deaths
-        /// reach clients only when the host's rolling agent scan gets to them, up to a minute in a large city); within this
-        /// window an agent mismatch is not divergence. The host also moves the agents of a requested bucket to the front of
-        /// its scan (<see cref="TouchAgent"/>), so most of them converge long before.
+        /// Agents mismatch for a moment after every key-link change on the host: household moves reach clients when the
+        /// host's agent scan promotes them, within a frame or two of the change through its key watch (chunk change
+        /// versions of the membership components), otherwise when the rolling scan gets to them (up to a minute and more in
+        /// a large city); within this window an agent mismatch is not divergence. The host also moves the agents of a
+        /// requested bucket to the front of its scan (<see cref="TouchAgent"/>).
         /// </summary>
         private const double AgentConfirmSeconds = 45;
         private const double ResendLogInterval = 10;

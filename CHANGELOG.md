@@ -39,6 +39,12 @@ All notable changes to this project are documented in this file. The format is b
   be and ran across the map in straight lines. Joining players now see no traffic routes for a selection; the host's
   are unchanged.
 - The log names the reason when a joining player's route tool closes and the host re-sends its transport lines.
+- **Households repaired over and over**: the integrity check kept re-sending households (and whole buckets of agents)
+  in an active city. Citizens move between households without the game tagging anything (students moving out, couples
+  moving together, divorces), and the host found such moves only when its rolling agent scan reached them, which in a
+  large city takes longer than the check waits before it repairs an agent. The host now watches the membership
+  components' chunk change versions and streams a move within a frame or two, and a household's member list counts as
+  a key link like the citizen's own household.
 
 ## [0.1.0-alpha.2] - 2026-10-16
 

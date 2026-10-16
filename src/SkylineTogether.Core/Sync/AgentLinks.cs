@@ -13,6 +13,8 @@ namespace SkylineTogether.Core.Sync
     /// <item><c>Worker.m_Workplace</c> → <c>Employee</c>;</item>
     /// <item><c>CurrentBuilding.m_CurrentBuilding</c> → <c>Occupant</c>/<c>Patient</c> (hospitals, prisons, shelters).</item>
     /// </list>
+    /// A household also carries the multiset of its members (<see cref="Members"/>: its <c>HouseholdCitizen</c> and
+    /// <c>HouseholdAnimal</c> lists), the reverse side of household membership that the integrity check verifies.
     /// </summary>
     public struct AgentRefs : IEquatable<AgentRefs>
     {
@@ -22,13 +24,27 @@ namespace SkylineTogether.Core.Sync
         public uint Workplace;
         public uint Building;
 
-        public bool IsEmpty => Household == 0 && Property == 0 && School == 0 && Workplace == 0 && Building == 0;
+        /// <summary>
+        /// A household's members as an order-independent hash (<see cref="AddMember"/> over its <c>HouseholdCitizen</c> and
+        /// <c>HouseholdAnimal</c> entries; 0 for an agent without members). Part of the key: the game moves citizens between
+        /// households without update tags, and the integrity check compares the member lists of both sides.
+        /// </summary>
+        public ulong Members;
 
-        public bool Equals(AgentRefs o) => Household == o.Household && Property == o.Property && School == o.School && Workplace == o.Workplace && Building == o.Building;
+        public bool IsEmpty => Household == 0 && Property == 0 && School == 0 && Workplace == 0 && Building == 0 && Members == 0;
+
+        public bool Equals(AgentRefs o) => Household == o.Household && Property == o.Property && School == o.School && Workplace == o.Workplace && Building == o.Building
+                                           && Members == o.Members;
 
         public override bool Equals(object obj) => obj is AgentRefs o && Equals(o);
 
-        public override int GetHashCode() => unchecked((int)(Household * 31 + Property * 17 + School * 13 + Workplace * 7 + Building));
+        public override int GetHashCode() => unchecked((int)(Household * 31 + Property * 17 + School * 13 + Workplace * 7 + Building) ^ Members.GetHashCode());
+
+        /// <summary>
+        /// Adds one member (a citizen's or a household pet's net id; unbound members count as 0) to a member hash
+        /// (<see cref="Members"/>). A wrapping sum of mixed ids: the same multiset gives the same hash in any order.
+        /// </summary>
+        public static ulong AddMember(ulong members, uint netId) => unchecked(members + HashMix.Mix64(0x510E527FADE682D1UL ^ netId));
 
         /// <summary>
         /// The owners whose reverse buffers changed when an agent's references went from <paramref name="before"/> to
@@ -54,11 +70,13 @@ namespace SkylineTogether.Core.Sync
 
         /// <summary>
         /// The key links that promote a change to the P0 stream (ARCHITECTURE.md#agents: household membership and property changes are
-        /// promoted): household and property. School, workplace and current building travel with the values.
+        /// promoted): household, property and a household's member multiset (both sides of membership, as the integrity check
+        /// verifies them). School, workplace and current building travel with the values.
         /// </summary>
-        public ulong KeyHash() => HashMix.Combine(HashMix.Combine(0x6A09E667F3BCC909UL, Household), Property);
+        public ulong KeyHash() => HashMix.Combine(HashMix.Combine(HashMix.Combine(0x6A09E667F3BCC909UL, Household), Property), Members);
 
-        public override string ToString() => "household " + Household + ", property " + Property + ", school " + School + ", workplace " + Workplace + ", building " + Building;
+        public override string ToString() => "household " + Household + ", property " + Property + ", school " + School + ", workplace " + Workplace + ", building " + Building
+                                             + (Members != 0 ? ", members 0x" + Members.ToString("X16", System.Globalization.CultureInfo.InvariantCulture) : "");
     }
 
     /// <summary>
