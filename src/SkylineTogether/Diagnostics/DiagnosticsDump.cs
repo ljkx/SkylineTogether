@@ -69,8 +69,15 @@ namespace SkylineTogether.Diagnostics
             {
                 var info = new GameInfoProvider();
                 HandshakeDigests d = info.GetDigests();
-                Line(sb, "build: " + GameInfoProvider.BuildText + " (SHA-256 of SkylineTogether.dll, as the installer prints it)");
+                Line(sb, "build: " + GameInfoProvider.BuildText + " (SHA-256 of SkylineTogether.dll, as the installer prints it; from " + GameInfoProvider.BuildSourceDetail + ")");
                 Line(sb, "game: " + d.GameVersion + " (" + d.GameFullVersion + "), locale " + d.Locale);
+            });
+            Safe(sb, () =>
+            {
+                // local Mods folder or Paradox Mods, and every other copy the game found (two copies conflict)
+                List<InstallInfo.InstalledCopy> copies = InstallInfo.Copies();
+                Line(sb, "installed: " + copies.Count + " cop" + (copies.Count == 1 ? "y" : "ies") + ", " + InstallInfo.UiModuleCount() + " UI module(s)" + (copies.Count > 1 ? " - INSTALLED MORE THAN ONCE, keep one copy" : ""));
+                foreach (InstallInfo.InstalledCopy c in copies) Line(sb, "  " + c.Describe());
             });
             Line(sb, "unity: " + UnityEngine.Application.unityVersion + ", os: " + Environment.OSVersion);
 

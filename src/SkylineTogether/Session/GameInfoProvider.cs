@@ -27,6 +27,7 @@ namespace SkylineTogether.Session
     {
         private static ulong _build;
         private static string _buildSource;
+        private static string _buildSourceDetail;
 
         private readonly ulong _modBuild;
         private int _cachedPrefabCount = int.MinValue;
@@ -42,8 +43,12 @@ namespace SkylineTogether.Session
 
         /// <summary>
         /// The build id (<see cref="Core.Session.BuildId"/>): the first 48 bits of the SHA-256 of the loaded
-        /// SkylineTogether.dll file, the value the installer prints. Only when the file cannot be read (no location)
-        /// it falls back to the assembly's MVID, and <see cref="BuildSource"/> says so. Computed once.
+        /// SkylineTogether.dll file, the value the installer prints. The game loads mods from the DLL's bytes, so
+        /// <see cref="Assembly.Location"/> is empty; the file is found through the game's mod manager
+        /// (<see cref="Diagnostics.InstallInfo.ReadOwnDll"/>), in the local Mods folder and in a Paradox Mods subscription
+        /// alike. Only when no file can be read it falls back to the assembly's MVID, and <see cref="BuildSource"/> says so
+        /// (the panel then shows "(mvid)" and the id differs from the installer's). Computed once, on first use: the first
+        /// use is in <c>Mod.OnLoad</c>, when the mod manager already knows this mod.
         /// </summary>
         public static ulong Build
         {
@@ -64,6 +69,16 @@ namespace SkylineTogether.Session
             }
         }
 
+        /// <summary>For the log: how the build id was found ("the DLL file (mod manager)", "the assembly's MVID (...)").</summary>
+        public static string BuildSourceDetail
+        {
+            get
+            {
+                if (_buildSource == null) ComputeBuild();
+                return _buildSourceDetail;
+            }
+        }
+
         /// <summary>The build id as 12 hex digits, e.g. "2f076aad4234" (with " (mvid)" for the fallback).</summary>
         public static string BuildText => Core.Session.BuildId.Format(Build) + (BuildSource == "dll" ? "" : " (" + BuildSource + ")");
 
@@ -72,10 +87,11 @@ namespace SkylineTogether.Session
             Assembly own = typeof(GameInfoProvider).Assembly;
             try
             {
-                string path = own.Location;
-                if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+                byte[] dll = Diagnostics.InstallInfo.ReadOwnDll(out string how);
+                if (dll != null)
                 {
-                    _build = Core.Session.BuildId.OfBytes(System.IO.File.ReadAllBytes(path));
+                    _build = Core.Session.BuildId.OfBytes(dll);
+                    _buildSourceDetail = "the DLL file (" + how + ")";
                     _buildSource = "dll";
                     return;
                 }
@@ -86,6 +102,7 @@ namespace SkylineTogether.Session
             }
             byte[] mvid = own.ManifestModule.ModuleVersionId.ToByteArray();
             _build = Core.Session.BuildId.FromHash(mvid);
+            _buildSourceDetail = "the assembly's MVID (the DLL file could not be found; this id differs from the installer's)";
             _buildSource = "mvid";
         }
 

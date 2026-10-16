@@ -215,6 +215,7 @@
   "st.toast.hostingStarted": "„{SESSION}“ wird gehostet. Freunde treten mit deiner Steam-ID {ID} oder einer Steam-Einladung bei.",
   "st.toast.hostFailed": "Hosten konnte nicht gestartet werden: {ERROR}",
   "st.toast.hostNeedsCity": "Lade oder starte zuerst eine Stadt und hoste sie dann.",
+  "st.toast.installedTwice": "Skyline Together ist doppelt installiert ({COPIES}). Nur eine Kopie wird geladen, die andere kann das Spiel oder deine Sitzungen stören. Behalte eine: Lösche den Ordner Mods/SkylineTogether im Benutzerdatenordner des Spiels oder deabonniere die Mod auf Paradox Mods. Starte das Spiel danach neu.",
   "st.toast.joinFailed": "Beitreten nicht möglich: {ERROR}",
   "st.toast.join.inSession": "Du bist schon in einer Sitzung. Verlasse sie zuerst.",
   "st.toast.join.noSteam": "Steam ist nicht verfügbar. Starte das Spiel über Steam und melde dich an.",

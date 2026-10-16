@@ -72,6 +72,8 @@ namespace SkylineTogether
             {
                 log.Warn(LogCategory.Session, "could not compute the build id", ex);
             }
+            // where this copy was loaded from (local Mods folder or Paradox Mods) and a warning when it is installed twice
+            Step(log, "install check", () => InstallInfo.CheckAtStartup(log));
             Step(log, "settings", () =>
             {
                 Settings = new SkylineTogetherSettings(this);
