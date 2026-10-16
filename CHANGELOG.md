@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Fixed
+
+- Joining players' building markers (schools, police stations, stops ... shown while an info view or a build menu is
+  open) no longer stay on screen after it closes: the icon filter dropped the game's marker removals.
+
 ## [0.1.0-alpha.1] - 2026-10-16
 
 First public test build (pre-release). It has not been through a complete two-player session yet; expect bugs and play

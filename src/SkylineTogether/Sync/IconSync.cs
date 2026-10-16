@@ -858,8 +858,32 @@ namespace SkylineTogether.Sync
             {
                 if (c.m_Target != Entity.Null && (!em.Exists(c.m_Target) || em.HasComponent<Deleted>(c.m_Target))) return true;
                 if (RemovesDeletedIcon(em, c)) return true;
+                if (RemovesLocalLayerIcon(em, c)) return true;
             }
             return !_codec.TryGetPortableRef(owner, out _, out _); // owners the host cannot name stay local
+        }
+
+        /// <summary>
+        /// A removal of a marker or transaction icon. <c>IconCommandBuffer.Remove</c> does not record the cluster layer
+        /// (the command's layer stays <c>Default</c>), so <c>MarkerCreateSystem</c>'s removal of the infoview and tool
+        /// markers (school, police station, stop icons ...) would otherwise look like a local status decision and be
+        /// dropped, leaving the markers on screen after the infoview or tool closes. Kept when the owner's icon of that
+        /// prefab is on a local layer and none of its default-layer icons has that prefab.
+        /// </summary>
+        private static bool RemovesLocalLayerIcon(EntityManager em, in IconCommandBuffer.Command c)
+        {
+            if (c.m_Prefab == Entity.Null || !em.HasBuffer<IconElement>(c.m_Owner)) return false;
+            DynamicBuffer<IconElement> buffer = em.GetBuffer<IconElement>(c.m_Owner, true);
+            bool local = false;
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                Entity icon = buffer[i].m_Icon;
+                if (!em.Exists(icon) || !em.HasComponent<Icon>(icon) || !em.HasComponent<PrefabRef>(icon)) continue;
+                if (em.GetComponentData<PrefabRef>(icon).m_Prefab != c.m_Prefab) continue;
+                if (em.GetComponentData<Icon>(icon).m_ClusterLayer == IconClusterLayer.Default) return false;
+                local = true;
+            }
+            return local;
         }
 
         /// <summary>IconDeletedSystem's removal of an icon entity that was deleted (bookkeeping, not a status decision).</summary>
