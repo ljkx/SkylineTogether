@@ -277,6 +277,8 @@ namespace SkylineTogether.Sync
             _gate.SetRouteWindow(open);
             if (!open)
             {
+                // one line per close: the host logs the re-send it causes, and this names the reason on our side
+                _log.Info(LogCategory.Replication, "route tool closed: asking the host to re-send its lines");
                 var w = new SyncBatch.Writer();
                 w.Request(SyncRequest.ResendRoutes);
                 ArraySegment<byte> bytes = w.Finish();

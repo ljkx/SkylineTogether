@@ -631,7 +631,8 @@ namespace SkylineTogether.Sync
                     o.Queue.Mark(id, DeferredClass.Upsert, now);
                     n++;
                 }
-                _log.Info(LogCategory.Replication, peer + ": re-sending " + n + " line entities (paced by its link)");
+                // the client sends this once each time its route tool closes (route preview window, ARCHITECTURE.md#client-proposals)
+                _log.Info(LogCategory.Replication, peer + ": re-sending " + n + " line entities after its route tool closed (paced by its link)");
                 return;
             }
             // the whole table is walked over several frames (AdvanceResend), not in this one

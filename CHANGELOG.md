@@ -38,6 +38,7 @@ All notable changes to this project are documented in this file. The format is b
   button): the routes were built from the path data of the moment they joined, so they started where a vehicle used to
   be and ran across the map in straight lines. Joining players now see no traffic routes for a selection; the host's
   are unchanged.
+- The log names the reason when a joining player's route tool closes and the host re-sends its transport lines.
 
 ## [0.1.0-alpha.2] - 2026-10-16
 
