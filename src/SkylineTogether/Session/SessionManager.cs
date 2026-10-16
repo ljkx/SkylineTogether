@@ -272,6 +272,26 @@ namespace SkylineTogether.Session
 
         // ---------------------------------------------------------------- actions
 
+        // mod compatibility: which of this host's mods every joiner must have (they store data in the city), once per hosting
+        private void LogCityDataMods()
+        {
+            try
+            {
+                var required = new List<string>();
+                foreach (ModEntry m in _info.Mods())
+                {
+                    if (CityDataRule.StoresCityData(m) && !CityDataRule.IsOldMultiplayerMod(m)) required.Add(m.Name + " " + m.Version + " (" + (m.CityDataDetail ?? "built-in list") + ")");
+                }
+                _log.Info(LogCategory.Session, required.Count == 0
+                    ? "no loaded mod stores data in the city: joiners with other mods are refused or told as the options say"
+                    : "joiners must have these mods (they store data in the city; never overridable): " + string.Join("; ", required));
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Session, "could not list the mods that store city data", ex);
+            }
+        }
+
         public void StartHosting()
         {
             if (!CanHost)
@@ -299,6 +319,14 @@ namespace SkylineTogether.Session
                     _log.Warn(LogCategory.Session, "direct connections are on but no host password is set; only Steam joining is open");
                     Notify(LocaleSource.Resolve("st.toast.directNeedsPassword"), ProgressState.Warning, null, 10f);
                 }
+                // the old multiplayer mod: hosting works, but every joiner is refused (the panel keeps a warning)
+                string conflicting = GameInfoProvider.ConflictingMod();
+                if (conflicting != null)
+                {
+                    _log.Warn(LogCategory.Session, "the old multiplayer mod is enabled (" + conflicting + "): no player can join until it is disabled and the game restarted");
+                    Notify(LocaleSource.Resolve("st.toast.conflictMod", "MOD", conflicting), ProgressState.Warning, null, 15f);
+                }
+                LogCityDataMods();
                 var options = new HostOptions
                 {
                     HostName = name,
@@ -332,6 +360,14 @@ namespace SkylineTogether.Session
                     if (line == null) return;
                     Notify(line, ProgressState.Warning, null, 10f);
                     if (report.JoinedAnyway) AddChat(new ChatEntry { IsSystem = true, Text = line });
+                };
+                // a joiner refused by a rule no option relaxes: mods with city data it lacks, or the old multiplayer mod
+                host.JoinerBlocked += (who, report) =>
+                {
+                    string line = JoinNoticeText.ForHostBlocked(who, report);
+                    if (line == null) return;
+                    Notify(line, ProgressState.Warning, null, 15f);
+                    AddChat(new ChatEntry { IsSystem = true, Text = line });
                 };
                 host.SpeedRequested += (peer, speed) =>
                 {

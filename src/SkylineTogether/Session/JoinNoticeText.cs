@@ -64,6 +64,21 @@ namespace SkylineTogether.Session
             return LocaleSource.Resolve("st.notice.hostDiffers", "NAME", name ?? "?");
         }
 
+        /// <summary>
+        /// The host's line about a joiner refused by a rule no option relaxes (Core <c>CityDataRule</c>): it lacks mods that
+        /// store data in this city, or the old multiplayer mod runs on one side. Null for any other refusal.
+        /// </summary>
+        public static string ForHostBlocked(string name, MismatchReport r)
+        {
+            if (r == null) return null;
+            if (r.HostConflict != null) return LocaleSource.Resolve("st.notice.hostConflictSelf", "NAME", name ?? "?");
+            if (r.ClientConflict != null) return LocaleSource.Resolve("st.notice.hostConflictJoiner", "NAME", name ?? "?");
+            if (r.CityData.Count == 0) return null;
+            var names = new List<string>();
+            foreach (ModEntry m in r.CityData) names.Add(m.Name ?? "?");
+            return LocaleSource.Resolve("st.notice.hostCityData", "NAME", name ?? "?", "LIST", Join(names));
+        }
+
         /// <summary>The code mods and asset packs that differ, by name (a list too long to send has no names).</summary>
         private static string Differences(MismatchReport r)
         {

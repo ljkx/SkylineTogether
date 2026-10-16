@@ -579,6 +579,8 @@ namespace SkylineTogether.UI
             // the self-test (ARCHITECTURE.md#probes-and-self-test) in one line, and what blocks hosting/joining if anything
             Prop(sb, "probes", Probes.Summary ?? "").Append(',');
             Prop(sb, "blocked", SessionManager.BlockingReason() ?? "").Append(',');
+            // the old multiplayer mod is loaded here: nobody can join this game and it cannot join others (panel warning)
+            Prop(sb, "conflictMod", GameInfoProvider.ConflictingMod() ?? "").Append(',');
 
             string status = "";
             string sessionName = "";
@@ -695,11 +697,15 @@ namespace SkylineTogether.UI
         }
 
         /// <summary>
-        /// The error screen's model: <c>{seq, kind, refuse, text, target, reportKind, overridable, missing, extra, versions,
-        /// hostGame, yourGame, hostProto, yourProto, hostBuild, yourBuild}</c>, or null. <c>overridable</c>: a refusal for code
-        /// mods or asset packs the player may pass with "Join anyway" (the host lets players join with different mods). The
-        /// three lists are the report kind's: code mods, DLC ("content": missing and extra) or asset packs ("assets"), each
-        /// entry with name, version and Paradox Mods id.
+        /// The error screen's model: <c>{seq, kind, refuse, text, target, reportKind, overridable, restOverridable,
+        /// conflictHost, conflictYou, required, missing, extra, versions, hostGame, yourGame, hostProto, yourProto, hostBuild,
+        /// yourBuild}</c>, or null. <c>overridable</c>: a refusal for code mods or asset packs the player may pass with "Join
+        /// anyway" (the host lets players join with different mods). <c>required</c>: mods that store data in the host's city
+        /// and this game lacks (name, version, id, <c>inCity</c>), never overridable; <c>missing</c> then lists only the
+        /// other missing mods, and <c>restOverridable</c> says whether those could be passed once the required ones are
+        /// enabled. <c>conflictHost</c>/<c>conflictYou</c>: the old multiplayer mod on that side (report kind "conflict").
+        /// The three lists are the report kind's: code mods, DLC ("content": missing and extra) or asset packs ("assets"),
+        /// each entry with name, version and Paradox Mods id.
         /// </summary>
         private static void WriteEnd(StringBuilder sb, SessionEndInfo end)
         {
@@ -718,7 +724,25 @@ namespace SkylineTogether.UI
             MismatchReport r = end.Report;
             Prop(sb, "reportKind", r?.Kind ?? "").Append(',');
             Prop(sb, "overridable", end.Kind == ClientEndKind.Refused && end.Refuse == Core.Protocol.RefuseReason.Mismatch && r != null && r.Overridable
-                                    && (r.Kind == "mods" || r.Kind == "assets")).Append(',');
+                                    && (r.Kind == "mods" || r.Kind == "assets") && r.CityData.Count == 0).Append(',');
+            Prop(sb, "restOverridable", r != null && r.RestOverridable && r.CityData.Count > 0).Append(',');
+            Prop(sb, "conflictHost", r?.HostConflict != null ? (r.HostConflict.Name ?? "?") : "").Append(',');
+            Prop(sb, "conflictYou", r?.ClientConflict != null ? (r.ClientConflict.Name ?? "?") : "").Append(',');
+            sb.Append("\"required\":[");
+            if (r != null)
+            {
+                for (int i = 0; i < r.CityData.Count && i < MaxListed; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append('{');
+                    Prop(sb, "name", r.CityData[i].Name ?? "").Append(',');
+                    Prop(sb, "version", r.CityData[i].Version ?? "").Append(',');
+                    Prop(sb, "id", r.CityData[i].PlatformId ?? "").Append(',');
+                    Prop(sb, "inCity", r.CityData[i].CityDataInCity);
+                    sb.Append('}');
+                }
+            }
+            sb.Append("],");
             Prop(sb, "hostGame", r?.HostGameVersion ?? "").Append(',');
             Prop(sb, "yourGame", r?.ClientGameVersion ?? "").Append(',');
             Prop(sb, "hostProto", r?.HostProtocol ?? "").Append(',');
@@ -730,7 +754,8 @@ namespace SkylineTogether.UI
             List<ModVersionDifference> versions = null;
             if (r != null)
             {
-                missing = r.Kind == "content" ? r.ContentMissing : r.Kind == "assets" ? r.AssetsMissing : r.Missing;
+                // code mods: the required ones (city data) have their own list
+                missing = r.Kind == "content" ? r.ContentMissing : r.Kind == "assets" ? r.AssetsMissing : r.OtherMissing();
                 extra = r.Kind == "content" ? r.ContentExtra : r.Kind == "assets" ? r.AssetsExtra : r.Extra;
                 versions = r.Kind == "content" ? new List<ModVersionDifference>() : r.Kind == "assets" ? r.AssetVersions : r.Versions;
             }

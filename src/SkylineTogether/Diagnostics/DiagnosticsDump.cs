@@ -209,7 +209,13 @@ namespace SkylineTogether.Diagnostics
             {
                 IReadOnlyList<ModEntry> mods = new GameInfoProvider().Mods();
                 Line(sb, mods.Count + " other code mods loaded:");
-                foreach (ModEntry m in mods) Line(sb, "  " + m.Name + " " + m.Version + " (" + Core.Session.ModCompatibility.Classify(m) + ")");
+                foreach (ModEntry m in mods)
+                {
+                    // mod compatibility: a joiner without a mod that stores city data is always refused
+                    string cityData = m.StoresCityData ? "; stores city data, a joiner needs it: " + (m.CityDataDetail ?? "") : "";
+                    string conflict = Core.Session.CityDataRule.IsOldMultiplayerMod(m) ? "; the old multiplayer mod: nobody can join while it is enabled" : "";
+                    Line(sb, "  " + m.Name + " " + m.Version + " (" + Core.Session.ModCompatibility.Classify(m) + cityData + conflict + ")");
+                }
             });
 
             // mod compatibility: which adapters run and what they switch

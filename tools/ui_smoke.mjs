@@ -261,6 +261,17 @@ const cases = {
   endFullOverridable: { state: { ...base, mode: "None", end: end("refused", "Full", { overridable: true }) } },
   endOverridableHostile: { state: { ...base, mode: "None", end: Object.assign({}, mods, { overridable: "yes" }) } },
   lobbyNoOverride: { state: { ...base, mode: "None", allowModOverride: false } },
+  // mods that store data in the host's city: never "join anyway" (even if a value claims overridable), the reason per mod
+  endModsCityData: { state: { ...base, mode: "None", end: Object.assign({}, mods, { overridable: true, missing: [], extra: [], versions: [],
+    required: [{ name: "ZoningToolkit", version: "1.0.0.0", id: "", inCity: true }, { name: "AreaBucket", version: "1.0.0.0", id: "", inCity: false }] }) } },
+  endModsCityDataRest: { state: { ...base, mode: "None", end: Object.assign({}, mods, { overridable: false, restOverridable: true,
+    required: [{ name: "ZoningToolkit", version: "1.0.0.0", id: "", inCity: true }] }) } },
+  endModsCityDataHostile: { state: { ...base, mode: "None", end: Object.assign({}, mods, { required: [null, 3, { name: { n: 1 }, inCity: "yes" }], restOverridable: "yes" }) } },
+  // the old multiplayer mod on one side
+  endConflictYou: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "conflict", conflictYou: "CS2MultiplayerMod", overridable: true }) } },
+  endConflictHost: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "conflict", conflictHost: "CS2MultiplayerMod" }) } },
+  lobbyConflictMod: { state: { ...base, mode: "None", conflictMod: "CS2MultiplayerMod 1.0.0.0" } },
+  hostingConflictMod: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", conflictMod: "CS2MultiplayerMod 1.0.0.0", players, chat } },
   lobbyNothingRequired: { state: { ...base, mode: "None", inGame: false, requireSameMods: false, requireSameAssets: false } },
   hostingNoOverride: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", allowModOverride: false, requireSameAssets: true, players, chat } },
   // the compatibility check: DLC the joiner lacks, asset packs the host requires (lists with Paradox Mods ids)
@@ -367,6 +378,19 @@ const EXPECT = {
   lobbyGame: { has: ["Let players join with different mods"] },
   lobbyMenu: { has: ["Let players join with different mods"] },
   lobbyNoOverride: { has: ["Let players join with different mods"] },
+  endModsCityData: { has: ["Mods required for this city", "Enable these mods to join (2)", "ZoningToolkit", "AreaBucket",
+    "This city contains its data – loading it without the mod would crash the game.", "It can store data in a city – loading the city without the mod can crash the game.",
+    "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again."],
+    lacks: [JOIN_ANYWAY, WARNING, "Other differences", "Try again"] },
+  endModsCityDataRest: { has: ["Enable these mods to join (1)", "Other differences", "Anarchy", "Traffic", "Move It",
+    "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again. The host lets you join anyway with the other differences once these are enabled."],
+    lacks: [JOIN_ANYWAY, WARNING] },
+  endModsCityDataHostile: { lacks: [JOIN_ANYWAY] },
+  endConflictYou: { has: ["Two multiplayer mods at once", "Disable the 'CS2 Multiplayer Mod' – two multiplayer mods at once conflict. Disable it in your playset or unsubscribe from it, restart the game and join again."], lacks: [JOIN_ANYWAY, "Try again"] },
+  endConflictHost: { has: ["The host has the 'CS2 Multiplayer Mod' enabled – two multiplayer mods at once conflict. Ask the host to disable it and restart the game, then join again."], lacks: [JOIN_ANYWAY] },
+  lobbyConflictMod: { has: ["The 'CS2 Multiplayer Mod' (CS2MultiplayerMod 1.0.0.0) is enabled. Disable it and restart the game – two multiplayer mods at once conflict. While it is enabled, nobody can join you and you can't join others."] },
+  hostingConflictMod: { has: ["The 'CS2 Multiplayer Mod' (CS2MultiplayerMod 1.0.0.0) is enabled. Disable it and restart the game – two multiplayer mods at once conflict. While it is enabled, nobody can join you and you can't join others."] },
+  hosting: { lacks: ["Two multiplayer mods at once"] },
 };
 for (const name of Object.keys(EXPECT)) if (!cases[name]) fail("EXPECT names an unknown state " + name);
 const passes = [

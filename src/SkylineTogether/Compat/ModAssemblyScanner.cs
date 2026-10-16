@@ -94,7 +94,8 @@ namespace SkylineTogether.Compat
                 var system = new SystemFact
                 {
                     Name = t.FullName,
-                    SavesState = serializable,
+                    // system state the game saves with the city (IDefaultSerializable systems are ISerializable too; checked anyway)
+                    SavesState = serializable || typeof(IDefaultSerializable).IsAssignableFrom(t),
                     IsTool = typeof(Game.Tools.ToolBaseSystem).IsAssignableFrom(t),
                     PostDeserialize = typeof(Game.Serialization.IPostDeserialize).IsAssignableFrom(t),
                 };

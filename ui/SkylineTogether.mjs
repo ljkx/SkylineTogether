@@ -294,6 +294,16 @@ const EN = {
   "st.ui.end.assets.extra": "Disable (the host doesn't have them)",
   "st.ui.end.assets.versions": "Update to the host's version",
   "st.ui.end.paradoxId": "Paradox Mods {ID}",
+  "st.ui.end.title.modsRequired": "Mods required for this city",
+  "st.ui.end.text.modsRequired": "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again.",
+  "st.ui.end.text.modsRequiredRest": "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again. The host lets you join anyway with the other differences once these are enabled.",
+  "st.ui.end.mods.required": "Enable these mods to join",
+  "st.ui.end.mods.requiredInCity": "This city contains its data – loading it without the mod would crash the game.",
+  "st.ui.end.mods.requiredMaybe": "It can store data in a city – loading the city without the mod can crash the game.",
+  "st.ui.end.mods.others": "Other differences",
+  "st.ui.end.title.conflict": "Two multiplayer mods at once",
+  "st.ui.end.text.conflictYou": "Disable the 'CS2 Multiplayer Mod' – two multiplayer mods at once conflict. Disable it in your playset or unsubscribe from it, restart the game and join again.",
+  "st.ui.end.text.conflictHost": "The host has the 'CS2 Multiplayer Mod' enabled – two multiplayer mods at once conflict. Ask the host to disable it and restart the game, then join again.",
   "st.ui.end.title.full": "The session is full",
   "st.ui.end.text.full": "Ask the host to raise the player limit, or try again when someone leaves.",
   "st.ui.end.title.notAllowed": "You can't join this session",
@@ -454,6 +464,7 @@ const EN = {
   "st.ui.test.copyPath": "Copy path",
   "st.ui.test.folder": "Recordings folder: {FOLDER}",
   "st.ui.blocked": "Hosting and joining are unavailable: {REASON}",
+  "st.ui.conflictMod": "The 'CS2 Multiplayer Mod' ({MOD}) is enabled. Disable it and restart the game – two multiplayer mods at once conflict. While it is enabled, nobody can join you and you can't join others.",
   "st.ui.footer.build": "Build {BUILD}",
 };
 
@@ -1764,6 +1775,13 @@ function ResyncOffer(p) {
   );
 }
 
+// the old multiplayer mod is loaded in this game: nobody can join and this game cannot join others (stays while it is)
+function ConflictWarning(p) {
+  const mod = str(p.state.conflictMod);
+  if (!mod) return null;
+  return h(Notice, { color: T.bad, style: { margin: "8rem" } }, t("st.ui.conflictMod", { MOD: mod }));
+}
+
 function SessionView(p) {
   const s = p.state;
   const hosting = s.mode === "Hosting";
@@ -1771,6 +1789,7 @@ function SessionView(p) {
     "div",
     null,
     h(SessionHeader, { state: s }),
+    h(ConflictWarning, { state: s }),
     !hosting ? h(ResyncOffer, { state: s }) : null,
     hosting ? h(RecordControls, null) : h(ReplayBanner, null),
     h(Players, { state: s }),
@@ -2212,6 +2231,7 @@ function GameLobby(p) {
     h(Tabs, { value: tab, onChange: function (id) { setStore({ gameTab: id }); }, tabs: [{ id: "host", label: t("st.ui.tab.host") }, { id: "join", label: t("st.ui.tab.join") }, { id: "solo", label: t("st.ui.tab.solo") }] }),
     s.steam === false ? h(SteamMissing, { style: { margin: "8rem" } }) : null,
     str(s.blocked) ? h(Notice, { color: T.bad, style: { margin: "8rem" } }, t("st.ui.blocked", { REASON: str(s.blocked) })) : null,
+    h(ConflictWarning, { state: s }),
     tab === "host" ? h(GameHostTab, { state: s, name: name, nameField: nameField }) : tab === "join" ? h(GameJoinTab, { state: s, name: name, nameField: nameField }) : h(SoloTestSection, { inGame: true }),
     str(s.probes) ? h(Section, null, h(SelfTest, { state: s, style: { padding: "2rem 6rem" } })) : null
   );
@@ -2549,6 +2569,7 @@ function MenuNav(p) {
         s.steam === false ? t("st.ui.steam.missing.title") : t("st.ui.steam.ok")
       ),
       str(s.blocked) ? h("div", { style: { color: T.badText, fontSize: FS.xs, lineHeight: 1.35, marginBottom: "6rem" } }, t("st.ui.blocked", { REASON: str(s.blocked) })) : null,
+      str(s.conflictMod) ? h("div", { style: { color: T.badText, fontSize: FS.xs, lineHeight: 1.35, marginBottom: "6rem" } }, t("st.ui.conflictMod", { MOD: str(s.conflictMod) })) : null,
       h(SelfTest, { state: s, menu: true }),
       h(BuildLine, { state: s, menu: true })
     )
@@ -2758,6 +2779,9 @@ function endCopy(e) {
       // DLC the joiner lacks, asset packs when the host requires the same (the lists are the report's)
       if (e.reportKind === "content") return "content";
       if (e.reportKind === "assets") return "assets";
+      // the old multiplayer mod on one side, mods with city data the player lacks: never "join anyway"
+      if (e.reportKind === "conflict") return str(e.conflictYou) ? "conflictYou" : "conflictHost";
+      if (objs(e.required).length > 0) return "modsRequired";
       return "mods";
     }
     if (r === "ProtocolVersion") return "build";
@@ -2779,11 +2803,12 @@ function endCopy(e) {
 }
 
 // the ends a new attempt cannot fix: the player has to change something first (or cannot join at all)
-const NO_RETRY = { kicked: 1, banned: 1, notAllowed: 1, ended: 1, mods: 1, game: 1, build: 1, content: 1, assets: 1 };
+const NO_RETRY = { kicked: 1, banned: 1, notAllowed: 1, ended: 1, mods: 1, modsRequired: 1, conflictYou: 1, conflictHost: 1, game: 1, build: 1, content: 1, assets: 1 };
 
 // the list titles of the screens with lists: code mods, DLC and content packs, asset packs
 const END_LISTS = {
   mods: { missing: "st.ui.end.mods.missing", extra: "st.ui.end.mods.extra", versions: "st.ui.end.mods.versions" },
+  modsRequired: { missing: "st.ui.end.mods.missing", extra: "st.ui.end.mods.extra", versions: "st.ui.end.mods.versions" },
   content: { missing: "st.ui.end.content.missing", extra: "st.ui.end.content.extra", versions: "" },
   assets: { missing: "st.ui.end.assets.missing", extra: "st.ui.end.assets.extra", versions: "st.ui.end.assets.versions", ids: true },
 };
@@ -2795,6 +2820,38 @@ function entryDetail(p, m) {
   else if (str(m.version)) parts.push(str(m.version));
   if (p.ids && str(m.id)) parts.push(t("st.ui.end.paradoxId", { ID: str(m.id) }));
   return parts.join(" · ");
+}
+
+// the mods the host's city stores data of and the player lacks: each with why it is required (never "join anyway")
+function RequiredList(p) {
+  if (p.items.length === 0) return null;
+  return h(
+    "div",
+    { style: { marginBottom: "12rem" } },
+    h(
+      "div",
+      { style: merge(S.row, { marginBottom: "6rem" }) },
+      h(Glyph, { src: G.warning, size: 12, color: OV.bad, style: { marginRight: "8rem" } }),
+      h("div", { style: { fontSize: "15rem", fontWeight: "bold", textTransform: "uppercase", color: OV.badText } }, t("st.ui.end.mods.required") + " (" + p.items.length + ")")
+    ),
+    h(
+      "div",
+      { style: merge({ maxHeight: "170rem", overflowY: "auto", padding: "4rem 12rem", borderRadius: "4rem", backgroundColor: OV.well }, border("2rem", OV.bad, ["Left"])) },
+      p.items.map(function (m, i) {
+        return h(
+          "div",
+          { key: i, style: merge({ padding: "5rem 0" }, i === 0 ? null : border("1rem", OV.divider, ["Top"])) },
+          h(
+            "div",
+            { style: { display: "flex", flexDirection: "row", fontSize: "14rem" } },
+            h("div", { style: merge(S.ellipsis, { flex: 1, minWidth: 0, color: OV.text, fontWeight: "bold" }) }, str(m.name) || str(m.id) || "?"),
+            str(m.version) ? h("div", { style: { color: OV.dim, marginLeft: "10rem", flexShrink: 0 } }, str(m.version)) : null
+          ),
+          h("div", { style: { fontSize: "13rem", color: OV.dim, lineHeight: 1.35, marginTop: "2rem", overflowWrap: "break-word", wordBreak: "break-word" } }, t(m.inCity === true ? "st.ui.end.mods.requiredInCity" : "st.ui.end.mods.requiredMaybe"))
+        );
+      })
+    )
+  );
 }
 
 function ModList(p) {
@@ -2826,6 +2883,7 @@ function ModList(p) {
 function reportText(e, title, text) {
   const lines = [title, text];
   if (str(e.text)) lines.push(str(e.text));
+  objs(e.required).forEach(function (m) { lines.push("! " + str(m.name) + " " + str(m.version) + (m.inCity === true ? " (this city contains its data)" : " (can store data in a city)")); });
   objs(e.missing).forEach(function (m) { lines.push("+ " + str(m.name) + " " + str(m.version)); });
   objs(e.extra).forEach(function (m) { lines.push("- " + str(m.name) + " " + str(m.version)); });
   objs(e.versions).forEach(function (m) { lines.push("~ " + str(m.name) + " (host " + (str(m.host) || "?") + ", you " + (str(m.you) || "?") + ")"); });
@@ -2851,7 +2909,7 @@ function EndOverlay(p) {
   const needsPassword = copy === "badPassword" || copy === "passwordRequired";
   const canRetry = !!copy && !NO_RETRY[copy];
   // the host refused different mods or asset packs but lets players join anyway (the lists stay; the choice is the player's)
-  const canJoinAnyway = (copy === "mods" || copy === "assets") && e.overridable === true;
+  const canJoinAnyway = (copy === "mods" || copy === "assets") && e.overridable === true && objs(e.required).length === 0;
   const dismiss = function () {
     setStore({ dismissedEnd: e.seq });
     send("dismissEnd");
@@ -2869,13 +2927,17 @@ function EndOverlay(p) {
   // Escape goes back, Enter tries again (the password field handles its own Enter)
   useWindowKeys({ Escape: dismiss, Enter: canRetry && !needsPassword ? retry : undefined }, shown, true);
   if (!shown) return null;
-  const title = t("st.ui.end.title." + copy);
-  const text = canJoinAnyway ? t(copy === "assets" ? "st.ui.end.text.assetsOverridable" : "st.ui.end.text.modsOverridable") : t("st.ui.end.text." + copy);
+  const title = t("st.ui.end.title." + (copy === "conflictYou" || copy === "conflictHost" ? "conflict" : copy));
+  const text = canJoinAnyway ? t(copy === "assets" ? "st.ui.end.text.assetsOverridable" : "st.ui.end.text.modsOverridable")
+    : copy === "modsRequired" && e.restOverridable === true ? t("st.ui.end.text.modsRequiredRest")
+    : t("st.ui.end.text." + copy);
+  const required = copy === "modsRequired" ? objs(e.required) : [];
   const missing = objs(e.missing);
   const extra = objs(e.extra);
   const versions = objs(e.versions);
   const lists = END_LISTS[copy] || null;
-  const isMods = !!lists && missing.length + extra.length + versions.length > 0;
+  const others = missing.length + extra.length + versions.length > 0;
+  const isMods = !!lists && (others || required.length > 0);
   const icon = h("div", { style: merge(S.center, { width: "26rem", height: "26rem", borderRadius: "13rem", backgroundColor: needsPassword ? OV.warn : OV.bad, marginRight: "12rem", flexShrink: 0 }) }, h(Glyph, { src: needsPassword ? G.lock : G.warning, size: 14, color: "#ffffff" }));
   return h(
     OverlayCard,
@@ -2885,6 +2947,8 @@ function EndOverlay(p) {
       ? h(
           "div",
           null,
+          h(RequiredList, { items: required }),
+          required.length > 0 && others ? h("div", { style: { fontSize: "13rem", textTransform: "uppercase", color: OV.faint, marginBottom: "6rem" } }, t("st.ui.end.mods.others")) : null,
           h(ModList, { title: t(lists.missing), color: OV.good, icon: G.plus, items: missing, ids: lists.ids }),
           h(ModList, { title: t(lists.extra), color: OV.badText, icon: G.close, items: extra, ids: lists.ids }),
           lists.versions ? h(ModList, { title: t(lists.versions), color: OV.warn, icon: G.refresh, items: versions, versions: true, ids: lists.ids }) : null

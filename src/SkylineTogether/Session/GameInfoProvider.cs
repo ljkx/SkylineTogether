@@ -146,6 +146,9 @@ namespace SkylineTogether.Session
                         var name = new AssemblyName(info.asset.fullName);
                         if (string.Equals(name.Name, own, StringComparison.OrdinalIgnoreCase)) continue;
                         var entry = new ModEntry { Name = name.Name, Version = info.asset.version?.ToString() ?? "" };
+                        // the old multiplayer mod is also recognised by its Paradox Mods id (only that id is sent: the
+                        // other entries keep their name as their identity)
+                        if (string.Equals(PlatformIdOf(info), CityDataRule.OldMultiplayerModId, StringComparison.Ordinal)) entry.PlatformId = CityDataRule.OldMultiplayerModId;
                         // mod compatibility: whether the mod can touch shared state (client-local mods never block a join)
                         try
                         {
@@ -157,6 +160,16 @@ namespace SkylineTogether.Session
                         {
                             entry.RegistersTypesOrSystemsOrPrefabs = true; // fail closed
                         }
+                        // mod compatibility: whether the mod stores data in the city (a joiner without it is always
+                        // refused; local to this peer, never sent)
+                        try
+                        {
+                            Compat.CityDataProbe.Fill(entry, info.asset.assembly);
+                        }
+                        catch (Exception)
+                        {
+                            entry.StoresCityData = true; // fail closed
+                        }
                         list.Add(entry);
                     }
                     catch (Exception)
@@ -167,6 +180,57 @@ namespace SkylineTogether.Session
             }
             list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
             return list;
+        }
+
+        private static string _conflictingMod;
+
+        /// <summary>
+        /// The old "CS2 Multiplayer Mod" when it is loaded in this game ("name version"), else null
+        /// (<see cref="CityDataRule.IsOldMultiplayerMod"/>, by assembly name or Paradox Mods id). Players cannot join a
+        /// host that runs it, and a joiner that runs it is refused; the panel warns while it is loaded. Cached once the
+        /// game's mod list exists (it does not change while the game runs).
+        /// </summary>
+        public static string ConflictingMod()
+        {
+            if (_conflictingMod != null) return _conflictingMod.Length > 0 ? _conflictingMod : null;
+            ModManager manager = GameManager.instance?.modManager;
+            if (manager == null) return null;
+            string found = "";
+            try
+            {
+                foreach (ModManager.ModInfo info in manager)
+                {
+                    try
+                    {
+                        if (!info.isValid || !info.isLoaded || info.asset == null) continue;
+                        var entry = new ModEntry { Name = new AssemblyName(info.asset.fullName).Name, Version = info.asset.version?.ToString() ?? "", PlatformId = PlatformIdOf(info) };
+                        if (CityDataRule.IsOldMultiplayerMod(entry)) found = (entry.Name + " " + entry.Version).Trim();
+                    }
+                    catch (Exception)
+                    {
+                        // a broken entry is no conflicting mod
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return null; // try again later
+            }
+            _conflictingMod = found;
+            return found.Length > 0 ? found : null;
+        }
+
+        // the Paradox Mods id of a loaded mod, or null (never a path)
+        private static string PlatformIdOf(ModManager.ModInfo info)
+        {
+            try
+            {
+                return info.asset?.GetMeta().platformID;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         /// <summary>Re-reads the DLC and asset pack lists when the prefab system's size changed (a mod added prefabs).</summary>
