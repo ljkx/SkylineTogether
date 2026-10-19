@@ -361,6 +361,23 @@ const cases = {
   garbage: { state: "{not json", net: "", presence: "null", join: "[1,2", replay: "{oops", friends: "{bad", perf: "{\"show\":true,\"features\":7,\"peers\":null" },
   empty: { state: "{}" },
   arrayState: { state: "[1,2,3]", presence: "[]", join: "\"text\"", replay: "42" },
+  // the Paradox Mods screenshots (tools/paradox/make_images.py): a believable session with invented names, no Steam IDs
+  // on screen and no build id in the footer, so the images do not go stale with the next release
+  showcaseHosting: { state: { ...base, mode: "Hosting", build: "", hold: true, sessionName: "Riverside", directPort: 27015, canInvite: true, inviteSteamId: "76561190000000000",
+    status: "A player is joining – the game is paused until they are in. Priya is downloading the city (60 %).", speed: "paused while a player joins", speedHeld: true,
+    sync: "48,210 objects in sync; verifying 9,000 objects every 30 s, 0 repairs sent; 1,904 movers",
+    players: [{ id: 0, name: "Mara", host: true, you: true, state: "Live", ping: 0, progress: 1, color: "#f2b84b", role: "host" },
+      { id: 1, name: "Jonas", host: false, you: false, state: "Live", ping: 38, progress: 1, color: "#3fb6e8", role: "builder" },
+      { id: 2, name: "Priya", host: false, you: false, state: "Downloading", ping: 52, progress: 0.6, color: "#5fcf7a", role: "builder" },
+      { id: 3, name: "Theo", host: false, you: false, state: "Live", ping: 71, progress: 1, color: "#a07af0", role: "viewer" }],
+    chat: [{ name: "", text: "You are hosting Riverside", system: true, seq: 1, you: false, color: "" }, { name: "Jonas", text: "I'll take the harbour district", system: false, seq: 2, you: false, color: "#3fb6e8" }] },
+    net: { show: false, text: "" }, presence: { tags: [{ id: 1, name: "Jonas", color: "#3fb6e8", x: 0.599, y: 0.458, on: true, activity: "building Small Road" }] },
+    friends: [{ id: "76561190000000001", name: "Jonas", state: "ingame", inSession: true }, { id: "76561190000000002", name: "Priya", state: "ingame", inSession: true },
+      { id: "76561190000000003", name: "Lena", state: "online", inSession: false }, { id: "76561190000000004", name: "Sam", state: "away", inSession: false },
+      { id: "76561190000000005", name: "Alex", state: "offline", inSession: false }], overlayAvailable: true },
+  showcaseLobby: { state: { ...base, mode: "None", build: "", inGame: false, canHost: false, playerName: "Priya", hasPassword: true, allowDirect: true } },
+  showcaseJoining: { state: { ...base, mode: "Joining", build: "", stage: "downloading", progress: 0.55 },
+    join: join("downloading", { session: "Riverside", target: "", done: 115343360, total: 209715200, bps: 6291456, eta: 15, progress: 0.55 }) },
 };
 // texts an English render of a state must show (has) or must not show (lacks)
 const JOIN_ANYWAY = "Join anyway";

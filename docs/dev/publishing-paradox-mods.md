@@ -54,7 +54,7 @@ Skyline Together is published as [mod 163578](https://mods.paradoxplaza.com/mods
 |---|---|
 | `src/SkylineTogether/Properties/PublishConfiguration.xml` | The page: `ModId`, `DisplayName`, `ShortDescription`, `LongDescription` (Paradox Mods markdown: headings, bullet lists, bold), `Thumbnail`, `Screenshot` (repeatable), `Tag` (`Code Mod`), `ModVersion`, `GameVersion`, `ChangeLog`, `ExternalLink` (GitHub), `AccessLevel` (Public, Unlisted or Private). Image paths are relative to `src/SkylineTogether`. Multi-line texts must not be indented. |
 | `src/SkylineTogether/Properties/Thumbnail.png` | 1024 x 1024. Paradox Mods shows thumbnails square (the installed mods' covers are 256 to 1024 px squares). Drawn with shapes from `tools/paradox/thumbnail.html`, without any game assets. |
-| `src/SkylineTogether/Properties/Screenshots/*.png` | 1920 x 1080. The UI module rendered by `tools/ui_smoke.mjs --html` with invented players and placeholder Steam IDs. |
+| `src/SkylineTogether/Properties/Screenshots/*.png` | 1920 x 1080. The UI module rendered by `tools/ui_smoke.mjs --html` in its showcase states (an invented session and players, no build id), over an original top-down city and with glyphs drawn by `tools/paradox/backdrop.py`; no game assets. |
 | (no `ForumLink`) | Paradox Mods only accepts a Paradox forum URL there ("Must be of acceptable format for a Paradox forum url"); the GitHub link is an `ExternalLink`. |
 | `tools/paradox/make_images.py` | Renders the thumbnail and the screenshots with a headless Edge or Chrome. Run it after UI changes and look at the images before you commit them. |
 | `tools/paradox/publish_paradox.py` | Checks everything and runs ModPublisher (see below). |

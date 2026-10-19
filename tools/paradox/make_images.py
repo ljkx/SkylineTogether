@@ -7,12 +7,16 @@ Writes
   src/SkylineTogether/Properties/Screenshots/NN-<state>.png  1920 x 1080, the UI module rendered by tools/ui_smoke.mjs --html
                                                               with stub data (no game assets, no real players)
 
-The screenshots show the hand-written UI module with the smoke test's invented players ("Anna", "Bo") and placeholder
-Steam IDs; they use the game's fonts and design tokens only when the game is installed (ui_smoke.mjs finds them through
-GameDir). Run it again after UI changes and look at the images before committing them.
+The screenshots show the hand-written UI module in the smoke test's "showcase" states: an invented session
+("Riverside") with invented players, no Steam ID as a name and no build id in the footer, so the images do not go
+stale with the next release. They are drawn over an original top-down city (tools/paradox/backdrop.py, shapes only),
+and the game's glyphs are replaced with the glyphs drawn there, so no game asset ends up in an image. The game's
+design tokens and fonts are used when the game is installed (ui_smoke.mjs finds them through GameDir). Run it again
+after UI changes and look at the images before committing them.
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -20,16 +24,33 @@ import tempfile
 import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import backdrop  # noqa: E402  (tools/paradox/backdrop.py)
 PROPS = os.path.join(ROOT, 'src', 'SkylineTogether', 'Properties')
 
 # (ui_smoke state file, output name, zoom): the host panel with the invite list, the title screen's join page and a join
 # in progress. A zoom above 1 lays the page out in a smaller viewport (1920 / zoom wide) and enlarges it to 1920 x 1080,
 # so the panels stay readable in the Paradox Mods gallery.
+# The name tag of the showcase's building player is anchored at (x, y) = (0.599, 0.458) of the frame (ui_smoke.mjs);
+# the backdrop draws that player's road preview up to it.
 SCREENSHOTS = [
-    ('hosting.game.html', '01-hosting.png', 1.38),
-    ('lobbyMenu.menu-join.html', '02-join-from-title-screen.png', 1.0),
-    ('joiningDownload.game.html', '03-joining.png', 1.0),
+    ('showcaseHosting.game.html', '01-hosting.png', 1.38),
+    ('showcaseLobby.menu-join.html', '02-join-from-title-screen.png', 1.0),
+    ('showcaseJoining.game.html', '03-joining.png', 1.0),
 ]
+PREVIEW = (round(0.599 * 1920), round(0.458 * 1080), '#3fb6e8')
+
+
+def prepare(page):
+    """Puts the city behind the panels and replaces the game's glyph paths with the backdrop module's glyphs."""
+    with open(page, encoding='utf-8') as f:
+        html = f.read()
+    html = re.sub(r'url\((?:["\']?)Media/(?:[A-Za-z]+/)*([A-Za-z]+)\.svg(?:["\']?)\)',
+                  lambda m: 'url(' + backdrop.data_uri(backdrop.glyph_svg(m.group(1))) + ')', html)
+    city = backdrop.data_uri(backdrop.city_svg(PREVIEW if 'showcaseHosting' in os.path.basename(page) else None))
+    html = html.replace('</head>', '<style>.frame{background-image:url(' + city + ') !important;background-size:cover}</style></head>', 1)
+    with open(page, 'w', encoding='utf-8') as f:
+        f.write(html)
 
 FRAME = '''<!doctype html><html><head><meta charset="utf-8"><style>
 html, body { margin: 0; padding: 0; overflow: hidden; background: #0b1622; width: 1920px; height: 1080px; }
@@ -104,6 +125,7 @@ def main():
                 page = os.path.join(html, state)
                 if not os.path.exists(page):
                     sys.exit('ui_smoke.mjs wrote no ' + state + '; update SCREENSHOTS in ' + os.path.relpath(__file__, ROOT))
+                prepare(page)
                 frame = os.path.join(html, 'frame-' + name + '.html')
                 with open(frame, 'w', encoding='utf-8') as f:
                     f.write(FRAME % {'zoom': zoom, 'width': round(1920 / zoom), 'height': round(1080 / zoom) + 1, 'src': os.path.basename(page)})
