@@ -83,7 +83,7 @@ network involved, and compares the result with what your game had.
 2. Open the Skyline Together panel. On the **Solo test** tab (or, while hosting, the **Solo test (no second PC
    needed)** foldout) click **Record test session**.
    - If you are not hosting, your game starts a session without network first ("Solo test session: nobody can join;
-     the test recorder plays the client.").
+     the test recorder takes the joining player's place.").
    - The test recorder joins like a player: your game saves the city for it, it takes a player slot, and from then on
      it records everything it receives. The panel shows the recording time, size and number of checkpoints.
 3. Build and play as usual for 5 to 10 minutes. Verification checkpoints are taken 10 seconds after the recorder joined,

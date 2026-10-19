@@ -386,7 +386,7 @@ const EXPECT = {
     "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again. The host lets you join anyway with the other differences once these are enabled."],
     lacks: [JOIN_ANYWAY, WARNING] },
   endModsCityDataHostile: { lacks: [JOIN_ANYWAY] },
-  endConflictYou: { has: ["Two multiplayer mods at once", "Disable the 'CS2 Multiplayer Mod' – two multiplayer mods at once conflict. Disable it in your playset or unsubscribe from it, restart the game and join again."], lacks: [JOIN_ANYWAY, "Try again"] },
+  endConflictYou: { has: ["Two multiplayer mods at once", "The 'CS2 Multiplayer Mod' is enabled – two multiplayer mods at once conflict. Disable it in your playset or unsubscribe from it, restart the game and join again."], lacks: [JOIN_ANYWAY, "Try again"] },
   endConflictHost: { has: ["The host has the 'CS2 Multiplayer Mod' enabled – two multiplayer mods at once conflict. Ask the host to disable it and restart the game, then join again."], lacks: [JOIN_ANYWAY] },
   lobbyConflictMod: { has: ["The 'CS2 Multiplayer Mod' (CS2MultiplayerMod 1.0.0.0) is enabled. Disable it and restart the game – two multiplayer mods at once conflict. While it is enabled, nobody can join you and you can't join others."] },
   hostingConflictMod: { has: ["The 'CS2 Multiplayer Mod' (CS2MultiplayerMod 1.0.0.0) is enabled. Disable it and restart the game – two multiplayer mods at once conflict. While it is enabled, nobody can join you and you can't join others."] },
