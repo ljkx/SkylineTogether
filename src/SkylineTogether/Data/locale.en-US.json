@@ -241,6 +241,7 @@
   "st.toast.join.other": "Joining is not possible right now.",
   "st.toast.join.cityLoading": "Joining was cancelled because another city is being loaded.",
   "st.toast.join.connecting": "Connecting to the host…",
+  "st.toast.join.resolving": "Looking up {HOST}…",
   "st.toast.join.waiting": "{SESSION}: the host is saving the city…",
   "st.toast.join.downloading": "{SESSION}: downloading the city",
   "st.toast.join.loadingCity": "{SESSION}: loading the city",

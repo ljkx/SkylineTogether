@@ -241,6 +241,7 @@
   "st.toast.join.other": "Beitreten ist gerade nicht möglich.",
   "st.toast.join.cityLoading": "Das Beitreten wurde abgebrochen, weil eine andere Stadt geladen wird.",
   "st.toast.join.connecting": "Verbindung zum Host wird hergestellt…",
+  "st.toast.join.resolving": "{HOST} wird gesucht…",
   "st.toast.join.waiting": "{SESSION}: der Host speichert die Stadt…",
   "st.toast.join.downloading": "{SESSION}: Stadt wird heruntergeladen",
   "st.toast.join.loadingCity": "{SESSION}: Stadt wird geladen",

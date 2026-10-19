@@ -87,6 +87,10 @@ namespace SkylineTogether.Session
         private int _playersVersion;
         private int _recoveryVersion;
         private Endpoint _lastEndpoint;
+        // a host name the player typed, resolved on a worker thread (never DNS on the main thread), and what to join then
+        private HostLookup _lookup;
+        private int _lookupPort;
+        private string _lookupPassword;
         private string _lastPassword = "";
         // the host (Endpoint.ToString) this player chose "join anyway" for: every later join and rejoin of this game
         // session to the same host says so in its hello, so automatic reconnects do not stop at the error screen again
@@ -171,7 +175,8 @@ namespace SkylineTogether.Session
         public bool CanHost => !InSession && SteamAvailable && BlockingReason() == null && GameManager.instance != null && GameManager.instance.gameMode == GameMode.Game && !GameManager.instance.isGameLoading;
 
         public bool CanJoin => !InSession && SteamAvailable && BlockingReason() == null && !string.IsNullOrWhiteSpace(_settings.JoinTarget) && (GameManager.instance == null || !GameManager.instance.isGameLoading)
-                               && !_loader.IsLoading; // an earlier join's import or load still runs
+                               && !_loader.IsLoading // an earlier join's import or load still runs
+                               && _lookup == null; // a typed host name is still being resolved
 
         /// <summary>Why the last session ended (shown until the next one starts).</summary>
         public string LastEndReason { get; private set; }
@@ -582,8 +587,39 @@ namespace SkylineTogether.Session
                 Notify(ex.Message, ProgressState.Warning);
                 return;
             }
+            if (endpoint.SteamId == 0 && !HostLookup.IsLiteral(endpoint.Host, out _))
+            {
+                // a host name: resolved off the main thread (DNS can take many seconds to time out); the join starts
+                // from Tick once the address is known
+                _lookup = new HostLookup(endpoint.Host);
+                _lookupPort = endpoint.Port;
+                _lookupPassword = _settings.JoinPassword ?? "";
+                _log.Info(LogCategory.Session, "resolving the host name " + endpoint.Host);
+                Notify(LocaleSource.Resolve("st.toast.join.resolving", "HOST", endpoint.Host), null, "SkylineTogether.resolving", 10f);
+                return;
+            }
             _rejoin.Reset();
             BeginJoin(endpoint, _settings.JoinPassword ?? "", rejoin: false);
+        }
+
+        /// <summary>Starts the join once a typed host name was resolved (or says why it could not be).</summary>
+        private void FinishLookup()
+        {
+            if (_lookup == null || !_lookup.IsDone) return;
+            HostLookup lookup = _lookup;
+            _lookup = null;
+            Unnotify("SkylineTogether.resolving");
+            string address = lookup.Result(out string error);
+            if (address == null)
+            {
+                _log.Warn(LogCategory.Session, "joining failed: " + error);
+                Notify(LocaleSource.Resolve("st.toast.joinFailed", "ERROR", error), ProgressState.Failed);
+                return;
+            }
+            if (InSession) return; // the player started something else meanwhile
+            _log.Info(LogCategory.Session, lookup.Host + " is " + address);
+            _rejoin.Reset();
+            BeginJoin(new Endpoint { Host = address, Port = _lookupPort }, _lookupPassword, rejoin: false);
         }
 
         /// <summary>
@@ -653,6 +689,7 @@ namespace SkylineTogether.Session
 
         public void Leave()
         {
+            _lookup = null; // a host name still being resolved: no join follows
             if (Host != null) StopHost("The host ended the session.");
             if (Client != null)
             {
@@ -912,6 +949,7 @@ namespace SkylineTogether.Session
         {
             if (_disposed) return;
             _main.Drain();
+            FinishLookup();
             if (!Features.Session.IsAvailable && Host == null && Client == null && !_rejoin.Recovering) return;
             // timed only in a city (the perf frame closes at the end of the in-game capture)
             bool timed = Host != null || (Client != null && Client.State == ClientState.Live);

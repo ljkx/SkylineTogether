@@ -509,13 +509,8 @@ namespace SkylineTogether.Net
             if (string.IsNullOrWhiteSpace(host)) throw new ArgumentException("Enter the host's IP address or Steam ID.");
             if (port <= 0 || port > 65535) throw new ArgumentException("The port must be between 1 and 65535.");
             host = host.Trim();
-            IPAddress ip;
-            if (!IPAddress.TryParse(host, out ip))
-            {
-                IPAddress[] all = Dns.GetHostAddresses(host);
-                ip = Array.Find(all, a => a.AddressFamily == AddressFamily.InterNetwork) ?? (all.Length > 0 ? all[0] : null);
-                if (ip == null) throw new ArgumentException("Could not resolve \"" + host + "\".");
-            }
+            // host names are resolved before (HostLookup, off the main thread): DNS here would freeze the game
+            if (!HostLookup.IsLiteral(host, out IPAddress ip)) throw new ArgumentException("\"" + host + "\" is not an IP address (host names are resolved before connecting).");
             var address = new SteamNetworkingIPAddr();
             address.Clear();
             if (ip.AddressFamily == AddressFamily.InterNetwork)
