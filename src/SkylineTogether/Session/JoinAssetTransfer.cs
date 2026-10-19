@@ -191,13 +191,23 @@ namespace SkylineTogether.Session
             {
                 try
                 {
-                    Type type = typeof(AssetData).Assembly.GetType(e.TypeName, false);
-                    if (type == null || !typeof(AssetData).IsAssignableFrom(type) || !Hash128.TryParse(e.Guid, out Hash128 guid))
+                    // a hostile host's bundle must not write outside this folder or add code: plain names and the
+                    // render prefab types only (JoinAssetBundle.Reject)
+                    string rejected = JoinAssetBundle.Reject(e);
+                    Type type = rejected == null ? typeof(AssetData).Assembly.GetType(e.TypeName, false) : null;
+                    if (rejected != null || type == null || !typeof(AssetData).IsAssignableFrom(type) || !Hash128.TryParse(e.Guid, out Hash128 guid))
                     {
-                        log.Warn(LogCategory.Join, "join assets: skipped " + e.Name + " (" + e.TypeName + ")");
+                        log.Warn(LogCategory.Join, "join assets: skipped an entry (" + (rejected ?? "unknown type") + "): " + Core.Protocol.ProtocolText.Truncate(Core.Protocol.ProtocolText.Sanitize(e.Name ?? ""), 80)
+                                                   + " (" + Core.Protocol.ProtocolText.Truncate(Core.Protocol.ProtocolText.Sanitize(e.TypeName ?? ""), 80) + ")");
                         continue;
                     }
                     IAssetData asset = db.AddAsset(e.Name, type, guid);
+                    string path = ((AssetData)asset).path;
+                    if (!string.IsNullOrEmpty(path) && !JoinAssetBundle.IsInside(folder, path))
+                    {
+                        log.Warn(LogCategory.Join, "join assets: skipped " + e.Name + ": its file would be outside the join folder");
+                        continue;
+                    }
                     using (Stream s = ((AssetData)asset).GetWriteStream()) s.Write(e.Data, 0, e.Data.Length);
                     if (e.Kind == JoinAssetKind.Prefab && asset is PrefabAsset p) prefabAssets.Add(p);
                 }

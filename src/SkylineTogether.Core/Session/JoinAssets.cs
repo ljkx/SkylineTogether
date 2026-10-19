@@ -44,6 +44,99 @@ namespace SkylineTogether.Core.Session
 
         private static readonly byte[] Magic = { (byte)'S', (byte)'T', (byte)'J', (byte)'A' };
 
+        /// <summary>Longest asset name a joiner accepts from a host.</summary>
+        public const int MaxNameChars = 128;
+
+        /// <summary>
+        /// The asset data types a joiner adds from a host's bundle: the render prefabs and their textures
+        /// (<c>PrefabSystem.SavePrefabAssets</c>). Anything else, executable or UI module assets above all, is skipped.
+        /// </summary>
+        public static readonly IReadOnlyList<string> AllowedTypeNames = new[]
+        {
+            "Colossal.IO.AssetDatabase.PrefabAsset",
+            "Colossal.IO.AssetDatabase.TextureAsset",
+        };
+
+        /// <summary>True for an asset type a joiner accepts from a host's bundle (<see cref="AllowedTypeNames"/>).</summary>
+        public static bool IsAllowedType(string typeName)
+        {
+            foreach (string t in AllowedTypeNames)
+            {
+                if (string.Equals(t, typeName, StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// True for an asset name a joiner may hand to its asset database: a plain file name (no path separator, drive
+        /// colon, wildcard, quote, angle bracket, pipe or control character), no <c>..</c>, no device name, not starting
+        /// or ending with a dot or space, at most <see cref="MaxNameChars"/> characters. A hostile host's bundle must not be
+        /// able to write outside the joiner's temporary folder.
+        /// </summary>
+        public static bool IsSafeName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length > MaxNameChars) return false;
+            if (name.Contains("..")) return false;
+            char first = name[0], last = name[name.Length - 1];
+            if (first == '.' || char.IsWhiteSpace(first) || last == '.' || char.IsWhiteSpace(last)) return false;
+            foreach (char c in name)
+            {
+                if (c < 0x20 || c == 0x7F || (c >= 0x80 && c < 0xA0)) return false;
+                switch (c)
+                {
+                    case '/': case '\\': case ':': case '*': case '?': case '"': case '<': case '>': case '|':
+                    case '\u2028': case '\u2029': case '\u202E': case '\uFEFF':
+                        return false;
+                }
+            }
+            string stem = name;
+            int dot = stem.IndexOf('.');
+            if (dot >= 0) stem = stem.Substring(0, dot);
+            switch (stem.Trim().ToUpperInvariant())
+            {
+                case "CON": case "PRN": case "AUX": case "NUL":
+                case "COM1": case "COM2": case "COM3": case "COM4": case "COM5": case "COM6": case "COM7": case "COM8": case "COM9":
+                case "LPT1": case "LPT2": case "LPT3": case "LPT4": case "LPT5": case "LPT6": case "LPT7": case "LPT8": case "LPT9":
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>True when <paramref name="path"/> resolves to a location strictly inside <paramref name="folder"/>.</summary>
+        public static bool IsInside(string folder, string path)
+        {
+            if (string.IsNullOrEmpty(folder) || string.IsNullOrEmpty(path)) return false;
+            try
+            {
+                string root = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                string full = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(folder, path));
+                return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && full.Length > root.Length;
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException || ex is PathTooLongException || ex is System.Security.SecurityException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Why an entry of a host's bundle is not added (null: it may be): an unsafe name, a type other than
+        /// <see cref="AllowedTypeNames"/>, or a guid that is not 32 hex digits.
+        /// </summary>
+        public static string Reject(JoinAssetEntry e)
+        {
+            if (e == null) return "empty entry";
+            if (!IsSafeName(e.Name)) return "unsafe name";
+            if (!IsAllowedType(e.TypeName)) return "type not allowed";
+            string guid = e.Guid ?? "";
+            if (guid.Length != 32) return "invalid guid";
+            foreach (char c in guid)
+            {
+                bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                if (!hex) return "invalid guid";
+            }
+            return null;
+        }
+
         /// <summary>Header and body of a bundle (an empty bundle is a valid 10-byte container).</summary>
         public static byte[] Write(IReadOnlyList<JoinAssetEntry> entries)
         {

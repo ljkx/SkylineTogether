@@ -15,6 +15,35 @@ namespace SkylineTogether.Core.Tests.Session
             new JoinAssetEntry { Kind = JoinAssetKind.Texture, TypeName = "Colossal.IO.AssetDatabase.TextureAsset", Name = "RockDiffuse", Guid = "fedcba9876543210fedcba9876543210", Data = new byte[5000] },
         };
 
+        [Test]
+        public void AHostsBundleCannotNameFilesOutsideTheJoinFolderOrAddCode()
+        {
+            foreach (JoinAssetEntry e in Sample()) Assert.Null(JoinAssetBundle.Reject(e), e.Name + " of an honest host is accepted");
+            Assert.True(JoinAssetBundle.IsSafeName("Klima \u00C4 (Winter) #2"), "ordinary names, also non-ASCII, pass");
+            foreach (string bad in new[] { "../../Mods/Evil", "..", "a/b", "a\\b", "C:evil", "evil.", " evil", "CON", "nul.txt", "x\u0000y", "\u202Eexe.gpj", new string('a', 129), "", null })
+            {
+                Assert.False(JoinAssetBundle.IsSafeName(bad), "rejected: " + bad);
+            }
+            var evil = new JoinAssetEntry { Kind = JoinAssetKind.Other, TypeName = "Colossal.IO.AssetDatabase.ExecutableAsset", Name = "Payload", Guid = "0123456789abcdef0123456789abcdef", Data = new byte[1] };
+            Assert.Equal("type not allowed", JoinAssetBundle.Reject(evil));
+            evil.TypeName = "Colossal.IO.AssetDatabase.UIModuleAsset";
+            Assert.Equal("type not allowed", JoinAssetBundle.Reject(evil));
+            evil.TypeName = "Colossal.IO.AssetDatabase.PrefabAsset";
+            evil.Name = "..\\..\\Mods\\x";
+            Assert.Equal("unsafe name", JoinAssetBundle.Reject(evil));
+            evil.Name = "fine";
+            evil.Guid = "../0123456789abcdef0123456789abc";
+            Assert.Equal("invalid guid", JoinAssetBundle.Reject(evil));
+
+            string folder = Path.Combine(Path.GetTempPath(), "st-join-assets");
+            Assert.True(JoinAssetBundle.IsInside(folder, Path.Combine(folder, "My Climate.Prefab")));
+            Assert.True(JoinAssetBundle.IsInside(folder, "sub/x.Texture"));
+            Assert.False(JoinAssetBundle.IsInside(folder, Path.Combine(folder, "..", "Mods", "x.dll")));
+            Assert.False(JoinAssetBundle.IsInside(folder, folder + "-sibling" + Path.DirectorySeparatorChar + "x"));
+            Assert.False(JoinAssetBundle.IsInside(folder, folder));
+            Assert.False(JoinAssetBundle.IsInside(folder, null));
+        }
+
         private static byte[] Blob(byte[] prefix, byte[] save)
         {
             var b = new byte[prefix.Length + save.Length];
