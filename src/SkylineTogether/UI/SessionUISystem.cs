@@ -129,6 +129,7 @@ namespace SkylineTogether.UI
             AddBinding(new TriggerBinding<int>(Group, "toggleCoHost", peer => Trigger("toggleCoHost", () => Mod.Sessions?.ToggleCoHost((byte)Math.Max(0, Math.Min(255, peer))))));
             AddBinding(new TriggerBinding<string>(Group, "unban", key => Trigger("unban", () => Mod.Sessions?.Unban(key))));
             AddBinding(new TriggerBinding<bool>(Group, "setFriendsOnly", on => Trigger("setFriendsOnly", () => Mod.Sessions?.SetFriendsOnly(on))));
+            AddBinding(new TriggerBinding<bool>(Group, "setNewPlayersViewer", on => Trigger("setNewPlayersViewer", () => Mod.Sessions?.SetNewPlayersViewer(on))));
             // the host's "require the same asset packs" (read live by a running host, like "require the same mods")
             AddBinding(new TriggerBinding<bool>(Group, "setRequireSameAssets", on => Trigger("setRequireSameAssets", () =>
             {
@@ -556,6 +557,7 @@ namespace SkylineTogether.UI
             // the build id (as the installer prints it), the join policy, this player's role, the ban list
             Prop(sb, "build", GameInfoProvider.BuildText).Append(',');
             Prop(sb, "friendsOnly", settings != null && settings.FriendsOnly).Append(',');
+            Prop(sb, "newPlayersViewer", settings != null && settings.NewPlayersJoinAsViewer).Append(',');
             Prop(sb, "localRole", s.Host != null ? "host" : s.Client != null ? RoleOf(s.Client.LocalRole) : "").Append(',');
             Prop(sb, "resync", s.Client != null ? Mod.Sync?.Integrity.ResyncOffer ?? "" : "").Append(',');
             sb.Append("\"bans\":[");

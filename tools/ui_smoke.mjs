@@ -47,7 +47,7 @@ const csBindings = new Set([...cs.matchAll(/GetterValueBinding<[^>]+>\(Group, "(
 const csTriggers = new Set([...cs.matchAll(/TriggerBinding(?:<[^>]*>)?\(Group, "([^"]+)"/g)].map((m) => m[1]));
 for (const b of ["state", "join", "net", "presence", "perf"]) if (!csBindings.has(b)) fail("SessionUISystem lost the binding " + b);
 for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "writeDiagnostics", "toggleNetHud", "togglePerfHud", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends",
-  "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync", "joinAnyway", "setAllowJoinWithDifferentMods"]) {
+  "ban", "toggleCoHost", "unban", "setFriendsOnly", "setNewPlayersViewer", "resync", "dismissResync", "joinAnyway", "setAllowJoinWithDifferentMods"]) {
   if (!csTriggers.has(t)) fail("SessionUISystem lost the trigger " + t);
 }
 // the invite contract the panel consumes
@@ -293,7 +293,7 @@ const cases = {
   endNotInvited: { state: { ...base, mode: "None", end: end("refused", "NotInvited") } },
   endClosing: { state: { ...base, mode: "None", end: end("refused", "HostShuttingDown") } },
   endBuildIds: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "build", hostBuild: "2f076aad4234", yourBuild: "0123456789ab" }) } },
-  hostingSecurity: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", hasPassword: true, allowDirect: true, friendsOnly: true, localRole: "host", bans,
+  hostingSecurity: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", hasPassword: true, allowDirect: true, friendsOnly: true, newPlayersViewer: true, localRole: "host", bans,
     players: coPlayers.map((p) => Object.assign({}, p, { you: p.host })), chat }, net, presence: tags },
   lobbyBans: { state: { ...base, mode: "None", bans, friendsOnly: true } },
   lobbyMenuNoPassword: { state: { ...base, mode: "None", inGame: false, hasPassword: false, allowDirect: true, bans } },
@@ -489,7 +489,7 @@ for (const t of triggerNames) if (!csTriggers.has(t)) fail("trigger the C# side 
 for (const t of triggers) if (t[0] !== "skylineTogether" && !(t[0] === "menu" && t[1] === "setActiveScreen")) fail("trigger outside the group: " + t[0] + "." + t[1]);
 console.log("triggers used: " + [...triggerNames].sort().join(", "));
 for (const t of ["host", "join", "leave", "chat", "kick", "saveHostSettings", "saveHostOptions", "retryJoin", "dismissEnd", "copySteamId", "copyText", "inviteFriends", "toggleNetHud", "writeDiagnostics", "toggleRole",
-  "ban", "toggleCoHost", "unban", "setFriendsOnly", "resync", "dismissResync", "joinAnyway", "setAllowJoinWithDifferentMods",
+  "ban", "toggleCoHost", "unban", "setFriendsOnly", "setNewPlayersViewer", "resync", "dismissResync", "joinAnyway", "setAllowJoinWithDifferentMods",
   "inviteFriend", "openInviteOverlay", "refreshFriends", "recordStart", "recordStop", "replayStart", "replayStop", "replayRefresh", "reconnect", "cancelReconnect", "stayOffline", "mainMenu"]) {
   if (!triggerNames.has(t)) fail("no UI path fires the trigger " + t);
 }

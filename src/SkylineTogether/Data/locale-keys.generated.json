@@ -337,6 +337,8 @@
     "st.ui.session.cohost",
     "st.ui.host.friendsOnly",
     "st.ui.host.friendsOnlyHint",
+    "st.ui.host.newPlayersViewer",
+    "st.ui.host.newPlayersViewerHint",
     "st.ui.host.allowDirectNeedsPassword",
     "st.ui.host.bans",
     "st.ui.host.bansHint",

@@ -23,7 +23,7 @@ namespace SkylineTogether.Settings
         /// <summary>Every option shown on the Options page (texts: <c>st.options.&lt;name&gt;.label/.desc</c>).</summary>
         public static readonly string[] OptionNames =
         {
-            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(RequireSameAssets), nameof(AllowJoinWithDifferentMods), nameof(FriendsOnly), nameof(EnforcePlacementChecks), nameof(AllowDirectConnections),
+            nameof(PlayerName), nameof(ShowBuildingPreviews), nameof(SessionName), nameof(HostPassword), nameof(MaxPlayers), nameof(RequireSameMods), nameof(RequireSameAssets), nameof(AllowJoinWithDifferentMods), nameof(FriendsOnly), nameof(NewPlayersJoinAsViewer), nameof(EnforcePlacementChecks), nameof(AllowDirectConnections),
             nameof(DirectPort), nameof(JoinTarget), nameof(JoinPassword), nameof(HostButton), nameof(JoinButton), nameof(LeaveButton), nameof(ShowNetworkHud),
             nameof(WriteDiagnosticsButton),
         };
@@ -85,6 +85,10 @@ namespace SkylineTogether.Settings
         /// <summary>Only the host's Steam friends and players invited from the panel may join (others: "not invited").</summary>
         [SettingsUISection(MainSection, HostGroup)]
         public bool FriendsOnly { get; set; }
+
+        /// <summary>Players joining for the first time in a session start as viewers (the host promotes them); off: builders.</summary>
+        [SettingsUISection(MainSection, HostGroup)]
+        public bool NewPlayersJoinAsViewer { get; set; }
 
         /// <summary>
         /// Refuse other players' builds that fail the host's placement checks (locked prefabs, unbought map tiles, impossible
@@ -185,6 +189,7 @@ namespace SkylineTogether.Settings
             AllowJoinWithDifferentMods = true;
             AllowDirectConnections = false;
             FriendsOnly = false;
+            NewPlayersJoinAsViewer = false;
             EnforcePlacementChecks = false;
             BannedPlayers = "";
             DirectPort = 27015;

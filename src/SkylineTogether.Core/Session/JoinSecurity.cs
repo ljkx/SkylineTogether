@@ -200,6 +200,30 @@ namespace SkylineTogether.Core.Session
             return a.Length == 0 ? null : a.ToLowerInvariant();
         }
 
+        /// <summary>
+        /// The key a remote address is judged by (bans, password lockouts, remembered roles, join cooldowns): the IPv4
+        /// address (<see cref="AddressHost"/>), or the /64 network of an IPv6 address (<c>2001:db8:1:2::/64</c>), because
+        /// one IPv6 subscriber usually holds a whole /64 and could otherwise rotate through addresses for unlimited
+        /// attempts. A host name (not an IP literal) is kept as it is. Null for an empty address.
+        /// </summary>
+        public static string AddressKey(string address)
+        {
+            string host = AddressHost(address);
+            if (host == null) return null;
+            if (host.EndsWith("/64", StringComparison.Ordinal)) return host; // already a key (a persisted ban)
+            int zone = host.IndexOf('%');
+            string literal = zone > 0 ? host.Substring(0, zone) : host;
+            if (literal.IndexOf(':') < 0 || !System.Net.IPAddress.TryParse(literal, out System.Net.IPAddress ip)) return host;
+            if (ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return host;
+            byte[] b = ip.GetAddressBytes();
+            var sb = new StringBuilder(32);
+            for (int i = 0; i < 8; i += 2)
+            {
+                sb.Append(((b[i] << 8) | b[i + 1]).ToString("x", CultureInfo.InvariantCulture)).Append(':');
+            }
+            return sb.Append(":/64").ToString();
+        }
+
         private static string CleanName(string name)
         {
             if (string.IsNullOrEmpty(name)) return "";

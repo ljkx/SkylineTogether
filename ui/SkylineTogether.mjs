@@ -199,6 +199,8 @@ const EN = {
   "st.ui.host.allowDirectNextTime": "Applies the next time you host.",
   "st.ui.host.friendsOnly": "Friends and invited only",
   "st.ui.host.friendsOnlyHint": "Only your Steam friends and players you invite from this panel can join through Steam. Direct IP joiners still need the password.",
+  "st.ui.host.newPlayersViewer": "New players join as viewers",
+  "st.ui.host.newPlayersViewerHint": "Players joining for the first time in this session can watch but not build until you make them builders in the player list. Players who were here before keep their role when they rejoin.",
   "st.ui.host.allowDirectNeedsPassword": "Set a password first: Steam does not check direct connections, so the password is what keeps strangers out.",
   "st.ui.host.bans": "Banned players",
   "st.ui.host.bansHint": "Banned players can't join your sessions until you unban them.",
@@ -2053,6 +2055,7 @@ function HostOptions(p) {
   const s = p.state;
   const o = useHostOptions(s);
   const [friendsOnly, setFriendsOnly] = React.useState(!!s.friendsOnly);
+  const [newViewer, setNewViewer] = React.useState(!!s.newPlayersViewer);
   // direct connections need a password (Steam does not check those players)
   const directOk = !!s.hasPassword;
   return h(
@@ -2063,6 +2066,7 @@ function HostOptions(p) {
     h(GameRow, { label: t("st.ui.host.requireAssets"), hint: t("st.ui.host.requireAssetsHint") }, h(Check, { checked: o.requireAssets, onChange: o.setAssets })),
     h(GameRow, { label: t("st.ui.host.allowModOverride"), hint: t("st.ui.host.allowModOverrideHint") }, h(Check, { checked: o.allowOverride, disabled: !o.overrideApplies, onChange: o.setOverride })),
     h(GameRow, { label: t("st.ui.host.friendsOnly"), hint: t("st.ui.host.friendsOnlyHint") }, h(Check, { checked: friendsOnly, onChange: function (v) { setFriendsOnly(v); send("setFriendsOnly", !!v); } })),
+    h(GameRow, { label: t("st.ui.host.newPlayersViewer"), hint: t("st.ui.host.newPlayersViewerHint") }, h(Check, { checked: newViewer, onChange: function (v) { setNewViewer(v); send("setNewPlayersViewer", !!v); } })),
     h(
       GameRow,
       { label: t("st.ui.host.allowDirect"), hint: directOk ? t("st.ui.host.allowDirectHint") + (p.live ? " " + t("st.ui.host.allowDirectNextTime") : "") : t("st.ui.host.allowDirectNeedsPassword") },
@@ -2438,6 +2442,7 @@ function MenuHostPage(p) {
   const [password, setPassword] = React.useState("");
   const [hoverInfo, setHoverInfo] = React.useState(null);
   const [friendsOnly, setFriendsOnly] = React.useState(!!s.friendsOnly);
+  const [newViewer, setNewViewer] = React.useState(!!s.newPlayersViewer);
   const directOk = !!s.hasPassword; // direct connections need a password
   const o = useHostOptions(s);
   // an untouched (empty) password field keeps the stored host password instead of wiping it
@@ -2488,6 +2493,8 @@ function MenuHostPage(p) {
     ),
     h(MenuRow, { label: t("st.ui.host.friendsOnly"), info: t("st.ui.host.friendsOnlyHint"), onInfo: setHoverInfo, onClick: function () { setFriendsOnly(!friendsOnly); send("setFriendsOnly", !friendsOnly); } },
       h(Check, { menu: true, checked: friendsOnly, onChange: function (v) { setFriendsOnly(v); send("setFriendsOnly", !!v); } })),
+    h(MenuRow, { label: t("st.ui.host.newPlayersViewer"), info: t("st.ui.host.newPlayersViewerHint"), onInfo: setHoverInfo, onClick: function () { setNewViewer(!newViewer); send("setNewPlayersViewer", !newViewer); } },
+      h(Check, { menu: true, checked: newViewer, onChange: function (v) { setNewViewer(v); send("setNewPlayersViewer", !!v); } })),
     h(
       MenuRow,
       { label: t("st.ui.host.allowDirect"), info: directOk ? t("st.ui.host.allowDirectHint") : t("st.ui.host.allowDirectNeedsPassword"), onInfo: setHoverInfo, onClick: directOk ? function () { o.setDirect(!o.allowDirect); } : undefined },

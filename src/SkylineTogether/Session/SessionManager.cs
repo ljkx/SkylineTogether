@@ -342,6 +342,7 @@ namespace SkylineTogether.Session
                     BackgroundPump = true,
                     // join policy and the persisted ban list
                     JoinPolicy = _settings.FriendsOnly ? JoinPolicy.FriendsAndInvited : JoinPolicy.Open,
+                    NewPlayersJoinAsViewer = _settings.NewPlayersJoinAsViewer,
                     IsFriendOrInvited = id => Mod.Invites != null && Mod.Invites.IsFriendOrInvited(id),
                     Bans = BanList.Parse(_settings.BannedPlayers),
                 };
@@ -833,6 +834,14 @@ namespace SkylineTogether.Session
             _settings.FriendsOnly = on;
             _settings.ApplyAndSave();
             if (Host != null) Host.Options.JoinPolicy = on ? JoinPolicy.FriendsAndInvited : JoinPolicy.Open;
+        }
+
+        /// <summary>New players join as viewers (applies at once to a running session; players seen before keep their role).</summary>
+        public void SetNewPlayersViewer(bool on)
+        {
+            _settings.NewPlayersJoinAsViewer = on;
+            _settings.ApplyAndSave();
+            if (Host != null) Host.Options.NewPlayersJoinAsViewer = on;
         }
 
         private void SaveBans(SessionHost host)

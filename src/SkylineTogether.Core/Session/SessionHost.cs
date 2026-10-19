@@ -24,6 +24,12 @@ namespace SkylineTogether.Core.Session
         public bool PasswordForUnauthenticated = true;
         /// <summary>Open, or Steam friends and invited players only (read live).</summary>
         public JoinPolicy JoinPolicy = JoinPolicy.Open;
+
+        /// <summary>
+        /// Players joining for the first time in this session start as viewers instead of builders (read live); the host
+        /// promotes them in the player list. A player who was in the session before keeps the role they had.
+        /// </summary>
+        public bool NewPlayersJoinAsViewer;
         /// <summary>True when a Steam ID is the host's Steam friend or was invited (null: nobody is).</summary>
         public Func<ulong, bool> IsFriendOrInvited;
         /// <summary>Banned Steam IDs and addresses (read live; the game layer persists it).</summary>
@@ -230,6 +236,9 @@ namespace SkylineTogether.Core.Session
         public const int SpeedRequestBurst = 4;
         private readonly ILog _log;
         private readonly Dictionary<IConnection, Peer> _peers = new Dictionary<IConnection, Peer>();
+        // the roles the host gave players in this session, by identity (IdentityKey), oldest first in _rememberedOrder
+        private readonly Dictionary<string, SessionRole> _rememberedRoles = new Dictionary<string, SessionRole>(StringComparer.Ordinal);
+        private readonly Queue<string> _rememberedOrder = new Queue<string>();
         private readonly ByteWriter _body = new ByteWriter(4096);
         private readonly ByteWriter _broadcastEnvelope = new ByteWriter(4096); // a broadcast's shared envelope
         private readonly ByteWriter _payload = new ByteWriter(4096);
@@ -747,6 +756,7 @@ namespace SkylineTogether.Core.Session
             foreach (Peer p in _peers.Values)
             {
                 if (!p.Admitted || p.Id != id) continue;
+                RememberRole(p, role);
                 if (p.Role == role) return true;
                 p.Role = role;
                 _playersDirty = true;
@@ -756,6 +766,48 @@ namespace SkylineTogether.Core.Session
                 return true;
             }
             return false;
+        }
+
+        /// <summary>Roles given to players are remembered for this many identities at most (the oldest go first).</summary>
+        public const int MaxRememberedRoles = 1024;
+
+        /// <summary>
+        /// The identity a role, a join cooldown or a ban is kept under: the authenticated Steam ID, else the address of a
+        /// connection without one (<see cref="BanList.AddressKey"/>); null for an in-process connection.
+        /// </summary>
+        private static string IdentityKey(Peer p)
+        {
+            if (p.Local) return null;
+            if (p.SteamAuthenticated && p.SteamId != 0) return "steam:" + p.SteamId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string address = BanList.AddressKey(p.Address);
+            return address != null ? "ip:" + address : null;
+        }
+
+        private void RememberRole(Peer p, SessionRole role)
+        {
+            string key = IdentityKey(p);
+            if (key == null) return;
+            if (!_rememberedRoles.ContainsKey(key))
+            {
+                if (_rememberedRoles.Count >= MaxRememberedRoles && _rememberedOrder.Count > 0)
+                {
+                    _rememberedRoles.Remove(_rememberedOrder.Dequeue());
+                }
+                _rememberedOrder.Enqueue(key);
+            }
+            _rememberedRoles[key] = role;
+        }
+
+        /// <summary>
+        /// The role a player starts with: the one they had earlier in this session (a viewer stays a viewer when they
+        /// rejoin), else viewer or builder as <see cref="HostOptions.NewPlayersJoinAsViewer"/> says. The in-process test
+        /// recorder always builds.
+        /// </summary>
+        private SessionRole InitialRole(Peer p)
+        {
+            string key = IdentityKey(p);
+            if (key != null && _rememberedRoles.TryGetValue(key, out SessionRole role)) return role;
+            return _options.NewPlayersJoinAsViewer && !p.Local ? SessionRole.Viewer : SessionRole.Builder;
         }
 
         public void Kick(PeerId id, string reason)
@@ -1607,6 +1659,7 @@ namespace SkylineTogether.Core.Session
                 return;
             }
             p.Admitted = true;
+            p.Role = InitialRole(p);
             p.State = PlayerState.WaitingForSnapshot;
             double admittedAt = _clock.Seconds;
             p.AdmittedAt = admittedAt;
