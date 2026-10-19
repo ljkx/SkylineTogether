@@ -1,19 +1,34 @@
 # Releasing
 
-There is no automated release pipeline yet; releases are built on a PC with the game installed.
+Releases are built by hand on a PC with the game installed (the game layer compiles against the game's own
+assemblies, which a CI runner does not have). Each release publishes SHA-256 checksums of its zips so players can check
+their download.
 
 ## Versions and identities
 
 | What | Where | Notes |
 |---|---|---|
-| Release version | `<Version>` in `Directory.Build.props` (currently 0.1.0) | Used for the zip names and the file version of both DLLs. |
+| Release version | `<Version>` in `Directory.Build.props` | Used for the zip names and the file version of both DLLs. See [Version numbers](#version-numbers). |
 | Assembly version | `<AssemblyVersion>1.0.0.0</AssemblyVersion>` in both projects | **Never change it.** The network id system is saved in cities by assembly-qualified name. |
 | Protocol version | `ProtocolVersion.Current` in `src/SkylineTogether.Core/Protocol/ProtocolVersion.cs` | Increment it for every change of the wire format (see [Protocol version policy](#protocol-version-policy)); update the golden byte vectors of the tests (`Protocol/*GoldenTests.cs`). Peers with different versions refuse each other, and solo test recordings cannot be replayed by another protocol version. |
 | Build id | First 12 hex digits of the SHA-256 of `SkylineTogether.dll` | Printed by the installer and by `publish_paradox.py`, shown in the panel footer and compared by the host on join (the game hashes the DLL file its mod manager loaded, in the local Mods folder or a Paradox Mods subscription; only if the file cannot be read does it fall back to the assembly's MVID, shown as "(mvid)"). |
-| Paradox Mods id and version | `ModId` and `ModVersion` in `src/SkylineTogether/Properties/PublishConfiguration.xml` | `ModId` is empty until the first upload; `ModVersion` must equal `<Version>`. See [publishing-paradox-mods.md](publishing-paradox-mods.md). |
+| Paradox Mods id and version | `ModId` and `ModVersion` in `src/SkylineTogether/Properties/PublishConfiguration.xml` | `ModId` is 163578 ([the mod's page](https://mods.paradoxplaza.com/mods/163578/Windows)); `ModVersion` must equal `<Version>`. See [publishing-paradox-mods.md](publishing-paradox-mods.md). |
 
 Every compile produces a different build that refuses to play with any other build, even at the same version number.
-Players must therefore all install the same published setup zip.
+Players must therefore all install the same release: the same Paradox Mods version or the same setup zip (both carry
+the same build id).
+
+### Version numbers
+
+Versions follow [Semantic Versioning](https://semver.org/):
+
+- **Minor** (`0.2.0`, `0.3.0`): new features, or a new protocol version.
+- **Patch** (`0.2.1`): bug fixes only. A patch release may still need a new protocol version when a fix changes the
+  wire format; the changelog says so.
+- A **pre-release suffix** (`-beta.1`) only for a build that is deliberately published as a preview, on GitHub only
+  and marked as a pre-release there. Regular releases have no suffix and are published on GitHub and Paradox Mods.
+
+The releases `0.1.0-alpha.1` to `0.1.0-alpha.4` predate this rule.
 
 ### Protocol version policy
 
@@ -61,13 +76,17 @@ format are refused by version instead of failing half-way through a replay.
    path to `/_/` (`DeterministicSourcePaths`), so the PDBs, the DLLs and stack traces in players' logs never contain the
    builder's paths; Source Link points stack traces at the commit on GitHub, so build releases from a pushed commit.
 
+   `make_installer.py` ends with the SHA-256 of both zips; copy them for the release notes.
+
 5. Test the setup zip itself (not a `--deploy` build): install it with `Install.cmd` on two PCs, check that both show
-   the build id printed in step 4, and run the [two-player checklist](../guide/testing.md#two-player-checklist) and a solo
-   test.
-6. Tag the commit (`git tag v<version>`, e.g. `v0.1.0-alpha.1`) and push the tag.
-7. Create a GitHub release for the tag (mark versions with a `-alpha`/`-beta` suffix as pre-releases). Attach `SkylineTogether-Setup.zip` (for players) and
-   `SkylineTogether-<version>.zip` (manual install). In the notes, give the build id, the game version it was tested
-   with and the changelog section.
+   the build id printed in step 4, and run the [two-player checklist](../guide/testing.md#two-player-checklist) and a
+   solo test. For a patch release, the solo test and the checklist steps that cover the fixed areas are enough.
+6. Tag the commit (`git tag v<version>`, e.g. `v0.2.0`) and push the tag.
+7. Create a GitHub release for the tag, titled "Skyline Together <version>". Mark it as a pre-release only for a
+   version with a pre-release suffix, so that regular releases show as "Latest". Attach `SkylineTogether-Setup.zip`
+   (for players) and `SkylineTogether-<version>.zip` (manual install). Write the notes from the
+   [release notes template](release-notes-template.md): the changelog section, the build id, the game version it was
+   tested with, the install routes, the SHA-256 checksums of both zips and how to report bugs.
 8. Paradox Mods: set `ModVersion` and `ChangeLog` in `src/SkylineTogether/Properties/PublishConfiguration.xml`, run
    `python tools/paradox/publish_paradox.py check` (it must print the build id of step 4), then, with the game running
    and logged in to Paradox, `python tools/paradox/publish_paradox.py NewVersion` (`Publish` for the very first upload;

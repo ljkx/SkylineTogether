@@ -7,10 +7,13 @@ Studio publish profiles. Skyline Together builds without the template's MSBuild 
 with the same arguments the template's `Mod.targets` passes. Uploading needs the maintainer's Paradox account. Nothing
 in the build or in CI uploads anything.
 
+Skyline Together is published as [mod 163578](https://mods.paradoxplaza.com/mods/163578/Windows); `ModId` in
+`PublishConfiguration.xml` holds that id, so every further upload is a `NewVersion` or an `Update`.
+
 - [How publishing works](#how-publishing-works)
 - [Files](#files)
 - [Before every upload](#before-every-upload)
-- [First upload](#first-upload)
+- [First upload (done)](#first-upload-done)
 - [A new version](#a-new-version)
 - [Changing only the page](#changing-only-the-page)
 - [How a Paradox Mods install differs from a local one](#how-a-paradox-mods-install-differs-from-a-local-one)
@@ -42,7 +45,7 @@ in the build or in CI uploads anything.
 - **.NET**: ModPublisher is built for .NET 6. If only a newer .NET runtime is installed, the script sets
   `DOTNET_ROLL_FORWARD=Major` so ModPublisher runs on it. Installing the .NET 6 runtime works too.
 - Paradox Mods treats `ModVersion` as a free text (other mods use versions like `1.5.2+build.2`), so
-  `0.1.0-alpha.1` is fine. The platform also counts uploads (`1`, `2`, ...). That count is the `<version>` in the
+  `0.2.0` or `0.2.0-beta.1` is fine. The platform also counts uploads (`1`, `2`, ...). That count is the `<version>` in the
   players' `pdx_mods\<id>_<version>` folder name.
 
 ## Files
@@ -74,15 +77,14 @@ platform accepts patterns such as `1.6.*` and `1.6.2*`).
    `make_installer.py` printed and the one in the GitHub release notes), scans the content and the config for
    personal data, writes `dist/paradox/PublishConfiguration.xml` (absolute image paths, multi-line texts without
    indentation) and prints the ModPublisher command.
-4. **Look at the page text.** Read `LongDescription` once more. Is it still true? Check the status, what works, the
-   requirements and the links.
+4. **Look at the page text.** Read `LongDescription` once more. Is it still true? Check what is shared, the
+   requirements, the known limitations and the links.
 
-## First upload
+## First upload (done)
 
-1. Do the steps of [Before every upload](#before-every-upload). Leave `ModId` empty. The release you upload must
-   contain the build id fix and the installed-twice check (CHANGELOG, Unreleased after 0.1.0-alpha.2): with older
-   builds a subscribed copy shows an "(mvid)" build id that differs from the GitHub setup's. So upload the next
-   release, not 0.1.0-alpha.2 or older.
+The first upload created mod 163578 with version 0.1.0-alpha.4. The steps are kept for reference.
+
+1. Do the steps of [Before every upload](#before-every-upload). Leave `ModId` empty.
 2. Optional: set `AccessLevel` to `Unlisted` for the first upload, check the page, and switch to `Public` later with
    `Update`.
 3. Start the game and log in to your Paradox account in the main menu. Leave the game running.
@@ -115,7 +117,7 @@ platform accepts patterns such as `1.6.*` and `1.6.2*`).
    ```
 
 5. Subscribed players get the update when they start the game. Players of a session must all be on the same build:
-   tell testers who use the GitHub setup to install the matching release.
+   tell players who use the GitHub setup to install the matching release.
 
 ## Changing only the page
 
