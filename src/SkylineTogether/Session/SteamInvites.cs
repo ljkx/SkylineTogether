@@ -637,14 +637,17 @@ namespace SkylineTogether.Session
                 if (purpose == EnterPurpose.Resolve)
                 {
                     LobbyInfo info = null;
+                    ulong owner = 0;
                     if (ok)
                     {
                         LobbyInfo.TryRead(key => SteamMatchmaking.GetLobbyData(new CSteamID(lobby), key), out info);
+                        owner = LobbyOwner(lobby); // a member can always read the owner
                         SteamMatchmaking.LeaveLobby(new CSteamID(lobby)); // only read; a live client joins it again
                     }
                     if (lobby != _resolveLobby) return; // a newer invite replaced this one
-                    if (info != null) Resolved(info, lobby);
-                    else FailResolve();
+                    if (info == null) FailResolve();
+                    else if (info.CheckOwner(owner) == LobbyOwnership.Host) Resolved(info, lobby);
+                    else FailMoved(info, lobby, owner);
                     return;
                 }
                 if (!ok) return;
@@ -738,7 +741,8 @@ namespace SkylineTogether.Session
             {
                 _resolveLobby = lobby;
                 _resolveFriend = friend;
-                Resolved(info, lobby);
+                _resolveStarted = _sessions.Clock.Seconds;
+                ResolvedFromOutside(info, lobby);
                 return;
             }
             if (friendId.m_SteamID != 0)
@@ -785,7 +789,7 @@ namespace SkylineTogether.Session
                 var id = new CSteamID(_resolveLobby);
                 if (e.m_bSuccess != 0 && LobbyInfo.TryRead(key => SteamMatchmaking.GetLobbyData(id, key), out LobbyInfo info))
                 {
-                    Resolved(info, _resolveLobby);
+                    ResolvedFromOutside(info, _resolveLobby);
                     return;
                 }
                 _resolveEntering = true;
@@ -812,6 +816,54 @@ namespace SkylineTogether.Session
                 _log.Warn(LogCategory.Session, "reading the invite's lobby " + Id(_resolveLobby) + " timed out");
                 FailResolve();
             }
+        }
+
+        /// <summary>The lobby's owner as Steam reports it (0 when unknown: outside the lobby Steam may not say).</summary>
+        private static ulong LobbyOwner(ulong lobby)
+        {
+            try
+            {
+                return SteamMatchmaking.GetLobbyOwner(new CSteamID(lobby)).m_SteamID;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Lobby data read from outside the lobby: followed only when its owner is the host it names (a lobby migrates to a
+        /// member when the host leaves, and that member could rewrite the host); an owner Steam does not report from
+        /// outside is read as a member.
+        /// </summary>
+        private void ResolvedFromOutside(LobbyInfo info, ulong lobby)
+        {
+            ulong owner = LobbyOwner(lobby);
+            switch (info.CheckOwner(owner))
+            {
+                case LobbyOwnership.Host:
+                    Resolved(info, lobby);
+                    return;
+                case LobbyOwnership.Other:
+                    FailMoved(info, lobby, owner);
+                    return;
+                default:
+                    _resolveEntering = true;
+                    Enter(lobby, EnterPurpose.Resolve);
+                    return;
+            }
+        }
+
+        /// <summary>The invite's lobby no longer belongs to the host it names: the invite is not followed.</summary>
+        private void FailMoved(LobbyInfo info, ulong lobby, ulong owner)
+        {
+            string friend = _resolveFriend;
+            _resolveLobby = 0;
+            _resolveFriend = null;
+            _resolveEntering = false;
+            _log.Warn(LogCategory.Session, "the invite's lobby " + Id(lobby) + " names host " + Id(info.HostSteamId) + " but belongs to " + (owner == 0 ? "an unknown owner" : Id(owner))
+                                           + " (the host left it); the invite is not followed");
+            SessionManager.Notify(LocaleSource.Resolve("st.toast.inviteMoved", "NAME", string.IsNullOrEmpty(friend) ? "?" : friend), ProgressState.Warning, null, 10f);
         }
 
         private void Resolved(LobbyInfo info, ulong lobby)

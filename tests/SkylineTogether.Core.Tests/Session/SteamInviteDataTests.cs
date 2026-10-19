@@ -9,6 +9,16 @@ namespace SkylineTogether.Core.Tests.Session
     public sealed class SteamInviteDataTests
     {
         [Test]
+        public void AnInvitesLobbyIsFollowedOnlyWhileTheNamedHostOwnsIt()
+        {
+            var info = new LobbyInfo { HostSteamId = 76561198000000001UL };
+            Assert.Equal(LobbyOwnership.Host, info.CheckOwner(76561198000000001UL));
+            Assert.Equal(LobbyOwnership.Other, info.CheckOwner(76561198000000002UL), "the lobby migrated to a member, who may have rewritten the host");
+            Assert.Equal(LobbyOwnership.Unknown, info.CheckOwner(0), "read again as a member");
+            Assert.Equal(LobbyOwnership.Other, new LobbyInfo { HostSteamId = 0 }.CheckOwner(5));
+        }
+
+        [Test]
         public void LobbyLaunchOptionCarriesTheLobbyId()
         {
             Assert.True(InviteLink.TryParseLobbyArgs(new[] { "Cities2.exe", "+connect_lobby", "109775241234567890" }, out ulong lobby));

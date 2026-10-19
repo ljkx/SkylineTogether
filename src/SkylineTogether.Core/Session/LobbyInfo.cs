@@ -4,6 +4,17 @@ using System.Globalization;
 
 namespace SkylineTogether.Core.Session
 {
+    /// <summary>Who owns an invite's lobby (<see cref="LobbyInfo.CheckOwner"/>).</summary>
+    public enum LobbyOwnership
+    {
+        /// <summary>Steam did not say (readable only as a member): read it again as a member.</summary>
+        Unknown,
+        /// <summary>The host named in the lobby data owns it: the invite may be followed.</summary>
+        Host,
+        /// <summary>Someone else owns it (the host left and the lobby migrated): the invite is not followed.</summary>
+        Other
+    }
+
     /// <summary>
     /// The data a host writes into its Steam lobby. The lobby exists only for invites and presence (Steam's invite dialog
     /// and the friends list's "Join game" need one); the session itself still runs over the P2P transport to
@@ -32,6 +43,17 @@ namespace SkylineTogether.Core.Session
         public string Build = "";
         public string GameVersion = "";
         public bool PasswordRequired;
+
+        /// <summary>
+        /// Whether an invite's lobby still belongs to the host it names: Steam hands a lobby to a remaining member when its
+        /// owner leaves, and that member could then rewrite <see cref="HostSteamId"/> to send stale invites elsewhere. Only
+        /// a lobby whose owner (<paramref name="owner"/>, 0 when Steam did not say) is the named host is trusted.
+        /// </summary>
+        public LobbyOwnership CheckOwner(ulong owner)
+        {
+            if (owner == 0) return LobbyOwnership.Unknown;
+            return owner == HostSteamId && HostSteamId != 0 ? LobbyOwnership.Host : LobbyOwnership.Other;
+        }
 
         /// <summary>The key/value pairs to write with <c>SetLobbyData</c> (every value non-null).</summary>
         public IReadOnlyList<KeyValuePair<string, string>> ToPairs()

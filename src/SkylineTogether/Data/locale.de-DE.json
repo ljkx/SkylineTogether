@@ -262,6 +262,7 @@
   "st.toast.inviteFailed": "Steam konnte die Einladung an {NAME} nicht senden. Teile stattdessen die Steam-ID {ID}.",
   "st.toast.inviteConfirm": "{NAME} hat dich zu einer Skyline-Together-Sitzung eingeladen. Klicke hier zum Beitreten – das ersetzt die Stadt, die du gerade spielst, also speichere vorher.",
   "st.toast.inviteUnreadable": "Die Einladung von {NAME} konnte nicht gelesen werden. Bitte um eine neue Einladung oder tritt mit der Steam-ID des Hosts bei.",
+  "st.toast.inviteMoved": "Die Einladung von {NAME} ist veraltet: Der Host hat diese Sitzung verlassen. Bitte um eine neue Einladung oder tritt mit der Steam-ID des Hosts bei.",
   "st.toast.diagnostics": "Diagnose geschrieben nach {PATH}",
   "st.toast.diagnosticsFailed": "Die Diagnose konnte nicht geschrieben werden (siehe Log).",
   "st.chat.hostingStarted": "Du hostest „{SESSION}“. Freunde können mit deiner Steam-ID {ID} beitreten.",

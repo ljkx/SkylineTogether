@@ -262,6 +262,7 @@
   "st.toast.inviteFailed": "Steam could not send the invite to {NAME}. Share the Steam ID {ID} instead.",
   "st.toast.inviteConfirm": "{NAME} invited you to a Skyline Together session. Click here to join – joining replaces the city you are playing, so save first.",
   "st.toast.inviteUnreadable": "Could not read the invite from {NAME}. Ask them to invite you again, or join with the host's Steam ID.",
+  "st.toast.inviteMoved": "The invite from {NAME} is out of date: the host has left that session. Ask for a new invite, or join with the host's Steam ID.",
   "st.toast.diagnostics": "Diagnostics written to {PATH}",
   "st.toast.diagnosticsFailed": "Could not write the diagnostics (see the log).",
   "st.chat.hostingStarted": "You are hosting \"{SESSION}\". Friends can join with your Steam ID {ID}.",
