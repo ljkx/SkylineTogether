@@ -53,6 +53,12 @@ namespace SkylineTogether.Core.Session
         public bool AllowModMismatchOverride = true;
         public ListenOptions Listen = new ListenOptions();
         public double HandshakeTimeoutSeconds = 30;
+
+        /// <summary>
+        /// A connection that sends no hello within this long is dropped (a joiner sends it the moment it is connected), so
+        /// strangers cannot hold handshake slots open for the whole <see cref="HandshakeTimeoutSeconds"/>.
+        /// </summary>
+        public double HelloTimeoutSeconds = 10;
         /// <summary>
         /// An admitted joiner that sends nothing at all (not even ping replies) for this long is dropped, so a joiner whose
         /// game hung does not hold the host's simulation forever. Generous, because the joiner's main thread stalls
@@ -468,6 +474,11 @@ namespace SkylineTogether.Core.Session
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "handshake timed out"));
                     continue;
                 }
+                if (!p.Admitted && p.Hello == null && _options.HelloTimeoutSeconds > 0 && now - p.Since > _options.HelloTimeoutSeconds && !grace)
+                {
+                    (drop ?? (drop = new List<(Peer, string)>())).Add((p, "no hello"));
+                    continue;
+                }
                 if (p.Admitted && p.State != PlayerState.Live && _options.MaxJoinSeconds > 0 && now - p.AdmittedAt > _options.MaxJoinSeconds && !grace)
                 {
                     // an absolute deadline, whatever progress the joiner reports
@@ -784,6 +795,19 @@ namespace SkylineTogether.Core.Session
             _payload.Reset();
             SessionPayloads.WriteText(_payload, text);
             BroadcastControl(ControlKind.Toast, _payload, live: false);
+        }
+
+        /// <summary>
+        /// Changes the player limit while hosting (2-16, counting the host): the session's own check and the transport's
+        /// connection cap (<see cref="ListenOptions.MaxConnections"/>, read live by the transport) follow, so raising it
+        /// lets more players in at once instead of the transport still refusing them at the old limit.
+        /// </summary>
+        public void SetMaxPlayers(int maxPlayers)
+        {
+            int n = Math.Max(2, Math.Min(16, maxPlayers));
+            _options.MaxPlayers = n;
+            if (_options.Listen != null) _options.Listen.MaxConnections = n;
+            _log.Info(LogCategory.Session, "player limit: " + n);
         }
 
         /// <summary>A player's role changed (<see cref="SetRole"/>).</summary>
@@ -1838,6 +1862,18 @@ namespace SkylineTogether.Core.Session
             p.Timeline = new JoinTimeline { Who = p.Name };
             p.Timeline.Mark(JoinStage.Start, admittedAt);
             p.Timeline.Mark(JoinStage.Welcome, admittedAt);
+            // the transport's per-player resources (slot, large receive buffer) only now
+            if (p.Channel.Connection is IAdmissionAware admission)
+            {
+                try
+                {
+                    admission.OnAdmitted();
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn(LogCategory.Net, p.Name + ": the transport could not finish the admission", ex);
+                }
+            }
             // the joiner's main thread will stall while its game loads the city (ARCHITECTURE.md#live-session)
             ConnectionTimeouts.Apply(p.Channel.Connection, joining: true, _log);
             _payload.Reset();

@@ -7,8 +7,13 @@ namespace SkylineTogether.Core.Transport
     /// the owner's <see cref="LoopbackNetwork"/>; the public members delegate to the owner, which takes it.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
-    internal sealed class LoopbackConnection : IConnection, IConnectionTimeouts
+    internal sealed class LoopbackConnection : IConnection, IConnectionTimeouts, IAdmissionAware
     {
+        /// <summary>The host admitted this connection's peer (<see cref="IAdmissionAware"/>; tests check it).</summary>
+        public bool Admitted { get; private set; }
+
+        public void OnAdmitted() => Admitted = true;
+
         internal readonly LoopbackTransport Owner;
 
         /// <summary>The other end; null for a connection attempt that failed.</summary>

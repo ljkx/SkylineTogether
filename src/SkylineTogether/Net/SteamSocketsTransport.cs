@@ -135,7 +135,9 @@ namespace SkylineTogether.Net
             SteamNetworkingSockets.SetConnectionPollGroup(handle, _pollGroup);
             var connection = new SteamConnection(this, handle, new PeerIdentity(endpoint.SteamId, endpoint.SteamId != 0 ? null : endpoint.Host + ":" + endpoint.Port, null));
             _connections[handle.m_HSteamNetConnection] = connection;
-            ConfigureNew(connection);
+            // our own connection to a host receives the city: the large receive buffer from the start
+            connection.Admitted = true;
+            RaiseReceiveBuffer(connection);
             return connection;
         }
 
@@ -304,11 +306,26 @@ namespace SkylineTogether.Net
                 case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_Connecting:
                     if (connection == null && e.m_info.m_hListenSocket != HSteamListenSocket.Invalid)
                     {
-                        int count = 0;
-                        foreach (SteamConnection c in _connections.Values) if (!c.Closed) count++;
-                        if (_listen != null && count >= _listen.MaxConnections + 4)
+                        // admitted players and handshakes in flight are limited separately (ListenOptions.Refusal), so
+                        // strangers holding handshakes open cannot fill the players' slots
+                        PeerIdentity incoming = IdentityOf(e.m_info, IsDirect(e.m_info));
+                        string remote = RemoteKey(incoming);
+                        int admitted = 0, pending = 0, fromRemote = 0;
+                        foreach (SteamConnection c in _connections.Values)
                         {
-                            SteamNetworkingSockets.CloseConnection(e.m_hConn, AppCloseReason, "server full", false);
+                            if (c.Closed) continue;
+                            if (c.Admitted) admitted++;
+                            else
+                            {
+                                pending++;
+                                if (remote != null && remote == c.RemoteKey) fromRemote++;
+                            }
+                        }
+                        string refusal = _listen?.Refusal(admitted, pending, fromRemote);
+                        if (refusal != null)
+                        {
+                            SteamNetworkingSockets.CloseConnection(e.m_hConn, AppCloseReason, refusal, false);
+                            if (_refusedLogged++ < 20 || _refusedLogged % 100 == 0) _log.Info(LogCategory.Net, "refused a connection (" + refusal + ": " + admitted + " admitted, " + pending + " in the handshake)");
                             return;
                         }
                         EResult result = SteamNetworkingSockets.AcceptConnection(e.m_hConn);
@@ -319,9 +336,8 @@ namespace SkylineTogether.Net
                             return;
                         }
                         SteamNetworkingSockets.SetConnectionPollGroup(e.m_hConn, _pollGroup);
-                        var accepted = new SteamConnection(this, e.m_hConn, IdentityOf(e.m_info, IsDirect(e.m_info)));
+                        var accepted = new SteamConnection(this, e.m_hConn, incoming) { RemoteKey = remote };
                         _connections[key] = accepted;
-                        ConfigureNew(accepted);
                     }
                     return;
                 case ESteamNetworkingConnectionState.k_ESteamNetworkingConnectionState_Connected:
@@ -561,8 +577,26 @@ namespace SkylineTogether.Net
             }
         }
 
+        private int _refusedLogged;
+
+        /// <summary>The key a remote's handshakes are counted under: its authenticated Steam ID, else its address.</summary>
+        private static string RemoteKey(PeerIdentity peer)
+        {
+            if (peer.SteamId != 0) return "steam:" + peer.SteamId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            string address = Core.Session.BanList.AddressKey(peer.Address);
+            return address != null ? "ip:" + address : null;
+        }
+
+        /// <summary>The host admitted this connection's peer: the large receive buffer (a stranger in the handshake gets the default).</summary>
+        internal void OnAdmitted(SteamConnection connection)
+        {
+            if (connection.Admitted || connection.Closed || _disposed) return;
+            connection.Admitted = true;
+            RaiseReceiveBuffer(connection);
+        }
+
         /// <summary>Per-connection settings that cannot go into the creation options (newer than this SDK's enum).</summary>
-        private void ConfigureNew(SteamConnection connection)
+        private void RaiseReceiveBuffer(SteamConnection connection)
         {
             bool ok = SetInt32(connection, RecvBufferSizeKey, RecvBufferBytes);
             if (ok)
@@ -665,8 +699,16 @@ namespace SkylineTogether.Net
         }
     }
 
-    internal sealed class SteamConnection : IThreadSafeConnection, IConnectionTimeouts
+    internal sealed class SteamConnection : IThreadSafeConnection, IConnectionTimeouts, IAdmissionAware
     {
+        /// <summary>The host admitted the peer (or this is our own connection to a host): it counts as a player slot.</summary>
+        public bool Admitted;
+
+        /// <summary>The remote's Steam ID or address key (handshakes per remote are limited).</summary>
+        public string RemoteKey;
+
+        public void OnAdmitted() => _transport.OnAdmitted(this);
+
         /// <summary>Chooses this connection's send rate (main thread, <see cref="SteamSocketsTransport"/>'s poll).</summary>
         public readonly SendRateController Rate = new SendRateController();
 

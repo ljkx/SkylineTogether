@@ -183,7 +183,7 @@ namespace SkylineTogether.UI
                 SessionHost host = Mod.Sessions?.Host;
                 if (host != null)
                 {
-                    host.Options.MaxPlayers = Mod.Settings.MaxPlayers;
+                    host.SetMaxPlayers(Mod.Settings.MaxPlayers); // the transport's connection cap follows
                     host.Options.RequireSameMods = requireSameMods;
                 }
                 Mod.Settings.ApplyAndSave();

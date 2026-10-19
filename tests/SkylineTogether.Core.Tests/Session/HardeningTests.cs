@@ -310,6 +310,69 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Contains("of the city again", string.Join("\n", rig.Log.Lines));
         }
 
+        // ------------------------------------------------------------- handshake slots and player limit (10, 18)
+
+        [Test]
+        public void TheTransportLimitsHandshakesSeparatelyFromPlayers()
+        {
+            var listen = new ListenOptions { MaxConnections = 4, MaxPendingConnections = 8, MaxPendingPerRemote = 2 };
+            Assert.Null(listen.Refusal(0, 0, 0));
+            Assert.Null(listen.Refusal(3, 7, 1), "players and handshakes below their limits");
+            Assert.Equal("server busy", listen.Refusal(0, 8, 0), "strangers holding handshakes do not take the players' slots");
+            Assert.Equal("server busy", listen.Refusal(0, 2, 2), "two handshakes per remote");
+            Assert.Equal("server full", listen.Refusal(4, 0, 0));
+        }
+
+        [Test]
+        public void AConnectionWithoutAHelloIsDroppedSoon()
+        {
+            var rig = new SessionRig();
+            var silent = new RawPeer(rig, "Silent", 7801);
+            for (int i = 0; i < 8 * 2; i++)
+            {
+                rig.Clock.Advance(0.5);
+                rig.Host.Tick();
+                silent.Poll();
+            }
+            Assert.False(silent.Disconnected, "eight seconds are fine");
+            for (int i = 0; i < 6 * 2; i++)
+            {
+                rig.Clock.Advance(0.5);
+                rig.Host.Tick();
+                silent.Poll();
+            }
+            Assert.True(silent.Disconnected, "no hello within ten seconds");
+            // a joiner that sends its hello at once is not affected
+            var (anna, _, _) = rig.AddClient("Anna");
+            rig.Run(400);
+            Assert.Equal(ClientState.Live, anna.State, anna.EndReason);
+        }
+
+        [Test]
+        public void TheTransportHearsOfAdmissionsAndOfARaisedPlayerLimit()
+        {
+            var listen = new ListenOptions { MaxConnections = 2 };
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty", MaxPlayers = 2, Listen = listen });
+            var raw = new RawPeer(rig, "Anna", 7901);
+            Pump(rig, new[] { raw });
+            var connection = (IAdmissionAware)rig.HostTransport.GetConnections()[0];
+            Assert.False(((LoopbackConnection)connection).Admitted, "a handshake gets no player resources");
+            Handshake(rig, raw);
+            Assert.True(raw.Got(MessageKind.Welcome));
+            Assert.True(((LoopbackConnection)connection).Admitted);
+
+            // the host raises the limit while hosting: the session and the transport's cap follow
+            var full = Handshake(rig, new RawPeer(rig, "Ben", 7902));
+            Assert.Equal(RefuseReason.Full, full.Refusal().Reason);
+            rig.Host.SetMaxPlayers(4);
+            Assert.Equal(4, listen.MaxConnections);
+            Assert.Equal(4, rig.Host.Options.MaxPlayers);
+            var ben = Handshake(rig, new RawPeer(rig, "Ben", 7903));
+            Assert.True(ben.Got(MessageKind.Welcome));
+            rig.Host.SetMaxPlayers(99);
+            Assert.Equal(16, rig.Host.Options.MaxPlayers, "clamped");
+        }
+
         [Test]
         public void PingsAreNotAnsweredBeforeAdmission()
         {
