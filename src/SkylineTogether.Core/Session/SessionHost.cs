@@ -914,11 +914,16 @@ namespace SkylineTogether.Core.Session
             if (id == PeerId.Host) return false;
             Peer p = FindAdmitted(id);
             if (p == null) return false;
-            bool added = _options.Bans.Add(p.SteamAuthenticated ? p.SteamId : 0, p.SteamAuthenticated ? null : p.Address, p.Name, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            long bannedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            bool added = _options.Bans.Add(p.SteamAuthenticated ? p.SteamId : 0, p.SteamAuthenticated ? null : p.Address, p.Name, bannedAt);
+            // a direct connection is also banned by its address (IPv6: its /64), so the player cannot come back over direct
+            // IP without a Steam identity
+            if (p.SteamAuthenticated && p.Direct && BanList.AddressKey(p.Address) != null) added |= _options.Bans.Add(0, p.Address, p.Name, bannedAt);
             _payload.Reset();
             SessionPayloads.WriteText(_payload, reason ?? "Banned by the host");
             SendControl(p, ControlKind.Ban, _payload);
-            _log.Info(LogCategory.Session, p.Name + " was banned (" + (p.SteamAuthenticated ? "Steam ID " + p.SteamId : "address " + BanList.AddressHost(p.Address)) + ")" + (added ? "" : "; already on the list"));
+            _log.Info(LogCategory.Session, p.Name + " was banned (" + (p.SteamAuthenticated ? "Steam ID " + p.SteamId : "") + (p.SteamAuthenticated && p.Direct ? " and " : "")
+                                           + (!p.SteamAuthenticated || p.Direct ? "address " + BanList.AddressKey(p.Address) : "") + ")" + (added ? "" : "; already on the list"));
             p.LeaveText = " was banned";
             Remove(p, 0, "banned", true);
             if (added) BansChanged?.Invoke();
@@ -1602,7 +1607,8 @@ namespace SkylineTogether.Core.Session
         {
             var keys = new List<string>(2);
             if (p.SteamAuthenticated) keys.Add("steam:" + p.SteamId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            string host = p.Direct || !p.SteamAuthenticated ? BanList.AddressHost(p.Address) : null;
+            // an IPv6 address counts as its /64 network: rotating addresses inside it gives no fresh attempts
+            string host = p.Direct || !p.SteamAuthenticated ? BanList.AddressKey(p.Address) : null;
             if (host != null) keys.Add("ip:" + host);
             if (keys.Count == 0) keys.Add("unknown"); // no identity at all: all such connections share one budget
             return keys.ToArray();

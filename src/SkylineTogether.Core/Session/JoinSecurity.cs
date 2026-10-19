@@ -25,7 +25,7 @@ namespace SkylineTogether.Core.Session
         /// <summary>The banned Steam ID; 0 for an address ban.</summary>
         public ulong SteamId;
 
-        /// <summary>The banned address without its port (see <see cref="BanList.AddressHost"/>); null for a Steam ban.</summary>
+        /// <summary>The banned address without its port, an IPv6 address as its /64 network (see <see cref="BanList.AddressKey"/>); null for a Steam ban.</summary>
         public string Address;
 
         /// <summary>The player's name when they were banned (for the unban list only).</summary>
@@ -76,7 +76,7 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         public bool IsBanned(ulong steamId, string address)
         {
-            string host = AddressHost(address);
+            string host = AddressKey(address);
             foreach (BanEntry e in _entries)
             {
                 if (e.SteamId != 0)
@@ -100,7 +100,7 @@ namespace SkylineTogether.Core.Session
             var entry = new BanEntry
             {
                 SteamId = steamId,
-                Address = steamId != 0 ? null : AddressHost(address),
+                Address = steamId != 0 ? null : AddressKey(address),
                 Name = CleanName(name),
                 BannedAt = bannedAt,
             };

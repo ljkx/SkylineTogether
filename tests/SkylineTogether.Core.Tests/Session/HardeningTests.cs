@@ -392,6 +392,58 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.True(lines >= 3 && lines <= 10, "the first few and then every 100th, not 500 lines (" + lines + ")");
         }
 
+        // ------------------------------------------------------------ bans and lockouts by address (14, 16)
+
+        [Test]
+        public void BanningADirectSteamPlayerAlsoBansTheAddress()
+        {
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty", Password = "pw" });
+            var anna = Handshake(rig, new RawPeer(rig, new PeerIdentity(8101, "203.0.113.20:4000", "Anna", true), 8101));
+            anna.AnswerChallenge("pw");
+            Pump(rig, new[] { anna });
+            var list = new List<PeerId>();
+            rig.Host.GetAdmittedPeers(list);
+            Assert.True(rig.Host.Ban(list[0], "bye"));
+            Assert.Equal(2, rig.Host.Options.Bans.Count, "the Steam ID and the address");
+            // she comes back over direct IP without a Steam identity
+            var back = Handshake(rig, new RawPeer(rig, new PeerIdentity(0, "203.0.113.20:4001", "Anna", true), 0));
+            Assert.Equal(RefuseReason.Banned, back.Refusal().Reason);
+
+            // a Steam P2P player is banned by the Steam ID only (a relay address means nothing)
+            var ben = Handshake(rig, new RawPeer(rig, "Ben", 8102));
+            ben.AnswerChallenge("pw");
+            Pump(rig, new[] { ben });
+            list.Clear();
+            rig.Host.GetAdmittedPeers(list);
+            int before = rig.Host.Options.Bans.Count;
+            Assert.True(rig.Host.Ban(list[0], null));
+            Assert.Equal(before + 1, rig.Host.Options.Bans.Count);
+        }
+
+        [Test]
+        public void IPv6BansAndLockoutsCoverTheWhole64()
+        {
+            var bans = new BanList();
+            Assert.True(bans.Add(0, "[2001:db8:aa:bb::1]:27015", "Eve", 1));
+            Assert.True(bans.IsBanned(0, "[2001:db8:aa:bb:ffff::42]:1"), "another address of the same /64");
+            Assert.False(bans.IsBanned(0, "[2001:db8:aa:bc::1]:1"), "the next /64 is not banned");
+            Assert.False(bans.Add(0, "[2001:db8:aa:bb::99]:2", "Eve", 2), "already banned");
+            BanList back = BanList.Parse("ip\t2001:db8:aa:bb::5\t0\tOld exact ban");
+            Assert.True(back.IsBanned(0, "[2001:db8:aa:bb::6]:7"), "a ban persisted for one address now covers its /64");
+            Assert.True(bans.IsBanned(0, "198.51.100.1:1") == false);
+
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty", Password = "right" });
+            for (int i = 0; i < 4; i++)
+            {
+                var guess = Handshake(rig, new RawPeer(rig, new PeerIdentity(0, "[2001:db8:1:2::" + (i + 1) + "]:5000", "Eve", true), 0));
+                guess.AnswerChallenge("wrong" + i);
+                Pump(rig, new[] { guess });
+            }
+            var rotated = Handshake(rig, new RawPeer(rig, new PeerIdentity(0, "[2001:db8:1:2::77]:5000", "Eve", true), 0));
+            Assert.Equal(RefuseReason.BadPassword, rotated.Refusal()?.Reason ?? (RefuseReason)255, "a new address in the same /64 is still locked out");
+            Assert.Null(rotated.Challenge());
+        }
+
         [Test]
         public void PingsAreNotAnsweredBeforeAdmission()
         {
