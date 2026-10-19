@@ -4,6 +4,7 @@ using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Tests.Framework;
+using SkylineTogether.Core.Transport;
 
 namespace SkylineTogether.Core.Tests.Session
 {
@@ -183,6 +184,130 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Equal("203.0.113.7", BanList.AddressKey("203.0.113.7:27015"));
             Assert.Equal("203.0.113.7", BanList.AddressKey("[::ffff:203.0.113.7]:1"));
             Assert.Null(BanList.AddressKey(" "));
+        }
+
+        // ------------------------------------------------------------------------- join watchdogs (finding 4)
+
+        [Test]
+        public void AJoinerWhoseLoadNeverProgressesNoLongerHoldsTheSimulationForHalfAnHour()
+        {
+            var rig = new SessionRig();
+            var (client, loader, _) = rig.AddClient("Griefer", tweakLoader: l => l.Defer = true);
+            rig.Run(300);
+            Assert.Equal(ClientState.Loading, client.State, client.EndReason);
+            Assert.True(rig.Host.HoldSimulation);
+            // the joiner keeps answering and reporting the same load progress
+            for (int i = 0; i < 2 * 400 && rig.Host.HoldSimulation; i++)
+            {
+                rig.Clock.Advance(0.5);
+                rig.Host.Tick();
+                client.Tick();
+            }
+            Assert.False(rig.Host.HoldSimulation, "released by the load watchdog");
+            Assert.True(rig.Clock.Seconds - 100 < 420, "after about five minutes without progress, not thirty minutes");
+            Assert.Contains("loading made no progress", string.Join("\n", rig.Log.Lines));
+        }
+
+        [Test]
+        public void AJoinerWhoseLoadProgressesIsNotDropped()
+        {
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty", MaxLoadSeconds = 1200 });
+            var (client, loader, _) = rig.AddClient("Slow", tweakLoader: l => l.Defer = true);
+            rig.Run(300);
+            Assert.Equal(ClientState.Loading, client.State, client.EndReason);
+            for (int i = 0; i < 2 * 900; i++)
+            {
+                client.ReportLoadProgress(i / 2000f);
+                rig.Clock.Advance(0.5);
+                rig.Host.Tick();
+                client.Tick();
+            }
+            Assert.Equal(ClientState.Loading, client.State, "a slow load that progresses may take its time");
+            loader.Finish();
+            rig.Run(30);
+            Assert.Equal(ClientState.Live, client.State, client.EndReason);
+        }
+
+        [Test]
+        public void AJoinerThatNeverFinishesTheDownloadIsDropped()
+        {
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty", DownloadStallSeconds = 60 });
+            var raw = Handshake(rig, new RawPeer(rig, "Lurker", 7501));
+            Assert.True(raw.Got(MessageKind.Welcome));
+            var progress = new ByteWriter();
+            SessionPayloads.WriteLoadProgress(progress, JoinPhase.Downloading, 0.5f);
+            for (int i = 0; i < 2 * 120 && rig.Host.HoldSimulation; i++)
+            {
+                if (i % 4 == 0) raw.Control(ControlKind.LoadProgress, progress.ToArray()); // heard, but never loading
+                rig.Clock.Advance(0.5);
+                rig.Host.Tick();
+                raw.Poll();
+            }
+            Assert.False(rig.Host.HoldSimulation);
+            Assert.Contains("the download made no progress", string.Join("\n", rig.Log.Lines));
+        }
+
+        [Test]
+        public void JoinsThatDoNotFinishMakeTheSamePlayerWait()
+        {
+            var rig = new SessionRig();
+            ulong id = 7601;
+            SessionClient Attempt(bool fail)
+            {
+                var (c, _, _) = rig.AddClient("Flaky", steamId: id, tweakLoader: l => l.Fail = fail);
+                rig.Run(300);
+                return c;
+            }
+            Assert.Equal(ClientEndKind.LoadFailed, Attempt(true).EndKind, "the first failed join");
+            Assert.Equal(ClientEndKind.LoadFailed, Attempt(true).EndKind, "the second is admitted at once (the first failure is free)");
+            int requests = rig.Snapshots.Requests;
+            SessionClient third = Attempt(false);
+            Assert.Equal(ClientEndKind.RefusedTemporarily, third.EndKind, "then the player waits");
+            Assert.Contains("You can join again in", third.EndReason);
+            Assert.True(SessionClient.IsRetryable(third.EndKind), "an automatic rejoin tries again later");
+            Assert.Equal(requests, rig.Snapshots.Requests, "no snapshot was taken for the refused attempt");
+            rig.RunHostOnly(61);
+            SessionClient fourth = Attempt(false);
+            Assert.Equal(ClientState.Live, fourth.State, fourth.EndReason);
+            // a completed join wipes the slate: another failure is free again
+            fourth.Leave();
+            rig.Run(10);
+            Assert.Equal(ClientEndKind.LoadFailed, Attempt(true).EndKind);
+            Assert.Equal(ClientEndKind.LoadFailed, Attempt(true).EndKind);
+            // other players are not affected
+            var (other, _, _) = rig.AddClient("Other", steamId: 7602);
+            rig.Run(300);
+            Assert.Equal(ClientState.Live, other.State, other.EndReason);
+        }
+
+        [Test]
+        public void AJoinerThatKeepsAskingForTheCityAgainIsDropped()
+        {
+            var rig = new SessionRig(snapshotBytes: 3_000_000);
+            var raw = Handshake(rig, new RawPeer(rig, "Leech", 7701));
+            SnapshotManifest manifest = null;
+            for (int i = 0; i < 200 && manifest == null; i++)
+            {
+                Pump(rig, new[] { raw }, 1);
+                foreach ((ControlKind kind, byte[] payload) in raw.Controls)
+                {
+                    if (kind == ControlKind.SnapshotManifest) manifest = SnapshotManifestCodec.Decode(payload, 0, payload.Length);
+                }
+            }
+            Assert.NotNull(manifest);
+            int chunks = (int)((manifest.Size + manifest.ChunkSize - 1) / manifest.ChunkSize);
+            var empty = new byte[(chunks + 7) / 8];
+            var have = new ByteWriter();
+            BlobCodec.WriteHave(have, manifest.SnapshotId, empty, 0, empty.Length);
+            for (int i = 0; i < 400 && !raw.Disconnected; i++)
+            {
+                raw.Send(MessageKind.BlobHave, have.ToArray());
+                rig.Clock.Advance(0.3);
+                rig.Host.Tick();
+                raw.Poll();
+            }
+            Assert.True(raw.Disconnected, "the host stopped sending the city over and over");
+            Assert.Contains("of the city again", string.Join("\n", rig.Log.Lines));
         }
 
         [Test]

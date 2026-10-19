@@ -88,6 +88,35 @@ namespace SkylineTogether.Core.Session
         public double MaxJoinSeconds = 1800;
 
         /// <summary>
+        /// A joiner's download is dropped when the host sees no progress for this long: no snapshot bytes leave the host
+        /// (handed to the transport and delivered), and the joiner does not report that it moved on to loading.
+        /// </summary>
+        public double DownloadStallSeconds = 180;
+
+        /// <summary>A joiner whose reported load progress does not grow for this long is dropped.</summary>
+        public double LoadStallSeconds = 300;
+
+        /// <summary>The longest the joiner's load of the city may take (its own game gives up after the same time).</summary>
+        public double MaxLoadSeconds = 1200;
+
+        /// <summary>
+        /// Snapshot bytes a joiner may ask for again (have-bitmaps), as a multiple of the snapshot's size (plus 16 MiB);
+        /// a joiner that asks for more is dropped instead of making the host send the city over and over.
+        /// </summary>
+        public double MaxResendFactor = 2;
+
+        /// <summary>
+        /// Wait before the same player (Steam ID or address) may be admitted again after joins that failed or were
+        /// abandoned (dropped, cancelled, connection lost, load failed), by the number of such joins in a row: the first
+        /// costs nothing, then 1, 5 and 30 minutes. Forgotten after <see cref="JoinFailureForgetSeconds"/> without one,
+        /// and after a join that completes.
+        /// </summary>
+        public double[] JoinCooldownSeconds = { 0, 60, 300, 1800 };
+
+        /// <summary>A player's failed joins are forgotten after this long without another one.</summary>
+        public double JoinFailureForgetSeconds = 3600;
+
+        /// <summary>
         /// A snapshot the save system has not delivered after this long is abandoned (the waiting joiners are
         /// told, the next join requests a new one); without it a lost callback blocked every later join.
         /// </summary>
@@ -219,6 +248,20 @@ namespace SkylineTogether.Core.Session
             /// <summary>Raw messages of this peer that wait for a later frame (its frame budget was spent), in order.</summary>
             public Queue<byte[]> Deferred;
             public long DeferredBytes;
+            /// <summary>Join watchdog: the most snapshot bytes seen leaving the host, the best load progress, and when either grew.</summary>
+            public long DeliveredBytes;
+            public float BestLoadProgress = -1f;
+            public double ProgressAt;
+            public double LoadingSince = double.NaN;
+            /// <summary>The join ended through no fault of the joiner (the host's snapshot failed, or a newer connection of the same player replaced it).</summary>
+            public bool NotJoinersFault;
+        }
+
+        private sealed class JoinFailures
+        {
+            public int Count;
+            public double Last;
+            public double Until;
         }
 
         /// <summary>Completed joins kept for the diagnostics and the UI.</summary>
@@ -239,6 +282,8 @@ namespace SkylineTogether.Core.Session
         // the roles the host gave players in this session, by identity (IdentityKey), oldest first in _rememberedOrder
         private readonly Dictionary<string, SessionRole> _rememberedRoles = new Dictionary<string, SessionRole>(StringComparer.Ordinal);
         private readonly Queue<string> _rememberedOrder = new Queue<string>();
+        // failed or abandoned joins by identity (IdentityKey): the cooldown before the next admission
+        private readonly Dictionary<string, JoinFailures> _joinFailures = new Dictionary<string, JoinFailures>(StringComparer.Ordinal);
         private readonly ByteWriter _body = new ByteWriter(4096);
         private readonly ByteWriter _broadcastEnvelope = new ByteWriter(4096); // a broadcast's shared envelope
         private readonly ByteWriter _payload = new ByteWriter(4096);
@@ -430,6 +475,16 @@ namespace SkylineTogether.Core.Session
                     SystemMessage(p.Name + " took too long to join.");
                     SendText(p, ControlKind.SessionEnd, "Joining took too long (more than " + (int)(_options.MaxJoinSeconds / 60) + " minutes). Try joining again.");
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "join took too long"));
+                    continue;
+                }
+                string stalled = p.Admitted && p.State != PlayerState.Live && !grace ? JoinStalled(p, now) : null;
+                if (stalled != null)
+                {
+                    // the watchdog judges what the host itself sees (snapshot bytes leaving), not just what the joiner claims
+                    _log.Warn(LogCategory.Join, p.Name + ": " + stalled + " (" + p.State + "); dropping it");
+                    SystemMessage(p.Name + " could not finish joining.");
+                    SendText(p, ControlKind.SessionEnd, "Joining stopped making progress (" + stalled + "). Try joining again.");
+                    (drop ?? (drop = new List<(Peer, string)>())).Add((p, "join made no progress"));
                     continue;
                 }
                 if (p.Admitted && p.State == PlayerState.Live && _options.LiveSilenceTimeoutSeconds > 0 && now - p.LastHeard > _options.LiveSilenceTimeoutSeconds && !grace)
@@ -1053,6 +1108,85 @@ namespace SkylineTogether.Core.Session
             }
         }
 
+        /// <summary>
+        /// The join watchdog: why a joiner's join no longer makes progress, or null. Downloading: the host sees no snapshot
+        /// bytes leave (the sender only hands over more as the transport delivers; a joiner that stops reading stalls it)
+        /// and the joiner did not move on to loading. Loading: the reported progress does not grow, or the load takes
+        /// longer than the joiner's own game would wait.
+        /// </summary>
+        private string JoinStalled(Peer p, double now)
+        {
+            switch (p.State)
+            {
+                case PlayerState.Downloading:
+                {
+                    long sent = p.Sender != null ? p.Sender.TotalBytesSent : 0;
+                    if (sent > p.DeliveredBytes)
+                    {
+                        p.DeliveredBytes = sent;
+                        p.ProgressAt = now;
+                    }
+                    if (_options.DownloadStallSeconds > 0 && now - p.ProgressAt > _options.DownloadStallSeconds)
+                    {
+                        return "the download made no progress for " + (int)(now - p.ProgressAt) + " s";
+                    }
+                    return null;
+                }
+                case PlayerState.Loading:
+                    if (double.IsNaN(p.LoadingSince)) p.LoadingSince = p.ProgressAt = now;
+                    if (_options.MaxLoadSeconds > 0 && now - p.LoadingSince > _options.MaxLoadSeconds)
+                    {
+                        return "loading took more than " + (int)(_options.MaxLoadSeconds / 60) + " minutes";
+                    }
+                    if (_options.LoadStallSeconds > 0 && now - p.ProgressAt > _options.LoadStallSeconds)
+                    {
+                        return "loading made no progress for " + (int)(now - p.ProgressAt) + " s";
+                    }
+                    return null;
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>Counts a join that ended before the player was live (the next admission of the same identity may wait).</summary>
+        private void RecordJoinFailure(Peer p, double now)
+        {
+            string key = IdentityKey(p);
+            if (key == null || _options.JoinCooldownSeconds == null || _options.JoinCooldownSeconds.Length == 0) return;
+            if (!_joinFailures.TryGetValue(key, out JoinFailures f) || now - f.Last > _options.JoinFailureForgetSeconds)
+            {
+                if (f == null && _joinFailures.Count >= MaxRememberedRoles) PruneJoinFailures(now);
+                f = new JoinFailures();
+                _joinFailures[key] = f;
+            }
+            f.Count++;
+            f.Last = now;
+            double[] steps = _options.JoinCooldownSeconds;
+            double wait = steps[Math.Min(f.Count, steps.Length) - 1];
+            f.Until = now + Math.Max(0, wait);
+            if (wait > 0) _log.Info(LogCategory.Join, p.Name + ": " + f.Count + " joins in a row did not finish; the next is admitted in " + (int)wait + " s at the earliest");
+        }
+
+        private void PruneJoinFailures(double now)
+        {
+            var stale = new List<string>();
+            foreach (KeyValuePair<string, JoinFailures> e in _joinFailures)
+            {
+                if (now - e.Value.Last > _options.JoinFailureForgetSeconds || e.Value.Until <= now) stale.Add(e.Key);
+            }
+            foreach (string k in stale) _joinFailures.Remove(k);
+        }
+
+        /// <summary>True (with the seconds left) while this identity must wait after joins that did not finish.</summary>
+        private bool CoolingDown(Peer p, double now, out double wait)
+        {
+            wait = 0;
+            string key = IdentityKey(p);
+            if (key == null || !_joinFailures.TryGetValue(key, out JoinFailures f)) return false;
+            wait = f.Until - now;
+            return wait > 0;
+        }
+
         /// <summary>A frame gap above this many seconds counts as a stall of the host.</summary>
         private const double StallSeconds = 5;
 
@@ -1208,7 +1342,19 @@ namespace SkylineTogether.Core.Session
                     if (t - p.LastHave < 0.25) return;
                     p.LastHave = t;
                     ArraySegment<byte> bitmap = BlobCodec.DecodeHave(e.Body, e.BodyOffset, e.BodyCount, out uint blobId);
-                    if (blobId == p.Sender.Manifest.BlobId) p.Sender.OnHave(bitmap.Array, bitmap.Offset, bitmap.Count);
+                    if (blobId != p.Sender.Manifest.BlobId) return;
+                    // resends are capped: a joiner that keeps asking for the city again is dropped (it would make the host
+                    // send the whole city every quarter second)
+                    long resent = (long)p.Sender.ResentChunks * Math.Max(1, p.Sender.Manifest.ChunkSize);
+                    if (resent > (long)(_options.MaxResendFactor * p.SnapshotSize) + 16L * 1024 * 1024)
+                    {
+                        _log.Warn(LogCategory.Join, p.Name + ": asked for " + resent + " bytes of the city again (snapshot " + p.SnapshotSize + " bytes); dropping it");
+                        SystemMessage(p.Name + " could not finish joining.");
+                        SendText(p, ControlKind.SessionEnd, "The city download kept failing. Try joining again.");
+                        Remove(p, TransportCloseReason.ProtocolError, "too many resends", true);
+                        return;
+                    }
+                    p.Sender.OnHave(bitmap.Array, bitmap.Offset, bitmap.Count);
                     return;
                 }
                 default:
@@ -1296,6 +1442,8 @@ namespace SkylineTogether.Core.Session
                     CloseSender(p);
                     p.State = PlayerState.Live;
                     p.LiveSince = _clock.Seconds;
+                    string identity = IdentityKey(p);
+                    if (identity != null) _joinFailures.Remove(identity); // a completed join wipes the slate
                     if (p.Timeline != null)
                     {
                         p.Timeline.Mark(JoinStage.Downloaded, p.LiveSince);
@@ -1332,6 +1480,18 @@ namespace SkylineTogether.Core.Session
                     else
                     {
                         p.LoadProgress = fraction;
+                        double at = _clock.Seconds;
+                        if (p.State != PlayerState.Loading)
+                        {
+                            p.LoadingSince = at;
+                            p.ProgressAt = at;
+                        }
+                        // the load watchdog counts growth only (a joiner repeating one value is stalled)
+                        if (fraction > p.BestLoadProgress + 0.0005f)
+                        {
+                            p.BestLoadProgress = fraction;
+                            p.ProgressAt = at;
+                        }
                         if (p.State != PlayerState.Loading) _log.Info(LogCategory.Join, p.Name + " downloaded the city and is loading it");
                         p.Timeline?.Mark(JoinStage.Downloaded, _clock.Seconds);
                         p.State = PlayerState.Loading;
@@ -1596,6 +1756,14 @@ namespace SkylineTogether.Core.Session
                 }
                 return;
             }
+            // a player whose last joins did not finish waits before the next one (each admission costs the host a
+            // snapshot and holds its simulation)
+            if (CoolingDown(p, _clock.Seconds, out double cooldown))
+            {
+                Refuse(p, RefuseReason.HostPreparing, "Your last attempts to join this session did not finish. You can join again in "
+                                                      + Math.Max(1, (int)Math.Ceiling(cooldown)).ToString(System.Globalization.CultureInfo.InvariantCulture) + " s.");
+                return;
+            }
             // the same player connected again (their game crashed, the old connection is dying): only now, with the
             // password proven and everything compatible, may the new connection replace the old one
             if (!ResolveDuplicate(p)) return;
@@ -1824,6 +1992,7 @@ namespace SkylineTogether.Core.Session
             {
                 if (p.Admitted && p.State == PlayerState.WaitingForSnapshot)
                 {
+                    p.NotJoinersFault = true;
                     _payload.Reset();
                     SessionPayloads.WriteText(_payload, "The host could not save the city: " + reason);
                     SendControl(p, ControlKind.SessionEnd, _payload);
@@ -1878,6 +2047,8 @@ namespace SkylineTogether.Core.Session
                 }
                 SendControl(p, ControlKind.SnapshotManifest, _payload);
                 p.State = PlayerState.Downloading;
+                p.ProgressAt = _clock.Seconds; // the download watchdog starts now
+                p.DeliveredBytes = 0;
                 _playersDirty = true;
                 _log.Info(LogCategory.Join, p.Name + ": sending the snapshot (" + info.Size + " bytes, " + info.ChunkCount + " chunks)");
                 // the manifest and the first window of chunks leave now, not one frame later
@@ -1990,6 +2161,8 @@ namespace SkylineTogether.Core.Session
         private void Remove(Peer p, int reason, string text, bool close)
         {
             if (!_peers.Remove(p.Channel.Connection)) return;
+            // a join that ended before the player was live (for any reason of the joiner's side) counts towards a cooldown
+            if (p.Admitted && p.State != PlayerState.Live && !_stopping && !_disposed && !p.NotJoinersFault) RecordJoinFailure(p, _clock.Seconds);
             CloseSender(p);
             if (close) p.Channel.Close(reason, text);
             else p.Channel.Dispose();
