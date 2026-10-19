@@ -101,7 +101,15 @@ namespace SkylineTogether.Core.Integrity
         /// A bucket detail was compared: <paramref name="differences"/> objects differ (confirmed or not) and
         /// <paramref name="repairsRequested"/> of them were sent for repair now.
         /// </summary>
-        public Step OnDetail(uint bucket, int differences, int repairsRequested, double now)
+        public Step OnDetail(uint bucket, int differences, int repairsRequested, double now) => OnDetail(bucket, differences, differences, repairsRequested, now);
+
+        /// <summary>
+        /// As <see cref="OnDetail(uint, int, int, double)"/>, with the differences this detail confirmed
+        /// (<paramref name="confirmed"/>) apart from all of them: a bucket counts as too different for object repairs
+        /// only by its confirmed differences (a host bulk edit still in flight differs everywhere for a moment), while
+        /// any difference keeps a bucket's unconverged repair rounds counting.
+        /// </summary>
+        public Step OnDetail(uint bucket, int differences, int confirmed, int repairsRequested, double now)
         {
             if (differences <= 0)
             {
@@ -116,7 +124,7 @@ namespace SkylineTogether.Core.Integrity
             }
             if (state.Repaired) state.StuckRounds++;
             if (repairsRequested > 0) state.Repaired = true;
-            bool massive = differences > _thresholds.EntityRepairLimit;
+            bool massive = confirmed > _thresholds.EntityRepairLimit;
             if (!massive && state.StuckRounds < StuckRoundsBeforeRebaseline) return Step.None;
             if (now - state.LastRebaseline < BucketCooldownSeconds) return Step.None;
             if (_rebaselines.Count(now) >= MaxRebaselinesPerMinute) return Step.None;

@@ -138,7 +138,12 @@ namespace SkylineTogether.Core.Integrity
             public double RecheckAfter;
 
             public int Matching;
+
+            /// <summary>Entities that differ in this detail, confirmed or not (a host edit in flight differs for a moment).</summary>
             public int Mismatching;
+
+            /// <summary>Entities whose difference was confirmed by this detail (stable for the confirmation window).</summary>
+            public int Confirmed;
 
             public void Clear()
             {
@@ -151,6 +156,7 @@ namespace SkylineTogether.Core.Integrity
                 RecheckAfter = 0;
                 Matching = 0;
                 Mismatching = 0;
+                Confirmed = 0;
             }
 
             internal void NeedRecheck(double delay)
@@ -185,8 +191,11 @@ namespace SkylineTogether.Core.Integrity
         /// <summary>Confirmed repairs postponed by the per-entity backoff.</summary>
         public long BackedOff { get; private set; }
 
-        /// <summary>Entities given up for the session.</summary>
+        /// <summary>Entities given up, over every session (diagnostics).</summary>
         public long GivenUpCount { get; private set; }
+
+        /// <summary>Entities given up in this session (<see cref="Clear"/> resets it; the resync offer counts these).</summary>
+        public long GivenUpThisSession { get; private set; }
 
         /// <summary>Entities currently tolerated.</summary>
         public int ToleratedCount(double now)
@@ -295,6 +304,7 @@ namespace SkylineTogether.Core.Integrity
                 return;
             }
             Confirmations++;
+            outcome.Confirmed++;
             _history.TryGetValue(id, out History h);
             if (h != null && h.Tolerances == 0 && now - h.LastRepair > HistorySeconds)
             {
@@ -316,6 +326,7 @@ namespace SkylineTogether.Core.Integrity
                 if (giveUp)
                 {
                     GivenUpCount++;
+                    GivenUpThisSession++;
                     outcome.GivenUp.Add(id);
                 }
                 if (!e.Explained)
@@ -476,13 +487,14 @@ namespace SkylineTogether.Core.Integrity
             foreach (uint id in _scratch) _history.Remove(id);
         }
 
-        /// <summary>Forgets everything (session end); keeps the statistics.</summary>
+        /// <summary>Forgets everything (session end); keeps the statistics, except the session's given-up count.</summary>
         public void Clear()
         {
             _entries.Clear();
             _history.Clear();
             _perBucket.Clear();
             _budget = double.NaN;
+            GivenUpThisSession = 0;
         }
     }
 }

@@ -315,7 +315,9 @@ namespace SkylineTogether.Sync
                         // (lanes, movers, citizens, icons, ...) are skipped without touching their entities
                         bool known = _codec.Families.TryClassifyArchetype(chunk.Archetype, out Family chunkFamily);
                         bool subElements = _subElementFrame && deleted && (chunkFamily == Family.Lane || chunkFamily == Family.PrefabSubObject);
-                        if (known && chunkFamily != Family.ZoneBlock && !subElements && !FamilyClassifier.IsHostReplicated(chunkFamily)) continue;
+                        // deleted events stay despawned after their feature turned off (their ids were bound before)
+                        bool eventDeletions = deleted && chunkFamily == Family.Event;
+                        if (known && chunkFamily != Family.ZoneBlock && !subElements && !eventDeletions && !FamilyClassifier.IsHostReplicated(chunkFamily)) continue;
                         bool created = chunk.Has<Game.Common.Created>();
                         bool hasPrefab = chunk.Has<PrefabRef>();
                         NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
@@ -511,7 +513,10 @@ namespace SkylineTogether.Sync
                 if (FamilyClassifier.AgentsReplicated) CaptureHostAgent(em, e, deleted, created, hasPrefab);
                 return;
             }
-            if (!FamilyClassifier.IsReplicated(family)) return;
+            // events, chirps and journal entries bound before Features.Events turned off are still despawned when the host
+            // deletes them (clients kept them for the rest of the session, the host kept their ids bound to destroyed
+            // entities); new ones are no longer bound
+            if (!FamilyClassifier.IsReplicated(family) && !(deleted && family == Family.Event)) return;
             uint id = _ids.GetNetId(e);
             if (deleted)
             {

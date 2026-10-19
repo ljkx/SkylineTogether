@@ -752,7 +752,7 @@ namespace SkylineTogether.Sync
                             if (compare) OnDigest(r.Bucket, r.Count, r.Hash, now);
                             break;
                         case SyncRecordKind.EntityHashes:
-                            OnDetail(r.Bucket, r.Hashes, now);
+                            OnDetail(r.Bucket, r.Hashes, now, compare);
                             break;
                         case SyncRecordKind.EntityExplain:
                             OnExplain(r.NetId, r.ComponentHashes);
@@ -810,7 +810,7 @@ namespace SkylineTogether.Sync
                 _verifiedThisCycle = 0;
                 if (_bucketMismatches > 0) _log.Debug(LogCategory.Integrity, "verification cycle: " + _bucketMismatches + " of " + _cycleCompared + " buckets mismatched");
                 // massive divergence across a whole cycle may offer a resync
-                _escalation.OnCycle(_cycleCompared, (int)_bucketMismatches, _tracker.GivenUpCount, _verifiedLastCycle, now);
+                _escalation.OnCycle(_cycleCompared, (int)_bucketMismatches, _tracker.GivenUpThisSession, _verifiedLastCycle, now);
                 AnnounceOffer();
                 _bucketMismatches = 0;
                 _cycleCompared = 0;
@@ -878,7 +878,7 @@ namespace SkylineTogether.Sync
             return acc;
         }
 
-        private void OnDetail(uint bucket, List<EntityHash> host, double now)
+        private void OnDetail(uint bucket, List<EntityHash> host, double now, bool compare)
         {
             _scheduler.OnArrived(bucket);
             if (host == null) return;
@@ -922,8 +922,10 @@ namespace SkylineTogether.Sync
             }
             if (_outcome.NewlyTolerated.Count > 0) LogTolerated(_outcome.NewlyTolerated, now);
             if (_outcome.Recheck) _scheduler.Request(bucket, now + _outcome.RecheckAfter, now);
-            // a bucket whose repairs do not converge (or too different for them) is re-sent as a whole
-            if (_escalation.OnDetail(bucket, _outcome.Mismatching, _outcome.Repair.Count, now) == RepairEscalation.Step.RebaselineBucket) RebaselineBucket(bucket, host);
+            // a bucket whose repairs do not converge (or too different for them) is re-sent as a whole: "too different" by
+            // the confirmed differences only (a host bulk edit still in flight differs for a moment, everywhere at once),
+            // and never while catching up (the client's view is behind by design then)
+            if (compare && _escalation.OnDetail(bucket, _outcome.Mismatching, _outcome.Confirmed, _outcome.Repair.Count, now) == RepairEscalation.Step.RebaselineBucket) RebaselineBucket(bucket, host);
             AnnounceOffer();
         }
 
