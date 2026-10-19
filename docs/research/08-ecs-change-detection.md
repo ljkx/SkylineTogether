@@ -1,16 +1,20 @@
 # 08 - ECS change detection and bulk data access at scale
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research for **Skyline Together** (host-authoritative co-op for Cities: Skylines II).
 Topic: how to find out cheaply, at the scale of a whole city, *which* entities and components changed, how to read and write
 their raw bytes for component types known only at runtime, and how to remap `Entity` references so that a generic
 "replicate the selected component types for the selected archetypes" engine works.
 
-All paths below are relative to `<audit>\decomp` unless stated otherwise.
+All paths below are relative to the root of the game's decompiled assemblies unless stated otherwise.
 `UE/` is short for `Unity.Entities/Unity.Entities/`. Line numbers refer to the decompiled files.
 
 How the claims are marked:
 
-- **[V]** verified: I read it in the decompiled code at the cited location.
+- **[V]** verified: read in the decompiled code at the cited location.
 - **[I]** inference: my reasoning, an estimate, or general knowledge of Unity DOTS that this decomp does not confirm directly.
 
 ---
@@ -305,22 +309,14 @@ is the current version.
 
 [V] `UE/ArchetypeChunk.cs:739-743,827-834`; `UE/ChunkDataUtility.cs:1272-1292` (uses `ElementSize` for both kinds).
 
-### 7.2 Remap template, straight from the engine
+### 7.2 How the engine walks entity fields
 
 `ChunkDataUtility.ClearEntityReferences` is the canonical way to walk `Entity` fields with `TypeInfo` offsets, for both
 components and buffers [V] `UE/ChunkDataUtility.cs:1257-1319`:
 
-```csharp
-// abridged from UE/ChunkDataUtility.cs:1301-1319
-EntityOffsetInfo* offs = GetEntityOffsets(typeInfo);
-for (int i = 0; i < elementCount; i++) {
-    byte* p = address + typeInfo.ElementSize * i;
-    for (int j = 0; j < typeInfo.EntityOffsetCount; j++) {
-        Entity* e = (Entity*)(p + offs[j].Offset);
-        /* remap *e */
-    }
-}
-```
+In outline (`UE/ChunkDataUtility.cs:1301-1319`): the method fetches the type's table of entity offsets, then visits
+every element of the array (its address is the base address plus the element size times the index) and, inside each
+element, every `Entity` field at the offsets of the table, which it rewrites.
 
 For a buffer, the same loop runs over `BufferHeader.GetElementPointer(header)` with `elementCount = header->Length`
 (lines 1276-1285).

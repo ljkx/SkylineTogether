@@ -1,11 +1,15 @@
 # 09 — Third-party mods: what they change and how a generic sync layer would see it
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Project: **Skyline Together** (clean-room, host-authoritative co-op for Cities: Skylines II).
-Scope: the 10 mods with local source under `thirdparty/`, plus the 11 mods the user runs without local source.
+Scope: the 10 mods with local source under `thirdparty/`, plus 11 further mods without published source.
 
 ## Conventions
 
-- Paths starting `thirdparty/` are relative to `<audit>\thirdparty`. All other code paths are relative to `<audit>\decomp`.
+- Paths starting `thirdparty/` refer to the published sources of those mods. All other code paths are relative to the root of the game's decompiled assemblies.
 - **[V]** means verified: read in code at the cited lines. **[I]** means inference: reasoning from verified facts, not observed directly. **[W]** means taken from the web (Traffic only). **[U]** means unverified because there is no source, so the claim is a classification from the mod's stated purpose.
 - "Design A" replicates the final ECS state of persistent entities generically, whatever system wrote it. Host-authoritative: the host diffs and sends, and clients apply.
 - "Design B" replays tool intents. The originating client sends the intent, the host re-executes it through the same tool code, and the results are then replicated or replayed.
@@ -488,7 +492,7 @@ Legend: A = generic final-state replication; B = intent replay. "All peers" mean
 ---
 
 ## 6. Open questions
-- Road Speed Adjuster: no source. Decompile its DLL from the user's mod folder (not in the allowed paths for this pass) to list components and systems.
+- Road Speed Adjuster: no public source; which components and systems it writes is to be confirmed from its documentation or in game.
 - Traffic: verify which of `ModifiedConnections`/`DataOwner` entities carry `PrefabRef` (affects identity), and whether `ModificationDataSyncSystem` (Modification4B) deletes data on edge updates. Peers would then race unless suppressed.
 - The exact intra-phase order of mod systems registered with `UpdateAt` versus vanilla (for example Anarchy `EnableToolErrorsSystem` versus `ValidationSystem`, both ModificationEnd) was not verified; ordering depends on `UpdateSystem` registration order (see doc on `UpdateSystem`).
 - Whether vanilla tool-local entities other than MoveIt's (for example `CreationDefinition` without `Temp`) can match the save query between ToolUpdate and Modification1 was not checked.

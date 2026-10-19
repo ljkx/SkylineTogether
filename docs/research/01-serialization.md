@@ -1,8 +1,12 @@
 # 01 – Save/Load serialization and runtime entity serialization (Cities: Skylines II)
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research for **Skyline Together**, a clean-room host-authoritative co-op mod.
 
-All paths are relative to `<audit>\decomp` unless stated otherwise. `file:line` refers to the decompiled source.
+All paths are relative to the root of the game's decompiled assemblies unless stated otherwise. `file:line` refers to the decompiled source.
 
 Legend:
 - **[V]** means verified: read directly in the decompiled code at the cited lines.

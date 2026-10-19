@@ -1,8 +1,12 @@
 # 04 - Entity taxonomy, prefabs and persistent state
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research for **Skyline Together** (host-authoritative co-op for Cities: Skylines II).
 Sources: decompiled game code only. All paths below are relative to
-`<audit>\decomp`. Line numbers refer to those files.
+the root of the game's decompiled assemblies. Line numbers refer to those files.
 
 Legend used throughout:
 
@@ -69,17 +73,9 @@ Load order: built-in prefabs come from `assetDatabase.GetAssets(SearchFilter<Pre
 
 `Game/Game.Prefabs/PrefabID.cs`:
 
-```csharp
-public PrefabID(PrefabBase prefab, Hash128 overrideHash = default) {
-    m_Type = prefab.GetType().Name;   m_Name = prefab.name;
-    if (overrideHash.isValid) m_Hash = overrideHash;
-    else if (prefab.asset != null) {
-        string platformID = prefab.asset.GetMeta().platformID;
-        if (!string.IsNullOrEmpty(platformID)) m_Hash.Calculate(platformID);
-        else m_Hash = prefab.asset.id.guid;            // asset GUID
-    }
-}                                                       // lines 15-36
-```
+The constructor (lines 15-36) stores the prefab's type name and object name. The hash is the override hash when a
+valid one is passed. Otherwise, for a prefab loaded from an asset, it is the hash of the asset's platform id (the
+Paradox Mods id) when the asset has one, else the asset's GUID. A prefab without an asset keeps an invalid hash.
 
 - Equality = type **and** name **and** hash (`:45-52`). `GetHashCode` uses name and hash only (`:54-57`).
 - Serialization writes `type`, `name`, `hash`; the hash is only read if the save has `FormatTags.PrefabIDHash` (`:84-105`, `Game/Game/FormatTags.cs:40`).

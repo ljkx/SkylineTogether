@@ -1,13 +1,17 @@
 # 12 – Entity identity, join bootstrap, session saves and versioning
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research for **Skyline Together**, a clean-room, host-authoritative co-op mod for Cities: Skylines II.
 
-All paths are relative to `<audit>\decomp` unless stated otherwise. `UE/` = `Unity.Entities/Unity.Entities/`, `CSE/` = `Colossal.Core/Colossal.Serialization.Entities/`, `CAD/` = `Colossal.IO.AssetDatabase/Colossal.IO.AssetDatabase/`.
+All paths are relative to the root of the game's decompiled assemblies unless stated otherwise. `UE/` = `Unity.Entities/Unity.Entities/`, `CSE/` = `Colossal.Core/Colossal.Serialization.Entities/`, `CAD/` = `Colossal.IO.AssetDatabase/Colossal.IO.AssetDatabase/`.
 
 Tags:
 - **[V]** verified: read in the decompiled code at the cited lines during this study.
 - **[I]** inference: reasoned from verified code; not executed.
-- **[V→NN]** verified in the prior report NN at the cited lines and consistent with what I read; not re-read line-by-line here.
+- **[V→NN]** verified in the prior report NN at the cited lines and consistent with this report's reading; not re-read line-by-line here.
 
 Line-number corrections against the task brief and prior reports [V]:
 - The private `GameManager.Load(GameMode, Purpose, AsyncReadDescriptor, Hash128, Guid)` is at `Game/Game.SceneFlow/GameManager.cs:1053-1151` (not 1046). `Save` is at `:945-1015`. Public `Load(GameMode, Purpose, IAssetData)` is `:1162-1215`, `Load(..., Hash128 guid)` is `:1217-1225`.

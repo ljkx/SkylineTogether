@@ -15,5 +15,10 @@ For how the mod works today, read [docs/ARCHITECTURE.md](../ARCHITECTURE.md), wh
 | [proposal-B-scale-efficiency.md](proposal-B-scale-efficiency.md) | Competing proposal B: scale and efficiency. |
 | [proposal-C-buildable-robust.md](proposal-C-buildable-robust.md) | Competing proposal C: buildable and robust. |
 
+Terms used in these documents: **R01**-**R15** are the [research reports](../research/); **P-A**, **P-B** and **P-C**
+are the three proposals; **J1**, **J2** and **J3** are the three design reviews of the proposals (J1 judged player
+experience, J2 engineering risk, J3 scale and performance); **ARCH** is the original architecture. Work-package tags
+such as `w2/ids` or `w8/security` name development branches.
+
 When a historical document and the code disagree, the code is right. Changes to the design are recorded in
 [docs/ARCHITECTURE.md](../ARCHITECTURE.md) and, for decisions, in [docs/decisions/](../decisions/).

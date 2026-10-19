@@ -1,7 +1,11 @@
 # 11 – Follower-client system gating audit and the single apply point
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research for **Skyline Together** (clean-room, host-authoritative co-op mod for Cities: Skylines II).
-All paths are relative to `<audit>\decomp` unless stated otherwise.
+All paths are relative to the root of the game's decompiled assemblies unless stated otherwise.
 Line numbers refer to the decompiled files as read on 2026-10-10. Prior reports are cited as `02 §x`, `03 §x` and so on.
 
 Legend:

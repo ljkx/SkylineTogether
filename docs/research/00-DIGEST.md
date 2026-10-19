@@ -407,7 +407,7 @@ All 10 mods with local source change world state. Most of them do it outside the
 
 **Open questions**
 
-- Road Speed Adjuster: which components and systems does it write? Answering this needs a decompile of its DLL, which is outside this pass's allowed paths.
+- Road Speed Adjuster: which components and systems does it write? It has no public source; to be confirmed from its documentation or in game.
 - Traffic: do its data entities (DataOwner/ModifiedConnections) carry PrefabRef? Does ModificationDataSyncSystem (Modification4B) delete or reset data on edge updates in a way that would race on clients?
 - What is the intra-phase ordering of mod systems registered with UpdateAt relative to vanilla systems in the same phase (for example Anarchy EnableToolErrorsSystem versus ValidationSystem, both at ModificationEnd)?
 - Is a per-mod suppression registry acceptable, or should the layer attempt a generic client-side write guard on replicated components?

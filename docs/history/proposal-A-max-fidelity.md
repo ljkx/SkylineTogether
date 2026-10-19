@@ -10,7 +10,7 @@ visible agents; every client is a *mirror* that runs only a follower simulation.
 - Date: 2026-10-10. Status: proposal for review (one of several competing proposals).
 - Sources: research digest and reports `docs/research/00`–`15` (cited as **R01 §x** … **R15 §x**), plus spot checks in
   the decompiled code made for this proposal (cited as `file.cs:line`, paths relative to the decomp root
-  `<audit>\decomp`).
+  the root of the game's decompiled assemblies).
 - Markers: **[V]** verified in code (by a research report or by this proposal's spot checks), **[I]** design inference,
   **[M]** must be measured or verified in game.
 
@@ -835,7 +835,7 @@ trigger a per-owner repair (§7.4).
 
 ### 4.1 Principle: capture effects, not inputs
 
-The game has 182 trigger bindings using eight different mutation mechanisms (R10 §0-§2), and the user's mods add many
+The game has 182 trigger bindings using eight different mutation mechanisms (R10 §0-§2), and the targeted mods add many
 direct writes outside the Temp pipeline (R09 §5.10). Re-implementing every handler as a bespoke intent would be large,
 brittle and never complete. Instead, on a client:
 
@@ -1401,7 +1401,7 @@ sealed class ModProfile {
 No compile-time reference to any mod; a profile whose types do not resolve is reported and the mod is treated as
 "unknown" (must match exactly).
 
-### 9.3 The user's mods
+### 9.3 The targeted mods
 
 | Mod | Class | Generic coverage | Client OFF / join neutralization | Session settings / host-only actions | Notes |
 |---|---|---|---|---|---|
@@ -1614,7 +1614,7 @@ SkylineTogether/
 
 ### 11.4 Milestones
 
-| M | Scope | Exit criteria (in game, by the user) |
+| M | Scope | Exit criteria (in game) |
 |---|---|---|
 | M0 Foundation | Core libraries + tests; mod loads; settings; UI module (menu entry, HUD skeleton); Steam lobby/invite/connect; handshake with mismatch report; chat in menu; diagnostics dump | two PCs: create lobby, invite, connect, see mismatch report for a deliberately missing mod, chat |
 | M1 Spectator join + measurement | host snapshot → transfer → client load (transient DB, overrides, NetId block); gate table; follower clock; `MeasurementProbe` (entity/chunk/archetype counts, scan costs, snapshot time and size) | client joins a 100k city, time and weather advance in step, no errors or growing queues for 30 min; measurement report sent back |

@@ -1,9 +1,13 @@
 # 07 - Terrain and Water Systems (research for Skyline Together)
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Scope: how Cities: Skylines II stores, modifies, saves and reads terrain heights, water, snow and the
 CPU "cell maps", and what that means for a host-authoritative co-op mod that must converge to an identical state on every machine.
 
-All paths are relative to `<audit>\decomp`. Line numbers refer to the decompiled files.
+All paths are relative to the root of the game's decompiled assemblies. Line numbers refer to the decompiled files.
 Labels used below:
 - **[V]** verified: read in the decompiled code.
 - **[I]** inference: reasoning from the code, not directly provable from C# (most often because the logic lives in compute or raster shaders whose source is not in the decompiled assemblies).

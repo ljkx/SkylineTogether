@@ -1,8 +1,12 @@
 # 06 — Networking and Platform Services
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research report for **Skyline Together** (from-scratch, host-authoritative co-op mod for Cities: Skylines II).
 
-All decompiled paths below are relative to `<audit>\decomp`.
+All decompiled paths below are relative to the root of the game's decompiled assemblies.
 Game-install paths are relative to `C:\Program Files (x86)\Steam\steamapps\common\Cities Skylines II`.
 
 **Evidence legend**
@@ -65,13 +69,9 @@ Consequences:
 
 ### 2.1 Construction and registration [V]
 
-- `Game/Game.PSI/PlatformSupport.cs:10-16`
-  ```csharp
-  private const uint kSteamAppId = 949230u;
-  public static readonly Func<IPlatformServiceIntegration> kCreateSteamPlatform = () => new SteamworksPlatform(949230u);
-  private const long kDiscordClientId = 1125009418476605441L;
-  public static readonly Func<IPlatformServiceIntegration> kCreateDiscordRichPresence = () => new DiscordRichPresence(1125009418476605441L);
-  ```
+- `Game/Game.PSI/PlatformSupport.cs:10-16`: the class holds the game's Steam app id (949230, the public id of
+  Cities: Skylines II) and factory delegates that create the Steamworks platform integration with it and a Discord
+  rich-presence integration.
 - `Game/Game.SceneFlow/GameManager.cs:1671-1687` `InitializePlatformManager()`:
   - registers rich-presence keys (`#StatusInMainMenu` etc., `:1673-1675`);
   - `RegisterPSI(kCreateSteamPlatform)` (`:1676`) and `RegisterPSI(kCreateDiscordRichPresence)` (`:1677`);
@@ -99,18 +99,11 @@ The game uses **only** `SteamAPI.Init()`, the client API. It never uses the Game
 
 ### 2.3 Per-frame pump [V]
 
-`GameManager.Update()` (`GameManager.cs:712-725`):
-
-```csharp
-if (shouldUpdateManager && !m_Cts.IsCancellationRequested) {
-    TestScenarioSystem.instance.Update(); InputManager.instance.Update(); ...
-    UpdateWorld();      // m_UpdateSystem.Update(SystemUpdatePhase.MainLoop)  (:2401-2408)
-    UpdateUI();
-    PostUpdateWorld();  // SystemUpdatePhase.Cleanup                          (:2410-2416)
-}
-MainThreadDispatcher.UpdateUpdaters();   // :723
-UpdatePlatforms();                       // :724 -> PlatformManager.instance.Update()
-```
+`GameManager.Update()` (`GameManager.cs:712-725`): while the manager is running and not cancelled, it updates the
+test scenario and input managers, then the world (the `MainLoop` phase of the update system, `:2401-2408`), the UI and
+the post-update world (the `Cleanup` phase, `:2410-2416`). After that, every frame, it runs the main-thread dispatcher's
+updaters (`:723`) and updates the platforms (`:724`, `PlatformManager.instance.Update()`), which pumps the Steam
+callbacks.
 
 `LateUpdate()` → `LateUpdateWorld()` runs the `LateUpdate` and `DebugGizmos` phases (`:727-733`, `:2418-2426`).
 
@@ -188,7 +181,7 @@ Calling `SteamAPI.RunCallbacks()` an *extra* time from the main thread would tec
 
 ## 4. Steam services relevant to co-op: concrete API (Steamworks.NET 20.2.0)
 
-All signatures below are copied from the decompiled wrapper [V]. Paths are under `com.rlabrecque.steamworks.net/Steamworks/`.
+The signatures below are those of Steamworks.NET 20.2.0 (MIT licence), the version the game ships [V]. Paths are under `com.rlabrecque.steamworks.net/Steamworks/`.
 
 ### 4.1 `SteamNetworkingSockets` (`SteamNetworkingSockets.cs`, interface `SteamNetworkingSockets012`, `Constants.cs:45`)
 

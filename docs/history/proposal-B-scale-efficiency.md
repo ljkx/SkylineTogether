@@ -1342,7 +1342,7 @@ P2P by SteamID goes through SDR relays or ICE automatically; users never forward
     change-version check on columns the applier did not write can name the type early, so a missing adapter is easy to
     identify from a user's log.
 
-### 10.2 The mods the user runs
+### 10.2 The targeted mods
 
 | Mod | What it does to the world (R09) | Generic coverage | Adapter work |
 |---|---|---|---|
@@ -1520,7 +1520,7 @@ in Game. `IReplicaWorld` is the seam: the Game layer implements it with ECS; tes
 | `ReflectionContract` | Game | validates every reflection target at startup and disables dependent features with a clear message |
 | `InGameSelfTest`, `DiagnosticsDump` | Game | single-machine verification and support data |
 
-### 12.3 Testing strategy (nobody can run the game during development)
+### 12.3 Testing strategy (modules written without running the game)
 
 1. **Core unit tests**: codec golden vectors and fuzzed round trips; slot reuse rules; dirty-set coalescing;
    scheduler budget adherence and fairness; epoch merge semantics; idempotent apply on `FakeWorld`; bucket repair
@@ -1536,12 +1536,12 @@ in Game. `IReplicaWorld` is the seam: the Game layer implements it with ECS; tes
    ECS data, which exercises schema discovery, classification, capture and remapping without a second PC; plus a
    loopback session over `SteamSocketPairTransport` that exercises the transport and blob paths.
 5. **Diagnostics dump** (one JSON + log zip): counts per class and archetype, schema and policy digests, gate table
-   state, slot statistics, budgets, staleness, hash health, last 1000 log lines. This is what the user sends back after
+   state, slot statistics, budgets, staleness, hash health, last 1000 log lines. This is what players send back after
    each in-game test.
 
 ### 12.4 Milestones
 
-| Milestone | Content | Exit criteria (checked in game by the user) |
+| Milestone | Content | Exit criteria (checked in game) |
 |---|---|---|
 | M0 Foundations | solution, build against game DLLs, logging, diagnostics dump, settings, UI stub (menu entry, HUD with fake data), `ReflectionContract` | mod loads, HUD shows, dump written |
 | M1 Transport and session | Steam P2P with lanes, lobby/invite, handshake digests and reports, chat, ping, direct IP | two players connected; chat works; a deliberate mod mismatch produces a readable report |
@@ -1550,7 +1550,7 @@ in Game. `IReplicaWorld` is the seam: the Game layer implements it with ECS; tes
 | M4 Client actions | tool capture/predict/commit/reconcile, local change capture, UI intents, permissions, terrain strokes and tiles | a client builds, zones, terraforms, sets taxes/budget/policies; conflicts rejected cleanly; Move It works from a client |
 | M5 Simulation state | `ChunkScanner`, shadow, dirty sets, scheduler and budget, attention, agent existence, system-state codecs, prefab state and synthesised progression events, icons, events, chirps, journal, statistics, budget outputs | money, demand, statistics and milestones identical; info panels show identical numbers; infoviews correct in view; bandwidth within budget |
 | M6 Moving objects | existence stream, motion sampler, Q-B, staging and JIT writer, extrapolation, effects, selection support, creature interest scoping, traffic-light derivation | traffic identical near the camera at speeds 1-4 without backward snaps; sirens and lights correct; vehicles clickable |
-| M7 Fields and mods | cell maps, water sources, parameters and tiles, terrain verification, adapters for the listed mods, session settings sync | the user's mod list works in a two-player session |
+| M7 Fields and mods | cell maps, water sources, parameters and tiles, terrain verification, adapters for the listed mods, session settings sync | the targeted mod list works in a two-player session |
 | M8 Integrity and resilience | full bucket hashing for every class, repair ladder, fast rejoin, snapshot cache and multiple joiners, resume-point saves, safe-state policy, watchdogs | injected divergences repaired automatically; a dropped client resumes without reloading; three players join one after another |
 | M9 Scale tuning | measurement-driven cadences and budgets, optional word-delta for hot types, optional Harmony quality pack (icon command filter, client tutorial triggers), optional managed UDP transport | a 100k city with four players over relay stays within budget and responsive |
 

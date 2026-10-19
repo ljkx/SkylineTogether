@@ -1,9 +1,13 @@
 # 13 — Derived entities that carry identity: regeneration determinism and stable keys
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Project: **Skyline Together** (clean-room, host-authoritative co-op mod for Cities: Skylines II).
 
 Conventions
-- Paths are relative to `<audit>\decomp`. `file.cs:N` is line N of that file.
+- Paths are relative to the root of the game's decompiled assemblies. `file.cs:N` is line N of that file.
 - **[V]** = verified by reading the decompiled code at the cited lines. **[I]** = inference or design reasoning.
 - "Client" = any non-host peer. "Regenerate" = a vanilla Modification-phase system rebuilds the entity from its owner.
 - Builds on reports 02 (tool pipeline), 03 (simulation), 04 (entities) and 09 (third-party mods).

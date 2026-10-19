@@ -1,7 +1,11 @@
 # 15 – Moving objects and agent visibility on follower clients
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research for **Skyline Together** (clean-room, host-authoritative co-op mod for Cities: Skylines II).
-All paths are relative to `<audit>\decomp` (most are under `Game/`).
+All paths are relative to the root of the game's decompiled assemblies (most are under `Game/`).
 Line numbers refer to the decompiled files as read on 2026-10-10.
 
 Builds on: 03 §2.2, §6.8, §9.5 (frame slicing, 32-tick interpolation lag, snapshot idea), 04 §4.7-4.8 (agent and
@@ -116,13 +120,10 @@ landing, flying. `TransformState` (`Game.Objects/TransformState.cs:3-12`) is `De
 
 ### 2.2 Reader: `ObjectInterpolateSystem.CalculateUpdateFrames`
 
-```csharp
-// Game.Rendering/ObjectInterpolateSystem.cs:4332-4338
-uint num = simulationFrameIndex - updateFrameIndex - 32;
-updateFrame1 = (num >> 4) & 3;
-updateFrame2 = (updateFrame1 + 1) & 3;
-framePosition = ((float)(num & 0xF) + simulationFrameTime) * 0.0625f;
-```
+`ObjectInterpolateSystem.CalculateUpdateFrames` (`Game.Rendering/ObjectInterpolateSystem.cs:4332-4338`) subtracts
+the chunk's update frame and a fixed lag of two 16-frame periods from the frame index. Bits 4-5 of the result select
+the first of the four history slots and the next slot (modulo 4) is the second; the low four bits plus the fractional
+frame time, scaled to 0..1 over 16 frames, give the blend position between the two slots.
 
 - **Inputs [V]:**
   - `simulationFrameIndex` and `simulationFrameTime` are **`RenderingSystem.frameIndex` and `frameTime`**, not the simulation's (`ObjectInterpolateSystem.cs:3041-3042, 3094-3095, 3129-3130`).

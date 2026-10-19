@@ -1,7 +1,11 @@
 # 03 – Simulation architecture and determinism (Cities: Skylines II)
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research for **Skyline Together** (clean-room co-op mod). Every path below is relative to
-`<audit>\decomp` unless stated otherwise.
+the root of the game's decompiled assemblies unless stated otherwise.
 Line numbers refer to the decompiled files as read on 2026-10-10.
 
 Legend used throughout:
@@ -156,11 +160,9 @@ The full list of 271 overrides was extracted from all `override int GetUpdateInt
 
 ### 3.1 `Game.Common.RandomSeed` (`Game/Game.Common/RandomSeed.cs`) [V]
 
-```csharp
-private static Unity.Mathematics.Random m_Random = new Unity.Mathematics.Random((uint)DateTime.Now.Ticks); // l.8
-public static RandomSeed Next() => new RandomSeed { m_Seed = m_Random.NextUInt() };                       // l.12-18
-public Random GetRandom(int index) { uint num = m_Seed ^ (uint)(370248451 * index); ... }                   // l.20-24
-```
+The type keeps one static `Unity.Mathematics.Random` stream, seeded from the wall-clock time (`DateTime.Now.Ticks`)
+when the type is initialized (l.8). `Next()` draws a new seed from that stream (l.12-18). `GetRandom(index)` derives a
+generator for one index by mixing the seed with the index multiplied by a fixed odd constant (l.20-24).
 
 - **One global stream, seeded from wall-clock time at type initialization.** It is never reseeded on load.
 - `RandomSeed.Next()` has **196 call sites**; 115 of the files are in `Game.Simulation`, and others are in `Game.Rendering` (4 files), `Game.Tools` (7), `Game.Audio`, `Game.Objects`, `Game.Triggers`, `Game.Serialization`, and more. Examples: tools at `Game/Game.Tools/NetToolSystem.cs:5576`, `GenerateObjectsSystem.cs:1841`, `CoveragePreviewSystem.cs:405`. So **local rendering, tool use and audio advance the same stream that seeds simulation jobs** [V call sites; the consequence is I].

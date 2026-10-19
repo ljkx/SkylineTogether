@@ -1,7 +1,11 @@
 # 14 – Progression, unlocks, notifications, chirper, achievements and tutorials
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research for **Skyline Together** (clean-room, host-authoritative co-op mod for Cities: Skylines II).
-Every path is relative to `<audit>\decomp` unless stated otherwise.
+Every path is relative to the root of the game's decompiled assemblies unless stated otherwise.
 Line numbers refer to the decompiled files as read on 2026-10-10.
 
 Legend:

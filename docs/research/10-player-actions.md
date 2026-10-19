@@ -1,5 +1,9 @@
 # 10 — Player actions outside the Temp/Apply pipeline, and intercepting tool apply on clients
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Project: **Skyline Together** (clean-room, host-authoritative co-op mod for Cities: Skylines II).
 Scope: (A) a full catalogue of player actions that change city state through UI triggers or other non-tool paths,
 with their exact mutation mechanism, consumer, replay parameters, side effects and sync class; (B) the cleanest way to
@@ -7,7 +11,7 @@ capture, suppress or predict a local tool apply on a client, and to commit it on
 may be using a tool.
 
 Conventions
-- Paths are relative to `<audit>\decomp\Game` unless prefixed `thirdparty/`
+- Paths are relative to the root of the game's decompiled assemblies (folder `Game`) unless prefixed `thirdparty/`
   (= `...\mod_audit\thirdparty`). `file.cs:N` = line N. `SystemOrder.cs` = `Game.Common/SystemOrder.cs`.
 - **[V]** = read in the decompiled code. **[I]** = inference or design reasoning.
 - Binding names are written `group.name`. Sections derived from `InfoSectionBase` use their class name as the group

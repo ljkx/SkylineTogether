@@ -1,11 +1,15 @@
 # 02 — Tool & Modification Pipeline, Entity Lifecycle (Cities: Skylines II)
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Project: **Skyline Together** (clean-room co-op mod). Scope: how the vanilla game turns player input into persistent
 entities, how derived data is regenerated, when lifecycle tags are cleared and entities destroyed, and what this means
 for host-authoritative replication.
 
 Conventions
-- Paths are relative to `<audit>\decomp` unless prefixed `thirdparty/`
+- Paths are relative to the root of the game's decompiled assemblies unless prefixed `thirdparty/`
   (= `...\mod_audit\thirdparty`). `file.cs:N` = line N in that file.
 - **[V]** = verified by reading the decompiled code. **[I]** = inference / design reasoning, not directly proven.
 

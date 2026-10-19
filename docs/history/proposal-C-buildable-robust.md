@@ -1324,7 +1324,7 @@ SkylineTogether/
 
 ### 12.2 What must be verified in game first (spike order)
 
-Each spike is a small debug build. A spike passes when its criterion holds on the user's machine and saves.
+Each spike is a small debug build. A spike passes when its criterion holds on the maintainer's machine and saves.
 
 1. **Codec round-trip** of every serializable type on a live 100k city, using the owned full-tag context. *Pass:* 100 % identical bytes. Report total time per family.
 2. **Snapshot cost:** `SaveGameSystem` into a `FileStream` on 20/100/300 MB cities. *Pass:* time and size logged; no "Continue" pointer change.

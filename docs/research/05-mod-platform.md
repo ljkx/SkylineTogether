@@ -1,8 +1,12 @@
 # 05 - Mod platform, UI and settings
 
+> **Historical research report.** Written before and during the implementation; it describes the game, not the
+> mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Code is cited
+> by file and member and described in prose; no game code is reproduced.
+
 Research report for **Skyline Together** (clean-room co-op mod for Cities: Skylines II).
 
-- All paths are relative to `<audit>\decomp` unless prefixed with `thirdparty/` (= `<audit>\thirdparty`).
+- All paths are relative to the root of the game's decompiled assemblies unless prefixed with `thirdparty/` (the published sources of those mods).
 - **[V]** = verified by reading the decompiled code (file:line given). **[I]** = inference / design recommendation, not directly proven by code.
 - Line numbers refer to the decompiled files as they exist in the audit folder.
 
@@ -22,10 +26,8 @@ Research report for **Skyline Together** (clean-room co-op mod for Cities: Skyli
 ## 1. Code mod discovery and loading
 
 ### 1.1 `IMod`
-[V] `Game/Game.Modding/IMod.cs:3-8`:
-```csharp
-public interface IMod { void OnLoad(UpdateSystem updateSystem); void OnDispose(); }
-```
+[V] `Game/Game.Modding/IMod.cs:3-8`: the interface has two methods, `OnLoad`, which receives the game's
+`UpdateSystem`, and `OnDispose`.
 
 ### 1.2 Discovery: `ExecutableAsset`
 - `ExecutableAsset.GetModAssets()` enumerates every IL assembly asset in `AssetDatabase.global`. It skips (with a warning) assemblies that duplicate a game assembly from the `Managed` folder [V `Colossal.IO.AssetDatabase/Colossal.IO.AssetDatabase/ExecutableAsset.cs:309-336`]. **[I]** Never ship game/Unity DLLs with the mod. Third-party networking DLLs (e.g. a transport library) are fine and get resolved as references.
