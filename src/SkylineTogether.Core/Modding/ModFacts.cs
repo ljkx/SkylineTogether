@@ -56,6 +56,13 @@ namespace SkylineTogether.Core.Modding
         /// <summary>Implements <c>IPostDeserialize</c> (runs after a city loaded).</summary>
         public bool PostDeserialize;
 
+        /// <summary>
+        /// The system (or a type nested in it, such as its jobs) calls an entity write of <c>EntityManager</c> or
+        /// <c>EntityCommandBuffer</c> (add, set, remove, create, destroy, enable). A UI system that does writes the world
+        /// when its player clicks, so it is not presentation (ARCHITECTURE.md#mod-compatibility).
+        /// </summary>
+        public bool WritesEntities;
+
         public override string ToString() => Name;
     }
 

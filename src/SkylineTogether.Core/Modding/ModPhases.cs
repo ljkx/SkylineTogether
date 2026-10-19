@@ -95,17 +95,44 @@ namespace SkylineTogether.Core.Modding
             "Game.Debug.", "UnityEngine.UI.", "Game.Achievements.",
         };
 
+        // the game's UI types that write shared state when the player uses them (policies, upgrades, the info panel's
+        // actions, names, colours, visual customisation, map tiles, water sources, transport lines): patching one of them
+        // changes what the world becomes, not only what a player sees
+        private static readonly string[] WorldWritingUiTypes =
+        {
+            "Game.UI.InGame.PoliciesUISystem", "Game.UI.InGame.UpgradesSection", "Game.UI.InGame.ActionsSection", "Game.UI.NameSystem",
+            "Game.UI.InGame.ColorSection", "Game.UI.InGame.VisualCustomizeSection", "Game.UI.InGame.MapPanelSystem",
+            "Game.UI.InGame.WaterPanelSystem", "Game.UI.InGame.TransportationOverviewUISystem",
+        };
+
         /// <summary>
         /// True when a Harmony patch target (<c>Namespace.Type.Method</c>) is presentation code (UI, localization, audio,
-        /// rendering, input): such a patch changes what one player sees, never the shared world. Everything else counts
-        /// as world-affecting (fail closed), patches of other mods included.
+        /// rendering, input): such a patch changes what one player sees, never the shared world. The game's UI types that
+        /// write shared state (<see cref="IsWorldWritingUiTarget"/>) are not presentation. Everything else counts as
+        /// world-affecting (fail closed), patches of other mods included.
         /// </summary>
         public static bool IsPresentationTarget(string method)
         {
-            if (string.IsNullOrEmpty(method)) return false;
+            if (string.IsNullOrEmpty(method) || IsWorldWritingUiTarget(method)) return false;
             foreach (string ns in PresentationNamespaces)
             {
                 if (method.StartsWith(ns, StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>True when a Harmony patch target is a method of a game UI type that writes shared state.</summary>
+        public static bool IsWorldWritingUiTarget(string method)
+        {
+            if (string.IsNullOrEmpty(method)) return false;
+            foreach (string type in WorldWritingUiTypes)
+            {
+                // the type itself and its nested types (jobs, callbacks): "Type.Method" or "Type+Nested..."/"Type/Nested..."
+                if (method.Length > type.Length && method.StartsWith(type, StringComparison.Ordinal))
+                {
+                    char next = method[type.Length];
+                    if (next == '.' || next == '+' || next == '/') return true;
+                }
             }
             return false;
         }

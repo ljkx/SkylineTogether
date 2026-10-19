@@ -84,7 +84,7 @@ namespace SkylineTogether.Sync
                 }
                 if (fromHost && r.Kind == SyncRecordKind.ModSettings)
                 {
-                    SafeCall("mod settings", () => _modSettings.Apply(r)); // mod compatibility: the host's rules
+                    SafeCall("mod settings", () => _modSettings.Apply(r), Features.ModCompat); // the host's rules
                     continue;
                 }
                 if (r.Kind != SyncRecordKind.ZoneCells) continue;

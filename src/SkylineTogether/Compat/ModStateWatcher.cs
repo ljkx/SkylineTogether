@@ -90,7 +90,6 @@ namespace SkylineTogether.Compat
                 None = new[] { ComponentType.ReadOnly<Game.Tools.Temp>(), ComponentType.ReadOnly<Game.Common.Deleted>(), ComponentType.ReadOnly<Game.Prefabs.PrefabData>() },
             });
             _hasQuery = true;
-            Active = true;
             int n = 0;
             NativeArray<Entity> entities = _query.ToEntityArray(Allocator.Temp);
             try
@@ -109,6 +108,9 @@ namespace SkylineTogether.Compat
                 entities.Dispose();
             }
             _lastVersion = em.GlobalSystemVersion;
+            // active only with a complete baseline: one that threw half-way reported every entity it had not hashed yet as
+            // changed (a burst of proposals)
+            Active = true;
             _log.Info(LogCategory.Compat, "mod state watcher: " + _types.Count + " watched types, baseline of " + n + " entities");
         }
 

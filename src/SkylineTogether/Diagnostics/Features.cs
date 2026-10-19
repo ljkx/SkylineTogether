@@ -91,6 +91,13 @@ namespace SkylineTogether.Diagnostics
         /// </summary>
         public static readonly FeatureHealth Mods = Registry.Add("mods", "mod integration API", false);
 
+        /// <summary>
+        /// Mod compatibility (docs/design/MOD-COMPATIBILITY.md): untagged mod state, the client gates of mod systems and
+        /// the host's mod settings. Fallback: untagged mod state is no longer captured (tagged changes still replicate);
+        /// the gates and settings are still restored at the session's end.
+        /// </summary>
+        public static readonly FeatureHealth ModCompat = Registry.Add("modcompat", "mod compatibility", false);
+
         /// <summary>The in-game panel (UI module and its bindings). Fallback: the Options page.</summary>
         public static readonly FeatureHealth Ui = Registry.Add("ui", "in-game panel", false);
     }

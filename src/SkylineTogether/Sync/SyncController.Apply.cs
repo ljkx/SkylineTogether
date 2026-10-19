@@ -110,7 +110,7 @@ namespace SkylineTogether.Sync
                     }
                 }
                 if (_holds.Count > 0 && Features.GlobalState.IsAvailable) GlobalBeforeHostWrite(); // a released hold applies host records
-                SafeCall("edit holds", _editHoldsCall); // mod compatibility
+                SafeCall("edit holds", _editHoldsCall, Features.ModCompat);
                 if (Features.Events.IsAvailable)
                 {
                     try
@@ -261,7 +261,8 @@ namespace SkylineTogether.Sync
             }
         }
 
-        private void SafeCall(string what, Action action)
+        /// <summary>Runs a step in its own guard; a failure counts against <paramref name="feature"/> (player actions by default).</summary>
+        private void SafeCall(string what, Action action, FeatureHealth feature = null)
         {
             try
             {
@@ -269,7 +270,7 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                Guard.Report(Features.Actions, what, ex);
+                Guard.Report(feature ?? Features.Actions, what, ex);
             }
         }
 

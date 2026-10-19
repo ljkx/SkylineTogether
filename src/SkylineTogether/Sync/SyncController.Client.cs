@@ -48,6 +48,9 @@ namespace SkylineTogether.Sync
                              && _tools.activeTool.GetType().Assembly != typeof(DefaultToolSystem).Assembly
                              && !Compat.ModCompat.IsPipelineTool(_tools.activeTool.GetType());
             bool toolPath = _toolApplied || localTool;
+            // mod compatibility: untagged mod state changed without the player's input is a local mod system's derivation
+            _input.Poll(now);
+            _modStateIsEdit = Core.Modding.ModStateProposalRule.MayPropose(toolPath, now, _input.LastInput);
             // deletions from the UI (district, service upgrade, line: R10 D1-D3) happen outside any
             // tool; outside a tool path only those are proposed, every other local deletion waits for the host
             ProposalFlags flags = _toolApplied ? ProposalFlags.ToolApply : localTool ? ProposalFlags.DirectTool : ProposalFlags.None;
@@ -156,6 +159,13 @@ namespace SkylineTogether.Sync
                                 continue;
                             }
                             _ids.Bind(e, id, family);
+                            if (_ids.GetEntity(id) != e)
+                            {
+                                // refused (beyond the host's announced range): a spawn of an id not bound here would come
+                                // back from the host as a second entity
+                                _log.Warn(LogCategory.Replication, "net id #" + id + " of the pool could not be bound; an edit is not sent (the host corrects it)");
+                                continue;
+                            }
                             created = true;
                         }
                         writes.Add(new PendingWrite { Entity = e, Id = id, Family = family, Created = created });
@@ -181,7 +191,7 @@ namespace SkylineTogether.Sync
                 WriteDependencies(written, proposed);
                 int before = proposed.Count;
                 _callNow = now;
-                SafeCall("mod state capture", _clientModStateCall); // written/proposed are _clientWritten/_clientProposed
+                SafeCall("mod state capture", _clientModStateCall, Features.ModCompat); // written/proposed are _clientWritten/_clientProposed
                 if (proposed.Count > before) flags |= ProposalFlags.DirectTool;
                 WriteDependencies(written, proposed);
                 _codec.DependencyBinder = null;

@@ -488,6 +488,8 @@ namespace SkylineTogether.Core.Modding
                 presentation |= kind == PhaseKind.Presentation;
                 editor |= kind == PhaseKind.Editor;
                 world |= ModPhases.MayChangeWorld(kind) && kind != PhaseKind.Simulation && kind != PhaseKind.SimulationStep;
+                // a UI system that writes entities writes the world when its player clicks (policies, upgrades, names)
+                world |= kind == PhaseKind.Presentation && s.WritesEntities;
             }
             if (simulation)
             {
@@ -561,9 +563,11 @@ namespace SkylineTogether.Core.Modding
                 }
                 foreach (string p in s.Phases)
                 {
-                    if (!ModPhases.MayChangeWorld(ModPhases.KindOf(p))) continue;
+                    PhaseKind kind = ModPhases.KindOf(p);
+                    bool writingUi = kind == PhaseKind.Presentation && s.WritesEntities;
+                    if (!ModPhases.MayChangeWorld(kind) && !writingUi) continue;
                     worldPhase++;
-                    example = example ?? s.Name + " in " + p;
+                    example = example ?? s.Name + " in " + p + (writingUi ? " (writes entities)" : "");
                     break;
                 }
             }
@@ -583,7 +587,7 @@ namespace SkylineTogether.Core.Modding
                     world++;
                     first = first ?? m;
                 }
-                if (world > 0) evidence.Add("patches " + world.ToString(CultureInfo.InvariantCulture) + " method(s) outside UI code with Harmony (e.g. " + first + ")");
+                if (world > 0) evidence.Add("patches " + world.ToString(CultureInfo.InvariantCulture) + " method(s) outside read-only UI code with Harmony (e.g. " + first + ")");
             }
             else if (facts.ReferencesHarmony)
             {

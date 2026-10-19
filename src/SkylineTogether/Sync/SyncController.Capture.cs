@@ -382,10 +382,10 @@ namespace SkylineTogether.Sync
             // mod compatibility: the dependencies all of the above needed, untagged mod state, and its dependencies
             CaptureStep(Features.Replication, "dependency capture", _dependenciesCall ?? (_dependenciesCall = () => WriteDependencies(_writtenThisFrame)));
             _callNow = now;
-            CaptureStep(Features.Actions, "mod state capture", _hostModStateCall);
+            CaptureStep(Features.ModCompat, "mod state capture", _hostModStateCall);
             CaptureStep(Features.Replication, "dependency capture", _dependenciesCall);
             _codec.DependencyBinder = null;
-            CaptureStep(Features.Actions, "mod settings capture", _hostModSettingsCall);
+            CaptureStep(Features.ModCompat, "mod settings capture", _hostModSettingsCall);
             long scan = Perf.Start();
             CaptureStep(Features.Replication, "value scan", _scanCall ?? (_scanCall = () => ScanValues(_callNow)));
             Perf.Budget.End(Perf.BudgetScan, Perf.Stop(Perf.Scan, scan));

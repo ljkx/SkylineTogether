@@ -88,7 +88,7 @@ namespace SkylineTogether.Sync
         /// </summary>
         private void CaptureModChanges(double now, HashSet<Entity> written, bool host, List<uint> proposed = null)
         {
-            if (_watcher == null || !_watcher.Active) return;
+            if (_watcher == null || !_watcher.Active || !Features.ModCompat.IsAvailable) return;
             EntityManager em = _codec.EntityManager;
             _modChanges.Clear();
             _watcher.Collect(now, _modChanges);
@@ -96,6 +96,13 @@ namespace SkylineTogether.Sync
             {
                 Entity e = c.Entity;
                 if (written.Contains(e) || _appliedThisFrame.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                if (!host && !_modStateIsEdit)
+                {
+                    // the client's own copy of a mod system recomputed it (no tool, no input): the host derives its own
+                    // value, which arrives with the host's records; never proposed (ModStateProposalRule)
+                    if (_derivedModChanges++ == 0) _log.Info(LogCategory.Compat, "mod state changed here without the player's input (a mod system deriving it locally); such changes are not sent to the host");
+                    continue;
+                }
                 uint id = c.NetId;
                 Family family;
                 if (id == 0)
@@ -121,6 +128,14 @@ namespace SkylineTogether.Sync
                 proposed?.Add(id);
             }
         }
+
+        /// <summary>Client: whether this frame's untagged mod state changes are the player's edits (<see cref="Core.Modding.ModStateProposalRule"/>).</summary>
+        private bool _modStateIsEdit = true;
+
+        /// <summary>Client: mod state changes not proposed because no tool or input preceded them (diagnostics).</summary>
+        private long _derivedModChanges;
+
+        private readonly Compat.PlayerInputWatch _input = new Compat.PlayerInputWatch();
 
         /// <summary>
         /// Client, frame start: ends expired edit holds and applies the host's latest record of each released entity

@@ -106,7 +106,7 @@ namespace SkylineTogether.Sync
             BindCity();
             // mod compatibility: untagged mod state is compared from here on; every mod setting goes out once
             _modSettings.Reset();
-            SafeCall("mod state watcher", () => _watcher.Start(true));
+            SafeCall("mod state watcher", () => _watcher.Start(true), Features.ModCompat);
         }
 
         private void OnClientStarted(SessionClient client)
@@ -119,7 +119,7 @@ namespace SkylineTogether.Sync
             _shadow.Clear();
             _baselinesPending.Clear();
             ResetGameplay();
-            SafeCall("mod join gates", () => Compat.ModCompat.OnClientStarted(_log)); // mod compatibility: before the load
+            SafeCall("mod join gates", () => Compat.ModCompat.OnClientStarted(_log), Features.ModCompat); // before the load
             _wasClient = true;
             _lastAckSent = -1;
             _ids.Authority = false;
@@ -142,8 +142,8 @@ namespace SkylineTogether.Sync
                 _clientLive = true;
                 _gate.Close();
                 // mod compatibility: mod systems that would derive host-owned state go off; untagged mod state is watched
-                SafeCall("mod client gates", () => Compat.ModCompat.OnClientLive(_log));
-                SafeCall("mod state watcher", () => _watcher?.Start(false));
+                SafeCall("mod client gates", () => Compat.ModCompat.OnClientLive(_log), Features.ModCompat);
+                SafeCall("mod state watcher", () => _watcher?.Start(false), Features.ModCompat);
                 Integrity.OnClientLive();
                 _log.Info(LogCategory.Replication, "client live with " + _ids.BoundCount + " bound entities; following the host");
             };
@@ -152,8 +152,8 @@ namespace SkylineTogether.Sync
         private void OnSessionEnded()
         {
             // mod compatibility: restore the player's own mod settings and every switched mod system
-            if (_wasClient) SafeCall("restoring mod settings", _modSettings.RestoreClient);
-            SafeCall("mod gates", () => Compat.ModCompat.OnSessionEnded(_log));
+            if (_wasClient) SafeCall("restoring mod settings", _modSettings.RestoreClient, Features.ModCompat);
+            SafeCall("mod gates", () => Compat.ModCompat.OnSessionEnded(_log), Features.ModCompat);
             _watcher?.Stop();
             _audit.Reset();
             Orphans.Reset();
@@ -162,6 +162,9 @@ namespace SkylineTogether.Sync
             _localDeletes.Clear();
             _dependencies.Clear();
             _missingNotified = false;
+            _derivedModChanges = 0;
+            _modStateIsEdit = true;
+            _input.Reset();
             _codec?.ResetSession(); // the missing-asset list is per session
             _wasClient = false; // (the id tables are cleared below for host and client alike)
             FamilyClassifier.AgentsReplicated = false;

@@ -48,6 +48,8 @@ namespace SkylineTogether.Compat
                     }
                 }
                 facts.RuntimePrefabCreators.AddRange(calls.PrefabCreators);
+                // after every type was visited (a system's jobs may come after it)
+                foreach (SystemFact s in facts.Systems) s.WritesEntities = calls.WritesEntities(s.Name);
             }
             catch (Exception ex)
             {
@@ -158,12 +160,43 @@ namespace SkylineTogether.Compat
         private sealed class CallIndex
         {
             private const int MemberRefTable = 0x0A;
+            private const int MethodSpecTable = 0x2B; // generic method instantiations (EntityManager.SetComponentData<T>)
             private static readonly Type CreationDefinition = typeof(Game.Tools.CreationDefinition);
             private readonly Assembly _assembly;
             private readonly List<IlToken> _tokens = new List<IlToken>();
             private readonly HashSet<Type> _mentions = new HashSet<Type>();
             private readonly Dictionary<int, MemberInfo> _resolved = new Dictionary<int, MemberInfo>();
+            private readonly HashSet<string> _entityWriters = new HashSet<string>(StringComparer.Ordinal);
             public readonly List<string> PrefabCreators = new List<string>();
+
+            /// <summary>True when the system type (or a type nested in it) calls an entity write (<see cref="IsEntityWrite"/>).</summary>
+            public bool WritesEntities(string systemName) => systemName != null && _entityWriters.Contains(systemName);
+
+            /// <summary>The outermost system type around <paramref name="t"/> (itself included), or null.</summary>
+            private static Type EnclosingSystem(Type t)
+            {
+                Type found = null;
+                for (Type o = t; o != null; o = o.DeclaringType)
+                {
+                    if (typeof(ComponentSystemBase).IsAssignableFrom(o)) found = o;
+                }
+                return found;
+            }
+
+            private static readonly HashSet<string> EntityWriteNames = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "AddComponent", "AddComponentData", "SetComponentData", "RemoveComponent", "AddBuffer", "SetBuffer", "AppendToBuffer",
+                "CreateEntity", "DestroyEntity", "Instantiate", "SetComponentEnabled", "AddSharedComponent", "SetSharedComponent",
+                "AddSharedComponentManaged", "SetSharedComponentManaged",
+            };
+
+            /// <summary>An entity write of <c>EntityManager</c> or <c>EntityCommandBuffer</c> (and its parallel writer).</summary>
+            private static bool IsEntityWrite(MethodBase m)
+            {
+                Type d = m.DeclaringType;
+                if (d == null || !EntityWriteNames.Contains(m.Name)) return false;
+                return d == typeof(EntityManager) || d == typeof(EntityCommandBuffer) || d == typeof(EntityCommandBuffer.ParallelWriter);
+            }
 
             public CallIndex(Assembly assembly)
             {
@@ -182,6 +215,7 @@ namespace SkylineTogether.Compat
             public void Visit(Type t)
             {
                 bool tool = InTool(t);
+                Type system = EnclosingSystem(t);
                 if (tool)
                 {
                     foreach (FieldInfo f in SafeFields(t))
@@ -216,7 +250,8 @@ namespace SkylineTogether.Compat
                     foreach (IlToken token in _tokens)
                     {
                         bool call = token.Kind == IlOperand.Method && token.Token >> 24 == MemberRefTable;
-                        if (!call && !tool) continue;
+                        bool spec = system != null && token.Kind == IlOperand.Method && token.Token >> 24 == MethodSpecTable;
+                        if (!call && !spec && !tool) continue;
                         MemberInfo member = Resolve(m.Module, token.Token, typeArgs, methodArgs);
                         if (member == null) continue;
                         if (call && member is MethodBase called && IsPrefabCreation(called))
@@ -224,6 +259,7 @@ namespace SkylineTogether.Compat
                             string where = (t.FullName ?? t.Name) + "." + m.Name;
                             if (!PrefabCreators.Contains(where)) PrefabCreators.Add(where);
                         }
+                        if ((call || spec) && system != null && member is MethodBase write && IsEntityWrite(write)) _entityWriters.Add(system.FullName ?? system.Name);
                         if (tool && MentionsMember(member)) _mentions.Add(t);
                     }
                 }
