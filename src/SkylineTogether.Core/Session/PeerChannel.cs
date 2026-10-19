@@ -23,10 +23,12 @@ namespace SkylineTogether.Core.Session
         private Lane _sendLane;
         private bool _sendOk;
         private readonly Action<byte[], int, int> _emit;
+        private readonly IClock _clock;
 
         public PeerChannel(IConnection connection, PeerId peer, IClock clock, ILog log)
         {
             Connection = connection ?? throw new ArgumentNullException(nameof(connection));
+            _clock = clock;
             Outbox = new PeerOutbox(connection, peer, new OutboxConfig(), clock, log);
             _codec = new EnvelopeCodec(new ManagedLz4Compressor(), log);
             // one delegate for every send (the lambda with a captured local allocated two objects per message)
@@ -46,6 +48,23 @@ namespace SkylineTogether.Core.Session
         /// messages are expected, and a tiny compressed message must not make it decompress megabytes.
         /// </summary>
         public int MaxBodyBytes { get; set; } = int.MaxValue;
+
+        /// <summary>
+        /// The kinds this channel accepts and their largest body (0: not accepted), read from the envelope's first byte
+        /// before anything is decompressed or reassembled (null: every kind up to its own limit). A message of a kind
+        /// that is not accepted is dropped unread (<see cref="DroppedKinds"/>), or rejected with a
+        /// <see cref="DecodeException"/> when <see cref="RejectUnexpectedKinds"/> is set.
+        /// </summary>
+        public Func<MessageKind, int> InboundLimit { get; set; }
+
+        /// <summary>A message of a kind <see cref="InboundLimit"/> does not accept is a protocol error (not just dropped).</summary>
+        public bool RejectUnexpectedKinds { get; set; }
+
+        /// <summary>Messages dropped unread because <see cref="InboundLimit"/> does not accept their kind.</summary>
+        public long DroppedKinds { get; private set; }
+
+        /// <summary>Bytes produced by decompressing received messages so far (the receiver's CPU cost of this peer).</summary>
+        public long DecompressedBytes { get; private set; }
 
         /// <summary>Encodes and queues one message (reliable, ordered). False once the connection is closed.</summary>
         public bool Send(MessageKind kind, byte[] body, int offset, int count, Lane lane = Lane.Reliable)
@@ -91,13 +110,43 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         public bool TryDecode(byte[] buffer, int offset, int count, out Envelope envelope)
         {
+            envelope = default;
             int max = MaxBodyBytes;
+            Func<MessageKind, int> limit = InboundLimit;
+            if (limit != null && buffer != null && count > 0 && offset >= 0 && offset < buffer.Length)
+            {
+                // the kind is the envelope's first byte: an unexpected kind costs nothing (no decompression, no reassembly)
+                var kind = (MessageKind)buffer[offset];
+                int allowed = limit(kind);
+                if (allowed <= 0)
+                {
+                    if (RejectUnexpectedKinds) throw new DecodeException(kind + ": not accepted on this connection now");
+                    DroppedKinds++;
+                    return false;
+                }
+                max = Math.Min(max, allowed);
+            }
             envelope = _codec.Decode(buffer, offset, count, _decodeScratch, max);
-            if ((envelope.Flags & EnvelopeFlags.Fragment) == 0) return true;
-            if (!_reassembler.Accept(envelope, out byte[] message, out int length, max)) return false;
+            if ((envelope.Flags & EnvelopeFlags.Fragment) == 0)
+            {
+                if ((envelope.Flags & EnvelopeFlags.Compressed) != 0) DecompressedBytes += envelope.BodyCount;
+                return true;
+            }
+            if (!_reassembler.Accept(envelope, out byte[] message, out int length, max, (_clock != null ? _clock.Seconds : 0.0))) return false;
             envelope = _codec.Decode(message, 0, length, _decodeScratch2, max);
+            if ((envelope.Flags & EnvelopeFlags.Compressed) != 0) DecompressedBytes += envelope.BodyCount;
             return true;
         }
+
+        /// <summary>
+        /// Drops partially received fragmented messages whose last fragment arrived more than <paramref name="maxIdleSeconds"/>
+        /// ago (a peer that starts large messages and never finishes them pins their memory otherwise). Returns the number
+        /// dropped; a later fragment of a dropped message is a protocol error.
+        /// </summary>
+        public int EvictStalePartials(double maxIdleSeconds) => _reassembler.EvictIdle((_clock != null ? _clock.Seconds : 0.0), maxIdleSeconds);
+
+        /// <summary>Partially received fragmented messages (diagnostics, tests).</summary>
+        public int PartialMessages => _reassembler.PartialMessages;
 
         public void Pump() => Outbox.Pump();
 

@@ -27,6 +27,8 @@ namespace SkylineTogether.Core.Protocol
             public int NextIndex;
             public int Received;
             public byte[] Buffer;
+            /// <summary>When the last fragment of this message arrived (the caller's clock).</summary>
+            public double LastFragmentAt;
         }
 
         private readonly List<Partial> _partials = new List<Partial>(Limits.MaxPartialMessagesPerPeer);
@@ -45,8 +47,8 @@ namespace SkylineTogether.Core.Protocol
         /// <see cref="EnvelopeCodec.Decode"/>. Throws <see cref="ArgumentException"/> for an envelope that is not a
         /// fragment and <see cref="DecodeException"/> for a malformed or out-of-order fragment.
         /// </summary>
-        /// <remarks><c>maxTotal</c> is a lower limit on the message's total length than the kind's own.</remarks>
-        public bool Accept(Envelope fragment, out byte[] message, out int length, int maxTotal = int.MaxValue)
+        /// <remarks><c>maxTotal</c> is a lower limit on the message's total length than the kind's own; <c>now</c> is the receiver's time, which <see cref="EvictIdle"/> compares against.</remarks>
+        public bool Accept(Envelope fragment, out byte[] message, out int length, int maxTotal = int.MaxValue, double now = 0)
         {
             message = null;
             length = 0;
@@ -118,6 +120,7 @@ namespace SkylineTogether.Core.Protocol
                 Drop(partial);
                 throw new DecodeException(what + ": fragments exceed the declared length " + partial.TotalLength.ToString(CultureInfo.InvariantCulture));
             }
+            partial.LastFragmentAt = now;
             Grow(partial, partial.Received + chunk);
             Buffer.BlockCopy(body, position, partial.Buffer, partial.Received, chunk);
             partial.Received += chunk;
@@ -138,6 +141,25 @@ namespace SkylineTogether.Core.Protocol
             message = result;
             length = partial.TotalLength;
             return true;
+        }
+
+        /// <summary>
+        /// Drops the partial messages whose last fragment arrived more than <paramref name="maxIdleSeconds"/> before
+        /// <paramref name="now"/>: fragments come in order on a reliable lane, so a message that stopped half-way was
+        /// abandoned by its sender (or the sender misbehaves), and its buffer would otherwise stay pinned for the life of
+        /// the connection. A later fragment of an evicted message is rejected like any fragment of an unknown message.
+        /// Returns the number of messages dropped.
+        /// </summary>
+        public int EvictIdle(double now, double maxIdleSeconds)
+        {
+            int dropped = 0;
+            for (int i = _partials.Count - 1; i >= 0; i--)
+            {
+                if (now - _partials[i].LastFragmentAt <= maxIdleSeconds) continue;
+                Drop(_partials[i]);
+                dropped++;
+            }
+            return dropped;
         }
 
         /// <summary>Drops every partial message (connection closed or reset).</summary>

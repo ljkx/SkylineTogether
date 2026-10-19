@@ -152,50 +152,80 @@ namespace SkylineTogether.Net
             }
             int delivered = 0;
             long pollStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            // the time budget is checked after every message (it used to be checked between batches of 256 only, so a
+            // batch of expensive messages could stall one frame for far longer); messages already taken from Steam
+            // but not delivered stay in _messages and go first at the next poll, in order
             while (!_disposed)
             {
-                if (delivered >= MaxMessagesPerFrame || (System.Diagnostics.Stopwatch.GetTimestamp() - pollStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > MaxPollMilliseconds) break;
-                int n = SteamNetworkingSockets.ReceiveMessagesOnPollGroup(_pollGroup, _messages, _messages.Length);
-                if (n <= 0) break;
-                delivered += n;
-                for (int i = 0; i < n; i++)
+                if (_pendingNext >= _pendingCount)
                 {
-                    IntPtr ptr = _messages[i];
-                    if (_disposed)
-                    {
-                        // a handler ended the session: free the rest without delivering it
-                        SteamNetworkingMessage_t.Release(ptr);
-                        continue;
-                    }
-                    SteamNetworkingMessage_t msg = SteamNetworkingMessage_t.FromIntPtr(ptr);
-                    int size = msg.m_cbSize;
-                    if (_receiveBuffer.Length < size) _receiveBuffer = new byte[Math.Max(size, _receiveBuffer.Length * 2)];
-                    if (size > 0) Marshal.Copy(msg.m_pData, _receiveBuffer, 0, size);
-                    uint handle = msg.m_conn.m_HSteamNetConnection;
-                    SteamNetworkingMessage_t.Release(ptr);
-                    if (!_connections.TryGetValue(handle, out SteamConnection connection) || connection.Closed) continue;
-                    // The "connected" status callback is dispatched by the game's SteamAPI.RunCallbacks,
-                    // which may run after this poll in the same frame, while the peer's first messages (its hello) are
-                    // already in the poll group. They used to be dropped, leaving the handshake to time out. A message
-                    // can only arrive on a connected connection, so report it now.
-                    if (!connection.Reported && !TryReportConnected(connection, sink)) continue;
-                    try
-                    {
-                        sink.OnMessage(connection, LanePlan.LaneOf(msg.m_idxLane), _receiveBuffer, 0, size);
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(LogCategory.Net, "message handler failed", ex);
-                    }
+                    if (delivered >= MaxMessagesPerFrame || OverPollBudget(pollStart)) break;
+                    int n = SteamNetworkingSockets.ReceiveMessagesOnPollGroup(_pollGroup, _messages, _messages.Length);
+                    if (n <= 0) break;
+                    _pendingNext = 0;
+                    _pendingCount = n;
                 }
-                if (n < _messages.Length) break;
+                IntPtr ptr = _messages[_pendingNext];
+                _messages[_pendingNext++] = IntPtr.Zero;
+                delivered++;
+                Deliver(ptr, sink);
+                if (delivered >= MaxMessagesPerFrame || OverPollBudget(pollStart)) break;
             }
+        }
+
+        // messages received from Steam but not delivered yet: _messages[_pendingNext .. _pendingCount - 1]
+        private int _pendingNext;
+        private int _pendingCount;
+
+        private static bool OverPollBudget(long start) => (System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > MaxPollMilliseconds;
+
+        private void Deliver(IntPtr ptr, ITransportEventSink sink)
+        {
+            if (_disposed)
+            {
+                // a handler ended the session: free the rest without delivering it
+                SteamNetworkingMessage_t.Release(ptr);
+                return;
+            }
+            SteamNetworkingMessage_t msg = SteamNetworkingMessage_t.FromIntPtr(ptr);
+            int size = msg.m_cbSize;
+            if (_receiveBuffer.Length < size) _receiveBuffer = new byte[Math.Max(size, _receiveBuffer.Length * 2)];
+            if (size > 0) Marshal.Copy(msg.m_pData, _receiveBuffer, 0, size);
+            uint handle = msg.m_conn.m_HSteamNetConnection;
+            int laneIndex = msg.m_idxLane;
+            SteamNetworkingMessage_t.Release(ptr);
+            if (!_connections.TryGetValue(handle, out SteamConnection connection) || connection.Closed) return;
+            // The "connected" status callback is dispatched by the game's SteamAPI.RunCallbacks,
+            // which may run after this poll in the same frame, while the peer's first messages (its hello) are
+            // already in the poll group. They used to be dropped, leaving the handshake to time out. A message
+            // can only arrive on a connected connection, so report it now.
+            if (!connection.Reported && !TryReportConnected(connection, sink)) return;
+            try
+            {
+                sink.OnMessage(connection, LanePlan.LaneOf(laneIndex), _receiveBuffer, 0, size);
+            }
+            catch (Exception ex)
+            {
+                _log.Error(LogCategory.Net, "message handler failed", ex);
+            }
+        }
+
+        /// <summary>Frees the messages taken from Steam that were never delivered.</summary>
+        private void ReleasePending()
+        {
+            for (int i = _pendingNext; i < _pendingCount; i++)
+            {
+                if (_messages[i] != IntPtr.Zero) SteamNetworkingMessage_t.Release(_messages[i]);
+                _messages[i] = IntPtr.Zero;
+            }
+            _pendingNext = _pendingCount = 0;
         }
 
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
+            ReleasePending();
             foreach (SteamConnection c in _connections.Values)
             {
                 if (!c.Closed) SteamNetworkingSockets.CloseConnection(c.Handle, AppCloseReason, "shutting down", true);

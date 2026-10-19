@@ -269,29 +269,31 @@ namespace SkylineTogether.Core.Tests.Session
             rig.Host.PresenceReceived += m => presence++;
             var peer = new RawPeer(rig, "Pushy", 503);
 
-            void Spam()
+            void Spam(RawPeer to)
             {
                 var w = new ByteWriter();
                 ChatMessage.Write(w, new ChatMessage { From = new PeerId(9), Text = "hi" });
-                peer.Send(MessageKind.Chat, w);
-                peer.Send(MessageKind.Epoch, new byte[] { 1, 2, 3, 4 });
+                to.Send(MessageKind.Chat, w);
+                to.Send(MessageKind.Epoch, new byte[] { 1, 2, 3, 4 });
                 var speed = new ByteWriter();
                 SessionPayloads.WriteSpeed(speed, new SpeedState { Speed = 3 });
-                peer.Control(ControlKind.SpeedRequest, speed.ToArray());
+                to.Control(ControlKind.SpeedRequest, speed.ToArray());
                 var done = new ByteWriter();
                 done.WriteBool(true);
                 SessionPayloads.WriteText(done, "");
-                peer.Control(ControlKind.LoadDone, done.ToArray());
+                to.Control(ControlKind.LoadDone, done.ToArray());
                 w.Reset();
                 PresenceMessage.Write(w, new PresenceMessage { CursorX = 1 });
-                peer.Send(MessageKind.Presence, w);
+                to.Send(MessageKind.Presence, w);
             }
 
-            // before the handshake
-            Spam();
-            Pump(rig, new[] { peer });
+            // before the handshake: only handshake kinds are accepted, anything else ends the connection
+            var early = new RawPeer(rig, "Early", 504);
+            Spam(early);
+            Pump(rig, new[] { early });
             Assert.Equal(0, chats.Count, "no chat from an unadmitted peer");
             Assert.Equal(0, live);
+            Assert.True(early.Disconnected, "a chat line before the hello is a protocol error");
 
             // admitted, but the snapshot is still being taken: LoadDone must not make it live
             rig.Snapshots.Hold = true;
@@ -300,7 +302,7 @@ namespace SkylineTogether.Core.Tests.Session
             Pump(rig, new[] { peer });
             Assert.True(peer.Got(MessageKind.Welcome));
             chats.Clear();
-            Spam();
+            Spam(peer);
             Pump(rig, new[] { peer });
             Assert.Equal(0, live, "LoadDone before the download is ignored");
             Assert.Equal(0, app.Count, "no replication messages from a joiner");

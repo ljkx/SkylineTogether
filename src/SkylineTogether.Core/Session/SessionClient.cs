@@ -474,7 +474,8 @@ namespace SkylineTogether.Core.Session
         {
             if (connection != _connection && _connection != null) return;
             _connection = connection;
-            _channel = new PeerChannel(connection, PeerId.Host, _clock, _log);
+            // only the kinds a host sends are read (anything else is dropped before it is decompressed)
+            _channel = new PeerChannel(connection, PeerId.Host, _clock, _log) { InboundLimit = Limits.MaxHostBodyBytes };
             SetState(ClientState.Handshaking);
             // one manifest for both messages: the hello's digests are those of the lists that follow
             HandshakeManifest manifest = _info.BuildManifest() ?? new HandshakeManifest { Digests = _info.GetDigests() };

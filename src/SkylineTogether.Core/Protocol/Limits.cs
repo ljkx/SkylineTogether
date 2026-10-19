@@ -111,5 +111,78 @@ namespace SkylineTogether.Core.Protocol
         /// and reserved kinds are dropped on receipt (a newer peer's addition or a stray value is never an error).
         /// </summary>
         public static bool IsDeliverable(MessageKind kind) => IsKnownKind(kind) && !IsReservedKind(kind);
+
+        /// <summary>The kinds a host accepts from a connection that has not been admitted (ARCHITECTURE.md#security-model).</summary>
+        public static bool IsHandshakeKind(MessageKind kind) => kind == MessageKind.Hello || kind == MessageKind.Control || kind == MessageKind.Ping;
+
+        /// <summary>Largest body of a <see cref="MessageKind.Control"/> message a client sends (its manifest is the largest).</summary>
+        public const int MaxClientControlBytes = 1024 * 1024;
+
+        /// <summary>Largest body of a <see cref="MessageKind.BlobHave"/> a client sends (a bitmap of 512 Ki chunks).</summary>
+        public const int MaxClientHaveBytes = 64 * 1024;
+
+        /// <summary>
+        /// The largest body a host accepts from an admitted client for <paramref name="kind"/>, checked against the envelope's
+        /// header before anything is decompressed or reassembled; 0 for the kinds a client never sends (host-only, reserved
+        /// and unknown kinds), which are dropped unread. The decompression-bomb guard per direction of
+        /// ARCHITECTURE.md#security-model.
+        /// </summary>
+        public static int MaxClientBodyBytes(MessageKind kind)
+        {
+            switch (kind)
+            {
+                case MessageKind.Hello:
+                case MessageKind.Ping:
+                case MessageKind.Presence:
+                case MessageKind.Chat:
+                case MessageKind.Proposal:
+                case MessageKind.View:
+                case MessageKind.Ack:
+                case MessageKind.ApplyAck:
+                case MessageKind.Terrain:
+                case MessageKind.CellMaps:
+                case MessageKind.AgentRefresh:
+                case MessageKind.ModChannel:
+                    return MaxBodyBytes(kind);
+                case MessageKind.Control:
+                    return MaxClientControlBytes;
+                case MessageKind.BlobHave:
+                    return MaxClientHaveBytes;
+                default:
+                    return 0;
+            }
+        }
+
+        /// <summary>
+        /// The largest body a client accepts from its host for <paramref name="kind"/> (the kind's own limit), 0 for the
+        /// kinds a host never sends; checked before anything is decompressed or reassembled.
+        /// </summary>
+        public static int MaxHostBodyBytes(MessageKind kind)
+        {
+            switch (kind)
+            {
+                case MessageKind.Welcome:
+                case MessageKind.Refuse:
+                case MessageKind.Control:
+                case MessageKind.Epoch:
+                case MessageKind.Motion:
+                case MessageKind.MotionControl:
+                case MessageKind.Presence:
+                case MessageKind.BlobChunk:
+                case MessageKind.Ping:
+                case MessageKind.Chat:
+                case MessageKind.Terrain:
+                case MessageKind.Water:
+                case MessageKind.SimValues:
+                case MessageKind.CellMaps:
+                case MessageKind.Statistics:
+                case MessageKind.AgentValues:
+                case MessageKind.FlowStatus:
+                case MessageKind.ModChannel:
+                    return MaxBodyBytes(kind);
+                default:
+                    return 0;
+            }
+        }
     }
 }

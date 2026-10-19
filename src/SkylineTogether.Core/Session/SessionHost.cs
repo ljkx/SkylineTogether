@@ -90,6 +90,25 @@ namespace SkylineTogether.Core.Session
         /// <summary>The largest message a connection may send before it is admitted (handshake messages only).</summary>
         public int UnadmittedMaxBodyBytes = 1024 * 1024;
 
+        /// <summary>
+        /// Bytes a connection's messages may decompress to in total before it is admitted (its hello, manifest and password
+        /// answer need a fraction of it); a connection that sends more is disconnected. Bounds what a stranger can make the
+        /// host decompress per connection (ARCHITECTURE.md#security-model).
+        /// </summary>
+        public long UnadmittedDecodeBudgetBytes = 4L * 1024 * 1024;
+
+        /// <summary>
+        /// Bytes one peer's messages may decompress to per frame; further messages of that peer wait (raw, still
+        /// compressed) for the next frames, so one peer cannot fill the host's frame with decompression.
+        /// </summary>
+        public long PeerDecodeBudgetBytesPerFrame = 8L * 1024 * 1024;
+
+        /// <summary>Raw bytes of one peer's messages that may wait for a later frame; a peer that sends more is disconnected.</summary>
+        public long MaxDeferredBytesPerPeer = 16L * 1024 * 1024;
+
+        /// <summary>A partially received fragmented message whose next fragment does not come for this long is dropped.</summary>
+        public double PartialMessageIdleSeconds = 120;
+
         /// <summary>Message handling failures (other than malformed data) after which a peer is disconnected.</summary>
         public int MaxHandlingFailures = 50;
 
@@ -189,6 +208,11 @@ namespace SkylineTogether.Core.Session
             public double SpeedRefilledAt;
             public long SpeedRequestsDropped;
             public double LastHave = double.NegativeInfinity;
+            /// <summary>Decompressed bytes of this peer's messages in the current frame (<see cref="HostOptions.PeerDecodeBudgetBytesPerFrame"/>).</summary>
+            public long FrameDecoded;
+            /// <summary>Raw messages of this peer that wait for a later frame (its frame budget was spent), in order.</summary>
+            public Queue<byte[]> Deferred;
+            public long DeferredBytes;
         }
 
         /// <summary>Completed joins kept for the diagnostics and the UI.</summary>
@@ -363,6 +387,10 @@ namespace SkylineTogether.Core.Session
         public void Tick()
         {
             if (_disposed) return;
+            // every peer's decompression budget starts over; messages that waited for it go first, in order
+            foreach (Peer p in _peers.Values) p.FrameDecoded = 0;
+            DrainDeferred();
+            if (_disposed) return;
             _transport.Poll(this);
             double now = _clock.Seconds;
             // after a stall of this side, give the peers time to be heard before anything is judged silent
@@ -423,6 +451,13 @@ namespace SkylineTogether.Core.Session
                         continue;
                     }
                     if (p.Timeline != null && !p.Timeline.Has(JoinStage.TransferSent) && p.Sender.IsComplete) p.Timeline.Mark(JoinStage.TransferSent, now);
+                }
+                // fragmented messages a peer started and never finished do not pin their memory (not right after a
+                // stall of this side: their fragments may still be waiting in the transport)
+                if (!grace && _options.PartialMessageIdleSeconds > 0 && p.Channel.PartialMessages > 0)
+                {
+                    int evicted = p.Channel.EvictStalePartials(_options.PartialMessageIdleSeconds);
+                    if (evicted > 0) _log.Info(LogCategory.Protocol, p.Name + ": dropped " + evicted + " unfinished fragmented message(s)");
                 }
                 if (p.Admitted && now - p.LastPingSent > 1.0)
                 {
@@ -854,8 +889,11 @@ namespace SkylineTogether.Core.Session
                 Direct = connection.Peer.Direct,
                 Local = connection.Peer.Local,
             };
-            // until it is admitted a connection may only send small handshake messages
+            // until it is admitted a connection may only send small handshake messages: any other kind ends the
+            // connection before a byte of it is decompressed
             peer.Channel.MaxBodyBytes = _options.UnadmittedMaxBodyBytes;
+            peer.Channel.InboundLimit = UnadmittedLimit;
+            peer.Channel.RejectUnexpectedKinds = true;
             _peers[connection] = peer;
             _log.Info(LogCategory.Session, "connection from " + connection.Peer + "; waiting for its hello");
         }
@@ -873,9 +911,70 @@ namespace SkylineTogether.Core.Session
         {
             if (_disposed || !_peers.TryGetValue(connection, out Peer p)) return;
             p.LastHeard = _clock.Seconds;
+            if ((p.Deferred != null && p.Deferred.Count > 0) || p.FrameDecoded >= _options.PeerDecodeBudgetBytesPerFrame)
+            {
+                Defer(p, buffer, offset, count);
+                return;
+            }
+            Receive(p, buffer, offset, count);
+        }
+
+        private static int UnadmittedLimit(MessageKind kind) => Limits.IsHandshakeKind(kind) ? Limits.MaxBodyBytes(kind) : 0;
+
+        /// <summary>
+        /// Keeps a message of a peer whose decompression budget for this frame is spent, for the next frames
+        /// (<see cref="DrainDeferred"/>); a peer that keeps sending more than the host can take is disconnected.
+        /// </summary>
+        private void Defer(Peer p, byte[] buffer, int offset, int count)
+        {
+            if (p.DeferredBytes + count > _options.MaxDeferredBytesPerPeer)
+            {
+                _log.Warn(LogCategory.Protocol, p.Name + ": sends more data than the host can process (" + (p.DeferredBytes + count) + " bytes waiting); disconnecting");
+                Remove(p, TransportCloseReason.ProtocolError, "sends more than the host can process", true);
+                return;
+            }
+            var copy = new byte[count];
+            Buffer.BlockCopy(buffer, offset, copy, 0, count);
+            (p.Deferred ?? (p.Deferred = new Queue<byte[]>())).Enqueue(copy);
+            p.DeferredBytes += count;
+        }
+
+        /// <summary>Handles the messages that waited for a peer's decompression budget, as far as the new frame's budget goes.</summary>
+        private void DrainDeferred()
+        {
+            List<Peer> waiting = null;
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.Deferred != null && p.Deferred.Count > 0) (waiting ?? (waiting = new List<Peer>())).Add(p);
+            }
+            if (waiting == null) return;
+            foreach (Peer p in waiting)
+            {
+                while (!_disposed && p.Deferred.Count > 0 && p.FrameDecoded < _options.PeerDecodeBudgetBytesPerFrame && _peers.ContainsKey(p.Channel.Connection))
+                {
+                    byte[] m = p.Deferred.Dequeue();
+                    p.DeferredBytes -= m.Length;
+                    Receive(p, m, 0, m.Length);
+                }
+            }
+        }
+
+        /// <summary>Decodes and handles one message of a peer (within its budgets).</summary>
+        private void Receive(Peer p, byte[] buffer, int offset, int count)
+        {
+            IConnection connection = p.Channel.Connection;
+            if (!p.Admitted && p.Channel.DecompressedBytes > _options.UnadmittedDecodeBudgetBytes)
+            {
+                _log.Warn(LogCategory.Protocol, p.Name + ": sent more than " + _options.UnadmittedDecodeBudgetBytes + " bytes of handshake data; disconnecting");
+                Remove(p, TransportCloseReason.ProtocolError, "too much handshake data", true);
+                return;
+            }
+            long decodedBefore = p.Channel.DecompressedBytes;
             try
             {
-                if (!p.Channel.TryDecode(buffer, offset, count, out Envelope e)) return;
+                bool complete = p.Channel.TryDecode(buffer, offset, count, out Envelope e);
+                p.FrameDecoded += p.Channel.DecompressedBytes - decodedBefore;
+                if (!complete) return;
                 Handle(p, e);
             }
             catch (DecodeException ex)
@@ -1503,7 +1602,10 @@ namespace SkylineTogether.Core.Session
             p.State = PlayerState.WaitingForSnapshot;
             double admittedAt = _clock.Seconds;
             p.AdmittedAt = admittedAt;
-            p.Channel.MaxBodyBytes = int.MaxValue; // admitted: the kinds' own limits apply
+            // admitted: the kinds a client sends, up to their own limits; host-only and unknown kinds are dropped unread
+            p.Channel.MaxBodyBytes = int.MaxValue;
+            p.Channel.InboundLimit = Limits.MaxClientBodyBytes;
+            p.Channel.RejectUnexpectedKinds = false;
             p.Timeline = new JoinTimeline { Who = p.Name };
             p.Timeline.Mark(JoinStage.Start, admittedAt);
             p.Timeline.Mark(JoinStage.Welcome, admittedAt);
