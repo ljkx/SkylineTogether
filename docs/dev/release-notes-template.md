@@ -19,6 +19,13 @@ protocol, so it cannot play with earlier versions.">
 <The CHANGELOG.md section of this version, shortened: one plain sentence per entry, grouped as Added / Changed /
 Fixed. Link the full section: https://github.com/ljkx/SkylineTogether/blob/main/CHANGELOG.md>
 
+## Works with your mods
+
+Dedicated support for Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller, Water Features, Plop the
+Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It; every other code mod is analysed
+automatically. <Mention changes to mod support in this release, if any.> Details:
+[MOD-COMPATIBILITY.md](https://github.com/ljkx/SkylineTogether/blob/main/docs/design/MOD-COMPATIBILITY.md)
+
 ## Install
 
 **From Paradox Mods (recommended):** subscribe to

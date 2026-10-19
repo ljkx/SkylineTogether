@@ -63,7 +63,17 @@ strangers out from the start, use a password or **Friends and invited only**.
 Yes: **…** → **Make co-host**. A co-host can kick builders and viewers and switch them between builder and viewer. A
 co-host cannot remove the host or another co-host, cannot ban and cannot change your settings or password.
 
-### Which mods work?
+### Can I use my mods?
+
+Yes. Skyline Together is built to be played with mods. Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller,
+Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It have dedicated
+support: their data, tools and simulation settings are shared by all players. Every other code mod is analysed
+automatically when a session starts, so its saved data replicates and its simulation runs on the host. Settings that
+change the simulation use the host's values during the session. All players should enable the same gameplay mods;
+if they differ, the join screen lists exactly what to enable, disable or update. See
+[Mods](getting-started.md#mods) and [MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md).
+
+### Do all players need the same mods?
 
 With **Require the same mods** on (the default), every player must enable the same code mods in the same versions.
 Mods that only change a player's own screen (translations, tooltips, icon libraries, overlays) may differ. Several

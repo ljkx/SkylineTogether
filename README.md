@@ -18,6 +18,8 @@ which checks and applies them for everyone. Differences are detected and repaire
   (default 8).
 - **Shared city**: roads, buildings, zoning, districts, transport lines, terrain, water, budget, taxes, policies,
   milestones, traffic, citizens and the numbers in the info panels.
+- **Works with your mods**: dedicated support for 12 popular mods, automatic handling of any other code mod, and a
+  join screen that lists exactly what to change ([details below](#works-with-your-mods)).
 - **Every player builds** with the normal game tools; your own actions show instantly and the host confirms them.
 - **Roles**: builders can do everything; viewers can only watch and chat; co-hosts help manage players. The host can
   also have other players' builds checked against what a normal game allows (off by default).
@@ -25,10 +27,44 @@ which checks and applies them for everyone. Differences are detected and repaire
 - **Host-controlled game speed** that builders can change for everyone.
 - **Automatic integrity checks** that find and repair objects that differ from the host.
 - **Reconnect** after a lost connection, with the city paused meanwhile.
-- **Mod compatibility checks**: the host can require the same code mods and the joining player gets a list of what to
-  change; dedicated support for 12 popular mods.
 - **Solo test**: record a session and verify it on one PC, without a second player.
 - English and German UI.
+
+## Works with your mods
+
+Skyline Together is built to be played with mods, not only with the base game.
+
+- **Dedicated support for 12 mods.** Their saved data, their tools and the settings that affect the simulation are
+  synced between all players:
+
+  | Mod | What is shared |
+  |---|---|
+  | Traffic | Lane connections and priorities, edited with its tools by any player |
+  | Move It | Moved roads, buildings and objects |
+  | Anarchy | Placements outside the usual rules, and the host's Anarchy settings |
+  | Better Bulldozer | Removed sub-elements, vehicles and citizens, and the host's removal settings |
+  | Tree Controller | Tree age, type and season changes from its brush, and the host's tree settings |
+  | Water Features | Its water sources and the host's water settings |
+  | Plop the Growables | Plopped and level-locked buildings, and the host's settings |
+  | 529 Tiles | Map tiles and their prices as on the host |
+  | Historical Start | The host's unlocks |
+  | Zoning Toolkit | Zoning settings on roads |
+  | Line Tool | Objects placed along lines and curves |
+  | Find It | Objects placed from it, including its generated variants |
+
+- **Any other code mod** is analysed automatically when a session starts: its saved data replicates with the objects
+  it belongs to, its simulation runs on the host, and its tools are captured like player edits. The diagnostics file
+  explains the decision for every mod.
+- **Mod settings from the host.** Settings that change the simulation use the host's values for everyone during the
+  session; each player's own values come back afterwards.
+- **A clear join screen.** When mods differ, the joining player sees exactly what to enable, disable or update.
+  Mods that only change a player's own screen (translations, tooltips, icon libraries, overlays) may differ.
+- **Join anyway.** The host can let players join with harmless differences. Mods that store data in the city are
+  always required, because the game cannot load the city without them.
+- **For mod authors**: declare what your mod does, react to sessions and send data to your mod on other PCs, without a
+  reference to Skyline Together: see [MOD-INTEGRATION.md](docs/MOD-INTEGRATION.md).
+
+Details per mod: [MOD-COMPATIBILITY.md](docs/design/MOD-COMPATIBILITY.md).
 
 ## Requirements
 
@@ -120,16 +156,10 @@ is in them.
 - **Game**: built and tested against game version 1.6.2f1 (Steam). A game update can switch features off until the mod
   is updated; the startup self-test shows which.
 - **Code mods**: every player needs the same world-affecting mods in the same versions (the host can turn this check
-  off). Local-only mods (translations, tooltips, icon libraries, overlays) may differ. Traffic, Move It, Anarchy, Better
-  Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool
-  and Find It have dedicated support. Every other mod is analysed automatically when a session starts: its saved data
-  replicates with its entities, its simulation runs on the host, its tools are captured like player edits, and the
-  decisions are explained in the diagnostics dump; see [MOD-COMPATIBILITY.md](docs/design/MOD-COMPATIBILITY.md).
+  off). See [Works with your mods](#works-with-your-mods).
 - **Assets**: use the same asset subscriptions on every PC; objects whose asset a player lacks are not created on that
   player's game, and the joining player is told which asset pack or mod is missing and what to subscribe to.
 - **Other multiplayer mods**: not compatible; disable them.
-- **Mod authors**: declare what your mod does, react to sessions and send data to your mod on other PCs, without a
-  reference to Skyline Together: see [MOD-INTEGRATION.md](docs/MOD-INTEGRATION.md).
 
 ## Building from source
 
