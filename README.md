@@ -9,9 +9,8 @@ One player hosts their city. Friends join, get a copy of it, and from then on ev
 The host's game runs the simulation. The other players' games show the host's city and send their actions to the host,
 which checks and applies them for everyone. Differences are detected and repaired automatically.
 
-> **Status: early testing.** Hosting, joining and the sync of the city work in test builds, and real two-PC sessions are
-> under way. Expect bugs, back up your saves and play on a copy of a city. Test builds are on the
-> [Releases page](https://github.com/ljkx/SkylineTogether/releases).
+**Get it on [Paradox Mods](https://mods.paradoxplaza.com/mods/163578/Windows)** or from the
+[Releases page](https://github.com/ljkx/SkylineTogether/releases). Back up your saves before you host or join.
 
 ## Features
 
@@ -20,14 +19,15 @@ which checks and applies them for everyone. Differences are detected and repaire
 - **Shared city**: roads, buildings, zoning, districts, transport lines, terrain, water, budget, taxes, policies,
   milestones, traffic, citizens and the numbers in the info panels.
 - **Every player builds** with the normal game tools; your own actions show instantly and the host confirms them.
-- **Roles**: builders can do everything; viewers can only watch and chat.
+- **Roles**: builders can do everything; viewers can only watch and chat; co-hosts help manage players. The host can
+  also have other players' builds checked against what a normal game allows (off by default).
 - **Presence**: other players' cursors with name tags, their building previews in their colour, and chat.
 - **Host-controlled game speed** that builders can change for everyone.
 - **Automatic integrity checks** that find and repair objects that differ from the host.
 - **Reconnect** after a lost connection, with the city paused meanwhile.
 - **Mod compatibility checks**: the host can require the same code mods and the joining player gets a list of what to
   change; dedicated support for 12 popular mods.
-- **Solo test**: record a session and replay it through the joining player's code path on one PC.
+- **Solo test**: record a session and verify it on one PC, without a second player.
 - English and German UI.
 
 ## Requirements
@@ -36,20 +36,29 @@ which checks and applies them for everyone. Differences are detected and repaire
 - Every player needs the **same build** of Skyline Together, the **same game version** and, by default, the **same code
   mods**.
 
+## Known limitations
+
+- Every player needs the same Skyline Together version, the same game version and the same gameplay mods.
+- A game update can switch features off until the mod is updated; the self-test in the panel shows which.
+- Objects from assets a player lacks are left out on that player's game.
+- Repairs of differences happen in the background and can take a moment.
+- The host's upload speed limits large sessions.
+
+More in [Troubleshooting](docs/guide/troubleshooting.md) and [SECURITY.md](SECURITY.md#known-limitations).
+
 ## Install
 
 Use **one** of the two ways, not both: with a local copy and a subscription at the same time the game loads only one
 of them, and Skyline Together warns at start.
 
-**From Paradox Mods** (once it is published there)
+**From Paradox Mods** (recommended)
 
-1. In the game's main menu open **Paradox Mods**, search for **Skyline Together** and subscribe (or subscribe on
-   [mods.paradoxplaza.com](https://mods.paradoxplaza.com/games/cities_skylines_2)). Make sure it is enabled in your
-   active playset.
+1. Subscribe to [Skyline Together](https://mods.paradoxplaza.com/mods/163578/Windows) on the website, or in the game's
+   main menu open **Paradox Mods** and search for **Skyline Together**. Make sure it is enabled in your active playset.
 2. Restart the game. Subscriptions update automatically, so everyone who subscribed has the same version after a
    restart; the panel's footer shows the build id to compare.
 
-**With the setup from GitHub** (every test build, also before it reaches Paradox Mods)
+**With the setup from GitHub** (the same release as on Paradox Mods; new versions may appear here first)
 
 1. Close the game.
 2. Download `SkylineTogether-Setup.zip` from the latest release on the
@@ -67,7 +76,7 @@ multiplayer mod. Details, manual installation and uninstalling: [Getting started
 **Host**
 
 1. Load a city.
-2. Click the round Skyline Together button in the top-left corner and press **Host this city**.
+2. Click the Skyline Together button in the top-left corner and press **Host this city**.
 3. Send your friends your Steam ID (copy icon at the top of the panel), or use **Invite friends**.
 
 **Join**
@@ -94,15 +103,22 @@ More in the [FAQ](docs/guide/faq.md).
 ## Troubleshooting
 
 A refused join explains why (different builds, game versions or mods, full session, password). For those, connection
-problems, things that look different for another player, and how to collect logs for a bug report, see
-[Troubleshooting](docs/guide/troubleshooting.md). In short: click **Write diagnostics** in the panel, run
-`Collect-Logs.cmd` from the setup folder and attach the zip from every player to the
-[issue](https://github.com/ljkx/SkylineTogether/issues/new/choose).
+problems and things that look different for another player, see [Troubleshooting](docs/guide/troubleshooting.md).
+
+To report a bug, every player clicks **Write diagnostics** in the panel, then:
+
+- **GitHub setup**: run `Collect-Logs.cmd` from the setup folder and attach the zip from your Desktop.
+- **Paradox Mods**: attach `Logs\SkylineTogether.log` and the newest `Logs\SkylineTogether-diagnostics-*.txt` from
+  `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`.
+
+Open a [bug report](https://github.com/ljkx/SkylineTogether/issues/new/choose) with the files of every player. They
+contain player names and Steam IDs; see [Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug) for what else
+is in them.
 
 ## Compatibility
 
-- **Game**: built against the current Steam version of Cities: Skylines II. A game update can switch features off
-  until the mod is updated; the startup self-test shows which.
+- **Game**: built and tested against game version 1.6.2f1 (Steam). A game update can switch features off until the mod
+  is updated; the startup self-test shows which.
 - **Code mods**: every player needs the same world-affecting mods in the same versions (the host can turn this check
   off). Local-only mods (translations, tooltips, icon libraries, overlays) may differ. Traffic, Move It, Anarchy, Better
   Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool
@@ -142,16 +158,17 @@ and the [code map](docs/dev/code-map.md) is the place to start reading the code.
 
 ## Contributing
 
-Bug reports from test sessions are the most useful contribution right now. For code, see
-[CONTRIBUTING.md](CONTRIBUTING.md); for security problems, [SECURITY.md](SECURITY.md). Changes are listed in the
-[CHANGELOG](CHANGELOG.md).
+Bug reports with logs, and compatibility reports for other mods, are very welcome. For code, see
+[CONTRIBUTING.md](CONTRIBUTING.md); for security problems, [SECURITY.md](SECURITY.md). Everyone taking part follows the
+[Code of Conduct](CODE_OF_CONDUCT.md). Changes are listed in the [CHANGELOG](CHANGELOG.md).
 
-Skyline Together is designed and written only from its own research reports, the decompiled game code and the sources
-of third-party mods it must be compatible with. No other co-op project was consulted, and contributions must follow
-the same [clean-room policy](CONTRIBUTING.md#clean-room-policy).
+Skyline Together is an independent implementation, written from the project's own research into the game's behaviour
+and from the public interfaces of the mods it supports. No code from other multiplayer projects was used or consulted,
+and no game code is included or redistributed. Contributions follow the same
+[clean-room policy](CONTRIBUTING.md#clean-room-policy).
 
 ## License
 
 [MIT](LICENSE). Cities: Skylines II is a trademark of Paradox Interactive; this project is not affiliated with or
 endorsed by Paradox Interactive or Colossal Order. The game's assemblies are referenced at build time from your own
-installation and are never redistributed.
+installation and are never redistributed. Third-party notices: [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).

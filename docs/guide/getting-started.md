@@ -1,15 +1,14 @@
 # Getting started
 
 This guide walks you through installing Skyline Together, hosting a city, joining a friend and what to expect during
-a session. Skyline Together is in **early testing**: back up your saves and play on a copy of a city you don't mind
-breaking.
+a session. Back up your saves before you host or join.
 
 - [Requirements](#requirements)
 - [Install](#install)
 - [Host a city](#host-a-city)
 - [Join a friend](#join-a-friend)
 - [During a session](#during-a-session)
-- [Roles: host, builder, viewer](#roles-host-builder-viewer)
+- [Roles](#roles)
 - [Game speed](#game-speed)
 - [Saving](#saving)
 - [Leaving, disconnects and reconnecting](#leaving-disconnects-and-reconnecting)
@@ -20,7 +19,7 @@ breaking.
 - Cities: Skylines II, **Steam version**, with Steam running and logged in on every PC. All connections go through
   Steam, including direct IP connections.
 - Every player needs:
-  - the **same build** of Skyline Together (compare the build id the installer prints),
+  - the **same build** of Skyline Together (compare the build id at the bottom of the Skyline Together panel),
   - the **same game version**,
   - by default, the **same code mods** in the same versions (the host can relax this, see [Mods](#mods)).
 - Windows (the installer is a PowerShell script).
@@ -31,27 +30,26 @@ There are two ways to install Skyline Together: a Paradox Mods subscription or t
 them. If the game finds both a local copy and a subscription, it loads only one of them, and Skyline Together shows a
 warning that names both copies and their build ids. Keep one copy and restart the game.
 
-### From Paradox Mods
+### From Paradox Mods (recommended)
 
-Once Skyline Together is published on Paradox Mods:
-
-1. In the main menu open **Paradox Mods**, search for **Skyline Together** and subscribe (or subscribe on
-   [mods.paradoxplaza.com](https://mods.paradoxplaza.com/games/cities_skylines_2)).
+1. Subscribe to [Skyline Together](https://mods.paradoxplaza.com/mods/163578/Windows) on the website, or in the game's
+   main menu open **Paradox Mods**, search for **Skyline Together** and subscribe.
 2. Make sure it is enabled in your active playset, then restart the game.
 3. Compare the build id in the panel's footer with your friends'. Subscriptions update when the game starts, so after
    a new version everyone needs a restart.
 
 To uninstall, unsubscribe (or disable it in the playset).
 
-New test builds appear on GitHub first. To test one, unsubscribe (or disable the mod in your playset) and use the
-installer below. Everyone in the session must use the same build.
+New versions may appear on GitHub a little earlier. To use one before it reaches Paradox Mods, unsubscribe (or
+disable the mod in your playset) and use the installer below. Everyone in the session must use the same build.
 
 ### With the installer
 
 1. Close Cities: Skylines II.
-2. Get `SkylineTogether-Setup.zip`, either from the
-   [Releases page](https://github.com/ljkx/SkylineTogether/releases) when a release is published, or by
-   [building it yourself](../dev/building.md#packaging-and-the-player-installer).
+2. Get `SkylineTogether-Setup.zip` from the latest release on the
+   [Releases page](https://github.com/ljkx/SkylineTogether/releases), or
+   [build it yourself](../dev/building.md#packaging-and-the-player-installer). The release notes list its SHA-256
+   checksum; `Get-FileHash .\SkylineTogether-Setup.zip` in PowerShell shows the checksum of your download.
 3. Unzip it and double-click **`Install.cmd`**. The installer:
    - checks that the game's user folder exists and that the game is not running,
    - copies the mod into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether`,
@@ -59,8 +57,8 @@ installer below. Everyone in the session must use the same build.
    - lists your subscribed code mods and warns about a known conflicting multiplayer mod.
 4. If you use another multiplayer mod, disable it in your playset. Two multiplayer mods at once conflict.
 
-The setup folder also contains `Collect-Logs.cmd` (see [Troubleshooting](troubleshooting.md#collecting-logs)) and
-`HOW-TO-TEST.txt`, a two-player test checklist (also in [testing.md](testing.md)).
+The setup folder also contains `Collect-Logs.cmd` (see [Troubleshooting](troubleshooting.md#reporting-a-bug)) and
+`HOW-TO-TEST.txt`, a two-player checklist (also in [testing.md](testing.md)).
 
 To uninstall, run in the setup folder:
 
@@ -80,8 +78,8 @@ don't keep both: see the note at the top of this section.
 
 Hosting always starts from inside a loaded city.
 
-1. Load a city (a copy you can afford to lose) or start a new one.
-2. Click the round **Skyline Together** button in the top-left button row of the game screen. The panel opens on the
+1. Load a city (back up the save first) or start a new one.
+2. Click the **Skyline Together** button in the top-left button row of the game screen. The panel opens on the
    **Host** tab.
 3. Optional settings (saved as soon as you leave a field):
    - **Your name**: empty uses your Steam name.
@@ -97,6 +95,9 @@ Hosting always starts from inside a loaded city.
      [Mods](#mods).
    - **Friends and invited only**: off by default. When on, only your Steam friends and players you invite from the
      panel can join through Steam; others are told they are not invited.
+   - **Enforce build checks on other players**: off by default. When on, the host undoes other players' builds that a
+     normal game could not make (locked buildings, unbought map tiles, impossible shapes). When off, such builds are
+     kept and only written to the log.
    - **Allow direct IP connections**: off by default, and only available while a password is set (Steam does not check
      direct joiners, so the password does). Also accepts connections on a UDP port (default 27015), which needs port
      forwarding on your router. Steam connections work without it.
@@ -153,16 +154,17 @@ and Esc goes back.
   milliseconds). For the host, the **…** button on a player offers **Make viewer** / **Make builder**, **Make co-host** /
   **Remove co-host**, **Kick** and **Ban**; a co-host gets **Make viewer** / **Make builder** and **Kick** for builders
   and viewers. **Kick** and **Ban** ask for a second click (**Confirm kick**, **Confirm ban**) within 3 seconds.
-- **Closing the panel.** The **×** in its title bar, the round button again, or Esc (when no text field has focus).
+- **Closing the panel.** The **×** in its title bar, the Skyline Together button again, or Esc (when no text field
+  has focus).
 - **Build id.** The panel's footer (and the main menu page) shows **Build &lt;12 characters&gt;**, the same id the
-  installer prints. All players must show the same one.
+  GitHub installer prints. All players must show the same one.
 - **Resync.** If your city drifts apart from the host's in many places that repairs cannot fix, the panel offers
   **Rejoin now**: your game rejoins with a fresh copy of the city (as long as a join takes). **Not now** hides the offer
   for 30 minutes.
 - **Network & diagnostics.** **Show network stats** adds a line with ping and traffic to the panel. **Write diagnostics**
-  writes a report file for bug reports (see [Troubleshooting](troubleshooting.md#collecting-logs)).
+  writes a report file for bug reports (see [Troubleshooting](troubleshooting.md#reporting-a-bug)).
 
-## Roles: host, builder, viewer
+## Roles
 
 | Role | Who | Can do |
 |---|---|---|
@@ -218,6 +220,8 @@ Options → **Skyline Together**, tab **Multiplayer**:
 | Hosting | Require the same mods | on |
 | Hosting | Require the same asset packs | off |
 | Hosting | Let players join with different mods | on |
+| Hosting | Friends and invited only | off |
+| Hosting | Enforce build checks on other players | off |
 | Hosting | Allow direct IP connections | off |
 | Hosting | Direct connection port (1024-65535) | 27015 |
 | Joining | Host's Steam ID or IP:port, Password | empty |

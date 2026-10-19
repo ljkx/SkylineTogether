@@ -61,3 +61,15 @@ for name, data in (('Install-SkylineTogether.ps1', script), ('Install.cmd', inst
     with open(os.path.join(loose, name), 'w', encoding='ascii', newline='') as f:
         f.write(data)
 print('built', out, 'version', version, 'build', build, 'size', os.path.getsize(out))
+
+
+def sha256_of(path):
+    with open(path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+# the checksums for the release notes (docs/dev/releasing.md): players compare them with Get-FileHash
+print()
+print('SHA-256 for the release notes:')
+for path in (out, release):
+    print('  %s  %s' % (sha256_of(path), os.path.basename(path)))

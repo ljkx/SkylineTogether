@@ -12,7 +12,7 @@
 - [Repeated errors and feature switch-offs](#repeated-errors-and-feature-switch-offs)
 - [Missing assets](#missing-assets)
 - [The panel does not appear](#the-panel-does-not-appear)
-- [Collecting logs](#collecting-logs)
+- [Reporting a bug](#reporting-a-bug)
 
 ## Join refused
 
@@ -27,7 +27,7 @@ player who has not passed the password learns nothing about versions, mods, DLC 
 
 | Screen title | Cause | What to do |
 |---|---|---|
-| **Skyline Together versions differ** | The protocol versions differ, or the two DLLs are different builds. Every compile is a different build, even with the same version number. The screen shows "Host build … · Your build …". | Install the same `SkylineTogether-Setup.zip` on every PC and compare the build id the installer prints (also in the panel's footer). |
+| **Skyline Together versions differ** | The protocol versions differ, or the two DLLs are different builds. Every compile is a different build, even with the same version number. The screen shows "Host build … · Your build …". | Use the same release on every PC (the same Paradox Mods version, or the same setup zip) and compare the build id at the bottom of the Skyline Together panel. |
 | **Game versions differ** | The game versions differ (shown as "Host: … · You: …"). | Update the game on both PCs (Steam may hold back an update until the game restarts). |
 | **Mods required for this city** | The host's city stores data of mods you don't have. Loading the city without them would crash your game, so the join is refused whatever the host's options say, and there is no **Join anyway**. The screen lists them under **Enable these mods to join**, each with "This city contains its data" or "It can store data in a city"; other differences are listed below them. | Enable or subscribe to the listed mods, restart the game and join again. See [Mods required for this city](#mods-required-for-this-city). |
 | **Two multiplayer mods at once** | You, or the host, have the old "CS2 Multiplayer Mod" enabled. | Disable it on the PC that has it, restart the game and join again. See [Two multiplayer mods at once](#two-multiplayer-mods-at-once). |
@@ -46,13 +46,13 @@ player who has not passed the password learns nothing about versions, mods, DLC 
 
 | What you see | Meaning | What to do |
 |---|---|---|
-| **Your game couldn't load the host's city** | The city arrived, but loading it failed (for example missing map or climate assets). | Try again. If it keeps failing, see [Missing assets](#missing-assets) and send the copied details to the host. |
-| **No answer from the host** ("The host did not answer. Check the address or Steam ID and that the host is hosting.") | Nothing answered within 30 seconds. | Check the Steam ID (17 digits) or the address. The host must have clicked **Host this city** and still be in the city. |
+| **Your game couldn't load the host's city** | The city arrived, but loading it failed (for example missing map or climate assets). | Try again. If it keeps failing, see [Missing assets](#missing-assets) and attach the copied details to a [bug report](#reporting-a-bug). |
+| **No answer from the host** ("The host didn't answer in time. Check the Steam ID or address and make sure the host is hosting right now, then try again.") | Nothing answered within 30 seconds. | Check the Steam ID (17 digits) or the address. The host must have clicked **Host this city** and still be in the city. |
 | "The host did not send the city in time. Try joining again." | The host's save of the city did not arrive within 5 minutes. | Very large cities on slow PCs; try again. The host's log shows how long saving took. |
 | "The city download stalled (nothing received for 120 s). Try joining again." | The download stopped. | Usually a network problem on either side; try again. |
-| "The host did not confirm the join after the city loaded. Try joining again." | Your game loaded the city but the host did not confirm within 2 minutes. | Try again; send both players' logs if it repeats. |
+| "The host did not confirm the join after the city loaded. Try joining again." | Your game loaded the city but the host did not confirm within 2 minutes. | Try again; if it repeats, [report it](#reporting-a-bug) with both players' logs. |
 | "The downloaded city is damaged (checksum mismatch). Try joining again." | The download arrived corrupted. | Try again. |
-| **Connection lost** / **Joining failed** | The connection broke, or something failed while joining. The details line says what. | Try again; if it repeats, [collect logs](#collecting-logs) from both PCs. |
+| **Connection lost** / **Joining failed** | The connection broke, or something failed while joining. The details line says what. | Try again; if it repeats, [collect logs](#reporting-a-bug) from both PCs. |
 | "The host's city uses map or climate assets you do not have (…)" | The host's map or climate comes from a Paradox Mods asset you lack. | Subscribe to the same map on Paradox Mods (or use a vanilla map) and join again. |
 
 On the host, a player that sends nothing for 3 minutes while joining is dropped, with the chat line "&lt;name&gt; stopped
@@ -61,11 +61,11 @@ responding while joining."
 ## Different builds, game versions or mods
 
 - **Build.** The game compares the build id of the Skyline Together DLL, so every player must install the very same
-  build. The build id is the start of the DLL's SHA-256: the installer prints it, the panel's footer and the
-  diagnostics show it, and a refusal shows both players' ids; compare it before you play. Building the
-  mod yourself from the same commit does not guarantee an identical DLL on another PC; share one setup zip instead.
+  build. The build id is the start of the DLL's SHA-256: the panel's footer and the diagnostics show it, the GitHub
+  installer prints it, and a refusal shows both players' ids; compare it before you play. Building the mod yourself
+  from the same commit does not guarantee an identical DLL on another PC; use a published release instead.
   A Paradox Mods subscription and the GitHub setup of the same release have the same build id. If the footer shows
-  "(mvid)" after the id, the game could not find the DLL file; please report it with the log.
+  "(mvid)" after the id, the game could not find the DLL file; please [report it](#reporting-a-bug) with the log.
 - **Installed twice.** The notification "Skyline Together is installed twice" means the game found a copy in the
   local `Mods` folder and a Paradox Mods subscription (or two of either). Only one is loaded, and it may not be the
   build you expect. Delete `Mods\SkylineTogether` (or run the installer with `-Uninstall`) or unsubscribe, then
@@ -78,7 +78,7 @@ responding while joining."
   believe is local-only, report it with its name so it can be classified. If the host lets players join with different
   mods (the default), the refusal screen also offers **Join anyway**; see
   [Joining anyway with different mods](#joining-anyway-with-different-mods).
-- For the first test, the simplest setup is an empty playset on both PCs.
+- The simplest setup is an empty playset on every PC.
 - Disable any other multiplayer mod; the installer warns about a known conflicting one, and the game refuses joins
   while the old "CS2 Multiplayer Mod" is enabled on either PC (see
   [Two multiplayer mods at once](#two-multiplayer-mods-at-once)).
@@ -200,7 +200,7 @@ The result is shown as "Self-test: X/Y checks passed" (title screen Multiplayer 
 link that writes diagnostics). A failed check switches its feature off. If a critical feature (session, Steam,
 replication or speed control) fails, the panel shows "Hosting and joining are unavailable: …".
 
-This usually means a game update changed something Skyline Together relies on. [Write diagnostics](#collecting-logs) and
+This usually means a game update changed something Skyline Together relies on. [Write diagnostics](#reporting-a-bug) and
 report it with your game version.
 
 ## Something looks different for another player (desync)
@@ -223,7 +223,7 @@ example, are not.
 If something stays different (a road, a building, a line, a number in a panel):
 
 - Note what differs and where, take a screenshot on both PCs.
-- Click **Write diagnostics** on both PCs, then [collect logs](#collecting-logs).
+- Click **Write diagnostics** on both PCs, then [collect logs](#reporting-a-bug).
 - Leaving and joining again gives the joining player a fresh copy of the host's city.
 
 ## Repeated errors and feature switch-offs
@@ -231,14 +231,15 @@ If something stays different (a road, a building, a line, a number in a panel):
 Each part of Skyline Together runs behind a guard. When a part fails 5 times within 30 seconds:
 
 - a non-critical feature switches off for the session: "Skyline Together: … hit repeated errors and is off for this
-  session. Please use "Write diagnostics" and send us the file."
+  session. Please use "Write diagnostics" and attach the file to a bug report on GitHub
+  (github.com/ljkx/SkylineTogether/issues)."
 - if the replication on a joined player's game fails repeatedly, that game leaves the session: "This game hit repeated
   errors in …, so it left the session. Reconnect to get a fresh copy of the city."
 - if the host cannot apply one player's changes repeatedly, that player is removed: "The host could not apply your
   changes. Join again to get a fresh copy of the city."
 - a critical failure on the host ends the session, and diagnostics are written automatically.
 
-All of these are bugs. Please report them with the diagnostics file and logs.
+All of these are bugs. Please [report them](#reporting-a-bug) with the diagnostics file and logs.
 
 ## Missing assets
 
@@ -255,22 +256,28 @@ the same asset subscriptions on every PC.
 ## The panel does not appear
 
 If the Skyline Together button or panel does not load, a notification says so. You can still host, join and leave from
-**Options → Skyline Together → Multiplayer**. Please send the diagnostics file (button on the same page) and `UI.log`.
+**Options → Skyline Together → Multiplayer**. Please [report it](#reporting-a-bug) with the diagnostics file (button on
+the same page) and `Logs\UI.log`.
 
-## Collecting logs
+## Reporting a bug
 
-1. **Write diagnostics** on every PC involved: in the panel's **Network & diagnostics** foldout, the **Details** link of
-   the self-test line, or Options → Skyline Together → Multiplayer. It writes
+Report bugs as a [GitHub issue](https://github.com/ljkx/SkylineTogether/issues/new/choose) with the files of **every**
+player in the session and a short note: what you did, what each player saw. Screenshots help.
+
+1. **Write diagnostics** on every PC: in the panel's **Network & diagnostics** foldout, the **Details** link of the
+   self-test line, or Options → Skyline Together → Multiplayer. It writes
    `SkylineTogether-diagnostics-<date>-<time>.txt` next to the log and shows the path. It contains versions, the
    self-test results, the session and its players, network numbers, settings without passwords, mods, and the last
    400 log lines. Diagnostics are also written automatically after a critical failure.
-2. Double-click **`Collect-Logs.cmd`** in the setup folder. It zips the following into
-   `SkylineTogether-logs-<date>-<time>.zip` on your Desktop:
-   - `Logs\SkylineTogether*` (the mod's log and the diagnostics files), `Logs\Modding.log`, `Logs\UI.log`,
-   - `Player.log` and `Player-prev.log` (the game's Unity logs),
-   - the verdict files of the 3 newest solo test recordings,
-   - the game's last two crash reports (`.log`, `.dmp`, `.txt`, `.json` under 200 MB).
-3. Attach the zips of **all** players to the bug report, with a short note: what you did, what each player saw.
+2. Collect the files. This depends on how you installed Skyline Together:
+   - **GitHub setup:** double-click **`Collect-Logs.cmd`** in the setup folder. It writes
+     `SkylineTogether-logs-<date>-<time>.zip` to your Desktop with the mod's log and diagnostics files,
+     `Logs\Modding.log`, `Logs\UI.log`, the game's `Player.log` and `Player-prev.log`, the verdicts of the 3 newest
+     solo test recordings and the text files of the game's last two crash reports. Your Windows user name is replaced
+     in the copied logs. Crash dumps (`.dmp`) are left out unless you ask for them (see below).
+   - **Paradox Mods:** there is no collector; attach the files from the table below yourself. The mod log and the
+     newest diagnostics file are the most important ones.
+3. Attach the zip or the files to the issue. GitHub accepts files up to 25 MB.
 
 Locations, under `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`:
 
@@ -278,8 +285,24 @@ Locations, under `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines 
 |---|---|
 | Mod log | `Logs\SkylineTogether.log` |
 | Diagnostics | `Logs\SkylineTogether-diagnostics-*.txt` |
-| Game log | `Player.log` |
+| UI log | `Logs\UI.log` |
+| Game log | `Player.log` (and `Player-prev.log` for the previous run) |
 | Solo test recordings | `ModsData\SkylineTogether\Recordings\` |
 
-Privacy: passwords and chat messages are not written to the diagnostics. Logs and diagnostics do contain player names
-and Steam IDs. If you do not want to post them publicly, say so in the issue.
+**What the files contain.** Passwords and chat messages are never written to the logs or the diagnostics. They do
+contain:
+
+- player names, Steam IDs and the session name;
+- IP addresses of players banned by address (direct IP connections only);
+- in `Player.log`, paths that include your Windows user name (`Collect-Logs.cmd` replaces it; if you attach the file
+  yourself, replace it in a text editor first).
+
+If you would rather not post this publicly, say so in the issue and ask for another way to send the files.
+
+**Crash dumps.** A crash dump (`.dmp`) can contain anything that was in the game's memory, including passwords. Never
+attach one to a public issue. If a crash dump is needed, the issue will ask for it; send it only privately. To include
+dumps in the zip, run in the setup folder:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-SkylineTogether.ps1 -CollectLogs -IncludeDumps
+```

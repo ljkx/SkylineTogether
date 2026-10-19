@@ -62,7 +62,7 @@ format are refused by version instead of failing half-way through a replay.
    builder's paths; Source Link points stack traces at the commit on GitHub, so build releases from a pushed commit.
 
 5. Test the setup zip itself (not a `--deploy` build): install it with `Install.cmd` on two PCs, check that both show
-   the build id printed in step 4, and run the [two-player checklist](../guide/testing.md#two-player-test) and a solo
+   the build id printed in step 4, and run the [two-player checklist](../guide/testing.md#two-player-checklist) and a solo
    test.
 6. Tag the commit (`git tag v<version>`, e.g. `v0.1.0-alpha.1`) and push the tag.
 7. Create a GitHub release for the tag (mark versions with a `-alpha`/`-beta` suffix as pre-releases). Attach `SkylineTogether-Setup.zip` (for players) and

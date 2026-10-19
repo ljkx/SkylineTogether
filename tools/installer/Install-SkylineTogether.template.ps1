@@ -95,7 +95,9 @@ if ($CollectLogs) {
     Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
     Write-Ok "Saved $count log file(s) to:"
     Write-Host "        $zip"
-    Write-Host '   Send this zip to the person who made the mod (passwords and chat are not in it).'
+    Write-Host '   Attach this zip to your bug report on GitHub: https://github.com/ljkx/SkylineTogether/issues'
+    Write-Host '   It contains player names and Steam IDs (no passwords, no chat); your Windows user name was replaced.'
+    Write-Host '   Crash dumps are not included. Add -IncludeDumps only when asked, and send dumps privately.'
     Finish 0
 }
 
@@ -212,10 +214,10 @@ if ($codeMods.Count -gt 0) {
 Write-Step 'Ready'
 Write-Host '   1. Start Cities: Skylines II.'
 Write-Host '   2. On the title screen click "Multiplayer" (below "Load Game").'
-Write-Host '   3. Open the "Join" tab, enter the host''s Steam ID (or IP:port) and the password if any, click "Join".'
+Write-Host '   3. Click "Join a friend", enter the host''s Steam ID (or IP:port) and the password if any, click "Join".'
 Write-Host '      The host''s city downloads and loads automatically.'
-Write-Host '   4. Something wrong? In the multiplayer panel click "Write diagnostics", then run Collect-Logs.cmd'
-Write-Host '      and send the zip from your Desktop.'
+Write-Host '   4. Something wrong? In the Skyline Together panel click "Write diagnostics", run Collect-Logs.cmd'
+Write-Host '      and attach the zip from your Desktop to a bug report: https://github.com/ljkx/SkylineTogether/issues'
 Finish 0
 
 # ------------------------------------------------------------------------------------------- embedded mod

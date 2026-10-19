@@ -3,7 +3,13 @@
 ### How many players can play together?
 
 The host sets **Max players** between 2 and 16, including the host; the default is 8. The design targets 2 to 8
-players. Sessions with more players are untested.
+players; larger sessions need a fast upload on the host.
+
+### Where do I get it?
+
+Subscribe to [Skyline Together on Paradox Mods](https://mods.paradoxplaza.com/mods/163578/Windows) (recommended), or
+use the setup from the [GitHub releases](https://github.com/ljkx/SkylineTogether/releases). Use one of the two, not
+both. See [Install](getting-started.md#install).
 
 ### Does every player need to own the game?
 
@@ -103,15 +109,22 @@ A joined player's game pauses the city and reconnects automatically up to 6 time
 host's city. Changes made while disconnected are not kept. See
 [Leaving, disconnects and reconnecting](getting-started.md#leaving-disconnects-and-reconnecting).
 
-### Something is different on my friend's screen. What now?
+### Something is different on another player's screen. What now?
 
 Small differences are found and repaired automatically in the background. If something stays different, see
-[Troubleshooting → desync](troubleshooting.md#something-looks-different-for-another-player-desync) and report it.
+[Troubleshooting → desync](troubleshooting.md#something-looks-different-for-another-player-desync) and
+[report it](troubleshooting.md#reporting-a-bug).
 
-### Can I test without a second PC?
+### Can I check a build without a second PC?
 
 Yes, with the solo test: it records what a joining player would receive and replays it through the joining player's
 code path on the same PC. See [testing.md](testing.md#solo-test-one-pc).
+
+### How do I report a bug?
+
+Open an issue on [GitHub](https://github.com/ljkx/SkylineTogether/issues/new/choose) with the diagnostics file and log
+of every player. [Reporting a bug](troubleshooting.md#reporting-a-bug) explains where the files are, for both install
+routes, and what they contain.
 
 ### Which languages does the UI support?
 

@@ -1,0 +1,57 @@
+Skyline Together - third-party notices
+======================================
+
+Skyline Together is licensed under the MIT licence (see LICENSE). It contains no third-party code. The notices below
+credit the specifications its own implementations follow and the components it uses from the game's installation.
+
+
+1. LZ4 block format
+-------------------
+
+SkylineTogether.Core contains its own C# implementation of the LZ4 block format (ManagedLz4Compressor). It was written
+from the LZ4 block format description and produces standard LZ4 blocks; no LZ4 source code is included.
+
+  LZ4 - Fast LZ compression algorithm
+  Copyright (c) Yann Collet. All rights reserved.
+  https://github.com/lz4/lz4
+
+
+2. xxHash (XXH64 and XXH3)
+--------------------------
+
+SkylineTogether.Core contains its own C# implementations of the XXH64 and XXH3 (128-bit) hash functions, written from
+the xxHash specification. To produce the same hash values as every other implementation, they use the algorithm's
+published constants, including the default XXH3 secret. No xxHash source code is included.
+
+  xxHash - Extremely Fast Hash algorithm
+  Copyright (c) Yann Collet. All rights reserved.
+  https://github.com/Cyan4973/xxHash
+
+The xxHash library and the LZ4 library are distributed under the BSD 2-Clause licence:
+
+  Redistribution and use in source and binary forms, with or without modification, are permitted provided that the
+  following conditions are met:
+
+  * Redistributions of source code must retain the above copyright notice, this list of conditions and the following
+    disclaimer.
+  * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the
+    following disclaimer in the documentation and/or other materials provided with the distribution.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+  INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+3. Components of the game's installation
+----------------------------------------
+
+Skyline Together is compiled against, and at run time uses, assemblies that ship with Cities: Skylines II, among them
+Steamworks.NET (MIT licence, https://github.com/rlabrecque/Steamworks.NET) and the Steamworks API. They are referenced
+from each player's own game installation and are not redistributed with Skyline Together.
+
+Cities: Skylines II is a trademark of Paradox Interactive. Skyline Together is not affiliated with or endorsed by
+Paradox Interactive or Colossal Order.

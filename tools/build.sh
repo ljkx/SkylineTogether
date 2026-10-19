@@ -3,13 +3,13 @@
 #
 #   tools/build.sh [--deploy] [--package] [--game-dir <path>] [--deploy-dir <path>] [--skip-ui-checks]
 #
-# Order: Release build -> ApiCheck (when tools/ApiCheck exists) -> UI checks (when node is installed) -> Core tests
+# Order: Release build -> UI checks (when node is installed) -> Core tests
 # -> deploy (--deploy) -> package (--package). Any failure stops the script before anything is deployed or packaged.
 #
 #   --deploy        copy the mod into the local Mods folder (default:
 #                   %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether)
 #   --package       write dist/SkylineTogether-<version>.zip (a SkylineTogether folder with the DLLs, PDBs,
-#                   the UI module and README.txt; extract it into the Mods folder)
+#                   the UI module, LICENSE, THIRD-PARTY-NOTICES.txt and README.txt; extract it into the Mods folder)
 #   --game-dir      the game's install folder (default: the Steam path of Directory.Build.props; env GameDir)
 #   --deploy-dir    deploy target (env ModDeployDir)
 #
@@ -94,15 +94,6 @@ for f in SkylineTogether.dll SkylineTogether.Core.dll; do
   [ -f "$OUT/$f" ] || fail "missing build output $OUT/$f"
 done
 
-# ---------- ApiCheck (metadata-only member and data-file name resolution; tools/ApiCheck, when present) ----------
-if [ -f tools/ApiCheck/ApiCheck.csproj ]; then
-  step "ApiCheck"
-  "$DOTNET" run --project tools/ApiCheck/ApiCheck.csproj -c Release -- --repo "$(to_native "$ROOT")" --configuration Release \
-    || fail "ApiCheck"
-else
-  step "ApiCheck skipped (tools/ApiCheck does not exist yet)"
-fi
-
 # ---------- UI checks (optional Node) ----------
 if [ "$UI_CHECKS" = 1 ] && [ -f ui/SkylineTogether.mjs ]; then
   if command -v node >/dev/null 2>&1; then
@@ -153,23 +144,33 @@ if [ "$PACKAGE" = 1 ]; then
   done
   cat > "$STAGE/README.txt" <<EOF
 Skyline Together $VERSION - co-op multiplayer for Cities: Skylines II
+https://github.com/ljkx/SkylineTogether
+
+Recommended: subscribe on Paradox Mods instead (https://mods.paradoxplaza.com/mods/163578/Windows).
+Use one of the two, not both.
 
 Install: extract this archive into
   %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Mods
-so that the files end up in Mods\\SkylineTogether, then start the game. Local mods take precedence over
-Paradox Mods subscriptions of the same name.
+so that the files end up in Mods\\SkylineTogether, then start the game.
 
-Every player of a session needs this exact build of the mod, the same game version and (by default) the same
-code mods. The host is told exactly which mods differ.
+Every player of a session needs the same build of the mod (the build id at the bottom of the Skyline Together
+panel), the same game version and, by default, the same code mods. If the mods differ, the joining player is told
+exactly what to enable, disable or update.
 
 Play:
-  Host:  load your city, open the "Multiplayer" button (top left), set a name/password, press "Host this city".
-         Give your friend the Steam ID shown in the panel.
-  Join:  open the same panel (main menu or in game), enter the host's Steam ID (or IP:port), press "Join".
+  Host:  load your city, click the Skyline Together button (top left) and press "Host this city".
+         Send the other players your Steam ID (copy icon at the top of the panel), or use "Invite friends".
+  Join:  on the title screen click "Multiplayer", then "Join a friend". Paste the host's Steam ID (or IP:port)
+         and the password if there is one, and press "Join".
          Your game downloads and loads the host's city; the host's game pauses until you are in.
 
-This is a test build. Please send both players' logs after a session:
-  %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Logs\SkylineTogether.log
+Back up your saves before you host or join.
+
+To report a bug, click "Write diagnostics" in the panel and attach these files of every player to a GitHub issue
+(https://github.com/ljkx/SkylineTogether/issues):
+  %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Logs\\SkylineTogether.log
+  %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Logs\\SkylineTogether-diagnostics-*.txt
+They contain player names and Steam IDs, but no passwords or chat.
 EOF
   # zip, else the bsdtar that ships with Windows 10+, else PowerShell (which writes backslashes into entry names)
   if command -v zip >/dev/null 2>&1; then

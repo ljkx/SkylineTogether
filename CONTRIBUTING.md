@@ -3,7 +3,7 @@
 Thanks for your interest. Skyline Together is in early testing, so the most useful contributions right now are:
 
 - **Test sessions and bug reports** with logs from all players ([testing guide](docs/guide/testing.md),
-  [collecting logs](docs/guide/troubleshooting.md#collecting-logs)). Use the issue templates.
+  [collecting logs](docs/guide/troubleshooting.md#reporting-a-bug)). Use the issue templates.
 - **Mod compatibility reports**: which mod, which version, what went wrong in a session.
 - **Code**: fixes and improvements, ideally for an existing issue. For larger changes, open an issue first so we can
   agree on the approach before you invest time.

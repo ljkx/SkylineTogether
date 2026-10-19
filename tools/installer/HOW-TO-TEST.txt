@@ -1,49 +1,59 @@
-SKYLINE TOGETHER - HOW TO TEST (build __BUILDID__)
-==================================================
+SKYLINE TOGETHER - TWO-PLAYER CHECKLIST (build __BUILDID__)
+==========================================================
 
 SETUP (both players, 2 minutes)
 1. Close Cities: Skylines II.
 2. Double-click Install.cmd. It installs the mod and prints a "Build id".
-   Both players must see the SAME build id.
-3. First test: turn your Paradox playset off (or use an empty playset) on BOTH PCs, so the mod lists match.
-   Disable the old "CS2 Multiplayer Mod" if you have it.
+   Both players must see the SAME build id (also shown at the bottom of the Skyline Together panel).
+3. For the simplest setup, turn your Paradox playset off (or use an empty playset) on BOTH PCs, so the mod lists
+   match. Disable the old "CS2 Multiplayer Mod" if you have it.
 4. Have Steam running and be logged in on both PCs.
 
 CONNECT
-Host:   load a city (a copy of a save you don't mind breaking) -> round Skyline Together button (top left)
-        -> Host tab -> "Host this city" -> copy "Your Steam ID" (copy icon) and send it to your friend
-        (or "Invite friends" -> "Invite").
-Friend: title screen -> "Multiplayer" (below Load Game) -> "Join a friend" -> paste the Steam ID -> Join.
-        You see the download and loading progress; the host's game pauses until you are in.
+Host:    load a city (back up your save first) -> Skyline Together button (top left) -> "Host this city"
+         -> copy "Your Steam ID" (copy icon) and send it to the other player (or "Invite friends" -> "Invite").
+Joining: title screen -> "Multiplayer" (below Load Game) -> "Join a friend" -> paste the Steam ID -> "Join".
+         You see the download and loading progress; the host's game pauses until you are in.
 
-TEST CHECKLIST (do each step, then both look at the same spot and compare)
+CHECKLIST (do each step, then both look at the same spot and compare; "the other player" is the one who joined)
+The same steps with the same numbers: docs/guide/testing.md on GitHub.
  [ ] 1. Join works; both see each other in the player list and as cursor rings with name tags; chat works (Enter).
- [ ] 2. Host builds a road and zones it -> friend sees it. Friend builds a road and zones it -> host sees it.
+ [ ] 2. Host builds a road and zones it -> the other player sees it. The other player builds a road and zones it
+        -> the host sees it.
  [ ] 3. Buildings grow on the zones -> both see the same buildings (wait a minute at speed 3).
- [ ] 4. Friend places a service building (e.g. school), host deletes something -> both identical.
- [ ] 4b. BULLDOZE: each player bulldozes a road, a building and a tree -> nobody crashes, both identical.
- [ ] 4d. Bulldoze a FULL apartment block and a busy office/shop (residents and workers), then the friend opens
-         the Workplaces and Household info views right away -> nobody crashes; edge curves stay identical.
- [ ] 4c. BLUEPRINTS: one player starts drawing a road (don't click to finish) -> the other sees the outline
-         in that player's colour. Same for placing a building, zoning, drawing a district. Esc -> it disappears.
- [ ] 5. TRAIN LINE: build two train stations, rails with a deliberate GAP, and a train line through both.
-        Both players: open the line panel -> it must show the same "not connected"/broken segment.
+ [ ] 4. The other player places a service building (e.g. a school), the host deletes something -> both identical.
+ [ ] 5. BULLDOZE: each player bulldozes a road, a building and a tree -> nobody crashes, both identical.
+ [ ] 6. BULLDOZE BUSY BUILDINGS: bulldoze a full apartment block and a busy office or shop (residents and workers),
+        then the other player opens the Workplaces and Household info views right away -> nobody crashes; road
+        curves stay identical.
+ [ ] 7. BUILDING PREVIEWS: one player starts drawing a road (don't click to finish) -> the other sees the outline
+        in that player's colour. Same for placing a building, zoning, drawing a district. Esc -> it disappears.
+        Raise the road with the elevation steps -> the other sees it at its height, "+10 m" on the name tag.
+ [ ] 8. TRAIN LINE: build two train stations, rails with a deliberate GAP, and a train line through both.
+        Both players: open the line panel -> it must show the same "not connected" segment.
         Close the gap -> both must show the line connected at the same time.
- [ ] 6. Friend draws a bus line; host changes its colour/vehicles -> identical on both.
- [ ] 7. Taxes / budget / a policy changed by the friend -> host sees it, and the other way round.
- [ ] 8. Speed: friend presses play/speed -> the host's game follows (the host decides).
- [ ] 9. Terraform a hill (both), paint some ore -> identical.
- [ ] 10. Traffic: both see cars and pedestrians moving near their camera.
- [ ] 11. Friend leaves and joins again -> works; city identical.
- [ ] 11b. ROBUSTNESS (each should end with a clear message or keep working, never a crash or a frozen game):
-         friend Alt-Tabs for a minute; host pauses for 2 minutes; host saves; host goes to the main menu while the
-         friend is still downloading; friend quits during the download and joins again.
- [ ] 12. Later: enable the same gameplay mods on both PCs (Traffic, Move It, Anarchy, ...) and repeat 2-6
-         with them (Move It: move a building; Traffic: lane connections).
+ [ ] 9. The other player draws a bus line; the host changes its colour/vehicles -> identical on both.
+ [ ] 10. Taxes / budget / a policy changed by the other player -> the host sees it, and the other way round.
+ [ ] 11. SPEED: the other player presses play/speed -> the host's game follows (the host decides).
+ [ ] 12. Terraform a hill (both), paint some ore -> identical.
+ [ ] 13. TRAFFIC: both see cars and pedestrians moving near their camera.
+ [ ] 14. The other player leaves and joins again -> works; city identical.
+ [ ] 15. ROBUSTNESS (each should end with a clear message or keep working, never a crash or a frozen game):
+         the other player Alt-Tabs for a minute; the host pauses for 2 minutes; the host saves; the host goes to
+         the main menu while the other player is still downloading; the other player quits during the download
+         and joins again.
+ [ ] 16. GAMEPLAY MODS: enable the same gameplay mods on both PCs (Traffic, Move It, Anarchy, ...) and repeat
+         steps 2-9 with them (Move It: move a building; Traffic: lane connections).
+ [ ] 17. DIFFERENT MODS: the other player enables one extra gameplay mod and joins -> the refusal screen lists it
+         and offers "Join anyway"; after clicking it, both see the "joined with different mods" chat line.
+ [ ] 18. MODS WITH CITY DATA: the host enables Zoning Toolkit and builds a road with it; the other player joins
+         without it -> "Mods required for this city", no "Join anyway"; the city is not loaded.
 
 IF SOMETHING IS WRONG (or after the session)
-- In the multiplayer panel open "Network & diagnostics" and click "Write diagnostics" (both players).
-- Then double-click Collect-Logs.cmd -> a zip appears on your Desktop. Send both zips plus a short note:
+- In the Skyline Together panel open "Network & diagnostics" and click "Write diagnostics" (both players).
+- Then double-click Collect-Logs.cmd -> a zip appears on your Desktop. Your Windows user name is replaced in the
+  copied logs; the zip still contains player names and Steam IDs.
+- Attach both zips to a bug report on GitHub (github.com/ljkx/SkylineTogether/issues) with a short note:
   which step, what each player saw (screenshots help).
 
 SOLO TEST (host alone, no second PC needed)
