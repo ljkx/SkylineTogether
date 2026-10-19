@@ -18,6 +18,9 @@ namespace SkylineTogether.Diagnostics
         private readonly Colossal.Logging.ILog _log;
         private readonly Queue<string> _recent = new Queue<string>(RecentCapacity);
         private readonly object _recentLock = new object();
+        // bounds the file whatever peers send: a rate limit and a size cap per run (Core.Diagnostics.LogFloodGuard)
+        private readonly Core.Diagnostics.LogFloodGuard _flood = new Core.Diagnostics.LogFloodGuard();
+        private static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
 
         public GameLog(string name)
         {
@@ -55,6 +58,8 @@ namespace SkylineTogether.Diagnostics
             if (level < Minimum) return;
             string text = "[" + category + "] " + message;
             Remember(level, text, exception);
+            if (!_flood.Allow(level, text.Length + (exception != null ? 512 : 0), Clock.Elapsed.TotalSeconds, out string notice)) return;
+            if (notice != null) _log.Warn("[" + LogCategory.Session + "] " + notice);
             switch (level)
             {
                 case CoreLevel.Trace:

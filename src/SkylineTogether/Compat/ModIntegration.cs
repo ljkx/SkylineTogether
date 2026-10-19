@@ -347,6 +347,7 @@ namespace SkylineTogether.Compat
         private static void Ended()
         {
             PeerBudgets.Clear();
+            Warned.Clear(); // the next session warns again (peer ids are reused)
             if (!_started) return;
             _started = false;
             foreach (Bound b in Channels.Values) Invoke(b, "OnSessionEnded", () => b.SessionEnded?.Invoke());
@@ -444,13 +445,14 @@ namespace SkylineTogether.Compat
             }
             catch (DecodeException ex)
             {
-                WarnOnce("decode." + from.Value, "mod channel: dropped an unreadable message from " + from + " (" + ex.Message + ")");
+                WarnOnce("decode." + from.Value, "mod channel: dropped an unreadable message from " + from + " (" + ex.Message + "); further ones are not logged");
                 return;
             }
             if (!PeerBudgets.TryGetValue(from.Value, out ModChannelBudget budget)) PeerBudgets[from.Value] = budget = new ModChannelBudget();
             if (!budget.TrySpend(m.Payload.Length, Now))
             {
-                WarnOnce("budget." + from.Value + "." + m.Channel, "mod channel: " + from + " sends " + m.Channel + " messages faster than allowed; the excess is dropped");
+                // keyed by peer and reason only: a peer choosing new channel names must not add a key (and a line) per name
+                WarnOnce("budget." + from.Value, "mod channel: " + from + " sends messages (" + Shown(m.Channel) + ") faster than allowed; the excess is dropped and not logged again");
                 return;
             }
             m.From = from; // a client never speaks for another
@@ -462,7 +464,7 @@ namespace SkylineTogether.Compat
             if (!ModChannelPermissions.MaySend(host.GetRole(from), m.Payload, declared?.ViewerKinds ?? ViewerMessageKinds.None))
             {
                 _refusedFromViewers++;
-                WarnOnce("viewer." + from.Value + "." + m.Channel, "mod channel: dropped a " + m.Channel + " message from " + from + ", a viewer (the mod does not declare that message kind viewer-allowed)");
+                WarnOnce("viewer." + from.Value, "mod channel: dropped a " + Shown(m.Channel) + " message from " + from + ", a viewer (the mod does not declare that message kind viewer-allowed); further ones are not logged");
                 return;
             }
             ModChannelRoute route = ModChannelRouter.Route(from, m.Target, m.TargetPeer, LivePeers(host));
@@ -521,8 +523,15 @@ namespace SkylineTogether.Compat
 
         private static void WarnOnce(string key, string text)
         {
+            // bounded: the keys are local channels, or a peer and a reason (cleared when the session ends)
+            if (Warned.Count >= MaxWarnedKeys) return;
             if (Warned.Add(key)) _log?.Warn(LogCategory.Compat, text);
         }
+
+        private const int MaxWarnedKeys = 1024;
+
+        /// <summary>A channel name from the network as it may appear in the log (no control characters, at most 64 characters).</summary>
+        private static string Shown(string channel) => ProtocolText.Truncate(ProtocolText.Sanitize(channel ?? ""), 64);
 
         /// <summary>The diagnostics lines: every mod using the integration class, its callbacks and channel counters.</summary>
         public static void Describe(List<string> lines)

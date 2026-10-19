@@ -373,6 +373,25 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Equal(16, rig.Host.Options.MaxPlayers, "clamped");
         }
 
+        // ------------------------------------------------------------------------------- log flood (finding 5)
+
+        [Test]
+        public void RefusedModerationRequestsAreLoggedSparingly()
+        {
+            var rig = new SessionRig();
+            SessionClient builder = Join(rig, "Builder", 8001);
+            SessionClient other = Join(rig, "Other", 8002);
+            for (int i = 0; i < 500; i++) builder.RequestKick(other.LocalPeer);
+            rig.Run(30);
+            Assert.Equal(ClientState.Live, other.State, "a builder kicks nobody");
+            int lines = 0;
+            foreach (string l in rig.Log.Lines)
+            {
+                if (l.Contains("may not Kick")) lines++;
+            }
+            Assert.True(lines >= 3 && lines <= 10, "the first few and then every 100th, not 500 lines (" + lines + ")");
+        }
+
         [Test]
         public void PingsAreNotAnsweredBeforeAdmission()
         {

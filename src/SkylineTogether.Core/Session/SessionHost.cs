@@ -248,6 +248,7 @@ namespace SkylineTogether.Core.Session
             public double SpeedTokens = SpeedRequestBurst;
             public double SpeedRefilledAt;
             public long SpeedRequestsDropped;
+            public long RefusedActions;
             public double LastHave = double.NegativeInfinity;
             /// <summary>Decompressed bytes of this peer's messages in the current frame (<see cref="HostOptions.PeerDecodeBudgetBytesPerFrame"/>).</summary>
             public long FrameDecoded;
@@ -1710,7 +1711,13 @@ namespace SkylineTogether.Core.Session
                 : action == PlayerActionKind.SetRole && Moderation.CanSetRole(p.Role, targetRole, role));
             if (!allowed)
             {
-                _log.Info(LogCategory.Session, p.Name + " (" + p.Role + ") may not " + action + " " + target + " (" + targetRole + "); ignored");
+                // rate-limited: a peer repeating refused requests does not fill the log
+                p.RefusedActions++;
+                if (p.RefusedActions <= 3 || p.RefusedActions % 100 == 0)
+                {
+                    _log.Info(LogCategory.Session, p.Name + " (" + p.Role + ") may not " + action + " " + target + " (" + targetRole + "); ignored"
+                                                   + (p.RefusedActions > 1 ? " (" + p.RefusedActions + " refused so far)" : ""));
+                }
                 return;
             }
             if (action == PlayerActionKind.Kick)

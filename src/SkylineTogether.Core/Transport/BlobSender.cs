@@ -56,6 +56,7 @@ namespace SkylineTogether.Core.Transport
         private long _totalSentBytes;
         private long _chunkMessagesSent;
         private int _resentChunks;
+        private int _havesReceived;
         private int _window;
         private bool _started;
         private bool _cancelled;
@@ -257,7 +258,10 @@ namespace SkylineTogether.Core.Transport
                 bool wasWaiting = _awaitingHave;
                 _awaitingHave = false;
                 if (_toSend.Count > 0) _completeLogged = false;
-                _log.Info(LogCategory.Net, _name + ": have-bitmap: the receiver holds " + held.ToString(CultureInfo.InvariantCulture) + " of "
+                // rate-limited: a receiver may send a have-bitmap every half second
+                _havesReceived++;
+                bool logIt = wasWaiting || (requeued > 0 && (_havesReceived <= 5 || _havesReceived % 50 == 0));
+                if (logIt) _log.Info(LogCategory.Net, _name + ": have-bitmap: the receiver holds " + held.ToString(CultureInfo.InvariantCulture) + " of "
                                            + _chunkCount.ToString(CultureInfo.InvariantCulture) + " chunk(s); " + _toSend.Count.ToString(CultureInfo.InvariantCulture)
                                            + " to send (" + requeued.ToString(CultureInfo.InvariantCulture) + " requeued)" + (wasWaiting ? "; resuming" : string.Empty));
             }
