@@ -7,6 +7,7 @@ using Game.Simulation;
 using Game.Tools;
 using SkylineTogether.Core;
 using SkylineTogether.Core.Buffers;
+using SkylineTogether.Core.Diagnostics;
 using SkylineTogether.Core.Fields;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Sync;
@@ -188,6 +189,7 @@ namespace SkylineTogether.Sync
             };
             host.PeerLeft += peer =>
             {
+                _peerFaults.Forget(peer.Value);
                 _requests.Remove(peer.Value);
                 _requestBudget.Remove(peer.Value);
                 _hostQuota.Forget(peer);
@@ -222,6 +224,7 @@ namespace SkylineTogether.Sync
         {
             _generation++;
             _inbox.Clear();
+            _peerFaults.Clear();
             _inflight.Clear();
             _outStamps.Clear();
             _dirty.Clear();
@@ -305,6 +308,7 @@ namespace SkylineTogether.Sync
                 {
                     (PeerId peer, byte[] data) = _inbox.Dequeue();
                     if (_sessions.Host != null) _hostQuota.Release(peer, data.Length);
+                    if (IsHost && _peerFaults.IsMuted(peer.Value)) continue;
                     try
                     {
                         Handle(peer, data, now);
@@ -315,7 +319,7 @@ namespace SkylineTogether.Sync
                     }
                     catch (Exception ex)
                     {
-                        Diagnostics.Guard.Report(Diagnostics.Features.Terrain, "applying a terrain message from " + peer, ex);
+                        PeerFault(peer, "applying a terrain message", ex, now);
                     }
                 }
                 if (!IsHost) FlushDeferred(now);
@@ -507,7 +511,21 @@ namespace SkylineTogether.Sync
                     continue;
                 }
                 budget.Count++;
-                if (!Replay(s, out Bounds2 area, out bool height)) continue;
+                Bounds2 area;
+                bool height;
+                try
+                {
+                    if (!Replay(s, out area, out height)) continue;
+                }
+                catch (Exception ex)
+                {
+                    // one bad stamp neither aborts the others (already replayed ones are still forwarded) nor counts
+                    // against the feature for everyone
+                    _stampsRefused++;
+                    PeerFault(peer, "replaying a terrain stamp", ex, now);
+                    if (_peerFaults.IsMuted(peer.Value)) break;
+                    continue;
+                }
                 if (height) MarkDirty(area, now);
                 _forward.Add(s);
             }
@@ -548,6 +566,13 @@ namespace SkylineTogether.Sync
                 WarnOnce("prefab", "a terrain stamp names an unknown tool or brush prefab; skipped (tiles still converge)");
                 return false;
             }
+            // both brush paths read the brush's texture (TerrainMaterialSystem.ApplyBrush looks the prefab up as a brush
+            // and throws for anything else): checked for every target, not only for heights
+            if (!em.Exists(brushPrefab) || !_prefabs.TryGetPrefab(brushPrefab, out BrushPrefab prefab) || prefab == null)
+            {
+                WarnOnce("brush", "a terrain stamp names a prefab that is not a brush; skipped");
+                return false;
+            }
             var brush = new Brush
             {
                 m_Tool = tool,
@@ -564,11 +589,6 @@ namespace SkylineTogether.Sync
             {
                 case TerraformingTarget.Height:
                 {
-                    if (!_prefabs.TryGetPrefab(brushPrefab, out BrushPrefab prefab) || prefab == null)
-                    {
-                        WarnOnce("brush", "a terrain stamp names a prefab that is not a brush; skipped");
-                        return false;
-                    }
                     TerraformingType type = td.m_Type;
                     if ((type == TerraformingType.Level || type == TerraformingType.Slope) && brush.m_Strength < 0f) return false;
                     if (type == TerraformingType.Soften && brush.m_Strength < 0f) brush.m_Strength = math.abs(brush.m_Strength) * 2f;
@@ -959,6 +979,27 @@ namespace SkylineTogether.Sync
             box.Writer.Reset();
             box.CountAt = -1;
             box.Count = 0;
+        }
+
+        /// <summary>Host: failures caused by each client's terrain messages (never the feature's, which serves everyone).</summary>
+        private readonly PeerFaultBook _peerFaults = new PeerFaultBook();
+
+        /// <summary>
+        /// A terrain message or stamp failed. On the host a client's input counts against that client only
+        /// (<see cref="PeerFaultBook"/>): one client sending stamps the host cannot replay (another mod's prefab, a hostile
+        /// client) must not switch terrain sync off for every player; a client whose input keeps failing is ignored for
+        /// the rest of the session. On a client, and for the host's own input, it counts against the feature as before.
+        /// </summary>
+        private void PeerFault(PeerId peer, string what, Exception ex, double now)
+        {
+            if (!IsHost || peer == PeerId.Host)
+            {
+                Diagnostics.Guard.Report(Diagnostics.Features.Terrain, what + " from " + peer, ex);
+                return;
+            }
+            PeerFaultVerdict v = _peerFaults.Report(peer.Value, now);
+            if (v.Log) _log.Warn(LogCategory.Fields, what + " from " + peer + " failed" + (v.Suppressed > 0 ? " (" + v.Suppressed + " more not logged)" : "") + ": " + ex.GetType().Name + ": " + ex.Message);
+            if (v.JustMuted) _log.Warn(LogCategory.Fields, peer + ": its terrain strokes keep failing on the host; they are ignored for the rest of its session (the tile audit keeps its view in line)");
         }
 
         private void WarnOnce(string key, string message)
