@@ -1074,6 +1074,9 @@ namespace SkylineTogether.Core.Session
                         Refuse(p, RefuseReason.HostShuttingDown, "The host is ending the session.");
                         return;
                     }
+                    // bans and the join policy come first, judged on the transport's identity: a banned or not-invited
+                    // player learns nothing else, not even the host's protocol version (SECURITY.md)
+                    if (!Screen(p)) return;
                     var theirProtocol = HelloMessage.PeekProtocolVersion(e.Body, e.BodyOffset, e.BodyCount);
                     if (theirProtocol != ProtocolVersion.Current)
                     {
@@ -1097,8 +1100,8 @@ namespace SkylineTogether.Core.Session
                     {
                         _log.Info(LogCategory.Session, p.Name + " claims Steam ID " + p.Hello.SteamId + (p.SteamAuthenticated ? " but Steam authenticated " + p.SteamId : " without Steam authentication") + "; the claim is ignored");
                     }
-                    if (!Screen(p)) return;
-                    if (!ResolveDuplicate(p)) return;
+                    // a second connection of a player already in the session is resolved only once it is fully
+                    // admitted (TryAdmit): before the password, a connection claiming someone's identity must not affect them
                     BeginAuthentication(p);
                     return;
                 }
@@ -1110,6 +1113,8 @@ namespace SkylineTogether.Core.Session
                     return;
                 case MessageKind.Ping:
                 {
+                    // nothing is answered before admission (a stranger learns no timing or liveness from it)
+                    if (!p.Admitted) return;
                     PingMessage ping = PingMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
                     if (ping.IsReply)
                     {
@@ -1539,6 +1544,9 @@ namespace SkylineTogether.Core.Session
                 }
                 return;
             }
+            // the same player connected again (their game crashed, the old connection is dying): only now, with the
+            // password proven and everything compatible, may the new connection replace the old one
+            if (!ResolveDuplicate(p)) return;
             // several handshakes may pass the password at once; each is checked here, after its own answer
             if (IsFull())
             {
