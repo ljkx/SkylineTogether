@@ -6,12 +6,14 @@
 
     Install:        double-click Install.cmd
                     (or: powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-SkylineTogether.ps1)
-    Collect logs:   double-click Collect-Logs.cmd   (or add -CollectLogs)
-    Uninstall:      add -Uninstall
+    Collect logs:   double-click Collect-Logs.cmd   (or add -CollectLogs; add -IncludeDumps for crash dumps)
+    Uninstall:      add -Uninstall (add -RemoveSettings to also delete the mod's settings without being asked)
 #>
 param(
     [switch]$CollectLogs,
+    [switch]$IncludeDumps,   # with -CollectLogs: also the crash dumps (memory snapshots that can contain passwords)
     [switch]$Uninstall,
+    [switch]$RemoveSettings, # with -Uninstall: also delete the mod's settings (host password, ban list)
     [switch]$NoPause,
     [string]$OutDir = '',
     [switch]$SkipGameCheck   # testing only
@@ -32,6 +34,26 @@ function Finish([int]$code) {
     if (-not $NoPause) { Write-Host ''; [void](Read-Host 'Press Enter to close') }
     exit $code
 }
+# every path is used literally: a user folder with [ ] in its name must not be read as a wildcard pattern
+function New-Dir([string]$path) { [void][IO.Directory]::CreateDirectory($path) }
+function Remove-Dir([string]$path) {
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue }
+}
+# collected text files name the Windows user folder (and so the user name); it is replaced by %USERPROFILE%
+function Hide-UserFolder([string]$file) {
+    $profileDir = $env:USERPROFILE
+    if (-not $profileDir) { return }
+    try {
+        $text = [IO.File]::ReadAllText($file)
+        $forms = @($profileDir, $profileDir.Replace('\', '/'), $profileDir.Replace('\', '\\')) | Select-Object -Unique
+        foreach ($form in $forms) {
+            $text = [Text.RegularExpressions.Regex]::Replace($text, [Text.RegularExpressions.Regex]::Escape($form), '%USERPROFILE%', 'IgnoreCase')
+        }
+        [IO.File]::WriteAllText($file, $text)
+    } catch {
+        Write-Warn2 "Could not remove the user folder from $([IO.Path]::GetFileName($file)); check it before sending."
+    }
+}
 
 $UserData = Join-Path $env:USERPROFILE 'AppData\LocalLow\Colossal Order\Cities Skylines II'
 $ModsDir = Join-Path $UserData 'Mods'
@@ -45,7 +67,7 @@ if ($CollectLogs) {
     Write-Step 'Collecting logs for a bug report'
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $stage = Join-Path $env:TEMP "SkylineTogether-logs-$stamp"
-    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    New-Dir $stage
     $patterns = @(
         @{ Dir = $LogsDir; Filter = 'SkylineTogether*' },
         @{ Dir = $LogsDir; Filter = 'Modding.log' },
@@ -54,56 +76,74 @@ if ($CollectLogs) {
         @{ Dir = $UserData; Filter = 'Player-prev.log' }
     )
     $count = 0
+    $dumps = 0
     foreach ($p in $patterns) {
-        if (-not (Test-Path $p.Dir)) { continue }
-        Get-ChildItem -Path $p.Dir -Filter $p.Filter -File -ErrorAction SilentlyContinue | ForEach-Object {
-            Copy-Item $_.FullName -Destination $stage -Force
+        if (-not (Test-Path -LiteralPath $p.Dir)) { continue }
+        Get-ChildItem -LiteralPath $p.Dir -Filter $p.Filter -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $stage $_.Name) -Force
             $count++
         }
     }
     $recordings = Join-Path $UserData 'ModsData\SkylineTogether\Recordings'
-    if (Test-Path $recordings) {
-        Get-ChildItem -Path $recordings -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 3 | ForEach-Object {
+    if (Test-Path -LiteralPath $recordings) {
+        Get-ChildItem -LiteralPath $recordings -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 3 | ForEach-Object {
             $dst = Join-Path $stage ('recording-' + $_.Name)
-            New-Item -ItemType Directory -Force -Path $dst | Out-Null
-            Get-ChildItem -Path $_.FullName -Filter 'verdict*' -File -ErrorAction SilentlyContinue | Copy-Item -Destination $dst -Force
+            New-Dir $dst
+            Get-ChildItem -LiteralPath $_.FullName -Filter 'verdict*' -File -ErrorAction SilentlyContinue | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $dst $_.Name) -Force
+            }
         }
     }
-    # Unity crash reports (error.log + crash.dmp) of the last two crashes
+    # Unity crash reports of the last two crashes: error.log always, crash.dmp only with -IncludeDumps (a dump is a
+    # snapshot of the game's memory and can contain passwords and chat)
     $crashRoots = @(
         (Join-Path $env:TEMP 'Colossal Order\Cities Skylines II\Crashes'),
         (Join-Path $env:LOCALAPPDATA 'Temp\Colossal Order\Cities Skylines II\Crashes'),
         (Join-Path $UserData 'Crashes')
     ) | Select-Object -Unique
     foreach ($root in $crashRoots) {
-        if (-not (Test-Path $root)) { continue }
-        Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 2 | ForEach-Object {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 2 | ForEach-Object {
             $dst = Join-Path $stage ('crash-' + $_.Name)
-            New-Item -ItemType Directory -Force -Path $dst | Out-Null
-            Get-ChildItem -Path $_.FullName -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.Extension -in '.log', '.dmp', '.txt', '.json' -and $_.Length -lt 200MB } |
-                ForEach-Object { Copy-Item $_.FullName -Destination $dst -Force; $count++ }
+            New-Dir $dst
+            Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue |
+                Where-Object { ($_.Extension -in '.log', '.txt', '.json' -or ($IncludeDumps -and $_.Extension -eq '.dmp')) -and $_.Length -lt 200MB } |
+                ForEach-Object {
+                    Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $dst $_.Name) -Force
+                    $count++
+                    if ($_.Extension -eq '.dmp') { $dumps++ }
+                }
         }
     }
     if ($count -eq 0) {
+        Remove-Dir $stage
         Write-Bad "No logs found in $LogsDir. Start the game with the mod once, then try again."
         Finish 1
     }
+    # the text files name the Windows user folder: replaced by %USERPROFILE%
+    Get-ChildItem -LiteralPath $stage -File -Recurse | Where-Object { $_.Extension -in '.log', '.txt', '.json' } | ForEach-Object { Hide-UserFolder $_.FullName }
     $desktop = if ($OutDir) { $OutDir } else { [Environment]::GetFolderPath('Desktop') }
     $zip = Join-Path $desktop "SkylineTogether-logs-$stamp.zip"
-    Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
-    Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+    $items = @(Get-ChildItem -LiteralPath $stage | ForEach-Object { $_.FullName })
+    Compress-Archive -LiteralPath $items -DestinationPath $zip -Force
+    Remove-Dir $stage
     Write-Ok "Saved $count log file(s) to:"
     Write-Host "        $zip"
-    Write-Host '   Attach this zip to your bug report on GitHub: https://github.com/ljkx/SkylineTogether/issues'
-    Write-Host '   It contains player names and Steam IDs (no passwords, no chat); your Windows user name was replaced.'
-    Write-Host '   Crash dumps are not included. Add -IncludeDumps only when asked, and send dumps privately.'
+    if ($dumps -gt 0) {
+        Write-Host '   It contains player names and Steam IDs; your Windows user name was replaced in the text files.'
+        Write-Warn2 "It also contains $dumps crash dump(s): snapshots of the game's memory, which can include passwords and chat."
+        Write-Host  '        Send this zip privately to the person who asked for it, not as an attachment to a public bug report.'
+    } else {
+        Write-Host '   Attach this zip to your bug report on GitHub: https://github.com/ljkx/SkylineTogether/issues'
+        Write-Host '   It contains player names and Steam IDs (no passwords, no chat); your Windows user name was replaced.'
+        Write-Host '   Crash dumps are not included. Add -IncludeDumps only when asked, and send dumps privately.'
+    }
     Finish 0
 }
 
 # ------------------------------------------------------------------------------------------- checks
 Write-Step 'Checking the game'
-if (-not (Test-Path $UserData)) {
+if (-not (Test-Path -LiteralPath $UserData)) {
     Write-Bad "Cities: Skylines II user folder not found ($UserData)."
     Write-Host '   Start the game once (until the main menu), close it, and run this again.'
     Finish 1
@@ -112,24 +152,55 @@ Write-Ok 'Cities: Skylines II user folder found'
 
 $game = if ($SkipGameCheck) { $null } else { Get-Process -Name 'Cities2' -ErrorAction SilentlyContinue }
 while ($game) {
+    if ($NoPause) {
+        # nobody can press Enter: stop instead of waiting forever
+        Write-Bad 'Cities: Skylines II is running. Close the game completely, then run this again.'
+        exit 1
+    }
     Write-Warn2 'Cities: Skylines II is running. Close the game completely, then press Enter.'
     [void](Read-Host)
     $game = Get-Process -Name 'Cities2' -ErrorAction SilentlyContinue
 }
 Write-Ok 'The game is not running'
 
+# leftovers of an install that was interrupted (outside the Mods folder, so the game never loads them)
+Get-ChildItem -LiteralPath $UserData -Directory -Filter "$ModName-setup-*" -ErrorAction SilentlyContinue | ForEach-Object { Remove-Dir $_.FullName }
+
 # ------------------------------------------------------------------------------------------- uninstall
 if ($Uninstall) {
     Write-Step 'Removing Skyline Together'
-    if (Test-Path $ModDir) { Remove-Item $ModDir -Recurse -Force; Write-Ok "Removed $ModDir" }
+    if (Test-Path -LiteralPath $ModDir) { Remove-Item -LiteralPath $ModDir -Recurse -Force; Write-Ok "Removed $ModDir" }
     else { Write-Ok 'Skyline Together was not installed' }
+    # temporary files of joins, snapshots, setups and log collections
+    $temps = @(Join-Path $env:TEMP $ModName)
+    $temps += @(Get-ChildItem -LiteralPath $env:TEMP -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$ModName-setup-*" -or $_.Name -like "$ModName-logs-*" } | ForEach-Object { $_.FullName })
+    $removedTemps = 0
+    foreach ($t in $temps) {
+        if (Test-Path -LiteralPath $t) { Remove-Dir $t; $removedTemps++ }
+    }
+    if ($removedTemps -gt 0) { Write-Ok 'Removed temporary files' }
+    # the settings hold the host password and the ban list: deleted only when the player says so
+    $settingsDir = Join-Path $UserData "ModsSettings\$ModName"
+    if (Test-Path -LiteralPath $settingsDir) {
+        $remove = [bool]$RemoveSettings
+        if (-not $remove -and -not $NoPause) {
+            $answer = Read-Host '   Also delete your Skyline Together settings (player name, host password, ban list)? [y/N]'
+            $remove = $answer -match '^\s*(y|yes|j|ja)\s*$'
+        }
+        if ($remove) { Remove-Dir $settingsDir; Write-Ok "Removed the settings ($settingsDir)" }
+        else { Write-Ok "Kept the settings ($settingsDir); run with -Uninstall -RemoveSettings to delete them" }
+    }
     Finish 0
 }
 
 # ------------------------------------------------------------------------------------------- install
 Write-Step 'Installing Skyline Together'
 $tmp = Join-Path $env:TEMP ("SkylineTogether-setup-" + [Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+New-Dir $tmp
+# the new copy is staged next to the Mods folder (same drive, outside Mods so the game never loads it) and swapped in
+# with two renames; the old copy is kept until the new one is in place, and put back if that fails
+$staging = Join-Path $UserData ("$ModName-setup-new-" + [Guid]::NewGuid().ToString('N'))
+$previous = Join-Path $UserData ("$ModName-setup-old-" + [Guid]::NewGuid().ToString('N'))
 try {
     $zipPath = Join-Path $tmp 'mod.zip'
     $self = [IO.File]::ReadAllText($PSCommandPath)
@@ -141,27 +212,45 @@ try {
     if ($i -lt 0 -or $j -le $i) { Write-Bad 'The embedded mod is missing from this script. Download the setup again.'; Finish 1 }
     $b64 = $self.Substring($i + $open.Length, $j - $i - $open.Length) -replace '\s', ''
     [IO.File]::WriteAllBytes($zipPath, [Convert]::FromBase64String($b64))
-    $actual = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $PayloadSha256) {
         Write-Bad 'The embedded mod is damaged (checksum mismatch). Download the setup again.'
         Finish 1
     }
-    Expand-Archive -Path $zipPath -DestinationPath (Join-Path $tmp 'x') -Force
+    Expand-Archive -LiteralPath $zipPath -DestinationPath (Join-Path $tmp 'x') -Force
     $source = Join-Path $tmp "x\$ModName"
-    if (-not (Test-Path (Join-Path $source 'SkylineTogether.dll'))) {
+    if (-not (Test-Path -LiteralPath (Join-Path $source 'SkylineTogether.dll'))) {
         Write-Bad 'The embedded mod is incomplete. Download the setup again.'
         Finish 1
     }
-    New-Item -ItemType Directory -Force -Path $ModsDir | Out-Null
-    if (Test-Path $ModDir) { Remove-Item $ModDir -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path $ModDir | Out-Null
-    Copy-Item -Path (Join-Path $source '*') -Destination $ModDir -Recurse -Force
+    New-Dir $ModsDir
+    New-Dir $staging
+    Get-ChildItem -LiteralPath $source | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $staging $_.Name) -Recurse -Force }
+    if (-not (Test-Path -LiteralPath (Join-Path $staging 'SkylineTogether.dll'))) { throw 'copying the mod failed' }
+    $hadOld = Test-Path -LiteralPath $ModDir
+    if ($hadOld) { [IO.Directory]::Move($ModDir, $previous) }
+    try {
+        [IO.Directory]::Move($staging, $ModDir)
+    }
+    catch {
+        if ($hadOld -and -not (Test-Path -LiteralPath $ModDir)) { [IO.Directory]::Move($previous, $ModDir) }
+        throw
+    }
+}
+catch {
+    Write-Bad "Installing failed: $($_.Exception.Message)"
+    if (Test-Path -LiteralPath $ModDir) { Write-Host '   The previously installed copy is unchanged.' }
+    Remove-Dir $staging
+    Remove-Dir $tmp
+    Finish 1
 }
 finally {
-    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Dir $tmp
+    Remove-Dir $staging
+    Remove-Dir $previous
 }
 $dll = Join-Path $ModDir 'SkylineTogether.dll'
-$installedBuild = (Get-FileHash -Path $dll -Algorithm SHA256).Hash.Substring(0, 12).ToLowerInvariant()
+$installedBuild = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.Substring(0, 12).ToLowerInvariant()
 Write-Ok "Installed to $ModDir"
 Write-Ok "Build id: $installedBuild  (the host must show the same build id)"
 
@@ -169,7 +258,7 @@ Write-Ok "Build id: $installedBuild  (the host must show the same build id)"
 Write-Step 'Checking your other mods'
 $pdx = Join-Path $UserData '.cache\mods\pdx_mods'
 $old = @()
-if (Test-Path $pdx) { $old = @(Get-ChildItem -Path $pdx -Directory -Filter "$($OldMultiplayerModId)_*" -ErrorAction SilentlyContinue) }
+if (Test-Path -LiteralPath $pdx) { $old = @(Get-ChildItem -LiteralPath $pdx -Directory -Filter "$($OldMultiplayerModId)_*" -ErrorAction SilentlyContinue) }
 if ($old.Count -gt 0) {
     Write-Warn2 'The old "CS2 Multiplayer Mod" is subscribed. Disable it (or unsubscribe) in Paradox Mods /'
     Write-Host  '        your playset before playing - two multiplayer mods at once conflict.'
@@ -178,9 +267,9 @@ if ($old.Count -gt 0) {
 }
 # a Paradox Mods subscription of Skyline Together next to this local copy: the game loads only one of them
 $subscribed = @()
-if (Test-Path $pdx) {
-    $subscribed = @(Get-ChildItem -Path $pdx -Directory -ErrorAction SilentlyContinue | Where-Object {
-        Test-Path (Join-Path $_.FullName 'SkylineTogether.dll')
+if (Test-Path -LiteralPath $pdx) {
+    $subscribed = @(Get-ChildItem -LiteralPath $pdx -Directory -ErrorAction SilentlyContinue | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName 'SkylineTogether.dll')
     })
 }
 if ($subscribed.Count -gt 0) {
@@ -190,11 +279,11 @@ if ($subscribed.Count -gt 0) {
 }
 $libs = @('0Harmony', 'Colossal.Mathematics', 'Markdig', 'Reinforced.Typings', 'Extensions', 'External')
 $codeMods = @()
-if (Test-Path $pdx) {
-    Get-ChildItem -Path $pdx -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+if (Test-Path -LiteralPath $pdx) {
+    Get-ChildItem -LiteralPath $pdx -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         if ($_.Name -like "$($OldMultiplayerModId)_*") { return }
-        if (Test-Path (Join-Path $_.FullName 'SkylineTogether.dll')) { return }
-        $names = Get-ChildItem -Path $_.FullName -Filter '*.dll' -File -Recurse -Depth 1 -ErrorAction SilentlyContinue |
+        if (Test-Path -LiteralPath (Join-Path $_.FullName 'SkylineTogether.dll')) { return }
+        $names = Get-ChildItem -LiteralPath $_.FullName -Filter '*.dll' -File -Recurse -Depth 1 -ErrorAction SilentlyContinue |
             Where-Object { $_.BaseName -notlike '*_win_x86_64' -and $libs -notcontains $_.BaseName } |
             ForEach-Object { $_.BaseName }
         if ($names) { $codeMods += ($names | Select-Object -First 1) }
