@@ -170,7 +170,8 @@ namespace SkylineTogether.Session
 
         public bool CanHost => !InSession && SteamAvailable && BlockingReason() == null && GameManager.instance != null && GameManager.instance.gameMode == GameMode.Game && !GameManager.instance.isGameLoading;
 
-        public bool CanJoin => !InSession && SteamAvailable && BlockingReason() == null && !string.IsNullOrWhiteSpace(_settings.JoinTarget) && (GameManager.instance == null || !GameManager.instance.isGameLoading);
+        public bool CanJoin => !InSession && SteamAvailable && BlockingReason() == null && !string.IsNullOrWhiteSpace(_settings.JoinTarget) && (GameManager.instance == null || !GameManager.instance.isGameLoading)
+                               && !_loader.IsLoading; // an earlier join's import or load still runs
 
         /// <summary>Why the last session ended (shown until the next one starts).</summary>
         public string LastEndReason { get; private set; }
@@ -566,7 +567,7 @@ namespace SkylineTogether.Session
                 else if (!SteamAvailable) why = LocaleSource.Resolve("st.toast.join.noSteam");
                 else if (BlockingReason() != null) why = LocaleSource.Resolve("st.toast.blocked", "REASON", BlockingReason());
                 else if (string.IsNullOrWhiteSpace(_settings.JoinTarget)) why = LocaleSource.Resolve("st.toast.join.noTarget");
-                else if (GameManager.instance != null && GameManager.instance.isGameLoading) why = LocaleSource.Resolve("st.toast.join.loading");
+                else if ((GameManager.instance != null && GameManager.instance.isGameLoading) || _loader.IsLoading) why = LocaleSource.Resolve("st.toast.join.loading");
                 else why = LocaleSource.Resolve("st.toast.join.other");
                 Notify(why, ProgressState.Warning);
                 return;

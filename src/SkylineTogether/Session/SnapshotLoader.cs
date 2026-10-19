@@ -42,7 +42,14 @@ namespace SkylineTogether.Session
             _root = Path.Combine(Path.GetTempPath(), "SkylineTogether", "join");
         }
 
-        public bool IsLoading { get; private set; }
+        /// <summary>
+        /// True while an import of bundled assets or a city load runs, of the current download or an older one (a new
+        /// join waits until it is over: an older load finishing on a newer, incomplete download broke it).
+        /// </summary>
+        public bool IsLoading => _generations.Busy;
+
+        // the download generations (a rejoin opens a newer download while an older import may still run)
+        private readonly LoadGeneration _generations = new LoadGeneration();
 
         /// <summary>The joiner's achievements flag from before the first join load (achievements are off in
         /// the host's city).</summary>
@@ -85,8 +92,20 @@ namespace SkylineTogether.Session
 
         public Stream OpenBlobTarget(SnapshotManifest manifest)
         {
-            Dispose();
-            _disposeRequested = false;
+            if (_generations.CurrentBusy)
+            {
+                // the previous download's import or load still runs: it releases its own database and folder when it
+                // completes (it sees that it was superseded); the fields are free for the new download
+                _db = null;
+                _data = null;
+                _folder = null;
+                _splitter = null;
+            }
+            else
+            {
+                Dispose();
+            }
+            _generations.Next();
             _folder = Path.Combine(_root, Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_folder);
             _db = AssetDatabase.GetTransient(0L, _folder);
@@ -97,7 +116,6 @@ namespace SkylineTogether.Session
         }
 
         private JoinBlobSplitter _splitter;
-        private bool _disposeRequested;
 
         public void BeginLoad(SnapshotManifest manifest, IReadOnlyList<SettingEntry> pushedSettings, Action<LoadOutcome> onDone)
         {
@@ -118,7 +136,10 @@ namespace SkylineTogether.Session
             }
             // add the host's bundled render prefabs, then check that every render prefab resolves, before the
             // load (the asset database registration is asynchronous)
-            IsLoading = true;
+            int generation = _generations.Current;
+            ILocalAssetDatabase saveDb = _db;
+            string saveFolder = _folder;
+            _generations.Started(generation);
             string folder = Path.Combine(_root, "assets-" + Guid.NewGuid().ToString("N"));
             TaskManager.instance.EnqueueTask("SaveLoadGame", async () =>
             {
@@ -132,11 +153,18 @@ namespace SkylineTogether.Session
                 }
                 _main.Post(() =>
                 {
-                    IsLoading = false;
-                    if (_disposeRequested)
+                    if (!_generations.Finished(generation))
+                    {
+                        // a newer download replaced this one while the assets were added: release this download's
+                        // own database and folder, and never start a load on the newer (still incomplete) download
+                        _log.Info(LogCategory.Join, "join assets: an earlier join's import finished after a newer join started; its download is released");
+                        Release(saveDb, saveFolder);
+                        return;
+                    }
+                    if (_generations.DisposeRequested)
                     {
                         // the session ended while the assets were added: no load
-                        _disposeRequested = false;
+                        _generations.DisposeRequested = false;
                         Dispose();
                         return;
                     }
@@ -232,7 +260,8 @@ namespace SkylineTogether.Session
             GameplaySettings gameplay = SharedSettings.instance.gameplay;
             bool pausedBefore = gameplay.pausedAfterLoading;
             gameplay.pausedAfterLoading = true; // in memory only: the first simulated frame must not run ahead of the host
-            IsLoading = true;
+            int loadGeneration = _generations.Current;
+            _generations.Started(loadGeneration);
             SaveGameData data = _data;
             ILocalAssetDatabase db = _db;
             string folder = _folder;
@@ -252,11 +281,18 @@ namespace SkylineTogether.Session
                 _main.Post(() =>
                 {
                     gameplay.pausedAfterLoading = pausedBefore;
-                    IsLoading = false;
                     // release this load's own database; if a newer download replaced the
                     // fields meanwhile (a rejoin attempt), Dispose() would have released the newer one instead
-                    if (ReferenceEquals(_data, data)) Dispose();
-                    else Release(db, folder);
+                    bool current = _generations.Finished(loadGeneration);
+                    if (current && ReferenceEquals(_data, data))
+                    {
+                        _generations.DisposeRequested = false;
+                        Dispose();
+                    }
+                    else
+                    {
+                        Release(db, folder);
+                    }
                     try
                     {
                         onDone(new LoadOutcome { Success = ok, FailureDetail = ok ? null : error ?? "the game could not load the city (see the game log)", SlotCoverage = 1f });
@@ -276,9 +312,9 @@ namespace SkylineTogether.Session
         /// </summary>
         public void Dispose()
         {
-            if (IsLoading)
+            if (_generations.CurrentBusy)
             {
-                _disposeRequested = true; // honoured after the asset import (the load's completion disposes anyway)
+                _generations.DisposeRequested = true; // honoured after the asset import (the load's completion disposes anyway)
                 // the load's completion callback disposes
                 return;
             }
