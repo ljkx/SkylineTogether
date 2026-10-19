@@ -16,7 +16,7 @@ dotnet run --project tests/SkylineTogether.Core.Tests -c Release -- --verbose   
 
 - Plain words are case-insensitive substring filters on the test name (a test runs when it matches any of them); a word
   starting with `-` excludes matching tests.
-- Test names are `Area.Class.Method`, for example `Buffers.ByteWriterTests.RoundTripsVarints`.
+- Test names are `Area.Class.Method`, for example `Buffers.ByteWriterReaderTests.VarUInt32GoldenBytes`.
 - The exit code is the number of failed tests, capped at 125. `tools/build.sh` runs the built DLL and fails on a
   non-zero exit code.
 
@@ -111,6 +111,7 @@ normal browser; Gameface is not Chrome, so a snapshot is a layout check, not the
 ```sh
 python tools/check_links.py          # relative links and #anchors in all tracked Markdown files
 python tools/check_personal_data.py  # home-folder paths, real-looking Steam IDs, e-mail addresses
+python tools/check_personal_data.py --commits <range>   # the same in commit messages and identities
 ```
 
 ## Sync coverage
@@ -122,16 +123,27 @@ decompiled game sources and checks that every serializable component and system 
 
 ## Continuous integration
 
-[.github/workflows/ci.yml](../../.github/workflows/ci.yml) runs on every push to `main` and on pull requests:
+[.github/workflows/ci.yml](../../.github/workflows/ci.yml) runs on every push to `main`, on pull requests and on
+demand (`workflow_dispatch`):
 
 | Job | Runner | Steps |
 |---|---|---|
 | Core build and tests | windows-latest, .NET 8 | Build Core without the game (netstandard2.1 fallback), build and run the tests |
-| UI module checks | ubuntu-latest, Node 22 | `node --check`, `tools/ui_smoke.mjs` |
-| Repository checks | ubuntu-latest, Python 3.12 | `tools/check_personal_data.py`, `tools/check_links.py` |
+| UI module checks | ubuntu-24.04, Node 22 | `node --check`, `tools/ui_smoke.mjs` |
+| Repository checks | ubuntu-24.04, Python 3.12 | `tools/check_personal_data.py` (files, and `--commits` for commit messages and identities), `tools/check_links.py` |
 
-The game layer cannot be built on CI (it needs the game's assemblies). Build it locally with `tools/build.sh` before
-you open a pull request that touches `src/SkylineTogether`.
+What CI does **not** check:
+
+- **The game layer is never compiled.** `src/SkylineTogether` needs the game's assemblies, which cannot be
+  redistributed to a CI runner. A pull request that breaks it, or that uses a game member that does not exist, passes
+  CI. Build it locally with `tools/build.sh` before you open a pull request that touches `src/SkylineTogether`, and
+  maintainers build every pull request locally before merging.
+- **Core's API level.** Core must use only netstandard2.0 APIs (the game runs on Mono / .NET Framework 4.7.2), but CI
+  compiles it against netstandard2.1 and the tests against net8.0, and the local build uses the game's netstandard 2.1
+  facade. An API missing on the game's runtime fails only in game, so reviewers check it by hand
+  ([decision 0001](../decisions/0001-build-without-nuget.md) lists the usual traps).
+- **Behaviour in game.** Unit tests cover Core; the game layer is checked with the solo test and two-player sessions
+  (below).
 
 ## In-game testing
 

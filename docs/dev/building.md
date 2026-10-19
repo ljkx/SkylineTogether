@@ -27,13 +27,12 @@ What it does, in order (any failure stops it before anything is deployed or pack
    `%LOCALAPPDATA%\Microsoft\dotnet`, `~/.dotnet`, `C:\Program Files\dotnet`.
 2. `dotnet build SkylineTogether.sln -c Release -p:DeployMod=false`, then checks that `SkylineTogether.dll` and
    `SkylineTogether.Core.dll` exist in `src/SkylineTogether/bin/Release/net472`.
-3. `tools/ApiCheck`, if it exists (it does not yet).
-4. With Node on the PATH: `node --check ui/SkylineTogether.mjs` and `node tools/ui_smoke.mjs`.
-5. Runs the Core tests (`dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll`).
-6. `--deploy`: copies `SkylineTogether.dll`, `SkylineTogether.Core.dll`, their `.pdb` files and
+3. With Node on the PATH: `node --check ui/SkylineTogether.mjs` and `node tools/ui_smoke.mjs`.
+4. Runs the Core tests (`dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll`).
+5. `--deploy`: copies `SkylineTogether.dll`, `SkylineTogether.Core.dll`, their `.pdb` files and
    `ui/SkylineTogether.mjs` into the Mods folder.
-7. `--package`: writes `dist/SkylineTogether-<version>.zip` with a `SkylineTogether` folder (the files above, `LICENSE`
-   and a `README.txt`). The version comes from `<Version>` in `Directory.Build.props`.
+6. `--package`: writes `dist/SkylineTogether-<version>.zip` with a `SkylineTogether` folder (the files above, `LICENSE`,
+   `THIRD-PARTY-NOTICES.txt` and a `README.txt`). The version comes from `<Version>` in `Directory.Build.props`.
 
 ## Game path and Directory.Build.props
 

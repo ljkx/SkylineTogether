@@ -1,9 +1,10 @@
 # Contributing to Skyline Together
 
-Thanks for your interest. Skyline Together is in early testing, so the most useful contributions right now are:
+Thanks for your interest. Everyone taking part in the project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+The most useful contributions are:
 
-- **Test sessions and bug reports** with logs from all players ([testing guide](docs/guide/testing.md),
-  [collecting logs](docs/guide/troubleshooting.md#reporting-a-bug)). Use the issue templates.
+- **Bug reports** with logs from all players ([reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug),
+  [two-player checklist](docs/guide/testing.md)). Use the issue templates.
 - **Mod compatibility reports**: which mod, which version, what went wrong in a session.
 - **Code**: fixes and improvements, ideally for an existing issue. For larger changes, open an issue first so we can
   agree on the approach before you invest time.
@@ -49,7 +50,8 @@ Rules that keep the architecture intact:
 
 - **Core stays pure .NET.** No Unity, Game or Colossal reference in `src/SkylineTogether.Core`. Use only APIs that exist
   in netstandard2.0 (the game's runtime is Mono/.NET Framework 4.7.2); [decision 0001](docs/decisions/0001-build-without-nuget.md)
-  lists the usual traps (`Math.Clamp`, `HashCode`, `Dictionary.TryAdd`, span overloads, ...).
+  lists the usual traps (`Math.Clamp`, `HashCode`, `Dictionary.TryAdd`, span overloads, ...). No build or CI step
+  checks this (both compile against netstandard2.1 or newer), so reviewers check it by hand.
 - **Untrusted input.** Everything decoded from the network goes through the limits in `Protocol/Limits.cs`, and decoders
   throw only `DecodeException` on bad input. See [SECURITY.md](SECURITY.md).
 - **Game internals.** Every game type or member you use must exist in the game version you build against. Non-public
@@ -93,12 +95,14 @@ licence problems, contributions must be your own work:
 
 - Do not copy code from other multiplayer mods for Cities: Skylines II or any other game, or from any proprietary or
   incompatibly licensed source. Do not port such code by translating or paraphrasing it line by line either.
-- You may study the game's decompiled code to understand how the game works and cite it (file and line) in research
-  notes and comments. Do not paste decompiled game code into the repository.
+- You may study the game's decompiled code to understand how the game works and refer to it (type and member names)
+  in research notes and comments. Never quote decompiled code, not even short excerpts; describe the behaviour in your
+  own words.
 - Code from openly licensed projects (MIT, BSD, Apache 2.0, ...) may be used when its licence allows it and is credited;
   mention it in the pull request.
-- Sources of third-party mods that Skyline Together must be compatible with may be studied for compatibility (their
-  data layout and behaviour), under the same no-copy rule.
+- The published source code of third-party mods that Skyline Together must be compatible with may be studied for
+  compatibility (their data layout and behaviour), under the same no-copy rule. Do not decompile mods that publish no
+  source; use their documentation and observe their behaviour in game instead.
 
 By submitting a pull request you confirm that you have the right to contribute the code under the project's
 [MIT licence](LICENSE).

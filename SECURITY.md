@@ -8,9 +8,21 @@ vulnerability reporting: the repository's **Security** tab → **Report a vulner
 open an issue that asks for a private contact, without any details.
 
 Please include what an attacker needs (a player in the session, someone who knows the host's Steam ID or IP address,
-...), what they can achieve, the build you tested and, if possible, steps to reproduce. You will get an answer within a
-few days. Skyline Together is a hobby project in early testing; fixes go into the next build, and only the latest build
-is supported.
+...), what they can achieve, the version and build id you tested and, if possible, steps to reproduce. You will get an
+answer within a few days. Fixes go into the next release.
+
+## Supported versions
+
+| Version | Supported |
+|---|---|
+| The latest release (Paradox Mods and GitHub) | Yes |
+| Older releases | No; update to the latest release |
+
+## Scope
+
+In scope: Skyline Together itself (the mod, its network protocol, the GitHub installer and log collector). Out of
+scope: bugs in Cities: Skylines II, Steam or Paradox Mods (report them to Paradox Interactive or Valve), other mods,
+including the unrelated "CS2 Multiplayer Mod", and attacks that need control of a player's PC.
 
 ## How Skyline Together uses the network
 
@@ -86,5 +98,8 @@ These are known and accepted for now; reports about them are welcome only if you
 - **Visible identifiers.** Players in a session see each other's Steam IDs. With direct IP connections, joining players
   know the host's IP address. A hosted session creates a friends-only Steam lobby whose data includes the session name
   and whether a password is set.
-- **Logs and diagnostics** contain player names and Steam IDs (not passwords or chat). Think before attaching them to a
-  public issue.
+- **Logs and diagnostics** contain player names, Steam IDs, session names and, for direct-IP bans, IP addresses (not
+  passwords or chat). The game's `Player.log` contains paths with your Windows user name; `Collect-Logs.cmd` replaces
+  it in the files it collects. Crash dumps (`.dmp`) can contain anything that was in the game's memory, including
+  passwords: share them only privately. Think before attaching files to a public issue; see
+  [Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug).

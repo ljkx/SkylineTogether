@@ -8,9 +8,9 @@
 ## Context
 
 The plan assumes a `netstandard2.0` Core project, a test project with xUnit that targets `net8.0;net472` through the
-`Microsoft.NETFramework.ReferenceAssemblies` package, and a PowerShell build script. In the environment the project is
-built in, **no NuGet download is allowed**: neither reference-assembly packages nor test frameworks can be restored.
-The only inputs are the .NET SDK (8.0) and the game's own `Cities2_Data\Managed` folder.
+`Microsoft.NETFramework.ReferenceAssemblies` package, and a PowerShell build script. The build must work **offline**,
+from the .NET SDK (8.0) and the game's own `Cities2_Data\Managed` folder alone: no NuGet package is restored, neither
+reference-assembly packages nor test frameworks.
 
 ## Decision
 
@@ -31,8 +31,8 @@ The only inputs are the .NET SDK (8.0) and the game's own `Cities2_Data\Managed`
    125). Tests live in `tests/SkylineTogether.Core.Tests/<Area>/*Tests.cs`. The hash implementations are
    additionally cross-checked against Microsoft's `System.IO.Hashing.dll`, which the game ships in its Managed folder;
    it is a conditional plain file reference, not a package, and those checks are compiled only when the file exists.
-4. **Build script**: `tools/build.sh` (bash; Git Bash on Windows) runs the Release build, `tools/ApiCheck` and the UI
-   checks when they exist, the tests, then optionally deploys (`--deploy`) and packages (`--package`).
+4. **Build script**: `tools/build.sh` (bash; Git Bash on Windows) runs the Release build, the UI checks (when Node is
+   installed) and the tests, then optionally deploys (`--deploy`) and packages (`--package`).
 5. **Language and toolchain limits** (unchanged hard constraints, restated because they shape every module): C# 10;
    no Entities source generators or IL post-processing (no `SystemAPI`, `IJobEntity`, `ISystem` code generation, no
    custom `IJobChunk` scheduling, no Burst requirement); game systems are `GameSystemBase` subclasses that iterate

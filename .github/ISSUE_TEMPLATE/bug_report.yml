@@ -5,24 +5,48 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for testing. Please check the [troubleshooting guide](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md) first.
-        Logs from **both** players make most bugs fixable: in the multiplayer panel click **Write diagnostics**, then run
-        `Collect-Logs.cmd` from the installer folder and attach the zip it puts on your Desktop.
-        Do not paste passwords. The logs contain player names and Steam IDs; if you do not want them public, say so and
-        we will arrange another way to send them.
+        Thanks for the report. Please check the [troubleshooting guide](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md) first.
+        Logs from **every** player make most bugs fixable. In the Skyline Together panel click **Write diagnostics**, then:
+        - **Installed from GitHub:** run `Collect-Logs.cmd` from the setup folder and attach the zip it puts on your Desktop.
+        - **Installed from Paradox Mods:** attach `Logs\SkylineTogether.log` and the newest `Logs\SkylineTogether-diagnostics-*.txt`
+          from `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`.
+
+        **Privacy:** issues are public. The files contain player names, Steam IDs and, for direct-IP bans, IP addresses (never
+        passwords or chat). `Player.log` contains your Windows user name in file paths unless it was collected with
+        `Collect-Logs.cmd`. If you do not want this public, say so and we will arrange another way to send the files.
+        **Never attach crash dumps (`.dmp`) here**: they can contain passwords. Send them only privately, and only when asked.
+        Details: [Reporting a bug](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug).
+  - type: dropdown
+    id: installed-from
+    attributes:
+      label: Installed from
+      options:
+        - Paradox Mods
+        - GitHub setup (Install.cmd)
+        - Built myself
+    validations:
+      required: true
+  - type: input
+    id: mod-version
+    attributes:
+      label: Mod version
+      description: The Skyline Together version (Paradox Mods page, release name or the first line Install.cmd prints).
+      placeholder: "0.2.0"
+    validations:
+      required: true
   - type: input
     id: build
     attributes:
       label: Build id
-      description: Printed by Install.cmd ("Build id") and in the first line of HOW-TO-TEST.txt. Give every player's build id.
-      placeholder: "host: 1a2b3c4d5e6f, friend: 1a2b3c4d5e6f"
+      description: Shown at the bottom of the Skyline Together panel ("Build …") and printed by Install.cmd. Give every player's build id.
+      placeholder: "host: 1a2b3c4d5e6f, other player: 1a2b3c4d5e6f"
     validations:
       required: true
   - type: input
     id: game-version
     attributes:
       label: Game version
-      description: Cities: Skylines II version from the main menu (bottom corner).
+      description: "The Cities: Skylines II version from the main menu (bottom corner)."
     validations:
       required: true
   - type: dropdown
@@ -47,10 +71,10 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: If you were following docs/guide/testing.md, name the checklist step.
+      description: If you were following the two-player checklist (docs/guide/testing.md or HOW-TO-TEST.txt), name the step number.
       placeholder: |
         1. Host loads a city and hosts
-        2. Friend joins
+        2. The other player joins
         3. ...
   - type: textarea
     id: mods
@@ -63,4 +87,4 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: Attach the Collect-Logs zip of each player (drag the files into this box).
+      description: Attach the log files or the Collect-Logs zip of each player (drag the files into this box). No crash dumps.

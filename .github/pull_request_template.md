@@ -5,7 +5,7 @@
 ## How it was tested
 
 <!-- tools/build.sh output, new or changed tests, and for game-layer changes: what you tried in game (solo test,
-     two-PC session, which checklist steps of docs/guide/testing.md). -->
+     two-player session, which steps of the checklist in docs/guide/testing.md). -->
 
 ## Checklist
 
