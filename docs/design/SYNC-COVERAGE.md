@@ -30,13 +30,13 @@ again on the client from host data. The statuses:
 | Status | Meaning |
 |---|---|
 | `structure` | structure codec: the host captures entities tagged `Created`/`Updated`/`Deleted` and streams full records; clients apply and the vanilla pipeline re-derives everything else |
-| `presence` | structure codec plus the **presence watch** (new): components the simulation adds or removes *without* an `Updated` tag are found by comparing component sets and re-sent |
-| `scan` | structure value scan: values hashed every 0.25-1 s (lines, the City entity, and now events), changes re-sent |
-| `values` | attention values (`AttentionValues`): simulation values of buildings, edges, areas and now nodes, by camera and selection priority |
+| `presence` | structure codec plus the **presence watch**: components the simulation adds or removes *without* an `Updated` tag are found by comparing component sets and re-sent |
+| `scan` | structure value scan: values hashed every 0.25-1 s (lines, the City entity and events), changes re-sent |
+| `values` | attention values (`AttentionValues`): simulation values of buildings, edges, areas and nodes, by camera and selection priority |
 | `keyed` | keyed state on derived entities (zone cells, station stops, sub-element deletions, flow status of the flow graphs) |
 | `global` | `GlobalStateSync`: a system's own `ISerializable` state, a custom slice of state, or a typed channel (taxes, budgets, names, ...) |
 | `actions` | `ActionSync` intents and the unlock set, or a client proposal channel |
-| `statistics`, `cellmap`, `terrain`, `water`, `movers`, `icons` | the dedicated channels of those branches |
+| `statistics`, `cellmap`, `terrain`, `water`, `movers`, `icons` | the dedicated channels of those features |
 | `agents` | agent replication (`AgentSync`) |
 | `clock` | the follower clock and what is a pure function of it (date, time of day, season, climate) |
 | `derived` | computed identically on every peer from synced inputs |
@@ -52,7 +52,7 @@ again on the client from host data. The statuses:
 | # | What players saw before | Root cause | Fix |
 |---|---|---|---|
 | 1 | Fires, collapsed or damaged buildings, flooded and endangered buildings, accident sites, tornadoes and lightning, floods, tsunamis and every other event were invisible on clients | `Game.Events.Event` entities were not a replicated family; `IgniteSystem`, `DamageSystem`, `WaterDamageSystem`, `AccidentSiteSystem` and others add or remove `OnFire`, `Damaged`, `Flooded`, `InDanger`, `AccidentSite`, `FacingWeather` without an `Updated` tag, so the capture never saw them | Events, journal entries, chirps and life-path events are a **host-only structure family** (`FamilyClassifier.IsHostOnly`): captured, value-scanned, never proposed by clients, refused by the host's validation, left out of the integrity check. References to entities that do not replicate travel as null instead of dropping the component (`EntityCodec.LenientRefs`). The **presence watch** (`EventSync`, `PresenceTracker`) compares each structure entity's replicated component set with the set last sent: every `BatchesUpdated` entity each frame, the watched types every 0.25 s, everything else on a 0.25 ms/frame rolling pass. `Game.Events.InitializeSystem` is gated on clients (it would ignite, damage and pick random targets). Weather phenomena get their `HotspotFrame` buffer sized and fed every frame on clients (`EventInterpolateSystem` indexes it unchecked, an empty buffer would read out of bounds) |
-| 2 | The chirper differed per player: clients got only chirps their own triggers made (weather, policies, tools) | chirps were not replicated and `CreateChirpSystem` ran on clients | chirps replicate from the host; `CreateChirpSystem` is gated and its queue emptied (`EventSync.DrainChirpQueue`); likes stay per player; sender and link names come from the host's `ChirpLinkSystem` cache (channel `Chirp.Links`), so chirps show names even while a citizen is not known locally |
+| 2 | The chirper differed per player: clients got only chirps their own triggers made (weather, policies, tools) | chirps were not replicated and `CreateChirpSystem` ran on clients | chirps replicate from the host; `CreateChirpSystem` stays enabled and `ChirpDrainSystem` empties its queue on clients; likes stay per player; sender and link names come from the host's `ChirpLinkSystem` cache (channel `Chirp.Links`), so chirps show names even while a citizen is not known locally |
 | 3 | The event journal was empty or wrong on clients | journal entries were not replicated | part of fix 1; `EventJournalSystem` keeps the list and its callbacks on clients |
 | 4 | Info panels froze at the join snapshot: happiness factors, production capacity, stored resources, company and worker counts, consumption, free properties and shelters, study positions, bicycle and parking counts, electricity and water production, consumption, import and export, garbage accumulation, fire hazard dry days | their writers are `GameSimulation` systems | each system's own saved state is mirrored as a blob (`GlobalStateSync.Panels`), paced to its update rate (`ChannelPacer`) |
 | 5 | The production panel froze (consumption, resource usage, production chains) | `CityProductionStatisticSystem` is simulation; its full blob would append to a queue on clients forever | custom channel `Production.Statistic` with only the panel's tables, chains in a stable order |
@@ -101,7 +101,7 @@ again on the client from host data. The statuses:
 | Garbage, healthcare, education, deathcare, police, fire, post panels | panel UI systems | building values, statistics, fix 4, fix 8 | values + statistics + global |
 | Selected entity panel | `SelectedInfoUISystem` | time-aligned inspection samples (`AttentionValues`), agents of the selection first (`AgentSync`) | values + agents |
 | Followed citizens, life path | `LifePathEventSystem` | fix 13 | actions + agents |
-| Radio, tutorials, camera, tools, photo mode | local systems | per player (tutorials off in sessions) | local |
+| Radio, tutorials, camera, tools, photo mode | local systems | per player | local |
 
 ## Remaining justified exclusions
 
@@ -135,8 +135,8 @@ again on the client from host data. The statuses:
   broadcast). The fast pass after a join sends that within a second or two.
 - **Flow keys** need bound owners. Edges touching an owner without a net id are not keyed and keep their local values;
   duplicate keys are dropped on both sides. The first pass logs the number of keyed and ambiguous edges per network.
-- Nothing here is tested in game yet; every new path is behind `Features.Events`, `Features.GlobalState` or
-  `Features.SimValues` (flow status: `Features.FlowStatus`) and contained by `Guard`.
+- Every path here is behind `Features.Events`, `Features.GlobalState` or `Features.SimValues` (flow status:
+  `Features.FlowStatus`) and contained by `Guard`.
 
 ## Generated inventory
 
@@ -182,7 +182,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `Game.Effects.EffectFlagSystem` | GameSimulation | `clock` | cosmetic allow-list (FollowerClock) | season and night flags are pure functions of the replicated date and time |
 | `Game.Net.AirwaySystem` | Deserialize | `derived` | rebuilt at load on every peer | airway graph from the map |
 | `Game.Prefabs.Modes.GameModeSystem` | Deserialize | `snapshot` | join snapshot (GameModeSystem.overrideMode) | the host's game mode |
-| `Game.Prefabs.PrefabSystem` | MainLoop | `snapshot` | handshake: same mods, same versions | prefab set; prefabs travel as ranks |
+| `Game.Prefabs.PrefabSystem` | MainLoop | `snapshot` | handshake: same mods, same versions | prefab set; prefabs bind by PrefabID (ranks only in tool previews) |
 | `Game.Rendering.MarkerIconSystem` | Rendering | `local` | - | marker icons are presentation |
 | `Game.Rendering.TerrainMaterialSystem` | PreCulling | `terrain` | TerrainSync (splatmap tiles) | terrain paint |
 | `Game.Rendering.WaterRenderSystem` | PreCulling | `local` | - | render state |

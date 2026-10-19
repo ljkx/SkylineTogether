@@ -1,8 +1,8 @@
 # Mod compatibility
 
-How Skyline Together keeps the user's installed Paradox mods in sync between host and clients. Research basis:
-`docs/research/09-third-party-mods.md` (R09). Every statement about a mod below was checked against the **installed
-version**, decompiled from `.cache/mods/pdx_mods/<id>_<version>` (decompiles under `mod_audit/decomp_mods/<name>`).
+How Skyline Together keeps third-party Paradox mods in sync between host and clients. Research basis:
+`docs/research/09-third-party-mods.md` (R09). Every statement about a mod below was checked against the **published
+version** listed in §2 (its Paradox Mods id and version).
 Code lives in `src/SkylineTogether/Compat/` (adapters, watcher, settings channel, assembly scanner, generic analysis,
 integration API, asset sources) with small marked hooks (`// mod compatibility`) in `EntityCodec`,
 `FamilyClassifier`, `TypeHandlers`, `SyncController`, `FollowerClock`, `GameInfoProvider`, `SnapshotService`,
@@ -18,11 +18,11 @@ without any reference to Skyline Together (§8, [`../MOD-INTEGRATION.md`](../MOD
 | Mechanism | What it solves | Where |
 |---|---|---|
 | Generic codec | Every `ISerializable`/`IEmptySerializable` component of every mod already replicates through the game's own save encoding, entity references as net ids or derived keys ([batch encoding](../ARCHITECTURE.md#batch-encoding)). | `Sync/EntityCodec`, `TypeHandlers` |
-| **Mod entity family** | Entities defined only by mod data replicate as `ModEntity` even when they carry a `PrefabRef` (Traffic's lane connection data: `PrefabRef(Traffic.FakePrefab)`; Better Bulldozer's removal records: `PrefabRef` of the removed prefab). Before, they fell to `Generic` and never replicated. Move It's control points (`PrefabRef(Entity.Null)`) are tool-local through their adapter-local type. | `FamilyClassifier.Markers/Classify` |
+| **Mod entity family** | Entities defined only by mod data replicate as `ModEntity` even when they carry a `PrefabRef` (Traffic's lane connection data: `PrefabRef(Traffic.FakePrefab)`; Better Bulldozer's removal records: `PrefabRef` of the removed prefab). Move It's control points (`PrefabRef(Entity.Null)`) are tool-local through their adapter-local type. | `FamilyClassifier.Markers/Classify` |
 | **Adapter-local types** | Types an adapter names (Traffic connectors, lane handles, temp data; Move It control points and overlays) make their entity tool-local ([families](../ARCHITECTURE.md#families)). | `ModAdapter.LocalTypes` → `FamilyMarker.AdapterLocal` |
 | **Dependency binding** | A replicated value that references an unbound mod entity (a node's `ModifiedLaneConnections` → its data entity; an owner's removal buffer → record entities) no longer travels as "presence only": the capture binds the entity (host: new id; client: id from its granted pool) and spawns it in the same batch, so references resolve on apply. | `EntityCodec.DependencyBinder`, `SyncController.HostBindDependency/ClientBindDependency/WriteDependencies` |
 | **Mod state watcher** | Mods write their own components without `Updated` (in-place buffer edits, structural add/remove from UI buttons). Per capture, chunk change versions of every mod component type (+ vanilla types adapters name) select candidates; a hash of the watched types (whole state for mod entities and water sources) finds real changes; a slow sweep (256/frame) catches removals. Host: upsert when the watched type set changed, values otherwise, max 1/s per ordinary entity, immediately for mod entities. Client: proposals (`DirectTool` flag → `ModTools` permission). The applier's own writes are refreshed into the baseline first, so nothing ping-pongs. | `Compat/ModStateWatcher`, `SyncController.CaptureModChanges` |
-| **Enabled bits** | Enableable components (vanilla `Decoration` on trees placed outside decoration mode, Tree Controller's `LumberResource`, `CustomMeshColor`) now replicate their enabled bit (`SyncRecordKind.EnabledBits = 110`, right after the entity record, both directions; `ISerializeAsEnabled` types excluded). Before, every replicated tree was created with `Decoration` enabled. | `EntityCodec.WriteEntity/Apply` |
+| **Enabled bits** | Enableable components (vanilla `Decoration` on trees placed outside decoration mode, Tree Controller's `LumberResource`, `CustomMeshColor`) replicate their enabled bit (`SyncRecordKind.EnabledBits = 110`, right after the entity record, both directions; `ISerializeAsEnabled` types excluded). | `EntityCodec.WriteEntity/Apply` |
 | **Edit hold** | A direct-write tool (Move It drag) proposes every frame; the host's echo of an older proposal would snap the object back. While the player keeps editing an entity (0.6 s after its last proposal) the client skips host records for it and applies the latest one when the hold ends, so the result always converges to the host's. Despawns are never held. | `SyncController.ApplyFromHost/ReleaseHolds` |
 | **Pipeline tools** | Mod tools that apply through the Temp pipeline (Traffic, Line Tool, Find It's picker) are not direct-write tools: idle frames propose nothing, applies come through `ApplyTool` like vanilla ones. Every other mod tool is direct-write (fail safe). | `ModAdapter.PipelineTools` |
 | **Placement relaxations** | The host's placement checks of client proposals (unlocks, owned map tiles, geometry) refuse only what a vanilla tool cannot produce. Mods that legitimately allow more switch checks off while they are loaded on the host: Anarchy and Line Tool tiles and geometry, Find It and Plop the Growables unlocks. A direct-write tool's proposal (Move It) skips them when the host runs any code mod ([placement checks](../ARCHITECTURE.md#placement-checks)). | `ModAdapter.RelaxedPlacementChecks`, `ModCompat.RelaxedPlacementChecks`, Core `PlacementPolicy` |
@@ -99,7 +99,7 @@ registry (mods register a second "defaults" instance there).
 
 ## 5. Adapter version check
 
-Every built-in adapter (§2) is knowledge about one version of its mod, verified against its decompile. When the mod is
+Every built-in adapter (§2) is knowledge about one version of its mod, verified against that version. When the mod is
 detected, every name the adapter relies on is resolved: tool-local and never-replicated types, watched vanilla types,
 client-off, join-off and kept systems (`PostDeserialize:T` wrappers included), pipeline tools, the settings type and
 every synchronised setting property (readable, writable, of a supported type). If any of them is missing, the mod was
@@ -124,7 +124,7 @@ clock), whether they save state or run after load (`IPostDeserialize`), tools, p
 on every loaded `0Harmony`; the patching mod is the declaring assembly of each patch method). Method bodies are read as
 IL bytes (Core `IlScanner`, exact opcode lengths) and their tokens resolved to find calls of
 `PrefabSystem.AddPrefab`/`AddOrUpdatePrefab` (runtime prefabs) and, inside tools, uses of `CreationDefinition`.
-Checked offline against all installed mods: runtime prefab creation is found in Find It, Water Features, Anarchy
+Checked offline against the mods of §2: runtime prefab creation is found in Find It, Water Features, Anarchy
 (network upgrades) and Traffic (its fake prefab), matching §2.
 
 **Decisions** (Core `ModClassifier`, pure and deterministic, tested in `Modding/ModClassifierTests.cs`):
@@ -133,7 +133,7 @@ Checked offline against all installed mods: runtime prefab creation is found in 
 |---|---|
 | Must it match on every peer? | Client-local only when the mod declares `client-local`, or when nothing in it can touch shared state: no saved component, no saved system, no prefab type, no runtime prefab, no tool, no system in a world phase (anything but UI, tooltips, rendering, culling, raycast, gizmos, editor), no Harmony patch outside presentation namespaces (`Game.UI`, `Colossal.UI`, localization, audio, rendering, input), and a readable patch list if it references Harmony. Unknown phases and failed scans count as world-affecting. The built-in lists of Core `ModCompatibility` still decide first for the join check. |
 | How does each component travel? | Saved by the game: replicated (references as net ids, referenced mod entities bound with it, enabled bits, untagged changes watched). Not saved: never sent (local or derived data; the entity is unaffected). Declarations can exclude a saved type or mark tool entities, never force an unsaved type onto the wire. |
-| Which systems run on clients? | `GameSimulation`: off (follower clock, like every vanilla simulation system). `PreSimulation`/`PostSimulation`/`LoadSimulation`: host only (they run with the simulation step; none of the installed mods uses these phases). Modification, tool, prefab, serialization and other phases: on every peer, like vanilla derivation. Declarations override. |
+| Which systems run on clients? | `GameSimulation`: off (follower clock, like every vanilla simulation system). `PreSimulation`/`PostSimulation`/`LoadSimulation`: host only (they run with the simulation step; none of the mods of §2 uses these phases). Modification, tool, prefab, serialization and other phases: on every peer, like vanilla derivation. Declarations override. |
 | How are its tools captured? | Direct-write unless declared `pipeline`: a missed direct write would lose a client's edit, an extra one only costs a redundant proposal. A tool that uses `CreationDefinition` gets a hint, not a different treatment (Move It does, and is direct-write). |
 | Which settings are the host's? | Only declared `host-setting` properties (validated); a heuristic cannot tell a UI setting from a rule. |
 
@@ -183,7 +183,8 @@ Documented for mod authors in [`../MOD-INTEGRATION.md`](../MOD-INTEGRATION.md). 
   lines (`"role: target"`), delegate fields Skyline Together sets (`IsInSession`, `IsHost`, `IsClient`, `LocalPlayer`,
   `Send`) and callbacks it calls (`OnSessionStarted(bool)`, `OnSessionEnded()`, `OnMessage(int, byte[])`).
 - Roles: `replicate`, `never-replicate`, `tool-local` (components); `host-only`, `everywhere`, `join-off` (systems);
-  `direct-write`, `pipeline` (tools); `host-setting` (settings); `client-local`, `world` (the mod). Parsing (Core
+  `direct-write`, `pipeline` (tools); `host-setting` (settings); `client-local`, `world` (the mod); `viewer-message`
+  (channel message kinds a viewer may send). Parsing (Core
   `ModDeclarations`) never throws; validation against the scan (Core `ModClassifier`) reports unknown roles, missing or
   wrong-kind targets, unsaved types declared `replicate`, unsupported settings, contradicting roles (both dropped) and
   newer API versions; every problem is ignored and listed.
@@ -192,7 +193,8 @@ Documented for mod authors in [`../MOD-INTEGRATION.md`](../MOD-INTEGRATION.md). 
 - Channel (Core `ModChannelMessage`, `ModChannelRouter`, `ModChannelBudget`): message kind 110, channel = the mod's
   assembly name, payload ≤ 16 KiB, 30 messages and 64 KiB per second per sender (one second of burst) checked by the
   sender and again by the host, which sets the sender id, relays client messages (everyone, host, one player; never back
-  to the sender; only to live players) and drops undecodable or over-budget messages with one log line. Messages for a
+  to the sender; only to live players) and drops undecodable or over-budget messages with one log line. A viewer may
+  send only the message kinds the mod declares `viewer-message`; builders, co-hosts and the host may send any kind. Messages for a
   mod that is not installed or not listening are dropped and counted.
 - A throwing callback is logged; after 3 failures the mod's callbacks are off for the game. All handlers run under the
   `mods` feature guard, so nothing reaches the session.
@@ -204,13 +206,12 @@ Documented for mod authors in [`../MOD-INTEGRATION.md`](../MOD-INTEGRATION.md). 
 - Mods that store data in the city (§10): a mod whose saved types are not on any entity of this city, and that has no
   saved system, is still required, because the save may carry its trace anyway; Employment Tracker (client-local,
   with an unused saved type) is therefore required when only the host has it. Whether the game really crashes for
-  every kind of missing saved type (a tag, a managed or shared component, a saved system) was not verified in the game;
-  the rule treats them all alike. A mod that stores data only through means the scan cannot see (for example its own
+  every kind of missing saved type (a tag, a managed or shared component, a saved system) is not known; the rule
+  treats every kind of saved type alike. A mod that stores data only through means the scan cannot see (for example its own
   files next to the save) is not covered.
 
-- Nothing here could be run in the game; names and behaviour were verified against the decompiled installed versions,
-  and the scan was run offline (outside the game, without system phases and Harmony) against every installed mod. The
-  phase lists and Harmony's patch list are only available in the game.
+- The built-in adapters follow the published versions listed in §2; an adapter whose names no longer resolve turns
+  itself off (§5). The phase lists and Harmony's patch list of the generic analysis are only available in the game.
 - Unknown mods: the analysis cannot tell what a Modification-phase system writes. Such systems run on every peer like
   vanilla derivation; one that writes host-owned values with randomness or from local settings diverges on clients until
   the integrity repair, and on a client its untagged writes to saved mod components may be proposed to the host. The
@@ -230,7 +231,7 @@ Documented for mod authors in [`../MOD-INTEGRATION.md`](../MOD-INTEGRATION.md). 
 
 **Why.** The game saves the component data of every `ISerializable`/`IEmptySerializable` component type with the
 city, mods' types included, and the state of systems that implement `ISerializable`. Its loader cannot read a city that
-contains a saved type of a mod it does not have: in a real session a joiner without Zoning Toolkit was admitted (the
+contains a saved type of a mod it does not have: in an observed session a joiner without Zoning Toolkit was admitted (the
 host did not require the same mods), the snapshot downloaded fine, and the game crashed natively while loading, right
 after Player.log printed "Not serializable type: ZoningToolkit.Components.ZoningInfo, ZoningToolkit, ...". Admitting
 such a joiner is never safe, so no option relaxes this rule.

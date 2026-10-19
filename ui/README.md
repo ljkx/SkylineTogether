@@ -12,17 +12,24 @@ Home of the hand-written UI module (no bundler, no Node dependency at runtime; s
 - inserts a "Multiplayer" entry into the vanilla main menu list (extends `MainMenuNavigation` of
   `game-ui/menu/components/main-menu-screen/main-menu-screen.tsx`, after Load Game, with the game's
   `LabeledIconButton` and the `menu-item` theme); it opens the multiplayer screen of the `Menu` root,
-- appends a round button to `GameTopLeft` (the game's `FloatingButton`, badge with the player count),
-- appends the `Game` root (panel, chat overlay, name tags, join overlay, error screen) and the `Menu` root.
+- appends a button to `GameTopLeft` (the game's `FloatingButton`, badge with the player count),
+- appends the `Game` root (panel, chat dock, name tags, join overlay, error screen) and the `Menu` root.
 
 Game components come from `window["cs2/ui"]` (Button, Panel, Tooltip, FloatingButton) and the module registry
 (LabeledIconButton, menu theme, Checkbox, FOCUS_DISABLED). Everything is feature-detected; an error boundary switches
-to a built-in look (copied from the vanilla styles, using the game's CSS custom properties) when one throws.
+to a built-in look (modelled on the game's styles, using the game's CSS custom properties) when one throws.
 
-Bindings (group `skylineTogether`, all from `SessionUISystem`): `state`, `join`, `net`, `presence`, `perf` (the
-performance overlay). Triggers: `host`,
-`join`, `leave`, `chat`, `kick`, `saveHostSettings`, `saveHostOptions`, `retryJoin`, `dismissEnd`, `copySteamId`,
-`copyText`, `inviteFriends`, `toggleNetHud`, `togglePerfHud`, `writeDiagnostics`.
+Bindings (group `skylineTogether`): `state`, `join`, `net`, `presence`, `perf` (the performance overlay) from
+`SessionUISystem`; `replay` from `ReplayUISystem`; `friends` and `overlayAvailable` from `InviteUISystem`. Triggers:
+`ban`, `cancelReconnect`, `chat`, `copySteamId`, `copyText`, `dismissEnd`, `dismissResync`, `host`, `inviteFriend`,
+`inviteFriends`, `join`, `joinAnyway`, `kick`, `leave`, `mainMenu`, `openInviteOverlay`, `reconnect`, `recordStart`,
+`recordStop`, `refreshFriends`, `replayRefresh`, `replayStart`, `replayStop`, `resync`, `retryJoin`, `saveHostOptions`,
+`saveHostSettings`, `setAllowJoinWithDifferentMods`, `setFriendsOnly`, `setRequireSameAssets`, `stayOffline`,
+`toggleCoHost`, `toggleNetHud`, `togglePerfHud`, `toggleRole`, `unban`, `writeDiagnostics`. `tools/ui_smoke.mjs`
+checks that each is declared on the C# side.
+
+The `Version` in the module header is the UI module's own version for the game's module registry; it is independent
+of the release version.
 
 Texts: every string is a key (`st.ui.*`) translated through `cs2/l10n` from `src/SkylineTogether/Data/locale.<id>.json`
 (C# `LocaleSource`), with the module's `EN` table as the fallback.

@@ -119,7 +119,7 @@ internal static class SkylineTogetherIntegration
     public static Func<bool> IsInSession;          // hosting, or joined and following the host
     public static Func<bool> IsHost;
     public static Func<bool> IsClient;
-    public static Func<int> LocalPlayer;           // 0 = host, 1 ... 7 = clients, -1 outside a session
+    public static Func<int> LocalPlayer;           // 0 = host, 1 ... 15 = clients (lowest free id first; freed ids are reused), -1 outside a session
     public static Func<byte[], int, bool> Send;    // payload, target: -1 = everyone, 0 = host, n = player n
 
     // called by Skyline Together on the main thread
@@ -159,8 +159,9 @@ only your mod receives what you send; a machine without your mod drops it silent
   Typical use: a viewer may *ask* the host for something (`viewer-message: 1` for a "request state" message), while
   the messages that change things stay with builders.
 - At most **16 KiB** per message, and **30 messages / 64 KiB per second** per sender (with one second of burst).
-  `Send` returns `false` (and sends nothing) when not in a session, over a limit, or to an unknown player. The host
-  drops a client's messages beyond the budget.
+  `Send` returns `false` (and sends nothing) when not in a session or over a limit, and on the host also for an unknown
+  player (a client cannot check the target; the host drops a message to an unknown player). The host drops a client's
+  messages beyond the budget.
 - Delivery is reliable and in order per sender. Messages are not stored: a player who joins later does not receive
   earlier ones (send your state in `OnSessionStarted` on the client's request, for example).
 - The host is the authority: when a client asks for a change, apply it on the host and let replication (saved

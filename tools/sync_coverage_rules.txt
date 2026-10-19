@@ -19,7 +19,7 @@ system:Game.City.CityConfigurationSystem | global | GlobalChannel.CityName + joi
 system:Game.Effects.EffectFlagSystem | clock | cosmetic allow-list (FollowerClock) | season and night flags are pure functions of the replicated date and time
 system:Game.Net.AirwaySystem | derived | rebuilt at load on every peer | airway graph from the map
 system:Game.Prefabs.Modes.GameModeSystem | snapshot | join snapshot (GameModeSystem.overrideMode) | the host's game mode
-system:Game.Prefabs.PrefabSystem | snapshot | handshake: same mods, same versions | prefab set; prefabs travel as ranks
+system:Game.Prefabs.PrefabSystem | snapshot | handshake: same mods, same versions | prefab set; prefabs bind by PrefabID (ranks only in tool previews)
 system:Game.Rendering.MarkerIconSystem | local | - | marker icons are presentation
 system:Game.Rendering.TerrainMaterialSystem | terrain | TerrainSync (splatmap tiles) | terrain paint
 system:Game.Rendering.WaterRenderSystem | local | - | render state

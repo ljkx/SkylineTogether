@@ -1,7 +1,7 @@
 # Skyline Together architecture
 
 This document describes Skyline Together **as built**: what the code in this repository does today. It was written
-from the code, and every statement names the file or type it comes from. Where this document and the code disagree,
+from the code and names the files and types it describes. Where this document and the code disagree,
 the code is right and this document has a bug.
 
 The design documents written before the implementation (the original architecture, the implementation plan and the
@@ -172,9 +172,11 @@ rollback), `.Client.cs` (client proposals, route preview window), `.Zones.cs` an
 
 The UI is one hand-written ES module, [`ui/SkylineTogether.mjs`](../ui/SkylineTogether.mjs), registered with the
 game's module registry: a "Multiplayer" main-menu entry and screen, a floating button with the player count, the
-session panel, chat overlay, name tags, join progress and error screens. It reads the bindings of group
-`skylineTogether` that [`SessionUISystem`](../src/SkylineTogether/UI/SessionUISystem.cs) publishes (`state`, `join`,
-`net`, `presence`) and calls its triggers. Every string is a locale key resolved through `cs2/l10n` from
+session panel, chat dock, name tags, join progress and error screens. It reads the bindings of group
+`skylineTogether` that [`SessionUISystem`](../src/SkylineTogether/UI/SessionUISystem.cs) (`state`, `join`, `net`,
+`presence`, `perf`), [`ReplayUISystem`](../src/SkylineTogether/UI/ReplayUISystem.cs) (`replay`) and
+[`InviteUISystem`](../src/SkylineTogether/UI/InviteUISystem.cs) (`friends`, `overlayAvailable`) publish, and calls
+their triggers ([ui/README.md](../ui/README.md) lists them). Every string is a locale key resolved through `cs2/l10n` from
 `src/SkylineTogether/Data/locale.<id>.json` ([`LocaleSource`](../src/SkylineTogether/Settings/LocaleSource.cs)).
 `tools/ui_smoke.mjs` checks bindings, triggers and keys against the C# side.
 
@@ -729,13 +731,13 @@ graph, each with the clean-up the game applies when its target goes:
 | `HouseholdMember`, `HouseholdPet` | citizens, pets | the holder is deleted with its household, as the game does (null is a passing state the game repairs itself) |
 
 A citizen or pet is never left without its household link: removing it (as earlier builds did) left a pet without
-`HouseholdPet`, its update-group marker, and the game logged "UpdateFrame added to unsupported type" for it before the
-crashes of a real session. The game deletes the members of a removed household (`HouseholdAndCitizenRemoveSystem`,
+`HouseholdPet`, its update-group marker, and the game logged "UpdateFrame added to unsupported type" for it before a
+crash (observed in a session). The game deletes the members of a removed household (`HouseholdAndCitizenRemoveSystem`,
 `HouseholdPetRemoveSystem`) and a citizen whose household is gone (`CitizenBehaviorSystem`); the client does the same
 and releases their ids, which it asks from the host again unless the batch despawns them anyway.
 
 **Referrers.** The lists do not lead to every link: a citizen inside a building has `CurrentBuilding` and no list names
-it (a building the player demolished was named by 540 citizens in a real session, found only by the sweep seconds later),
+it (a demolished building was observed to be named by 540 citizens, found only by the sweep seconds later),
 and on a client a household's list, a workplace's list and the members' own links travel on different streams. So the
 client keeps a [`AgentReferrerIndex`](../src/SkylineTogether.Core/Sync/AgentReferrerIndex.cs): for every entity, the
 entities that may name it through an agent link (both ways) and the movers whose owner, citizen or pet it is. It is built
@@ -789,7 +791,7 @@ host's own state replaces the clean-up.
 **Normalised links** ([`AgentLinkNormalization`](../src/SkylineTogether.Core/Sync/SpawnCompleteness.cs)). The host's own
 state may still hold agent links to targets that are gone (a save writes a worker that is gone as nobody; the game prunes
 some lists lazily). Sent and hashed as they were, they made a repaired client differ from the host forever: every repair
-asked the host, which sent the same record again (a repair loop of a real session, the same companies on every join).
+asked the host, which sent the same record again (a repair loop observed in a session: the same companies on every join).
 Both sides therefore leave the same things out: agent lists (`Employee`, `Patient`, `Occupant` and the id lists) never
 write a member that is nobody or gone, and their integrity hash covers live members only; an agent's forward link whose
 target is gone or cannot be named travels the way the reader's repair leaves it (a workplace, school, property or
@@ -892,8 +894,8 @@ Two counters must not be confused: **ledger epochs** number the host's structura
 
 #### Placement checks
 
-**Enforcement is off by default** (host option *Enforce build checks on other players*, `EnforcePlacementChecks`): until
-the rules are confirmed in real sessions, a failed placement check is only logged (`placement check would refuse …; kept,
+**Enforcement is off by default** (host option *Enforce build checks on other players*, `EnforcePlacementChecks`):
+with it off, a failed placement check is only logged, so a check that misjudges legitimate play never undoes a build. It is logged (`placement check would refuse …; kept,
 enforcement is off`, at most 200 lines per session, then counted) and the build is kept. With the option on, a failure
 refuses the proposal as described below. Header, base-epoch, host-only and cost checks are always enforced.
 
@@ -1478,8 +1480,6 @@ the most ids alive at once plus the quarantine and are released at session end.
 
 ## Known gaps
 
-Open design gaps and inconsistencies found while writing this document.
-
 ### Open design gaps
 
 - **Assets outside packages.** The join check compares Paradox Mods packages only. Local assets and prefabs mods
@@ -1490,8 +1490,8 @@ Open design gaps and inconsistencies found while writing this document.
 - **Placement checks are partial** ([placement checks](#placement-checks)): the game's validation is not re-run
   (it judges only the local tool's `Temp` entities), so collisions, slopes, water, clearance, curvature and whole
   footprints are not checked. Owned spawns are exempt, and the owner a spawn names is not verified, so a forged owner
-  reference exempts a structure from the unlock, tile and geometry checks. Line Tool and Find It relax checks because
-  their behaviour towards the game's errors and locks is unconfirmed; tighten them once confirmed in game.
+  reference exempts a structure from the unlock, tile and geometry checks. Line Tool and Find It relax checks as a
+  whole; tightening them needs per-mod rules.
 - **NotLive is never delivered.** A proposal of a peer that is no longer live is dropped with a log line; the peer
   cannot receive a result.
 - **Permissions are per role.** There are no per-player overrides (`RolePermissions.Of` depends on the role only).

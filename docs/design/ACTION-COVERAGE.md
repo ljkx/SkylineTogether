@@ -18,7 +18,7 @@ Every proposal is validated on the host ([host validation](../ARCHITECTURE.md#ho
 
 - **Live sender.** Proposals of a player who left while they waited are dropped (`NotLive`, logged only).
 - **Header.** A proposal that changes the world carries exactly one `ProposalHeader` (`Invalid` otherwise).
-- **Role permission.** `RolePermissions`: builder or co-host may do everything; a viewer may only chat. The host toggles the role in the player list.
+- **Role permission.** `RolePermissions`: builder or co-host may do everything; a viewer may only chat. The host toggles the role in the player list; a co-host can switch builders and viewers.
 - **Rate limit.** 120 proposals per second per player, with a burst of 240.
 - **Size.** At most 200k entities per proposal.
 - **Base epoch.** The base must be an epoch the host broadcast, and not older than the conflict ledger reaches back (`Timeout`).
@@ -63,7 +63,7 @@ Status values:
 | 1 | Place road, track, path, pipe or power line (net tool, every mode, parallel and grid) | Tool | OK | Build orders re-based on the host. Splits keep the inherited ranges. |
 | 2 | Net upgrades: lanes, trees, sound barriers, wide sidewalks, one-way flip, replace | Tool | OK | `ApplyNetSystem` tags the originals `Applied`+`Updated`. `Upgraded` replicates. |
 | 3 | Roundabouts and other node or edge objects | Tool | OK | Created objects plus the updated nodes. |
-| 4 | Place a building, prop, tree, decal or surface (object tool, brush, stamp, line or curve modes) | Tool | OK | Line Tool and Tree Controller use the same apply path (mod-specific work is handled on another branch). |
+| 4 | Place a building, prop, tree, decal or surface (object tool, brush, stamp, line or curve modes) | Tool | OK | Line Tool applies through the same tool pipeline; Tree Controller's brush is a direct-write tool (row 45, [MOD-COMPATIBILITY.md](MOD-COMPATIBILITY.md)). |
 | 5 | Move or relocate a building or object (`toggleMove`, `UpgradesSection.relocate`) | Tool | OK | The original gets `Updated` and is captured as a Temp original. |
 | 6 | Building upgrades and extensions (place) | Tool | OK | `ServiceUpgrade` objects are first-class. The host's initializers and `UpgradeDeletedSystem` stay host-only. |
 | 7 | Building upgrade or extension removal (`UpgradesSection.delete`, D2) | UI delete | OK | The host's `UpgradeDeletedSystem` regenerates sub-nets and areas, and they are broadcast (it is gated on clients). |
@@ -87,10 +87,10 @@ Status values:
 | 25 | Building mesh colours, paste, reset, "set to all" (C3, C4) | Intent `SetMeshColor` | OK | Every entity tagged `BatchesUpdated` is checked against the last state. The applier restores the enable bit and the render refresh. |
 | 26 | Global colour palette (C5) | — | Local | Treated as a per-player preference (R10 Q7). The colours applied to buildings still sync (row 25). |
 | 27 | Historical toggle (C6) | Intent `SetHistorical` | OK | This vanilla write has no tag at all. It is watched on the selected building. |
-| 28 | Rename an entity or line (N1, N2) | Global `Name` | OK | `SetCustomName` now runs in the late phase. Before, it threw at frame start because the EndFrameBarrier was closed. |
+| 28 | Rename an entity or line (N1, N2) | Global `Name` | OK | `SetCustomName` runs in the late phase (at frame start the EndFrameBarrier is closed). |
 | 29 | City name (N3) | Global `CityName` | OK | |
 | 30 | Taxes (E4-E6) | Global `Tax` | OK | |
-| 31 | Service budgets (E1, E3) | Global `Budget` | OK | `SetServiceBudget` now runs in the late phase (same EndFrameBarrier fix as row 28). |
+| 31 | Service budgets (E1, E3) | Global `Budget` | OK | `SetServiceBudget` runs in the late phase (same reason as row 28). |
 | 32 | Service fees (E2) | Global `Fee` | OK | |
 | 33 | Loan (E7) | Global `Loan` | OK | Re-clamped against the host's money. |
 | 34 | Transport line draw, edit, stops (route tool) | Tool | OK | Guarded preview window, then the host's line state. `RouteNumber` and `VehicleModel` take host values (host initializers on creation; never overwritten by client edits). |
@@ -100,11 +100,11 @@ Status values:
 | 38 | Water source add, edit, remove (water tool) | Tool | OK | `WaterSource` family. Mod water tools: Water Features adapter ([MOD-COMPATIBILITY.md](MOD-COMPATIBILITY.md)). |
 | 39 | Terraforming | Terrain stamps (`TerrainSync`) | OK | |
 | 40 | Disasters and emergencies | Host simulation | OK | No player trigger exists apart from rebuild (row 8) and policies (rows 18-19). |
-| 41 | Pause and speed (T1, T3) | Speed | OK | Clients send requests (viewers' requests are refused). On a host with live players, TimeUISystem's forced pause (pause menu, focus loss) no longer pauses everyone. A pause that someone chose is kept. |
+| 41 | Pause and speed (T1, T3) | Speed | OK | Clients send requests (viewers' requests are refused). On a host with live players, TimeUISystem's forced pause (pause menu, focus loss) does not pause everyone. A pause that someone chose is kept. |
 | 42 | Follow citizen (F1) | Global | OK | Channel `Follow` (`GlobalStateSync.Panels.cs`, SYNC-COVERAGE fix 13): clients send follow/unfollow deltas, the host follows through the vanilla API, agent replication brings `Followed` and the life path to everyone. Needs the Names permission, so viewers cannot follow. Chirp likes (F2) and tutorials (F3) stay local per-player meta; tutorial prefabs stay out of the unlock set. |
 | 43 | Signature building notice, milestone notice clear, camera, info views, photo mode | — | Local | Presentation (R10 §6.1). |
 | 44 | Viewer role | No-predict gate | OK | `ViewerGateSystem` rewrites `Apply` to `Clear` before `ToolOutputSystem`. The host refuses viewers' proposals in any case. |
-| 45 | Direct-write mod tools (Move It, Zoning Toolkit, ...) | Tool (direct-write flag) | Partial | Generic un-applied capture while a non-vanilla tool is active (flag `DirectTool`, permission `ModTools`). Mod-specific robustness is handled on another branch. |
+| 45 | Direct-write mod tools (Move It, Zoning Toolkit, ...) | Tool (direct-write flag) | OK | Captured as change sets while a non-vanilla tool is active (flag `DirectTool`, permission `ModTools`); the edit hold prevents snap-back from the host's echo, `ModStateWatcher` finds untagged writes, and adapters cover the supported mods ([MOD-COMPATIBILITY.md](MOD-COMPATIBILITY.md)). |
 
 ## Integration notes
 

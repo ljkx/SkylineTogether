@@ -9,7 +9,7 @@
 
 // Hand-written ES module (no build step). The game provides React, its binding API and its own components as globals.
 // Everything the game provides is feature-detected; nothing may throw while the module is imported or rendered. Where a
-// game component or theme is missing (or throws while rendering), a built-in look that copies the vanilla styles is used.
+// game component or theme is missing (or throws while rendering), a built-in look modelled on the game's styles is used.
 //
 // Styling rules learned from the game's own stylesheet (Content/Game/UI/index.css), which this module follows:
 //  - the game's CSS never writes var(--token, fallback): Gameface drops such a declaration, which is why text and fields
