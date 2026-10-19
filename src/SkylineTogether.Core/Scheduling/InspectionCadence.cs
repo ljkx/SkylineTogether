@@ -65,12 +65,16 @@ namespace SkylineTogether.Core.Scheduling
         /// <summary>Dropped because the queue was full (diagnostics).</summary>
         public long Dropped { get; private set; }
 
-        public void Enqueue(uint tick, double now, T payload)
+        public void Enqueue(uint tick, double now, T payload) => Enqueue(tick, now, payload, null);
+
+        /// <summary>As <see cref="Enqueue(uint, double, T)"/>; <paramref name="evicted"/> gets each sample dropped to make room.</summary>
+        public void Enqueue(uint tick, double now, T payload, Action<T> evicted)
         {
             while (_queue.Count >= MaxPending)
             {
-                _queue.Dequeue();
+                Pending old = _queue.Dequeue();
                 Dropped++;
+                evicted?.Invoke(old.Payload);
             }
             _queue.Enqueue(new Pending { Tick = tick, Arrived = now, Payload = payload });
         }

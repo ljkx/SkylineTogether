@@ -466,6 +466,9 @@ namespace SkylineTogether.Sync
                 // decode-boundary validation and the client's removal clean-up
                 lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal
                           + " reads past a payload stopped; removal clean-up: " + DeletionCascade.Removed + " references to deleted entities removed");
+                // apply transactions: stale id bindings replaced, half-made new entities rolled back, failed host batches
+                lines.Add("apply safety: " + _codec.StaleBindingsTotal + " stale id bindings replaced, " + _codec.RolledBackSpawnsTotal + " half-made new objects rolled back"
+                          + (IsHost ? "" : ", " + _failedBatches + " failed host batches") + ", " + _staged.Count + " despawns awaiting their broadcast");
                 if (!IsHost) lines.Add(_audit.Describe());
                 if (!IsHost) lines.Add(Orphans.Describe());
             }
@@ -479,13 +482,15 @@ namespace SkylineTogether.Sync
 
         // ================================================================== sending
 
-        private void Broadcast(SyncBatch.Writer w, string channel)
+        /// <summary>Hands the batch to every peer; false when there is no host session (nothing was sent).</summary>
+        private bool Broadcast(SyncBatch.Writer w, string channel)
         {
             SessionHost host = _sessions.Host;
-            if (host == null) return;
+            if (host == null) return false;
             ArraySegment<byte> bytes = w.Finish();
             host.Broadcast(MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
             Perf.Counters.AddBytes(channel, (long)bytes.Count * Math.Max(1, _outList.Count), Perf.Now);
+            return true;
         }
 
         private void Send(PeerId peer, SyncBatch.Writer w, string channel)

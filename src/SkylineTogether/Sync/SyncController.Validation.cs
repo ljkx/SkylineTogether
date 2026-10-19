@@ -186,6 +186,25 @@ namespace SkylineTogether.Sync
             _rejectStructural = false;
         }
 
+        /// <summary>
+        /// Host: a proposal threw while being committed. Its originator gets the same rollback as for a refusal
+        /// (<see cref="RejectReason.HostError"/>): the host's current state of every entity and zone block it touched, so
+        /// its prediction does not stay (and its local deletions do not block the host's records) until the integrity
+        /// check notices. Not counted as a violation (the caller counts the failure). Never throws.
+        /// </summary>
+        private void RollBackFailedProposal(PeerId peer, uint seq, List<SyncRecord> records)
+        {
+            try
+            {
+                _rejectDetail = "the commit failed on the host";
+                RejectProposal(peer, seq, RejectReason.HostError, records); // HostError is never counted as a violation
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Replication, peer + ": rolling back a failed proposal failed", ex);
+            }
+        }
+
         /// <summary>What the last validation refused, for the refusal's log line (null: the reason says it all).</summary>
         private string _rejectDetail;
 

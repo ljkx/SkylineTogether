@@ -101,6 +101,8 @@ namespace SkylineTogether.Sync
         private const double SampleBudgetMs = 2.0;
         private long _sampleCarryOvers;
         private readonly SyncBatch.Writer _batch = new SyncBatch.Writer();
+        private readonly StagedReleases _staged = new StagedReleases(); // despawned ids, released after the broadcast
+        private Action<uint> _writeDespawn;
         private readonly List<uint> _refresh = new List<uint>();
         private readonly MotionFrame[] _four = new MotionFrame[4];
         private readonly uint[] _fourTicks = new uint[4];
@@ -152,6 +154,7 @@ namespace SkylineTogether.Sync
         public void OnHostStarted(SessionHost host)
         {
             _encoder = new MotionHostEncoder(_log);
+            _staged.Clear();
             _movers.Clear();
             _peers.Clear();
             _prefabReach.Clear();
@@ -174,6 +177,7 @@ namespace SkylineTogether.Sync
         public void OnSessionEnded()
         {
             _active = false;
+            _staged.Clear();
             _movers.Clear();
             _peers.Clear();
             _refresh.Clear();
@@ -265,6 +269,9 @@ namespace SkylineTogether.Sync
             }
             long start = Perf.Start();
             _batch.Reset();
+            // despawns of a batch that was never sent (the capture threw): their ids are still allocated (staged), and
+            // their despawns go out again first (ARCHITECTURE.md#net-ids)
+            if (_staged.Count > 0) _staged.Rewrite(_writeDespawn ?? (_writeDespawn = id => _batch.MoverDespawn(id)));
             CaptureDeleted(em);
             CaptureCreated(em);
             CaptureChanged(em);
@@ -274,6 +281,7 @@ namespace SkylineTogether.Sync
             {
                 ArraySegment<byte> bytes = _batch.Finish();
                 _sessions.Host.Broadcast(MessageKind.Epoch, bytes.Array, bytes.Offset, bytes.Count);
+                _ids.ReleaseStaged(_staged); // quarantined only once their despawns are on the way to every peer
                 Perf.Counters.AddBytes(Perf.MoverBytes, (long)bytes.Count * Math.Max(1, _peers.Count), Perf.Now);
             }
             ServeResends(em);
@@ -336,7 +344,7 @@ namespace SkylineTogether.Sync
                     uint id = _ids.GetNetId(e);
                     if (id == 0 || _ids.GetFamily(id) != Family.Mover) continue;
                     _batch.MoverDespawn(id);
-                    _ids.Unbind(id, despawnSent: true); // quarantined until every peer applied this batch
+                    _ids.Unbind(id, _staged); // quarantined after the broadcast, until every peer applied this batch
                     _movers.Remove(id);
                     if (id > NetSlot.MaxValue) continue;
                     foreach (PeerView v in _peers.Values)
@@ -517,7 +525,7 @@ namespace SkylineTogether.Sync
             foreach (uint id in _vanishedIds)
             {
                 _batch.MoverDespawn(id);
-                _ids.Unbind(id, despawnSent: true); // quarantined until every peer applied this batch
+                _ids.Unbind(id, _staged); // quarantined after the broadcast, until every peer applied this batch
                 _movers.Remove(id);
                 ForgetInterest(id);
             }

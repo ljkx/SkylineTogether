@@ -26,9 +26,12 @@ namespace SkylineTogether.Sync
     /// reads and drops them. The tables never grow without a session.
     /// </para>
     /// <para>
-    /// Ids are reused. On the host (<see cref="Authority"/>) every unbinding hands the id to the quarantine of
-    /// <see cref="Ids"/> (<see cref="NetIdAllocator"/>), which frees it only after every peer applied the despawn; an
-    /// id unbound without a despawn on the wire waits in <see cref="TakePendingDespawns"/> until the capture writes one.
+    /// Ids are reused. On the host (<see cref="Authority"/>) an id unbound with its despawn written into a batch is
+    /// staged (<see cref="StagedReleases"/>) and enters the quarantine of <see cref="Ids"/> (<see cref="NetIdAllocator"/>)
+    /// only once that batch was handed to the peers (<see cref="ReleaseStaged"/>); the quarantine frees it only after every
+    /// peer applied the despawn. An id unbound without a despawn on the wire waits in <see cref="TakePendingDespawns"/>
+    /// until the capture writes one. Clients keep the host's generation of each id (<see cref="TryGetGeneration"/>), so
+    /// a record for an id this client still binds to an older entity is recognised (<see cref="BoundRecordCheck"/>).
     /// Per-family index sets (<see cref="ScannedIds"/>) replace scans over the whole table. Session start compacts the
     /// ids (<see cref="Compact"/>). Saves of format 1 (no generations) still load.
     /// </para>
@@ -56,6 +59,7 @@ namespace SkylineTogether.Sync
         private readonly List<uint> _pendingDespawns = new List<uint>();
         private readonly HashSet<uint> _pendingDespawnSet = new HashSet<uint>(); // O(1) membership (was List.Contains per unbind)
         private bool _warnedExhausted;
+        private readonly IdGenerationTable _clientGenerations = new IdGenerationTable();
 
         public NetIdAllocator Ids { get; } = new NetIdAllocator(Mod.Log);
 
@@ -132,6 +136,7 @@ namespace SkylineTogether.Sync
             _pendingDespawns.Clear();
             _pendingDespawnSet.Clear();
             Ids.Clear();
+            _clientGenerations.Clear();
             Ceiling.Reset();
             _warnedExhausted = false;
         }
@@ -157,6 +162,26 @@ namespace SkylineTogether.Sync
 
         /// <summary>The id's generation (incremented on each reuse; host and the clients that loaded its save).</summary>
         public byte GetGeneration(uint netId) => Ids.GenerationOf(netId);
+
+        /// <summary>
+        /// The host's generation of the id: on the host always known; on a client known for ids bound from the host's
+        /// records or its snapshot, unknown for ids this client bound itself (its predicted edits).
+        /// </summary>
+        public bool TryGetGeneration(uint netId, out byte generation)
+        {
+            if (Authority)
+            {
+                generation = Ids.GenerationOf(netId);
+                return netId != 0 && netId <= NetIdAllocator.MaxId;
+            }
+            return _clientGenerations.TryGet(netId, out generation);
+        }
+
+        /// <summary>Client: records the host's generation of a bound id (from the record that bound it).</summary>
+        public void NoteGeneration(uint netId, byte generation)
+        {
+            if (!Authority) _clientGenerations.Set(netId, generation);
+        }
 
         /// <summary>
         /// Host: a new id (lowest free after quarantine, else fresh), 0 when all 16 777 215 ids are in use (logged once;
@@ -202,11 +227,12 @@ namespace SkylineTogether.Sync
             Entity old = GetEntity(netId);
             if (old != Entity.Null && old != entity) UnbindEntityIndex(old);
             uint previous = GetNetId(entity);
-            if (previous != 0 && previous != netId) UnbindId(previous, false);
+            if (previous != 0 && previous != netId) UnbindId(previous, null);
             EnsureReader((int)netId);
             EnsureWriter(entity.Index);
             if (_reader[(int)netId] == Entity.Null) _bound++;
             else RemoveFromIndexes(netId, (Family)_family[(int)netId]);
+            if (!Authority && _reader[(int)netId] != entity) _clientGenerations.Forget(netId); // until the binder notes the host's
             _reader[(int)netId] = entity;
             _family[(int)netId] = (byte)family;
             _writer[entity.Index] = new Entity { Index = (int)netId, Version = entity.Version };
@@ -215,16 +241,25 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Unbinds an id. <paramref name="despawnSent"/>: the caller wrote the despawn into this frame's batch (host: the id
-        /// goes to the quarantine now); otherwise the host keeps the id allocated until the capture wrote a despawn for it
+        /// Unbinds an id. The host keeps the id allocated until the capture wrote a despawn for it
         /// (<see cref="TakePendingDespawns"/>), so no peer can keep a binding of an id that is reused.
         /// </summary>
-        public void Unbind(uint netId, bool despawnSent = false)
+        public void Unbind(uint netId) => Unbind(netId, null);
+
+        /// <summary>
+        /// Unbinds an id whose despawn the caller just wrote into a batch that is not sent yet: on the host the id is
+        /// staged in <paramref name="staged"/> and enters the quarantine only through <see cref="ReleaseStaged"/>, once that
+        /// batch was handed to the peers (null: as <see cref="Unbind(uint)"/>).
+        /// </summary>
+        public void Unbind(uint netId, StagedReleases staged)
         {
             Entity e = GetEntity(netId);
             if (e != Entity.Null) UnbindEntityIndex(e);
-            UnbindId(netId, despawnSent);
+            UnbindId(netId, staged);
         }
+
+        /// <summary>Host: the batch carrying the staged despawns was handed to the peers; their ids enter the quarantine.</summary>
+        public int ReleaseStaged(StagedReleases staged) => staged == null || staged.Count == 0 ? 0 : staged.Commit(Ids);
 
         /// <summary>Host: ids unbound without a despawn on the wire; the caller writes despawns and releases them.</summary>
         public bool TakePendingDespawns(List<uint> output)
@@ -236,7 +271,7 @@ namespace SkylineTogether.Sync
             return true;
         }
 
-        private void UnbindId(uint netId, bool despawnSent)
+        private void UnbindId(uint netId, StagedReleases staged)
         {
             if (netId == 0 || netId >= (uint)_reader.Length) return;
             bool wasBound = _reader[(int)netId] != Entity.Null;
@@ -250,9 +285,9 @@ namespace SkylineTogether.Sync
             // only a binding is released: an allocated but unbound id is a client's unused grant (returned when it
             // leaves) or already waits for its despawn
             if (!wasBound || !Authority || !Ids.IsAllocated(netId)) return;
-            if (despawnSent)
+            if (staged != null)
             {
-                Ids.Release(netId);
+                staged.Stage(netId);
                 return;
             }
             if (_pendingDespawnSet.Add(netId)) _pendingDespawns.Add(netId);
@@ -470,7 +505,9 @@ namespace SkylineTogether.Sync
                 if (format >= 2) reader.Read(out generation);
                 if (!keep || e == Entity.Null || id == 0 || id > NetIdAllocator.MaxId) continue;
                 Bind(e, id, (Family)family);
-                if (GetEntity(id) == e) generations.Add(new KeyValuePair<uint, byte>(id, generation));
+                if (GetEntity(id) != e) continue;
+                generations.Add(new KeyValuePair<uint, byte>(id, generation));
+                if (format >= 2) _clientGenerations.Set(id, generation);
             }
             if (keep) Ids.Restore(Math.Min(Math.Max(next, 1u), NetIdAllocator.MaxId + 1), generations);
         }

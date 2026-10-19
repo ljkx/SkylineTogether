@@ -108,8 +108,11 @@ namespace SkylineTogether.Sync
         private long _changes, _samplesSent, _bytesSent;
 
         // client
-        private readonly Queue<byte[]> _inbox = new Queue<byte[]>();
-        private readonly InspectionSampleQueue<byte[]> _samples = new InspectionSampleQueue<byte[]>();
+        // held: none of the epochs received after a message is acknowledged before it applied (ARCHITECTURE.md#net-ids)
+        private readonly AckHeldQueue<byte[]> _inbox = new AckHeldQueue<byte[]>();
+        private Action<(byte[] Data, long Hold)> _releaseSample;
+        // a sample keeps the acknowledgement hold of its message until it is applied or dropped
+        private readonly InspectionSampleQueue<(byte[] Data, long Hold)> _samples = new InspectionSampleQueue<(byte[] Data, long Hold)>();
         private InfoviewPrefab _infoview;
         private uint _infomodeMask;
         private long _valuesApplied, _samplesApplied;
@@ -185,6 +188,7 @@ namespace SkylineTogether.Sync
         private void OnClientStarted(SessionClient client)
         {
             Reset();
+            _inbox.Attach(client.ApplyAcks);
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.SimValues) return;
@@ -214,7 +218,7 @@ namespace SkylineTogether.Sync
             _lastSend = -1;
             _changes = _samplesSent = _bytesSent = 0;
             _inbox.Clear();
-            _samples.Clear();
+            ClearSamples();
             _infoview = null;
             _infomodeMask = 0;
             _valuesApplied = _samplesApplied = 0;
@@ -676,15 +680,18 @@ namespace SkylineTogether.Sync
                 // go-live or a burst) were applied first: values of entities not spawned yet were dropped for good and
                 // an older Upsert applied afterwards overwrote newer values. They wait like the agent values do.
                 bool hold = structureBacklog > 0 && _inbox.Count < MaxHeldValueMessages;
-                while (!hold && _inbox.Count > 0 && n++ < MaxInboxPerFrame)
+                while (!hold && n++ < MaxInboxPerFrame && _inbox.TryDequeueHeld(out byte[] data, out long held))
                 {
-                    byte[] data = _inbox.Dequeue();
                     try
                     {
                         if (data.Length > 1 && data[0] == SimValueMessage.Version && data[1] == SimValueMessage.TypeSample)
                         {
                             SimValueMessage.ReadSampleHeader(data, 0, data.Length, out uint tick, out uint entities); // decoded once, when applied
-                            if (entities > 0) _samples.Enqueue(tick, Now, data);
+                            if (entities > 0)
+                            {
+                                _samples.Enqueue(tick, Now, (data, held), _releaseSample ?? (_releaseSample = ReleaseSample));
+                                held = 0; // the sample keeps the hold
+                            }
                             continue;
                         }
                         Apply(data, out _);
@@ -694,10 +701,16 @@ namespace SkylineTogether.Sync
                     {
                         _log.Warn(LogCategory.Replication, "dropped a malformed simulation value message: " + ex.Message);
                     }
+                    finally
+                    {
+                        _inbox.Release(held);
+                    }
                 }
                 uint frame = _simulation.frameIndex;
-                while (_samples.TryDequeueReady(frame, Now, out byte[] sample, out _))
+                while (_samples.TryDequeueReady(frame, Now, out (byte[] Data, long Hold) held, out _))
                 {
+                    byte[] sample = held.Data;
+                    ReleaseSample(held); // applied right below, before any acknowledgement goes out
                     try
                     {
                         uint selected = Apply(sample, out bool isSample);
@@ -724,6 +737,16 @@ namespace SkylineTogether.Sync
                     _log.Debug(LogCategory.Replication, "applying simulation values failed: " + ex.Message);
                 }
             }
+        }
+
+        private void ReleaseSample((byte[] Data, long Hold) sample)
+        {
+            if (sample.Hold != 0) _sessions.Client?.ApplyAcks.Release(sample.Hold);
+        }
+
+        private void ClearSamples()
+        {
+            while (_samples.TryDequeueReady(0, double.NaN, out (byte[] Data, long Hold) held, out _)) ReleaseSample(held);
         }
 
         private readonly ApplyResult _applyResult = new ApplyResult();

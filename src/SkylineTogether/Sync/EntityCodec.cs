@@ -18,6 +18,8 @@ namespace SkylineTogether.Sync
     public sealed class ApplyResult
     {
         public int Spawned, Upserted, Values, Despawned, Skipped, ZoneBlocks;
+        /// <summary>Stale bindings replaced (an id still bound here to an entity the host despawned and reused the id of).</summary>
+        public int StaleReplaced;
         /// <summary>Spawns not created because a structural reference (owner, edge node, parent) is not here.</summary>
         public int UnresolvedSpawns;
         /// <summary>Components that kept (existing entity) or nulled (new entity) a reference that did not resolve.</summary>
@@ -51,7 +53,7 @@ namespace SkylineTogether.Sync
         /// <summary>Clears the result for the next apply (the codec reuses one instance).</summary>
         public void Reset()
         {
-            Spawned = Upserted = Values = Despawned = Skipped = ZoneBlocks = 0;
+            Spawned = Upserted = Values = Despawned = Skipped = ZoneBlocks = StaleReplaced = 0;
             UnresolvedSpawns = UnresolvedComponents = UnsafeSkipped = DanglingDeleted = Cascaded = 0;
             Cost = 0;
             HasCost = false;
@@ -311,7 +313,8 @@ namespace SkylineTogether.Sync
             TypeHandler[] handlers = HandlersOf(e);
             EntityManager em = EntityManager;
             ulong valueHash = HashSeed;
-            w.BeginEntity(kind, netId, family, kind != SyncRecordKind.Values);
+            _ids.TryGetGeneration(netId, out byte generation); // 0 when a client does not know it (the host ignores it)
+            w.BeginEntity(kind, netId, family, kind != SyncRecordKind.Values, generation);
             // events and chirps keep their values when they name an entity that does not replicate (a citizen
             // sender, a household target): that reference travels as null instead of dropping the whole component
             _ws.NullRefs = LenientRefs(family);
@@ -1052,16 +1055,119 @@ namespace SkylineTogether.Sync
                 }
             }
 
+            _spawnState.Clear();
             try
             {
                 ApplySteps(records, offset, data, proposal, mayCreate, skip, result);
+            }
+            catch (Exception)
+            {
+                // a batch that throws outside the per-record guards never leaves a half-made entity behind
+                // (no values, a null PrefabRef, zero edge nodes) for this frame's Modification systems
+                RollBackUnwrittenSpawns(result);
+                throw;
             }
             finally
             {
                 _rs.Dying.Clear();
                 _earlyDespawns.Clear();
+                _spawnState.Clear();
             }
             return result;
+        }
+
+        /// <summary>The new entities of this apply: written completely, or failed (<see cref="SpawnTransaction{T}"/>).</summary>
+        private readonly SpawnTransaction<Entity> _spawnState = new SpawnTransaction<Entity>();
+
+        private readonly List<Entity> _rollBackScratch = new List<Entity>();
+        private readonly HashSet<Entity> _dropScratch = new HashSet<Entity>();
+        private long _rolledBackSpawnsTotal;
+
+        /// <summary>New entities destroyed again because the apply failed before their values were written (diagnostics).</summary>
+        public long RolledBackSpawnsTotal => _rolledBackSpawnsTotal;
+
+        /// <summary>
+        /// The apply threw: every entity it created whose values were not written is destroyed again and its id unbound
+        /// (the integrity check asks for it again). Entities whose values were written stay (they are complete). Never throws.
+        /// </summary>
+        private void RollBackUnwrittenSpawns(ApplyResult result)
+        {
+            EntityManager em = EntityManager;
+            _rollBackScratch.Clear();
+            _spawnState.Incomplete(_spawned, _rollBackScratch);
+            foreach (Entity e in _rollBackScratch)
+            {
+                try
+                {
+                    _spawned.Remove(e);
+                    result.SpawnedEntities.Remove(e);
+                    uint id = _ids.GetNetId(e);
+                    if (id != 0)
+                    {
+                        _ids.Unbind(id);
+                        _rs.MissingIds?.Add(id);
+                        result.DanglingIds.Add(id);
+                    }
+                    if (em.Exists(e)) em.DestroyEntity(e); // created by this apply; nothing outside it refers to it
+                    _rolledBackSpawnsTotal++;
+                }
+                catch (Exception ex)
+                {
+                    _log.Warn(LogCategory.Replication, "rolling back a new entity of a failed apply failed", ex);
+                }
+            }
+            if (_rollBackScratch.Count > 0) result.Problems.Add(_rollBackScratch.Count + " new entities rolled back after the apply failed");
+            _rollBackScratch.Clear();
+        }
+
+        /// <summary>
+        /// Client: the apply of a host batch threw. The batch's despawns are what the host may reuse ids after (once this
+        /// client acknowledges it), so each of <paramref name="ids"/> (<see cref="FailedBatchRecovery.DespawnsToApply"/>) is
+        /// applied now: the id is unbound and its entity deleted cleanly, exactly as step 5 would have. Returns the
+        /// number of those ids still bound afterwards (the batch must then never be acknowledged).
+        /// </summary>
+        public int SalvageDespawns(List<uint> ids)
+        {
+            ApplyResult result = _result;
+            EntityManager em = EntityManager;
+            int stillBound = 0;
+            _touch.Clear();
+            try
+            {
+                foreach (uint id in ids)
+                {
+                    try
+                    {
+                        Despawn(id, false, result);
+                    }
+                    catch (Exception)
+                    {
+                        // checked below
+                    }
+                    if (_ids.GetEntity(id) != Entity.Null) stillBound++;
+                }
+                DeleteDangling(false, result);
+                foreach (Entity e in _touch)
+                {
+                    if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                    if (!em.HasComponent<Game.Common.Updated>(e)) em.AddComponent<Game.Common.Updated>(e);
+                    result.Touched.Add(e);
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Replication, "applying the despawns of a failed batch failed", ex);
+                stillBound = 0;
+                foreach (uint id in ids)
+                {
+                    if (_ids.GetEntity(id) != Entity.Null) stillBound++;
+                }
+            }
+            finally
+            {
+                _touch.Clear();
+            }
+            return stillBound;
         }
 
         /// <summary>Ids despawned by the batch being applied, with the index of their first despawn record.</summary>
@@ -1113,6 +1219,18 @@ namespace SkylineTogether.Sync
                     result.Skipped++;
                     continue;
                 }
+                else if (e != Entity.Null && !proposal && CheckBinding(r, e, offset) == BoundRecordVerdict.Replace)
+                {
+                    // a stale binding (the host reused the id for another entity): never written across entities
+                    ReplaceStaleBinding(r, e, result);
+                    e = Entity.Null;
+                    if (r.Kind == SyncRecordKind.Values)
+                    {
+                        result.Skipped++;
+                        result.DanglingIds.Add(r.NetId); // a values record cannot create it: asked for again
+                        continue;
+                    }
+                }
                 if (e == Entity.Null)
                 {
                     if (r.Kind != SyncRecordKind.Spawn && r.Kind != SyncRecordKind.Upsert)
@@ -1137,7 +1255,15 @@ namespace SkylineTogether.Sync
                         result.Skipped++;
                         continue;
                     }
-                    _ids.Bind(e, r.NetId, r.Family);
+                    try
+                    {
+                        _ids.Bind(e, r.NetId, r.Family);
+                    }
+                    catch (Exception)
+                    {
+                        em.DestroyEntity(e); // never an unbound replica with default values
+                        throw;
+                    }
                     if (_ids.GetEntity(r.NetId) != e)
                     {
                         // the id could not be bound (host: quarantined); never leave an unbound replica behind
@@ -1146,6 +1272,7 @@ namespace SkylineTogether.Sync
                         result.Problems.Add("#" + r.NetId + " could not be bound");
                         continue;
                     }
+                    if (!proposal) _ids.NoteGeneration(r.NetId, r.Generation);
                     _spawned.Add(e);
                     result.SpawnedEntities.Add(e);
                     result.Spawned++;
@@ -1164,6 +1291,8 @@ namespace SkylineTogether.Sync
                 {
                     result.Upserted++;
                 }
+                // client: an id bound by its own prediction learns the host's generation from the host's record
+                if (!proposal && !_spawned.Contains(e)) _ids.NoteGeneration(r.NetId, r.Generation);
                 _targets.Add((r, e));
             }
 
@@ -1183,8 +1312,10 @@ namespace SkylineTogether.Sync
                 catch (Exception ex)
                 {
                     result.Problems.Add("#" + r.NetId + " component set: " + ex.Message); // one record never stops the batch
+                    if (_spawned.Contains(e)) _spawnState.Fail(e); // a new entity with a broken component set is not kept
                 }
             }
+            if (_spawnState.FailedCount > 0) DropFailedSpawns(result, "its component set could not be built");
 
             // 2b: no new entity keeps UpdateFrame without an update-group marker (the game's UpdateGroupSystem indexes
             // its Burst job with a table it does not have for it)
@@ -1197,12 +1328,16 @@ namespace SkylineTogether.Sync
                 try
                 {
                     WriteValues(r, e, proposal, offset, data, result);
+                    if (_spawned.Contains(e)) _spawnState.Written(e);
                 }
                 catch (Exception ex)
                 {
                     result.Problems.Add("#" + r.NetId + " values: " + ex.Message);
+                    if (_spawned.Contains(e)) _spawnState.Fail(e); // half-written values: never kept on a new entity
                 }
             }
+            // what referred to a dropped entity is cleaned up below (dangling owners and nodes) or by the reference audit
+            if (_spawnState.FailedCount > 0) DropFailedSpawns(result, "its values could not be written");
 
             // 3b (mod compatibility): enabled bits of enableable components, for the entities written above
             Dictionary<uint, Entity> written = null;
@@ -1279,20 +1414,22 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>Applies one despawn record (step 5, or before the entity steps when the batch reuses the id).</summary>
-        private void Despawn(SyncRecord r, bool proposal, ApplyResult result)
+        private void Despawn(SyncRecord r, bool proposal, ApplyResult result) => Despawn(r.NetId, proposal, result);
+
+        private void Despawn(uint netId, bool proposal, ApplyResult result)
         {
             EntityManager em = EntityManager;
             // mod compatibility: a client may delete vehicles, citizens and animals with a mod tool (Better Bulldozer)
-            if (proposal && _ids.GetEntity(r.NetId) != Entity.Null && !FamilyClassifier.IsReplicated(_ids.GetFamily(r.NetId)) && _ids.GetFamily(r.NetId) != Family.Mover)
+            if (proposal && _ids.GetEntity(netId) != Entity.Null && !FamilyClassifier.IsReplicated(_ids.GetFamily(netId)) && _ids.GetFamily(netId) != Family.Mover)
             {
-                result.Problems.Add("refused to delete #" + r.NetId + " (" + _ids.GetFamily(r.NetId) + ")");
+                result.Problems.Add("refused to delete #" + netId + " (" + _ids.GetFamily(netId) + ")");
                 return;
             }
-            Entity e = _ids.GetEntity(r.NetId);
+            Entity e = _ids.GetEntity(netId);
             // the host keeps the binding of a proposed deletion; its capture sees the Deleted tag, broadcasts
             // the despawn to every peer and only then releases the id (unbinding here hid the despawn from the
             // other clients)
-            if (!proposal) _ids.Unbind(r.NetId);
+            if (!proposal) _ids.Unbind(netId);
             if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return;
             try
             {
@@ -1314,23 +1451,93 @@ namespace SkylineTogether.Sync
                     }
                     catch (Exception ex)
                     {
-                        result.Problems.Add("removal clean-up of #" + r.NetId + ": " + ex.Message);
+                        result.Problems.Add("removal clean-up of #" + netId + ": " + ex.Message);
                     }
                 }
                 em.AddComponent<Game.Common.Deleted>(e);
                 _touch.Remove(e);
                 result.Touched.Add(e);
                 result.Despawned++;
-                for (int i = 0; i < _leftAtNode.Count; i++) DeleteDangling(_leftAtNode[i], proposal, result, "it ends at node #" + r.NetId + ", which was deleted");
+                for (int i = 0; i < _leftAtNode.Count; i++) DeleteDangling(_leftAtNode[i], proposal, result, "it ends at node #" + netId + ", which was deleted");
             }
             catch (Exception ex)
             {
-                result.Problems.Add("despawn of #" + r.NetId + ": " + ex.Message);
+                result.Problems.Add("despawn of #" + netId + ": " + ex.Message);
             }
             finally
             {
                 _leftAtNode.Clear();
             }
+        }
+
+        private long _staleBindingsTotal;
+        private double _lastStaleLog = double.NegativeInfinity;
+        private int _staleNotLogged;
+
+        /// <summary>Records written to an id this client still bound to an older entity, which was replaced (diagnostics).</summary>
+        public long StaleBindingsTotal => _staleBindingsTotal;
+
+        /// <summary>
+        /// Client: whether an entity record describes the entity its id is bound to here (<see cref="BoundRecordCheck"/>):
+        /// by the id's generation when known, else by the family and the prefab class.
+        /// </summary>
+        private BoundRecordVerdict CheckBinding(SyncRecord r, Entity e, int offset)
+        {
+            bool known = _ids.TryGetGeneration(r.NetId, out byte generation);
+            Family bound = _ids.GetFamily(r.NetId);
+            bool classes = false, same = true;
+            if (!known && r.Family == bound && r.Kind != SyncRecordKind.Values) classes = TryComparePrefabClasses(r, e, offset, out same);
+            return BoundRecordCheck.Check(r.Generation, known, generation, r.Family, bound, classes, same);
+        }
+
+        /// <summary>Whether the record's prefab and the entity's are of the same class; false when either is unknown.</summary>
+        private bool TryComparePrefabClasses(SyncRecord r, Entity e, int offset, out bool same)
+        {
+            same = true;
+            try
+            {
+                EntityManager em = EntityManager;
+                if (!em.HasComponent<PrefabRef>(e)) return false;
+                Entity bound = em.GetComponentData<PrefabRef>(e).m_Prefab;
+                Entity named = ReadPrefab(r, offset);
+                if (bound == Entity.Null || named == Entity.Null) return false;
+                if (bound == named) return true;
+                if (!em.Exists(bound) || !em.Exists(named)) return false;
+                if (!_prefabs.TryGetPrefab(bound, out PrefabBase a) || !_prefabs.TryGetPrefab(named, out PrefabBase b) || a == null || b == null) return false;
+                same = a.GetType() == b.GetType();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Client: the id of the record is still bound to an entity the host has despawned (a despawn this client lost): the
+        /// old entity is despawned the way a despawn record does it (made safe, its removal clean-up, its closure tagged),
+        /// so the record can create the new entity under the id. Components are never moved across entities.
+        /// </summary>
+        private void ReplaceStaleBinding(SyncRecord r, Entity old, ApplyResult result)
+        {
+            Family bound = _ids.GetFamily(r.NetId);
+            bool known = _ids.TryGetGeneration(r.NetId, out byte generation);
+            string what = Describe(old);
+            _staleBindingsTotal++;
+            result.StaleReplaced++;
+            Despawn(r.NetId, false, result);
+            if (_ids.GetEntity(r.NetId) == old) _ids.Unbind(r.NetId); // a refused or failed despawn still frees the id for the new entity
+            double now = Diagnostics.Perf.Now;
+            if (now - _lastStaleLog < 10.0)
+            {
+                _staleNotLogged++;
+                return;
+            }
+            _lastStaleLog = now;
+            _log.Warn(LogCategory.Replication, "the host's " + r.Kind + " of #" + r.NetId + " (" + r.Family + ", generation " + r.Generation + ") names an id still bound here to "
+                                               + what + " (" + bound + (known ? ", generation " + generation : "") + "): a despawn was lost; the old entity is deleted"
+                                               + (_staleNotLogged > 0 ? " (" + _staleNotLogged + " more since the last report)" : ""));
+            _staleNotLogged = 0;
         }
 
         /// <summary>Edges that end at a node being despawned and that this batch does not despawn itself.</summary>
@@ -1691,21 +1898,7 @@ namespace SkylineTogether.Sync
                     }
                 }
                 if (_badSpawns.Count == 0) return;
-                EntityManager em = EntityManager;
-                for (int t = _targets.Count - 1; t >= 0; t--)
-                {
-                    (SyncRecord r, Entity e) = _targets[t];
-                    if (!_badSpawns.Contains(e)) continue;
-                    _targets.RemoveAt(t);
-                    _spawned.Remove(e);
-                    result.SpawnedEntities.Remove(e);
-                    result.Spawned--;
-                    result.Skipped++;
-                    result.UnresolvedSpawns++;
-                    _unresolvedSpawnsTotal++;
-                    if (_ids.GetEntity(r.NetId) == e) _ids.Unbind(r.NetId);
-                    if (em.Exists(e)) em.DestroyEntity(e); // created by this apply; nothing references it yet
-                }
+                _unresolvedSpawnsTotal += RemoveSpawns(_badSpawns, result, false); // created by this apply; nothing references them yet
             }
             finally
             {
@@ -1808,10 +2001,11 @@ namespace SkylineTogether.Sync
         private void DropIncompleteSpawns(ApplyResult result)
         {
             EntityManager em = EntityManager;
-            for (int t = _targets.Count - 1; t >= 0; t--)
+            _badSpawns.Clear();
+            for (int t = 0; t < _targets.Count; t++)
             {
                 (SyncRecord r, Entity e) = _targets[t];
-                if (!_spawned.Contains(e) || !em.Exists(e)) continue;
+                if (!_spawned.Contains(e) || !em.Exists(e) || _badSpawns.Contains(e)) continue;
                 EntityArchetype archetype = em.GetChunk(e).Archetype;
                 if (IsUpdateGroupComplete(archetype)) continue;
                 var names = new List<string>();
@@ -1829,17 +2023,67 @@ namespace SkylineTogether.Sync
                 string prefabName = prefab != Entity.Null && em.Exists(prefab) ? _prefabs.GetPrefabName(prefab) : "none";
                 _log.Warn(LogCategory.Replication, "spawn of #" + r.NetId + " (" + r.Family + ", prefab " + prefabName + ") not kept: UpdateFrame without an update-group marker; components "
                                                    + string.Join(", ", names) + "; asked for again");
-                _targets.RemoveAt(t);
-                _spawned.Remove(e);
-                result.SpawnedEntities.Remove(e);
+                _badSpawns.Add(e);
+            }
+            if (_badSpawns.Count == 0) return;
+            try
+            {
+                _incompleteSpawnsTotal += RemoveSpawns(_badSpawns, result, true); // created by this apply; no value refers to them yet
+            }
+            finally
+            {
+                _badSpawns.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Drops the failed new entities (<see cref="SpawnTransaction{T}.Failed"/>): a new entity whose component set or values could not be
+        /// written is never kept half-made (default values, a null PrefabRef, zero edge nodes are what the game's jobs then
+        /// index unchecked); it is destroyed before any system saw it and asked for again.
+        /// </summary>
+        private void DropFailedSpawns(ApplyResult result, string why)
+        {
+            result.Problems.Add(_spawnState.FailedCount + " new entities not kept: " + why);
+            _dropScratch.Clear();
+            foreach (Entity e in _spawnState.Failed) _dropScratch.Add(e);
+            _rolledBackSpawnsTotal += RemoveSpawns(_dropScratch, result, true);
+            _spawnState.ClearFailed();
+            _dropScratch.Clear();
+        }
+
+        /// <summary>
+        /// Removes the new entities of <paramref name="drop"/> from this apply in one pass (was one list removal per entity,
+        /// quadratic in big catch-up batches): their targets go, their ids are unbound (and asked for again with
+        /// <paramref name="askAgain"/>) and the entities, created by this apply, are destroyed. Returns the targets dropped.
+        /// </summary>
+        private int RemoveSpawns(HashSet<Entity> drop, ApplyResult result, bool askAgain)
+        {
+            EntityManager em = EntityManager;
+            int kept = 0, dropped = 0;
+            for (int t = 0; t < _targets.Count; t++)
+            {
+                (SyncRecord r, Entity e) = _targets[t];
+                if (!drop.Contains(e))
+                {
+                    _targets[kept++] = _targets[t];
+                    continue;
+                }
+                dropped++;
                 result.Spawned--;
                 result.Skipped++;
                 result.UnresolvedSpawns++;
-                _incompleteSpawnsTotal++;
                 if (_ids.GetEntity(r.NetId) == e) _ids.Unbind(r.NetId);
-                _rs.MissingIds?.Add(r.NetId);
-                em.DestroyEntity(e); // created by this apply; no value refers to it yet
+                if (askAgain) _rs.MissingIds?.Add(r.NetId);
             }
+            _targets.RemoveRange(kept, _targets.Count - kept);
+            foreach (Entity e in drop)
+            {
+                _spawned.Remove(e);
+                _spawnState.Forget(e);
+                if (em.Exists(e)) em.DestroyEntity(e);
+            }
+            result.SpawnedEntities.RemoveAll(e => drop.Contains(e));
+            return dropped;
         }
 
         /// <summary>True when the record carries the component's value (not only its presence).</summary>
@@ -2121,10 +2365,12 @@ namespace SkylineTogether.Sync
             if (!archetype.Valid)
             {
                 var types = new List<ComponentType> { ComponentType.ReadWrite<Game.Common.Created>(), ComponentType.ReadWrite<Game.Common.Updated>() };
+                var seen = new HashSet<int> { types[0].TypeIndex.Value, types[1].TypeIndex.Value };
                 foreach (SyncComponent c in r.Components)
                 {
                     TypeHandler h = TypeHandlers.GetByHash(c.TypeHash);
-                    if (h != null) types.Add(h.Type);
+                    // a type named twice (a malformed record) made CreateArchetype throw half-way through the apply
+                    if (h != null && seen.Add(h.Index.Value)) types.Add(h.Type);
                 }
                 if (types.Count <= 2)
                 {

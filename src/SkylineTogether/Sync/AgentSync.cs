@@ -182,7 +182,8 @@ namespace SkylineTogether.Sync
         private bool _keyWatchReady;
 
         // client
-        private readonly Queue<byte[]> _inbox = new Queue<byte[]>();
+        // held: none of the epochs received after a message is acknowledged before it applied (ARCHITECTURE.md#net-ids)
+        private readonly AckHeldQueue<byte[]> _inbox = new AckHeldQueue<byte[]>();
         private readonly RefreshThrottle _throttle = new RefreshThrottle();
         private readonly List<uint> _unresolved = new List<uint>();
         private readonly List<uint> _due = new List<uint>();
@@ -307,6 +308,7 @@ namespace SkylineTogether.Sync
         {
             ResetState();
             GateReroll(true);
+            _inbox.Attach(client.ApplyAcks);
             client.AppMessage += e =>
             {
                 if (e.Kind != MessageKind.AgentValues) return;
@@ -329,6 +331,13 @@ namespace SkylineTogether.Sync
         {
             GateReroll(false);
             ResetState();
+            _inbox.Attach(null);
+        }
+
+        /// <summary>Client: the agents feature is off: what waits is dropped (its acknowledgement holds released).</summary>
+        public void DropHeld()
+        {
+            if (_inbox.Count > 0) _inbox.Clear();
         }
 
         private void ResetState()
@@ -1187,9 +1196,8 @@ namespace SkylineTogether.Sync
                 double now = Now;
                 int n = 0;
                 bool any = false;
-                while (_inbox.Count > 0 && n++ < MaxInboxPerFrame)
+                while (n++ < MaxInboxPerFrame && _inbox.TryDequeue(out byte[] data))
                 {
-                    byte[] data = _inbox.Dequeue();
                     try
                     {
                         List<SyncRecord> records = SimValueMessage.Read(data, 0, data.Length, _decodePool, out _, out _, out _);

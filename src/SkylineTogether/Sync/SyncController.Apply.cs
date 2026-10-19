@@ -138,6 +138,7 @@ namespace SkylineTogether.Sync
                 n++;
                 Inbound item = _inbox.Dequeue();
                 if (IsHost) _hostInboxQuota.Release(item.Peer, item.Data.Length);
+                bool acknowledge = true;
                 try
                 {
                     if (IsHost)
@@ -152,12 +153,15 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
+                    // client: a failed batch is acknowledged only once its despawns are applied (ARCHITECTURE.md#client-apply)
+                    if (!IsHost) acknowledge = RecoverFailedBatch(ex);
                     ApplyFailed(item.Peer, ex);
                     if (!Features.Replication.IsAvailable) return; // the session is ending (client: a rejoin repairs it)
                 }
                 finally
                 {
-                    if (item.Seq != 0) _sessions.Client?.ApplyAcks.Release(item.Seq);
+                    _applyingRecords = null;
+                    if (item.Seq != 0 && acknowledge) _sessions.Client?.ApplyAcks.Release(item.Seq);
                 }
             }
             // the backlog left after this frame (zero ends the catch-up and logs the join's timings)
@@ -179,6 +183,7 @@ namespace SkylineTogether.Sync
             }
             // client: agent values once the structure batches that spawn them are applied
             if (!IsHost && Features.Agents.IsAvailable) _agents.ApplyIncoming(_inbox.Count);
+            else if (!IsHost) _agents.DropHeld(); // nothing applies them while off; their acknowledgement holds must not stay
             // client: per-player chirp likes, event target lists, weather phenomenon hotspot frames, tree growth
             if (!IsHost && Features.Events.IsAvailable)
             {
@@ -316,9 +321,74 @@ namespace SkylineTogether.Sync
             _kicks.Clear();
         }
 
+        /// <summary>Client: the records of the host batch being applied (null before it was decoded).</summary>
+        private List<SyncRecord> _applyingRecords;
+
+        private long _failedBatches;
+        private readonly List<uint> _recoveryIds = new List<uint>();
+
+        /// <summary>
+        /// Client: a host batch threw while being applied. Acknowledging it tells the host it may reuse the ids the batch
+        /// despawned, so it is acknowledged only when every one of those despawns is applied now (their ids unbound, their
+        /// entities deleted cleanly; the codec already destroyed whatever the batch half-created). Everything the batch
+        /// carried is asked for again. A batch that could not even be decoded, or whose despawns cannot be applied, is
+        /// never acknowledged: replication is switched off, which ends the session with a rejoin offer (a fresh snapshot).
+        /// Returns whether the batch may be acknowledged.
+        /// </summary>
+        private bool RecoverFailedBatch(Exception ex)
+        {
+            List<SyncRecord> records = _applyingRecords;
+            _applyingRecords = null;
+            _failedBatches++;
+            if (_codec == null || !FailedBatchRecovery.MayAcknowledge(records != null, 0))
+            {
+                Guard.Disable(Features.Replication, "a batch from the host could not be read (" + ex.GetType().Name + "), so what it deleted is unknown");
+                return false;
+            }
+            _recoveryIds.Clear();
+            FailedBatchRecovery.DespawnsToApply(records, _recoveryIds);
+            int despawns = _recoveryIds.Count, stillBound;
+            try
+            {
+                stillBound = _codec.SalvageDespawns(_recoveryIds);
+            }
+            catch (Exception)
+            {
+                stillBound = Math.Max(1, despawns);
+            }
+            _recoveryIds.Clear();
+            FailedBatchRecovery.IdsToRequest(records, _recoveryIds);
+            int asked = 0;
+            if (Features.Integrity.IsAvailable)
+            {
+                try
+                {
+                    foreach (uint id in _recoveryIds)
+                    {
+                        Integrity.RequestRepair(id);
+                        asked++;
+                    }
+                }
+                catch (Exception repair)
+                {
+                    Guard.Report(Features.Integrity, "repair requests after a failed batch", repair);
+                }
+            }
+            _recoveryIds.Clear();
+            if (!FailedBatchRecovery.MayAcknowledge(true, stillBound))
+            {
+                Guard.Disable(Features.Replication, stillBound + " deletion(s) of a batch that failed to apply could not be applied");
+                return false;
+            }
+            _log.Warn(LogCategory.Replication, "a batch from the host failed to apply (" + ex.GetType().Name + ": " + ex.Message + "); its " + despawns + " deletion(s) were applied and "
+                                               + asked + " entities are asked for again");
+            return true;
+        }
+
         private void ApplyFromHost(byte[] data)
         {
             List<SyncRecord> records = SyncBatch.Read(data, 0, data.Length, _decodePool); // decoded once for every consumer (pooled records)
+            _applyingRecords = records;
             if (Features.GlobalState.IsAvailable && MayWriteGlobalState(records)) GlobalBeforeHostWrite();
             // ids this player deleted locally wait for the host's despawn; a rejected proposal releases its ids
             // (the rollback in the same message recreates them)
@@ -601,7 +671,18 @@ namespace SkylineTogether.Sync
             long removedObjects = 0;
             NetCharge netCharge = facts.EntityCount > 0 ? CollectCostBasis(records, direct, out removedObjects) : null;
             _proposalPeer = peer;
-            ApplyResult r = _codec.Apply(records, data, 0, data.Length, _mayCreate);
+            ApplyResult r;
+            try
+            {
+                r = _codec.Apply(records, data, 0, data.Length, _mayCreate);
+            }
+            catch (Exception)
+            {
+                // the codec destroyed what it half-created; the client's prediction is rolled back to whatever the host
+                // holds now (failures are counted against the peer by the caller)
+                RollBackFailedProposal(peer, seq, records);
+                throw;
+            }
             RebaseBuildOrders(r.SpawnedEntities, touchedEdges);
             for (int i = 0; i < records.Count; i++)
             {

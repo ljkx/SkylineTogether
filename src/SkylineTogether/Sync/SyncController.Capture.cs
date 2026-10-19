@@ -275,6 +275,14 @@ namespace SkylineTogether.Sync
         {
             EntityManager em = _codec.EntityManager;
             _batch.Reset();
+            _captureFailures = 0;
+            // despawns of a frame whose batch was never sent (its capture threw before the broadcast): their ids are still
+            // allocated (staged, ARCHITECTURE.md#net-ids), and their despawns go out again first
+            if (_staged.Count > 0)
+            {
+                _log.Warn(LogCategory.Replication, _staged.Count + " despawn(s) of an unsent batch are sent again");
+                _staged.Rewrite(_writeDespawn ?? (_writeDespawn = id => _batch.Despawn(id)));
+            }
             _writtenThisFrame.Clear();
             SettleNetCharges(); // the nets of this frame's proposals, now that the game composed them
             // mod compatibility: mod data entities that replicated values reference are bound and sent with them
@@ -287,11 +295,11 @@ namespace SkylineTogether.Sync
                 foreach (uint id in _scratchIds)
                 {
                     _batch.Despawn(id);
+                    _staged.Stage(id); // released once this batch is out
                     _shadow.Remove(id);
                     _events.Forget(id);
                     _ledger.Forget(id);
                     DropDeferred(id, DeferredClass.Upsert);
-                    _ids.Ids.Release(id);
                 }
             }
             if (!_changed.IsEmptyIgnoreFilter)
@@ -314,8 +322,20 @@ namespace SkylineTogether.Sync
                         for (int i = 0; i < entities.Length; i++)
                         {
                             Entity e = entities[i];
-                            Family family = known ? chunkFamily : _codec.Families.Classify(em, e);
-                            CaptureHostEntity(em, e, family, deleted, created, hasPrefab);
+                            // one entity that fails never costs the frame's batch (and the despawns in it)
+                            SyncBatch.Writer.Mark mark = _batch.GetMark();
+                            int staged = _staged.Mark;
+                            try
+                            {
+                                Family family = known ? chunkFamily : _codec.Families.Classify(em, e);
+                                CaptureHostEntity(em, e, family, deleted, created, hasPrefab);
+                            }
+                            catch (Exception ex)
+                            {
+                                RollBackCapture(mark, staged);
+                                if (deleted) DespawnAfterFailure(e);
+                                CaptureFailed("capture of a changed entity", ex);
+                            }
                         }
                     }
                 }
@@ -343,21 +363,31 @@ namespace SkylineTogether.Sync
             // entities that intents or the host's own UI changed without any tag
             foreach (Entity e in _forceCapture)
             {
-                if (_writtenThisFrame.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                Family family = _codec.Families.Classify(em, e);
-                if (FamilyClassifier.IsReplicated(family)) WriteHostEntity(em, e, family, _ids.GetNetId(e), em.HasComponent<Game.Common.Created>(e), em.HasComponent<PrefabRef>(e));
+                SyncBatch.Writer.Mark mark = _batch.GetMark();
+                int staged = _staged.Mark;
+                try
+                {
+                    if (_writtenThisFrame.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
+                    Family family = _codec.Families.Classify(em, e);
+                    if (FamilyClassifier.IsReplicated(family)) WriteHostEntity(em, e, family, _ids.GetNetId(e), em.HasComponent<Game.Common.Created>(e), em.HasComponent<PrefabRef>(e));
+                }
+                catch (Exception ex)
+                {
+                    RollBackCapture(mark, staged);
+                    CaptureFailed("capture of an untagged change", ex);
+                }
             }
             // the agent scan slice, key-link changes and the co-captured owners of this frame's agent changes
-            _agents.HostCapture(_batch, _writtenThisFrame, _writeAgent ?? (_writeAgent = WriteAgentRecord));
+            CaptureStep(Features.Agents, "agent capture", _agentCaptureCall ?? (_agentCaptureCall = () => _agents.HostCapture(_batch, _writtenThisFrame, _writeAgent ?? (_writeAgent = WriteAgentRecord))));
             // mod compatibility: the dependencies all of the above needed, untagged mod state, and its dependencies
-            WriteDependencies(_writtenThisFrame);
+            CaptureStep(Features.Replication, "dependency capture", _dependenciesCall ?? (_dependenciesCall = () => WriteDependencies(_writtenThisFrame)));
             _callNow = now;
-            SafeCall("mod state capture", _hostModStateCall);
-            WriteDependencies(_writtenThisFrame);
+            CaptureStep(Features.Actions, "mod state capture", _hostModStateCall);
+            CaptureStep(Features.Replication, "dependency capture", _dependenciesCall);
             _codec.DependencyBinder = null;
-            SafeCall("mod settings capture", _hostModSettingsCall);
+            CaptureStep(Features.Actions, "mod settings capture", _hostModSettingsCall);
             long scan = Perf.Start();
-            ScanValues(now);
+            CaptureStep(Features.Replication, "value scan", _scanCall ?? (_scanCall = () => ScanValues(_callNow)));
             Perf.Budget.End(Perf.BudgetScan, Perf.Stop(Perf.Scan, scan));
             if (now - _lastClock >= ClockInterval)
             {
@@ -388,7 +418,8 @@ namespace SkylineTogether.Sync
             {
                 // the ledger epoch goes last, so the first-record routing of batches is unchanged
                 _batch.Epoch(_ledger.Advance());
-                Broadcast(_batch, Perf.StructureBytes);
+                // the despawned ids enter the quarantine only now that their despawns are on the way to every peer
+                if (Broadcast(_batch, Perf.StructureBytes)) _ids.ReleaseStaged(_staged);
             }
             long deferred = Perf.Start();
             FlushDeferred(now, dt);
@@ -397,6 +428,71 @@ namespace SkylineTogether.Sync
         }
 
         private AgentSync.RecordWriter _writeAgent;
+        private Action _agentCaptureCall, _dependenciesCall, _scanCall;
+        private Action<uint> _writeDespawn;
+
+        /// <summary>Host: ids whose despawn is in the batch being built (released after its broadcast).</summary>
+        private readonly StagedReleases _staged = new StagedReleases();
+
+        /// <summary>Capture steps of this frame that failed (each one is reported, at most a few per frame).</summary>
+        private int _captureFailures;
+
+        private const int MaxCaptureReportsPerFrame = 3;
+
+        /// <summary>
+        /// Host: one step of the frame's capture in its own guard. A step that throws loses only its own records: the
+        /// records it wrote are rolled back (a half-written record would make the whole batch undecodable), the despawns it
+        /// staged are written again, and the rest of the frame's batch still goes out.
+        /// </summary>
+        private void CaptureStep(FeatureHealth feature, string what, Action step)
+        {
+            if (step == null) return;
+            SyncBatch.Writer.Mark mark = _batch.GetMark();
+            int staged = _staged.Mark;
+            try
+            {
+                step();
+            }
+            catch (Exception ex)
+            {
+                RollBackCapture(mark, staged);
+                CaptureFailed(what, ex, feature);
+            }
+        }
+
+        private void RollBackCapture(SyncBatch.Writer.Mark mark, int staged)
+        {
+            _batch.RollBack(mark);
+            _staged.Rewrite(_writeDespawn ?? (_writeDespawn = id => _batch.Despawn(id)), staged); // unbound and staged: their despawns must go out
+        }
+
+        private void CaptureFailed(string what, Exception ex, FeatureHealth feature = null)
+        {
+            if (++_captureFailures > MaxCaptureReportsPerFrame) return; // one broken entity type must not trip the guard within a frame
+            Guard.Report(feature ?? Features.Replication, what, ex);
+        }
+
+        /// <summary>
+        /// Host: a deleted entity whose capture threw still gets its despawn (its entity is destroyed at the end of the
+        /// frame; a binding left behind would only be noticed by a later sweep).
+        /// </summary>
+        private void DespawnAfterFailure(Entity e)
+        {
+            try
+            {
+                uint id = _ids.GetNetId(e);
+                if (id == 0 || _staged.Contains(id)) return;
+                _batch.Despawn(id);
+                _ids.Unbind(id, _staged);
+                _shadow.Remove(id);
+                _ledger.Forget(id);
+                DropDeferred(id, DeferredClass.Upsert);
+            }
+            catch (Exception)
+            {
+                // the id stays bound; the presence watch or the integrity check finds the entity gone
+            }
+        }
 
         private void CaptureHostEntity(EntityManager em, Entity e, Family family, bool deleted, bool created, bool hasPrefab)
         {
@@ -422,7 +518,7 @@ namespace SkylineTogether.Sync
                 if (id == 0) return;
                 if (family == Family.Object) _agents.OnOwnerDespawned(em, e); // its renters, workers, students
                 _batch.Despawn(id);
-                _ids.Unbind(id, despawnSent: true);
+                _ids.Unbind(id, _staged); // quarantined once this batch is out
                 _shadow.Remove(id);
                 _events.Forget(id);
                 _ledger.Forget(id);
@@ -445,7 +541,7 @@ namespace SkylineTogether.Sync
                 if (id == 0) return;
                 _agents.OnDespawned(id, e);
                 _batch.Despawn(id);
-                _ids.Unbind(id, despawnSent: true);
+                _ids.Unbind(id, _staged);
                 _ledger.Forget(id);
                 DropDeferred(id, DeferredClass.Upsert);
                 return;

@@ -191,10 +191,28 @@ namespace SkylineTogether.Core.Sync
         /// <summary>Assigns the next sequence number to a received message and returns it.</summary>
         public long OnReceived() => ++_received;
 
+        /// <summary>
+        /// A message that is not an <c>Epoch</c> but names net ids (simulation, agent and attention values) arrived and
+        /// is applied later: nothing received from now on is acknowledged until it is released, so the host cannot free
+        /// and reuse an id this message names before it was applied (ARCHITECTURE.md#net-ids). Everything received so far
+        /// stays acknowledgeable. Returns the sequence number to <see cref="Release"/>.
+        /// </summary>
+        public long HoldNext()
+        {
+            long seq = _received + 1;
+            AddHold(seq);
+            return seq;
+        }
+
         /// <summary>A consumer will apply message <paramref name="seq"/> later (sequence numbers must be held in non-decreasing order).</summary>
         public void Hold(long seq)
         {
             if (seq <= 0 || seq > _received) throw new ArgumentOutOfRangeException(nameof(seq));
+            AddHold(seq);
+        }
+
+        private void AddHold(long seq)
+        {
             int last = _counts.Count - 1;
             if (last >= _head && _seqs[last] == seq)
             {
@@ -246,6 +264,111 @@ namespace SkylineTogether.Core.Sync
             _counts.Clear();
             _head = 0;
             _received = 0;
+        }
+    }
+
+    /// <summary>
+    /// Client: a FIFO of received messages that name net ids and are applied later (agent values, attention values,
+    /// inspection samples). Each one holds the apply acknowledgement (<see cref="ApplyAckTracker.HoldNext"/>) from its
+    /// arrival until it is applied or dropped, so a held message can never be applied after the host reused one of the
+    /// ids it names. Every way out of the queue (<see cref="TryDequeue"/>, <see cref="Clear"/>, eviction) releases the
+    /// hold. Main thread. Not thread-safe.
+    /// </summary>
+    public sealed class AckHeldQueue<T>
+    {
+        private readonly Queue<(T Item, long Seq)> _queue = new Queue<(T, long)>();
+        private ApplyAckTracker _acks;
+
+        public int Count => _queue.Count;
+
+        /// <summary>Messages dropped by <see cref="Clear"/> or <see cref="EvictOldest"/> (diagnostics).</summary>
+        public long Dropped { get; private set; }
+
+        /// <summary>
+        /// The tracker of the current client session (null outside one: nothing is held). Messages queued on another
+        /// tracker are dropped and their holds released first.
+        /// </summary>
+        public void Attach(ApplyAckTracker acks)
+        {
+            if (ReferenceEquals(acks, _acks)) return;
+            Clear();
+            _acks = acks;
+        }
+
+        public void Enqueue(T item)
+        {
+            long seq = _acks != null ? _acks.HoldNext() : 0;
+            _queue.Enqueue((item, seq));
+        }
+
+        /// <summary>
+        /// Takes the oldest message and releases its hold: the caller applies it before anything else can acknowledge
+        /// (acknowledgements are sent at the end of the frame).
+        /// </summary>
+        public bool TryDequeue(out T item)
+        {
+            if (_queue.Count == 0)
+            {
+                item = default(T);
+                return false;
+            }
+            (T value, long seq) = _queue.Dequeue();
+            if (seq != 0) _acks?.Release(seq);
+            item = value;
+            return true;
+        }
+
+        /// <summary>The oldest message, left in the queue (its hold stays).</summary>
+        public bool TryPeek(out T item)
+        {
+            if (_queue.Count == 0)
+            {
+                item = default(T);
+                return false;
+            }
+            item = _queue.Peek().Item;
+            return true;
+        }
+
+        /// <summary>
+        /// Takes the oldest message and hands its hold to the caller, who releases it (<see cref="Release"/>) once the
+        /// message is applied or dropped (an inspection sample that waits for its tick keeps it meanwhile).
+        /// </summary>
+        public bool TryDequeueHeld(out T item, out long hold)
+        {
+            if (_queue.Count == 0)
+            {
+                item = default(T);
+                hold = 0;
+                return false;
+            }
+            (item, hold) = _queue.Dequeue();
+            return true;
+        }
+
+        /// <summary>Releases a hold handed out by <see cref="TryDequeueHeld"/> (0 is ignored).</summary>
+        public void Release(long hold)
+        {
+            if (hold != 0) _acks?.Release(hold);
+        }
+
+        /// <summary>Drops the oldest message (a full queue); false when empty.</summary>
+        public bool EvictOldest()
+        {
+            if (!TryDequeue(out _)) return false;
+            Dropped++;
+            return true;
+        }
+
+        /// <summary>Drops every message and releases every hold.</summary>
+        public void Clear()
+        {
+            while (_queue.Count > 0)
+            {
+                (T _, long seq) = _queue.Dequeue();
+                if (seq != 0) _acks?.Release(seq);
+                Dropped++;
+            }
         }
     }
 

@@ -221,6 +221,7 @@ namespace SkylineTogether.Sync
         private void ResetHostState()
         {
             _hostInboxQuota.Clear();
+            _staged.Clear(); // no peer holds an id across sessions
             _ackStall.Clear();
             _kicks.Clear();
             _acks.Clear();

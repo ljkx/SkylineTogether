@@ -289,6 +289,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 w.WriteVarUInt32(42);
                 w.WriteByte(family);
                 w.WriteBool(true);
+                w.WriteByte(0); // generation
                 w.WriteUInt16(0);
                 return w.ToArray();
             }

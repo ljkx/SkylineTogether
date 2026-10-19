@@ -213,6 +213,8 @@ namespace SkylineTogether.Core.Sync
         /// <summary>For <see cref="SyncRecordKind.Spawn"/> and <see cref="SyncRecordKind.Upsert"/>: the full replicated type set
         /// (components not listed are removed on the receiver when they are replicated types).</summary>
         public bool CompleteSet;
+        /// <summary>For entity records: the generation of <see cref="NetId"/> on the sender (<see cref="NetIdAllocator.GenerationOf"/>).</summary>
+        public byte Generation;
         public readonly List<SyncComponent> Components = new List<SyncComponent>();
         /// <summary>For <see cref="SyncRecordKind.Prefab"/>: a readable name (diagnostics) and the game-encoded PrefabID.</summary>
         public string PrefabName;
@@ -281,6 +283,7 @@ namespace SkylineTogether.Core.Sync
             NetId = 0;
             Family = default;
             CompleteSet = false;
+            Generation = 0;
             Components.Clear();
             PrefabName = null;
             PrefabData = null;
@@ -445,14 +448,46 @@ namespace SkylineTogether.Core.Sync
                 _count = 0;
             }
 
-            /// <summary>Starts an entity record; follow with <see cref="AddComponent"/> calls and <see cref="EndEntity"/>.</summary>
-            public void BeginEntity(SyncRecordKind kind, uint netId, Family family, bool completeSet)
+            /// <summary>A position between two records (<see cref="GetMark"/>, <see cref="RollBack"/>).</summary>
+            public readonly struct Mark
+            {
+                internal readonly int Length;
+                internal readonly uint Count;
+
+                internal Mark(int length, uint count)
+                {
+                    Length = length;
+                    Count = count;
+                }
+            }
+
+            /// <summary>The current position; only valid between records (never inside an entity record).</summary>
+            public Mark GetMark() => new Mark(_w.Length, _count);
+
+            /// <summary>
+            /// Drops every record written since <paramref name="mark"/>, including a record left half-written by an
+            /// exception (a capture step that failed must not leave a malformed batch behind).
+            /// </summary>
+            public void RollBack(Mark mark)
+            {
+                if (mark.Length < HeaderBytes || mark.Length > _w.Length || mark.Count > _count) throw new ArgumentOutOfRangeException(nameof(mark));
+                _w.Truncate(mark.Length);
+                _count = mark.Count;
+            }
+
+            /// <summary>
+            /// Starts an entity record; follow with <see cref="AddComponent"/> calls and <see cref="EndEntity"/>.
+            /// <paramref name="generation"/> is the id's generation (<see cref="NetIdAllocator.GenerationOf"/>; a client
+            /// writes the one it knows, the host ignores it).
+            /// </summary>
+            public void BeginEntity(SyncRecordKind kind, uint netId, Family family, bool completeSet, byte generation = 0)
             {
                 if (kind != SyncRecordKind.Spawn && kind != SyncRecordKind.Upsert && kind != SyncRecordKind.Values) throw new ArgumentException("not an entity record kind", nameof(kind));
                 _w.WriteByte((byte)kind);
                 _w.WriteVarUInt32(netId);
                 _w.WriteByte((byte)family);
                 _w.WriteBool(completeSet);
+                _w.WriteByte(generation);
                 _componentCountPosition = _w.Reserve(2);
                 _componentCount = 0;
             }
@@ -951,6 +986,7 @@ namespace SkylineTogether.Core.Sync
                     rec.NetId = r.ReadVarUInt32();
                     rec.Family = ReadFamily(r);
                     rec.CompleteSet = r.ReadBool();
+                    rec.Generation = r.ReadByte();
                     int components = r.ReadUInt16();
                     if (components > MaxComponents) throw new DecodeException("record with " + components + " components");
                     // one sized allocation instead of the list's doubling (each component needs at least 9 bytes)
