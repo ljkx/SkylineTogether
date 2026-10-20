@@ -125,7 +125,8 @@ python tools/installer/make_installer.py
 ```
 
 `make_installer.py` takes `dist/SkylineTogether-<version>.zip` of the `<Version>` in `Directory.Build.props` (or
-`--zip <path>`), checks that its DLL was built from the clean `HEAD` (`--allow-dirty` for a local test) and writes
+`--zip <path>`), checks that its DLL was built from the clean, pushed `HEAD` (no modified tracked file, no untracked
+file among the build inputs, `HEAD` on `origin/main`; `--allow-dirty` and `--allow-unpushed` for a local test) and writes
 `dist/SkylineTogether-Setup.zip`
 (and the same files loose in `dist/SkylineTogether-Setup/`):
 
@@ -137,7 +138,9 @@ python tools/installer/make_installer.py
 - `TWO-PLAYER-CHECKLIST.txt`: the two-player checklist from `tools/installer/TWO-PLAYER-CHECKLIST.txt`.
 
 The installer also takes `-Uninstall` (with `-RemoveSettings`) and, with `-CollectLogs`, `-IncludeDumps` (crash dumps
-are left out by default).
+are left out by default) and `-OutDir <folder>` (default: the Desktop; when that folder does not resolve, the user
+folder). `python tools/installer/smoke_test.py <dll>` runs it against a fake user profile: install, upgrade over that
+copy, log collection and uninstall (CI runs it with the Core DLL as a stand-in mod).
 
 The **build ID** printed by the installer and written into `TWO-PLAYER-CHECKLIST.txt` is the first 12 hex digits of the
 SHA-256 of `SkylineTogether.dll`. The game computes the same value from the DLL it loaded and compares it when a player

@@ -36,9 +36,10 @@ jobs:
       - name: Build the tests
         run: dotnet build tests/SkylineTogether.Core.Tests/SkylineTogether.Core.Tests.csproj -c Release
       - name: Run the tests
-        # the exit code is the number of failed tests; fewer tests than this means some were lost (raise it as the
-        # suite grows; the no-game build runs 4 tests fewer than a build with the game)
-        run: dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll --expect-at-least 1300
+        # the exit code is the number of failed tests; fewer executed tests than this means some were lost (raise it as
+        # the suite grows, close to the count; the no-game build runs 4 tests fewer than a build with the game), and a
+        # test that skips itself fails the run
+        run: dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll --expect-at-least 1420 --max-skipped 0
       - name: A failing test fails the run (canary)
         shell: bash
         run: |
@@ -104,3 +105,7 @@ jobs:
           python -m py_compile $(git ls-files 'tools/*.py' 'tools/**/*.py')
           python tools/test_release_tools.py
           bash -n tools/build.sh
+      - name: The Paradox Mods configuration matches the release version
+        # ModVersion equals <Version>, the CHANGELOG has its section, the images exist: a "Release x.y.z" commit that
+        # misses one fails here, before anything is built
+        run: python tools/paradox/publish_paradox.py check --config-only

@@ -18,8 +18,10 @@ dotnet run --project tests/SkylineTogether.Core.Tests -c Release -- --culture tr
 - Plain words are case-insensitive substring filters on the test name (a test runs when it matches any of them); a word
   starting with a single `-` excludes matching tests.
 - Test names are `Area.Class.Method`, for example `Buffers.ByteWriterReaderTests.VarUInt32GoldenBytes`.
-- The exit code is the number of failed tests, capped at 125. A selection without any test, an unknown `--` option
-  and fewer tests than `--expect-at-least N` are errors (exit code 126); `--allow-empty` accepts an empty selection.
+- The exit code is the number of failed tests, capped at 125. A selection without any test, an unknown `--` option,
+  fewer selected or executed tests than `--expect-at-least N` (skipped tests and tests not run after a timeout do not
+  count) and more skipped tests than `--max-skipped N` are errors (exit code 126); `--allow-empty` accepts an empty
+  selection. CI pins the suite with `--expect-at-least` close to its size and `--max-skipped 0`.
   `tools/build.sh` runs the built DLL and fails on a non-zero exit code.
 - Every test runs under the invariant culture unless `--culture <name>` says otherwise; the game runs with the
   player's locale, so CI also runs the suite under `tr-TR` and `de-DE`.

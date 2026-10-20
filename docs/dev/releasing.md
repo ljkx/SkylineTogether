@@ -85,7 +85,12 @@ committed before the build, so the tag, the DLL's commit hash and the uploads al
 
    `make_installer.py` and `publish_paradox.py` take the zip of the `<Version>` in `Directory.Build.props` (never an
    older zip left in `dist/`), and refuse it unless its `SkylineTogether.dll` was built from the current `HEAD` (the
-   DLL's informational version ends in `+<commit hash>`) and nothing tracked is modified. `make_installer.py` also
+   DLL's informational version ends in `+<commit hash>`), nothing tracked is modified, no untracked file lies among the
+   inputs of the build (`src`, `ui`, `Directory.Build.*`, `global.json` and the packaging tools; the projects compile
+   every `.cs` file below their folder) and, for `make_installer.py` and every upload, `origin/main` contains `HEAD`
+   (as last fetched; `publish_paradox.py check` only warns). `tools/build.sh` warns about the same files. `publish_paradox.py` uploads only versions without a pre-release suffix
+   (`--allow-prerelease` overrides it), and CI checks that `ModVersion` equals `<Version>` and that the changelog has
+   the version's section (`publish_paradox.py check --config-only`). `make_installer.py` also
    refuses to build when any packaged file contains personal data (home-folder paths, e-mail addresses, Steam IDs;
    the patterns of `tools/check_personal_data.py`). `Directory.Build.props` maps the checkout path to `/_/`
    (`DeterministicSourcePaths`), so the PDBs, the DLLs and stack traces in players' logs never contain the builder's
