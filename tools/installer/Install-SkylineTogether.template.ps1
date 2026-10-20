@@ -16,7 +16,8 @@ param(
     [switch]$RemoveSettings, # with -Uninstall: also delete the mod's settings (session password, ban list)
     [switch]$NoPause,
     [string]$OutDir = '',
-    [switch]$SkipGameCheck   # testing only
+    [switch]$SkipGameCheck,  # testing only
+    [switch]$TestNoDesktop   # testing only: -CollectLogs as if the Desktop folder did not resolve
 )
 
 $ErrorActionPreference = 'Stop'
@@ -134,7 +135,24 @@ if ($CollectLogs) {
     }
     # the text files name the Windows user folder: replaced by %USERPROFILE%
     Get-ChildItem -LiteralPath $stage -File -Recurse | Where-Object { $_.Extension -in '.log', '.txt', '.json' } | ForEach-Object { Hide-UserFolder $_.FullName }
-    $desktop = if ($OutDir) { $OutDir } else { [Environment]::GetFolderPath('Desktop') }
+    # the Desktop, else (a redirected or offline Desktop: GetFolderPath returns '') the user folder, this script's
+    # folder or TEMP; -OutDir names the folder (created when missing)
+    $desktop = ''
+    if ($OutDir) {
+        try { New-Dir $OutDir; $desktop = $OutDir } catch { Write-Warn2 "Could not use $OutDir ($($_.Exception.Message))." }
+    } elseif (-not $TestNoDesktop) {
+        try { $desktop = [Environment]::GetFolderPath('Desktop') } catch { $desktop = '' }
+    }
+    if (-not $desktop -or -not (Test-Path -LiteralPath $desktop -PathType Container)) {
+        $fallback = @($env:USERPROFILE, $PSScriptRoot, $env:TEMP) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -First 1
+        if (-not $fallback) {
+            Remove-Dir $stage
+            Write-Bad 'Found no folder to save the logs in (no Desktop, user folder or TEMP). Run again with -OutDir <folder>.'
+            Finish 1
+        }
+        Write-Warn2 "Your Desktop folder could not be found; the zip is saved in $fallback instead."
+        $desktop = $fallback
+    }
     $zip = Join-Path $desktop "SkylineTogether-logs-$stamp.zip"
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
     [System.IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip)
