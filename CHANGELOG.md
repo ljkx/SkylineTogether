@@ -5,11 +5,11 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
-First regular release: safer joining and passwords, a viewer-first option for hosts, and fixes for crashes and
-differences on joined players' games. Skyline Together is available on
+First regular release: big cities can be joined on slower PCs, safer joining and passwords, a viewer-first option for
+hosts, and fixes for crashes and differences on joined players' games. Skyline Together is available on
 [Paradox Mods](https://mods.paradoxplaza.com/mods/163578/Windows) and on GitHub with the same build, so players of both
 can play together. Everyone in a session must use this version; earlier versions cannot join (network protocol 8).
-From this release on, versions have no pre-release suffix.
+From this release on, regular releases have no pre-release suffix.
 
 ### Added
 
@@ -31,17 +31,21 @@ From this release on, versions have no pre-release suffix.
   - Developer detail: hardened handshake, id generation in entity and mover records, painted-cell masks in resource
     paint patches, statistics appends that resend the newest sample, a load heartbeat in the load progress report.
 - **Messages from the host appear in each player's language**: chat lines such as "… joined the city", kick, ban and
-  end reasons, and refusal details.
+  end reasons, and refusal details. So do the joining game's own reasons, the names of the mod's features, the
+  self-test line and the network line.
 - **Clearer join screens.** A password lockout has its own screen ("Too many wrong passwords") instead of "Wrong
-  password", and a host that cannot prove that it knows the password has its own screen ("Couldn't confirm the host")
-  instead of "Joining failed".
+  password", a host that cannot prove that it knows the password has its own screen ("Couldn't confirm the host")
+  instead of "Joining failed", a join cooldown says how long to wait ("Please wait before joining again") instead of
+  "The host isn't ready yet", and a join the host stopped says so ("The host stopped your join") instead of
+  "Connection lost". Waits read "about 10 minutes" instead of "600 s"; the mod screens read as plain sentences.
 - **Bug reports go to GitHub issues.** The texts in the game, the installer and the release zip say where to send the
   diagnostics file and logs; the guide explains how to collect them for a Paradox Mods install (which has no
   `Collect-Logs.cmd`) and what they contain.
-- **Your Windows user name stays out of the logs.** Skyline Together's log, the diagnostics file and its notifications
-  write paths in your user folder as `%USERPROFILE%`, and a joining player's log shortens the host's address after a
-  direct join (`203.0.113.x`). `Collect-Logs.cmd` replaces the user folder in the game's logs too, and leaves crash
-  dumps out: they can contain passwords and are collected only with `-IncludeDumps`, for sending privately.
+- **Your Windows user name and IP addresses stay out of the logs.** Skyline Together's log, the diagnostics file and
+  its notifications write paths in your user folder as `%USERPROFILE%` and IP addresses shortened (`203.0.113.x`);
+  only the host's ban list keeps the full address of a player banned by address. `Collect-Logs.cmd` replaces the user
+  folder in the game's logs too, and leaves crash dumps out: they can contain passwords and are collected only with
+  `-IncludeDumps`, for sending privately.
 - **Dropped, not kicked.** A player who stops responding, cannot keep up or whose changes keep failing is
   disconnected rather than kicked, so their game offers to join again.
 - **Clear names in chat.** Player names are unique in a session and never the host's; the host's chat lines carry a
@@ -93,7 +97,6 @@ another object.
   retried automatically, and an automatic rejoin waits as long as the host asks instead of using up its attempts.
 - **No more crashes from objects without an owner.** An update whose owner a joined player's game lacks no longer leaves
   an object pointing at nothing; the object is removed and asked for again.
-
 - **Buildings no longer turn into roads on joined players.** Every object record carries its id's generation: a joined
   player whose game still holds an older object under a reused id deletes it cleanly and creates the new one.
 - **Deletions are no longer lost** when an error happens later in the same frame. The host frees the id of a deleted
@@ -138,8 +141,10 @@ another object.
   name instead of "Name (2)"; a player's last messages before leaving are no longer lost.
 - **Joined players are not dropped while catching up** on a slow PC: values waiting for the city's updates no longer
   hold back the confirmations the host watches.
-- Smaller fixes: a player name with `{...}` in it shows as typed, GPU readbacks time out, flow status messages are dropped while that feature is off, a tool edit of an
-  object the host updated in the same frame is sent, and the icon filter and viewer gate recover in the next session.
+- Smaller fixes: a player name with `{...}` in it shows as typed; reads from the graphics card that never finish now
+  time out instead of waiting forever; electricity and water flow updates are ignored while that sync is off; a tool
+  edit of an object the host changed in the same frame is sent; the warning-icon filter and the viewer restrictions
+  recover in the next session.
 
 ## [0.1.0-alpha.4] - 2026-10-16
 
