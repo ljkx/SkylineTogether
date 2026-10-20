@@ -291,13 +291,26 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   `HMAC-SHA256(key, "client" label ‖ sessionId ‖ hostNonce ‖ clientNonce ‖ salt ‖ host Steam ID as dialled)`, the host
   checks it (one answer per challenge, constant-time compare) and sends the same with the "host" label in
   `Control Authenticated`, which the client checks before it sends its manifest
-  ([`SessionCrypto`](../src/SkylineTogether.Core/Session/SessionCrypto.cs)). The host binds direct and in-process
-  connections to Steam ID 0. [`PasswordAttemptLimiter`](../src/SkylineTogether.Core/Session/JoinSecurity.cs) keys
+  ([`SessionCrypto`](../src/SkylineTogether.Core/Session/SessionCrypto.cs)). On a direct connection, whose real host
+  always challenges, and for a session known to have a password (`ClientOptions.ExpectPassword`) the client also ends a
+  join whose host authenticates it without a challenge (`HostNotProven`); over Steam P2P the dialled host is the Steam
+  account Steam authenticated, and a password kept in the join settings does not stop joins of a session without one.
+  Until the host authenticated it the client reads only refusals, pings and the password controls; the welcome is
+  accepted once, at the end of the handshake. The session id is random (`SessionCrypto.RandomBytes`). The host binds
+  direct and in-process connections to Steam ID 0. [`PasswordAttemptLimiter`](../src/SkylineTogether.Core/Session/JoinSecurity.cs) keys
   failures by Steam ID and address (IPv6 by /64): three free, then a lockout of 5 s doubling up to 10 minutes, forgotten
-  after 15 minutes; at most two open challenges per key. A lockout refusal carries a "retry-after" report record.
+  after 15 minutes; at most two open challenges per key. A lockout refusal carries a "retry-after" report record. A
+  challenged connection that does not answer within 15 s is dropped, and a remote (Steam ID or address) that opens more
+  than 20 connections a minute is closed before its hello
+  ([`ConnectionRateLimiter`](../src/SkylineTogether.Core/Session/ConnectionRateLimiter.cs)); lines about connections that
+  are not admitted are logged at most 60 times a minute at info level.
 - After the compatibility checks, a player whose last joins did not finish waits (`HostOptions.JoinCooldownSeconds`:
-  the first is free, then 30 s, 2, 10 and 30 minutes; refused with `HostPreparing`; forgotten after an hour without a
-  failed join, and after a join that completes), and `ResolveDuplicate` replaces an
+  the first is free, then 30 s, 2, 10 and 30 minutes; a drop by a join watchdog or deadline is never the free one; once
+  the failed joins held everyone's game for more than 30 minutes in total, at least as long as the excess, at most
+  4 hours, `FailedJoinHoldAllowanceSeconds`; refused with `HostPreparing` and a "retry-after" record; forgotten an hour
+  after the wait ended, and after a join that completes). Failures of the host itself (its snapshot cannot be saved or
+  read, the transfer cannot start, a newer connection of the same player replaces an older one) cost the joiner
+  nothing. `ResolveDuplicate` replaces an
   older connection of the same Steam user, unless it is still loading (then the new attempt is refused with
   `HostPreparing`, which the client treats as retryable). The duplicate is resolved only here, after the password.
 - `TryAdmit` then compares the build id (first 48 bits of the SHA-256 of the loaded DLL,
@@ -430,11 +443,16 @@ because a `Spawn` of a bound id reconciles in place and a despawn of an unknown 
 
 Timeouts on the host: snapshot not delivered by the save system after 360 s (abandoned; waiting joiners told), a joiner
 silent for 180 s, a download without progress on the host's side (no snapshot bytes leave it, and the joiner does not
-move on to loading) for 180 s, a load whose reported progress does not grow for 300 s or that takes more than
-20 minutes, re-sends of more than twice the snapshot (have-bitmaps), a join longer than 30 minutes in total. A dropped
-joiner gets `Control Dropped` (a technical removal; its game may rejoin), and a join that ends before the player is live
-counts towards the join cooldown. On the client: 30 s to connect and handshake, 300 s waiting for the snapshot, 120 s
-without a chunk, 20 minutes for the load, 120 s waiting for `Live`.
+move on to loading) for 180 s, a load that shows no sign of work for 300 s or that takes more than 20 minutes, re-sends
+of more than twice the snapshot (have-bitmaps), a join longer than 30 minutes in total. The game's own load progress
+stands still through a saved game's whole deserialization (1 before the load, 0 throughout, 1 at the first simulation
+step), so the joiner's `LoadProgress` reports also carry a load heartbeat: the frames its game ran while loading. The
+load watchdog counts the growth of either; an honest slow load ends only at the 20-minute limit. A dropped joiner gets
+`Control Dropped` (a technical removal; its game may rejoin, except after a join that ran out of time: that one would
+take as long again), and a join that ends before the player is live counts towards the join cooldown. On the client:
+30 s to connect and handshake, 420 s waiting for the snapshot (longer than the host's own 360 s, so the host gives up
+first and says why), 120 s without a chunk, 20 minutes for the load (not retried automatically), 120 s waiting for
+`Live`.
 
 ### Live session
 
@@ -462,7 +480,8 @@ When a client session ends unexpectedly while the player is in the host's city,
 [`RejoinController`](../src/SkylineTogether.Core/Session/RejoinController.cs) takes over: the city stays paused and
 does not autosave. Retryable ends (connection lost, unreachable host, timeout, failed join, `HostPreparing`, accepted resync)
 rejoin automatically through the normal join path (fresh snapshot) with backoff 2, 5, 10, 20, 30, 30 s, at most six
-attempts; everything else, and the end of the attempts, asks the player: reconnect, main menu, or keep the city as an
+attempts; a refusal with a "retry-after" record waits that long instead and spends no attempt (a wait of more than
+30 minutes asks the player); everything else, and the end of the attempts, asks the player: reconnect, main menu, or keep the city as an
 offline copy. A local fault that may have damaged the replica (a critical feature tripped) is offered, never
 automatic, because a deterministic fault would loop.
 
@@ -474,7 +493,10 @@ Roles are `Host`, `CoHost`, `Builder` (the default) and `Viewer`
 `Permission` and viewers only `Chat`; the host checks the sender's role on every proposal, intent, global-state edit,
 speed request and mod channel message. Viewers' tools never apply locally (`ViewerGateSystem`), which is comfort; the host's check is the
 rule. [`Moderation`](../src/SkylineTogether.Core/Session/JoinSecurity.cs): co-hosts may kick builders and viewers and
-switch them between builder and viewer; only the host bans, appoints co-hosts and changes session options.
+switch them between builder and viewer; only the host bans, appoints co-hosts and changes session options. Roles are
+remembered for the session: under an authenticated Steam ID any role, under an address (direct or unauthenticated
+connections, an IPv6 address by its /64 network) only the viewer role, because an address is shared behind one router,
+carrier NAT or VPN (`SessionHost.MayRememberRole`).
 
 ## Transport
 
@@ -719,7 +741,11 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
    values, a null `PrefabRef` or zero edge nodes). An existing entity keeps its value when the new one names something
    not here, unless the kept value itself names an entity that is gone, deleted or despawned by this batch (its own
    `Serialize` names its references, `EntityRefCollector`): then the new value is written with the unresolved
-   references null;
+   references null. Required links (an object's `Owner`, an edge's nodes,
+   [`UnresolvedValueRule`](../src/SkylineTogether.Core/Sync/UnresolvedValueRule.cs)) are never written as null over an
+   existing value: the old value stays, and when it names something gone or deleted the dangling pass deletes the entity
+   and asks the host for it. When the apply throws, a new entity that was written but would dangle (its node's spawn was
+   dropped earlier in the same apply) is rolled back too;
 6. applies despawns with `Deleted`, and on clients
    [`DeletionCascade`](../src/SkylineTogether/Sync/DeletionCascade.cs) removes references to the despawned entity
    (renters, workers, students, household members, hotel guests, ...) that the gated vanilla cleanup systems would have
@@ -754,8 +780,14 @@ entity the player is dragging with a direct-write mod tool is held against the h
 with a rejoin offer. Acknowledging a batch tells the host it may reuse the ids the batch despawned, so a batch whose
 apply threw is acknowledged only once its despawns are applied
 ([`FailedBatchRecovery`](../src/SkylineTogether.Core/Sync/ApplyTransaction.cs): every despawn except one followed by a
-record of the same id; the rest of the batch is asked for again). A batch that cannot be decoded, or whose despawns
-cannot be applied, is never acknowledged: replication is switched off, which ends the session with a rejoin offer.
+record of the same id; the rest of the batch is asked for again). A despawn counts as applied when its id is unbound
+and its entity is gone or tagged `Deleted` (`FailedBatchRecovery.CountNotApplied`; a client's despawn whose clean-up
+throws finishes it best effort and tags the entity anyway, and a batch that leaves an untagged entity behind is handled
+as a failed one). A batch that cannot be decoded, or whose despawns cannot be applied, is never acknowledged:
+replication is switched off, which ends the session with a rejoin offer. Mover batches follow the same rule, and their
+despawns are applied even while the movers feature is off. Value messages wait for queued structure batches at most
+10 s ([`ValueHoldRule`](../src/SkylineTogether.Core/Sync/ValueHoldRule.cs)): their acknowledgement holds block every
+later acknowledgement.
 On the host, a proposal that throws while being committed is rolled back on its client like a refused one
 (`RejectReason.HostError`).
 
@@ -1191,8 +1223,12 @@ lost or failed: movers only it has are removed at once (riders released, ids unb
 they were missing in two rosters in a row ([`MoverRosterAudit`](../src/SkylineTogether.Core/Sync/MoverRoster.cs), sent as
 an integrity `ResendEntities` request; the host answers with the mover's spawn and agent links to that client only). A
 mover that keeps not arriving (a vehicle asset this client lacks) is asked for again with doubling pauses, up to 64
-rosters of its window, and starts over once it arrived. A mover record creates an entity only from a vehicle or
-creature prefab. On
+rosters of its window, and starts over once it arrived or the host despawned its id. A mover record creates an entity
+only from a vehicle or creature prefab. Mover records carry their id's generation: a client replaces a mover still bound
+under a reused id (by generation, else by prefab: a mover never changes its prefab) the way a despawn removes it, and the
+codec removes a mover it deletes (a stale binding replaced by a record of another family) through the same path, riders
+released and trailers along. Stray riders of a vehicle deleted on a client are released in the same frame, at the end
+of the Modification phases. On
 the host, a tracked mover whose entity vanished without a `Deleted` tag (so no despawn was ever captured) is despawned
 when its window comes up. The client's orphan sweep at going live only removes snapshot movers without a host id;
 movers with an id the host no longer uses are the roster's job. [`MoverClient`](../src/SkylineTogether/Sync/MoverClient.cs) applies the records after the
@@ -1265,10 +1301,11 @@ unlocked-prefab set reaches clients on change (at most once a second) and is rep
 
 - **Statistics** ([`StatisticsSync`](../src/SkylineTogether/Sync/StatisticsSync.cs)): changed series keyed by
   (statistic, parameter), written into the entities the client's own lookup names (none created or destroyed). After
-  the first whole series only the appended samples travel
-  ([`StatisticsDelta`](../src/SkylineTogether.Core/Sync/StatisticsMessage.cs)); each message names the host buffer
-  length its samples end at, so a receiver appends exactly what it lacks, and a series that does not continue the last
-  one sent goes whole.
+  the first whole series only the newest sample sent (the game adds events into it in place) and the samples appended
+  since travel ([`StatisticsDelta`](../src/SkylineTogether.Core/Sync/StatisticsMessage.cs)); each message names the host
+  buffer length its samples end at, so a receiver overwrites the samples it holds and appends what it lacks, and a series
+  whose older samples changed (or that is shorter) goes whole. A series is recorded as sent once its message is on its
+  way. Limit: a client that missed an append keeps that series until the host sends it whole.
 - **Icons** ([`IconSync`](../src/SkylineTogether/Sync/IconSync.cs)) are host data: complete icon sets of changed
   owners (targets by net id or derived key) plus a periodic digest. On clients `IconAuthorityFilterSystem` drops local
   icon decisions from the vanilla command queues and reconciles changed owners through one command buffer; repeated
@@ -1398,11 +1435,14 @@ computed with the UI's own functions; clients compare their own rows and re-send
   its code. Core's [`ModClassifier`](../src/SkylineTogether.Core/Modding/ModClassifier.cs) turns the facts and the
   mod's own declarations into decisions: scope (client-local only when declared or provably unable to touch shared
   state; a failed scan is world-affecting), component treatment, system treatment on clients, tool capture
-  (direct-write unless declared pipeline) and host settings. A system in a UI phase that calls an `EntityManager` or
-  `EntityCommandBuffer` write (its own code or its nested jobs) writes the world when its player clicks, so it is
-  world-affecting and runs everywhere; Harmony patches of the game's UI types that write shared state (policies,
-  upgrades, the info panel's actions, names, colours, visual customisation, map tiles, the water panel, the line
-  overview) do not count as presentation. The result becomes a
+  (direct-write unless declared pipeline) and host settings. A system in a UI phase a player clicks (`UIUpdate`,
+  `UITooltip`) that calls an `EntityManager` or `EntityCommandBuffer` write (its own code or its nested jobs; writes of
+  presentation-only types such as `BatchesUpdated` and `Highlighted` excepted) or the game's city-changing calls
+  (service budgets, tax rates, loans, map tile purchases) writes the world when its player clicks, so it is
+  world-affecting and runs everywhere; rendering, culling, raycast and gizmo systems write entities of their own and stay
+  presentation. Harmony patches of the game's UI types that write shared state (policies, upgrades, the info panel's
+  actions, names, colours, visual customisation, the line overview, service budgets, taxes, loans, map tiles, chirp
+  likes, districts, the editor's map and water panels) do not count as presentation. The result becomes a
   [`GenericModAdapter`](../src/SkylineTogether/Compat/GenericModAdapter.cs).
 - **Built-in adapters** ([`ModAdapter`](../src/SkylineTogether/Compat/ModAdapter.cs), names resolved by reflection and
   checked at startup, an adapter whose names no longer match turns itself off): Traffic, Move It, Anarchy, Better
@@ -1410,14 +1450,19 @@ computed with the UI's own functions; clients compare their own rows and re-send
   Tool, Find It ([`ModCompat`](../src/SkylineTogether/Compat/ModCompat.cs)).
 - **Gates.** Mod systems that must not run on a joining or live client are switched off and restored at session end;
   mod systems declared as simulation can stay on. A gated system its mod switches back on (for example when a city
-  finished loading) is held off again every frame; the mod's wish is what it gets back at session end.
+  finished loading) is held off again every frame from the start of the join; it gets the state recorded before the
+  hold back at session end (a mod's one-shot system is not switched on, and run again, then).
 - **Untagged mod state.** [`ModStateWatcher`](../src/SkylineTogether/Compat/ModStateWatcher.cs) finds mod components
   written without an update tag (chunk change versions plus a slow re-hash sweep) on the host and on clients; mod data
   entities referenced by replicated values are bound and sent with them (dependency binding). A client proposes such
-  a change only while a tool applies or when its player pressed or released a button within 3 s
-  ([`ModStateProposalRule`](../src/SkylineTogether.Core/Modding/ModStateProposalRule.cs)); otherwise it is the client's
-  own copy of a mod system recomputing it, and the host's value, which arrives with the host's records, is the one that
-  counts. Limit: a mod system that recomputes a saved component while the player is clicking is still proposed then.
+  a change only while a tool applies or within 3 s of input that can edit
+  ([`ModStateProposalRule`](../src/SkylineTogether.Core/Modding/ModStateProposalRule.cs),
+  [`EditInput`](../src/SkylineTogether.Core/Modding/EditInput.cs): the primary button or the wheel over a panel, held
+  or not; keys that are no camera keys, held or not; gamepad buttons and the d-pad; not camera input, world clicks
+  without a tool or typing in a text field); otherwise it is the client's own copy of a mod system recomputing it, and
+  the host's value, which arrives with the host's records, is the one that counts. A change that is not proposed is not
+  consumed: the watcher keeps the state before it, so the player's next input proposes it unless the host's value
+  replaced it first. Limit: a mod system that recomputes a saved component while the player edits is still proposed then.
 - **Edit hold** for direct-write tools ([client apply](#client-apply)).
 - **Mod settings.** [`ModSettingsSync`](../src/SkylineTogether/Compat/ModSettingsSync.cs) applies the host's values of
   listed settings on clients for the session and restores the player's own values afterwards.
@@ -1443,8 +1488,9 @@ and keeps recent lines for the dump. Every line has a
 [`LogCategory`](../src/SkylineTogether.Core/Contracts/Environment/LogCategory.cs).
 
 The file stays bounded whatever peers send
-([`LogFloodGuard`](../src/SkylineTogether.Core/Diagnostics/LogFloodGuard.cs)): non-error lines are limited to 200 per
-second (burst 2000) and errors to 20 per second (burst 200); after 64 MiB in one run only errors are written, up to a
+([`LogFloodGuard`](../src/SkylineTogether.Core/Diagnostics/LogFloodGuard.cs)): information lines are limited to 200 per
+second (burst 2000), warnings to 50 per second (burst 500) and errors to 20 per second (burst 200), so a flood of one
+kind never hides the others; after 64 MiB in one run only errors are written, up to a
 further 16 MiB, then nothing. The next line written is preceded by `N log line(s) left out`. Warnings caused by peer
 input are logged once per key.
 

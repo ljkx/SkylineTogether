@@ -8,14 +8,15 @@ All notable changes to this project are documented in this file. The format is b
 First regular release: safer joining and passwords, a viewer-first option for hosts, and fixes for crashes and
 differences on joined players' games. Skyline Together is available on
 [Paradox Mods](https://mods.paradoxplaza.com/mods/163578/Windows) and on GitHub with the same build, so players of both
-can play together. Everyone in a session must use this version; earlier versions cannot join (network protocol 7).
+can play together. Everyone in a session must use this version; earlier versions cannot join (network protocol 8).
 From this release on, versions have no pre-release suffix.
 
 ### Added
 
 - **New players join as viewers** (host option, off by default): players who join a session for the first time can
   watch and chat, but not build, until the host or a co-host makes them builders.
-- **Roles are remembered** for the session: a player who rejoins gets the same role (viewer, builder or co-host).
+- **Roles are remembered** for the session: a player who rejoins gets the same role (viewer, builder or co-host). A
+  player who joined by direct IP without Steam is remembered by address only as a viewer (an address can be shared).
 - **Uninstall cleans up**: the installer's uninstall also removes the mod's temporary files, and its settings (session
   password, ban list) after a confirmation or with `-RemoveSettings`.
 - **Checksums**: the release notes list the SHA-256 checksums of both zips, with a `Get-FileHash` line to check a
@@ -26,9 +27,9 @@ From this release on, versions have no pre-release suffix.
 ### Changed
 
 - **Players of earlier versions cannot join** this version, and solo test recordings made with earlier versions cannot
-  be replayed (network protocol 7).
-  - Developer detail: hardened handshake, id generation in entity records, painted-cell masks in resource paint
-    patches, statistics appends.
+  be replayed (network protocol 8).
+  - Developer detail: hardened handshake, id generation in entity and mover records, painted-cell masks in resource
+    paint patches, statistics appends that resend the newest sample, a load heartbeat in the load progress report.
 - **Messages from the host appear in each player's language**: chat lines such as "… joined the city", kick, ban and
   end reasons, and refusal details.
 - **Clearer join screens.** A password lockout has its own screen ("Too many wrong passwords") instead of "Wrong
@@ -62,25 +63,36 @@ Joining and passwords are harder to abuse. Details: [SECURITY.md](SECURITY.md).
   200 000 PBKDF2 rounds instead of 10 000.
   - The proof covers the host's Steam ID as dialled, both nonces and the session; the host proves the password back
     before the joining game sends its mod lists; the key is derived off the main thread.
+  - On a direct (IP) join, a host that skips the password check is left at once ("Couldn't confirm the host"), and a
+    joining game reads nothing from a host before it is authenticated.
 - **No one can take over a player's place.** A connection with the Steam ID of a player in the session can no longer
   replace that player before it has proven the password.
   - Connections Steam flags as unauthenticated are identified by their address, and only the direct-IP socket accepts
     them.
 - **Joins can no longer stall the host.** The host drops a join whose download or load makes no progress, caps
-  re-sends of the city, and makes a player whose joins keep failing wait (30 seconds up to 30 minutes).
-  - Handshakes are limited separately from players (8 at once, 2 per Steam ID or address, 10 seconds for the hello),
-    and the large receive buffer is given only to admitted players.
+  re-sends of the city, and makes a player whose joins keep failing wait (30 seconds up to 30 minutes, longer once
+  their failed joins held everyone's game for more than half an hour).
+  - Handshakes are limited separately from players (8 at once, 2 per Steam ID or address, 10 seconds for the hello,
+    15 seconds for the password answer, at most 20 connections a minute from one Steam ID or address), and the large
+    receive buffer is given only to admitted players.
 - **Bans also cover the address** of a player who joined by direct IP; IPv6 bans and password lockouts cover the /64.
 - **Steam invites** are followed only while the lobby belongs to the host it names.
 - **Bundled assets stay in their folder.** A host's bundled assets are added only as prefab and texture assets with
   plain names inside the join folder.
 - **Logs stay small**: rate-limited and capped at 64 MiB per game start, and per-player warnings no longer grow with
-  names a player chooses.
+  names a player chooses. Strangers connecting over and over can no longer push the host's own warnings out of the log.
 
 ### Fixed
 
 Fixes for crashes and differences on joined players' games, most of them cases where an object's data could end up on
 another object.
+
+- **Big cities can be joined on slower PCs.** A joining player whose game took more than 5 minutes to load the city
+  was dropped (the game's own progress stands still while it reads a saved game) and kept retrying. Loading now counts
+  as progress while the joining game keeps working, up to the 20-minute limit; a load that runs out of time is not
+  retried automatically, and an automatic rejoin waits as long as the host asks instead of using up its attempts.
+- **No more crashes from objects without an owner.** An update whose owner a joined player's game lacks no longer leaves
+  an object pointing at nothing; the object is removed and asked for again.
 
 - **Buildings no longer turn into roads on joined players.** Every object record carries its id's generation: a joined
   player whose game still holds an older object under a reused id deletes it cleanly and creates the new one.
@@ -97,27 +109,36 @@ another object.
   switch terrain sync off for everyone; such strokes are checked first, and a player whose strokes keep failing is
   ignored.
 - **Mods behave on joined players.** A joined player's copy of a mod system no longer sends its own recomputed values
-  to the host as the player's edits; mods whose panels write the city count as world-affecting; mod systems switched
-  off on joined players stay off when the mod switches them on again; mods always see the session end.
+  to the host as the player's edits (moving the camera or chatting no longer counts as editing, and a mod-panel change
+  made by a long slider drag or a held key is no longer lost); mods whose panels write the city count as
+  world-affecting, mods that only draw things do not; mod systems switched off on joined players stay off from the
+  start of the join, and are not switched on at the session end; mods always see the session end.
 - **Events, disasters and chirps** deleted after the events feature switched itself off are deleted for everyone.
 - **Resource painting** merges only the painted cells (it overwrote nearby groundwater with older values) and keeps
   groundwater consistent.
-- **Vehicles and passengers.** Riders of a deleted vehicle that its passenger list missed leave it; a vehicle a
-  player's game cannot create (a missing asset) is asked for less and less often; no duplicate passenger entries while
-  catching up.
+- **Vehicles and passengers.** Riders of a deleted vehicle that its passenger list missed leave it, in the same frame;
+  a vehicle still held under a reused id is replaced (its passengers released) instead of taking another vehicle's
+  data; vehicle updates that fail are not confirmed to the host; a vehicle a player's game cannot create (a missing
+  asset) is asked for less and less often; no duplicate passenger entries while catching up.
 - **Fewer needless repairs.** The integrity check no longer re-sends whole areas during a host's bulk edit or a
   catch-up, and the resync offer no longer counts objects given up in earlier sessions.
 - **Smoother play on joined players.** The orphan check reads the deleted objects' own lists and scans everything at
   most once a second, and the index of who references whom no longer grows for the whole session.
-- **Less network traffic in older cities**: statistics send only the new samples instead of every series' whole
-  history (megabytes) at every sample.
+- **Less network traffic in older cities**: statistics send only the newest samples instead of every series' whole
+  history (megabytes), also for the income, trade and population statistics the game updates all the time.
 - **Max players** raised while hosting takes effect at once (later joiners were refused at the old limit).
 - **Joining by host name** no longer freezes the game while the name is looked up.
 - **Overlapping joins**: joining is not possible while an earlier join's city is still loading, and an earlier join's
   asset import no longer starts loading a newer, incomplete download.
-- **Installer**: works in user folders whose names contain `[` or `]`, keeps the installed copy when an update fails,
-  and with `-NoPause` stops instead of waiting while the game is running.
-- Smaller fixes: GPU readbacks time out, flow status messages are dropped while that feature is off, a tool edit of an
+- **Installer**: works in user folders whose names contain `[` or `]`, keeps the installed copy when an update fails
+  (also when putting it back fails: it then says where the copy is), with `-NoPause` stops instead of waiting while the
+  game is running, and hides the short form of the user folder in collected logs.
+- **Fewer unfair waits.** A join that failed because of the host (its city could not be saved or sent) or because
+  the same player connected again no longer makes that player wait; a player who rejoins after a crash keeps their
+  name instead of "Name (2)"; a player's last messages before leaving are no longer lost.
+- **Joined players are not dropped while catching up** on a slow PC: values waiting for the city's updates no longer
+  hold back the confirmations the host watches.
+- Smaller fixes: a player name with `{...}` in it shows as typed, GPU readbacks time out, flow status messages are dropped while that feature is off, a tool edit of an
   object the host updated in the same frame is sent, and the icon filter and viewer gate recover in the next session.
 
 ## [0.1.0-alpha.4] - 2026-10-16

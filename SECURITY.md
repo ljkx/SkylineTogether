@@ -54,8 +54,9 @@ Everything received from the network is treated as untrusted:
 - Texts from other players are sanitized (control characters, bidirectional overrides and line separators are removed).
 - Before a player is admitted, the host's game only accepts hello, control and ping messages (any other kind ends the
   connection unread), at most 64 KiB each until the password is proven and 1 MiB after it, and 4 MiB of decompressed
-  handshake data in total. A connection must send its hello within 10 seconds and finish the handshake within 30;
-  the Steam transport allows 8 handshakes at once (2 per Steam ID or address) besides the players, and gives a
+  handshake data in total. A connection must send its hello within 10 seconds, answer a password challenge within 15
+  and finish the handshake within 30; a Steam ID or address that opens more than 20 connections a minute is closed
+  before its hello; the Steam transport allows 8 handshakes at once (2 per Steam ID or address) besides the players, and gives a
   connection its large receive buffer only once it is admitted. Pings are not answered before admission. Chat needs
   admission; presence and other messages need a fully joined player. The host never trusts the sender id or the
   Steam ID a message claims.
@@ -66,10 +67,13 @@ Everything received from the network is treated as untrusted:
   ids, the values of the mod settings a host pushes) only after the host accepted its password (or said none is
   needed) and proved the password itself. A second connection of a player who is already in the session replaces the
   old one only once it is fully admitted.
-- A joining player's watchdogs run on the host: a download that makes no progress for 3 minutes, a load whose reported
-  progress does not grow for 5 minutes or that takes more than 20 minutes, and a joiner that keeps asking for the
-  city again are dropped. Joins that do not finish make the same Steam ID or address wait before the next one (the
-  first is free, then 30 seconds, 2, 10 and 30 minutes). A player's "Join anyway" (when the host lets
+- A joining player's watchdogs run on the host: a download that makes no progress for 3 minutes, a load that shows no
+  sign of work for 5 minutes (neither its progress nor its load heartbeat, the frames its game ran while loading, grows)
+  or that takes more than 20 minutes, and a joiner that keeps asking for the city again are dropped. Joins that do not
+  finish make the same Steam ID or address wait before the next one (the first is free unless a watchdog dropped it,
+  then 30 seconds, 2, 10 and 30 minutes); once one player's failed joins held everyone's game for more than 30 minutes
+  in total, the wait is at least as long as the excess (at most 4 hours). Joins that end through the host's own fault
+  cost nothing. A player's "Join anyway" (when the host lets
   players join with different mods) only skips the comparison of code mods and asset packs; bans, the join policy, the
   password, the build, game version, DLC and the player limit are checked as always.
 - Per-player rate limits apply to proposals (120 per second, burst 240), presence updates and integrity repair
@@ -84,8 +88,12 @@ salt ‖ host Steam ID)`, where the label names the direction and the host Steam
 player's game answers first; the host draws a fresh nonce for every challenge, accepts one answer per challenge (a
 recorded answer is useless on another connection) and compares it in constant time, then proves the password back. The
 joining player's game checks the host's proof before it sends anything else, so a host that does not know the password
-is detected and learns no mod lists. An answer relayed through another Steam ID fails, because it names the Steam ID
-the player dialled.
+is detected and learns no mod lists. On a direct (IP) connection the joining player's game also requires the challenge:
+a host there always needs a password, so one that skips the challenge (a spoofed address or host name) is left before
+the joiner sends anything, with the "Couldn't confirm the host" screen; until the host authenticated it, the joining
+game reads nothing but refusals, pings and the password messages (no welcome, no city). Over Steam the host is the
+Steam account the player dialled, which Steam authenticates. An answer relayed through another Steam ID fails, because
+it names the Steam ID the player dialled.
 
 Wrong answers are limited per Steam ID and per address (for direct and unauthenticated connections; an IPv6 address
 counts as its /64 network): three are free, then the identity is locked out for 5 seconds, doubling with every further
@@ -98,7 +106,8 @@ identity. A locked-out player is told how long to wait (not "wrong password").
   for a player who joined over direct IP (an IPv6 address by its /64 network). The ban list is stored with the host's
   settings and can be edited in the host options (unban).
 - **Roles are remembered** for the session: a player the host made a viewer (or co-host) gets the same role when they
-  join again. With **New players join as viewers** (host option, off by default) players who join for the first time in
+  join again. A player without a Steam identity (direct IP) is remembered by address, which several people can share
+  (a home router, a carrier's NAT, a VPN): by address only the viewer role is remembered, never builder or co-host. With **New players join as viewers** (host option, off by default) players who join for the first time in
   a session start as viewers until the host or a co-host makes them builders.
 - A player who stops responding, cannot keep up or whose changes keep failing is **dropped**, not kicked: their game
   offers to join again. Names are unique in a session and never the host's; the host's chat lines carry a badge and
