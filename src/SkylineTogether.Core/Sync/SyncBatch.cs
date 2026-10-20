@@ -213,7 +213,7 @@ namespace SkylineTogether.Core.Sync
         /// <summary>For <see cref="SyncRecordKind.Spawn"/> and <see cref="SyncRecordKind.Upsert"/>: the full replicated type set
         /// (components not listed are removed on the receiver when they are replicated types).</summary>
         public bool CompleteSet;
-        /// <summary>For entity records: the generation of <see cref="NetId"/> on the sender (<see cref="NetIdAllocator.GenerationOf"/>).</summary>
+        /// <summary>For entity and mover records: the generation of <see cref="NetId"/> on the sender (<see cref="NetIdAllocator.GenerationOf"/>).</summary>
         public byte Generation;
         public readonly List<SyncComponent> Components = new List<SyncComponent>();
         /// <summary>For <see cref="SyncRecordKind.Prefab"/>: a readable name (diagnostics) and the game-encoded PrefabID.</summary>
@@ -724,12 +724,17 @@ namespace SkylineTogether.Core.Sync
                 _count++;
             }
 
-            /// <summary>A mover spawn or state record (ARCHITECTURE.md#movers).</summary>
-            public void Mover(SyncRecordKind kind, uint netId, MoverRecord mover)
+            /// <summary>
+            /// A mover spawn or state record (ARCHITECTURE.md#movers): <c>u8 kind | varuint netId | u8 generation | mover</c>;
+            /// <paramref name="generation"/> is the id's generation on the host (<see cref="SyncRecord.Generation"/>), so a
+            /// client replaces a mover still bound under a reused id instead of writing another mover's state into it.
+            /// </summary>
+            public void Mover(SyncRecordKind kind, uint netId, MoverRecord mover, byte generation = 0)
             {
                 if (kind != SyncRecordKind.MoverSpawn && kind != SyncRecordKind.MoverState) throw new ArgumentException("not a mover record kind", nameof(kind));
                 _w.WriteByte((byte)kind);
                 _w.WriteVarUInt32(netId);
+                _w.WriteByte(generation);
                 MoverRecordCodec.Write(_w, mover);
                 _count++;
             }
@@ -1128,6 +1133,7 @@ namespace SkylineTogether.Core.Sync
                 case SyncRecordKind.MoverSpawn:
                 case SyncRecordKind.MoverState:
                     rec.NetId = r.ReadVarUInt32();
+                    rec.Generation = r.ReadByte();
                     rec.Mover = MoverRecordCodec.Read(r);
                     return rec;
                 case SyncRecordKind.MoverDespawn:

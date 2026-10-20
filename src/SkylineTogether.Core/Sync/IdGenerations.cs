@@ -105,4 +105,17 @@ namespace SkylineTogether.Core.Sync
             return BoundRecordVerdict.Write;
         }
     }
+
+    /// <summary>
+    /// Client: whether a mover record describes the mover its id is bound to here (ARCHITECTURE.md#movers): by the id's
+    /// generation when known (a mover record carries it, <see cref="SyncRecord.Generation"/>), else by the prefab, which
+    /// a vehicle or creature never changes (a different prefab is another mover under a reused id). Pure.
+    /// </summary>
+    public static class MoverBindingCheck
+    {
+        public static BoundRecordVerdict Check(byte recordGeneration, bool boundGenerationKnown, byte boundGeneration, bool prefabsKnown, bool samePrefab)
+        {
+            return BoundRecordCheck.Check(recordGeneration, boundGenerationKnown, boundGeneration, Family.Mover, Family.Mover, prefabsKnown, samePrefab);
+        }
+    }
 }

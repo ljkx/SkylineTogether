@@ -126,7 +126,7 @@ namespace SkylineTogether.Core.Tests.Protocol
         {
             { "sync batch: entities", 0x12CF5952F2AC3DC3UL },
             { "sync batch: integrity", 0x7DFA3BB1AB8E7C45UL },
-            { "sync batch: movers and proposals", 0x37705AD13E53C4A5UL },
+            { "sync batch: movers and proposals", 0x35E5AC8B48183397UL },
             { "global: ints", 0xD6C7088F4B398856UL },
             { "global: floats", 0x95F0AA886B4264D8UL },
             { "global: strings", 0xF98F8AF3C29C0FC8UL },

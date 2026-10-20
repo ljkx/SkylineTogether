@@ -279,22 +279,7 @@ namespace SkylineTogether.Sync
                 if (n > 0 && Perf.Elapsed(start) > allowance) break;
                 n++;
                 (byte[] data, long seq) = _batches.Dequeue();
-                try
-                {
-                    ApplyBatch(em, SyncBatch.Read(data, 0, data.Length, _decodePool));
-                }
-                catch (DecodeException ex)
-                {
-                    _log.Warn(LogCategory.Replication, "dropped a malformed mover batch: " + ex.Message);
-                }
-                catch (Exception ex)
-                {
-                    Diagnostics.Guard.Report(Diagnostics.Features.Movers, "applying a mover batch", ex);
-                }
-                finally
-                {
-                    if (seq != 0) _sessions.Client?.ApplyAcks.Release(seq);
-                }
+                if (!ApplyOrRefuse(em, data, seq, false)) return;
             }
             if (n > 0)
             {
@@ -304,6 +289,60 @@ namespace SkylineTogether.Sync
             }
             if (_pendingLinks.Count > 0) RetryLinks(em);
             if (_rosterRequests.Count > 0) SendRosterRequests();
+            if (_releasedVehicles.Count > 0) ReleaseStrayRiders(em);
+        }
+
+        /// <summary>
+        /// Applies one mover batch (only its despawns with <paramref name="despawnsOnly"/>) and releases its acknowledgement
+        /// hold, the rule of the structure batches (ARCHITECTURE.md#client-apply): the host reuses a despawned mover's id once
+        /// every peer acknowledged the batch, so a batch that cannot be read, or whose despawn left its mover, is never
+        /// acknowledged; replication is switched off instead, which ends the session with a rejoin offer. False then.
+        /// </summary>
+        private bool ApplyOrRefuse(EntityManager em, byte[] data, long seq, bool despawnsOnly)
+        {
+            int notApplied;
+            try
+            {
+                notApplied = ApplyBatch(em, SyncBatch.Read(data, 0, data.Length, _decodePool), despawnsOnly);
+            }
+            catch (Exception ex)
+            {
+                // SyncBatch.Read threw (every record and every later pass is guarded on its own): what the batch despawned is unknown
+                _log.Warn(LogCategory.Replication, "a mover batch could not be read: " + ex.Message);
+                Diagnostics.Guard.Disable(Diagnostics.Features.Replication, "a mover batch from the host could not be read (" + ex.GetType().Name + "), so what it deleted is unknown");
+                return false;
+            }
+            if (notApplied > 0)
+            {
+                Diagnostics.Guard.Disable(Diagnostics.Features.Replication, notApplied + " mover deletion(s) could not be applied");
+                return false;
+            }
+            if (seq != 0) _sessions.Client?.ApplyAcks.Release(seq);
+            return true;
+        }
+
+        /// <summary>
+        /// Client with the movers feature off (it tripped): the mover batches' despawns are still applied (the host reuses
+        /// those ids once this client acknowledges them, and a stale mover binding is what a later record of another
+        /// family would find), everything else in them is dropped.
+        /// </summary>
+        public void ApplyDespawnsOnly()
+        {
+            _motion.Clear(); // nothing will drain it
+            if (_batches.Count == 0) return;
+            if (_sessions.Client == null || !EnsureWorld())
+            {
+                DropHeld();
+                return;
+            }
+            EntityManager em = _world.EntityManager;
+            int n = 0;
+            while (_batches.Count > 0 && n < MaxBatchesPerFrame)
+            {
+                n++;
+                (byte[] data, long seq) = _batches.Dequeue();
+                if (!ApplyOrRefuse(em, data, seq, true)) return;
+            }
             if (_releasedVehicles.Count > 0) ReleaseStrayRiders(em);
         }
 
@@ -460,11 +499,15 @@ namespace SkylineTogether.Sync
             _log.Info(LogCategory.Gate, "mover gate closed: " + _gated.Count + " of " + Gated.Length + " systems off");
         }
 
-        private void ApplyBatch(EntityManager em, List<SyncRecord> records)
+        /// <summary>Applies a mover batch; returns the number of its despawns that left their mover (never acknowledged).</summary>
+        private int ApplyBatch(EntityManager em, List<SyncRecord> records, bool despawnsOnly = false)
         {
             var touched = new List<(Entity, MoverRecord, bool)>();
+            int despawnsNotApplied = 0;
             foreach (SyncRecord r in records)
             {
+                if (despawnsOnly && r.Kind != SyncRecordKind.MoverDespawn) continue;
+                Entity despawning = Entity.Null;
                 try
                 {
                     switch (r.Kind)
@@ -473,6 +516,17 @@ namespace SkylineTogether.Sync
                         case SyncRecordKind.MoverState:
                         {
                             Entity e = _ids.GetEntity(r.NetId);
+                            if (e != Entity.Null && em.Exists(e) && !em.HasComponent<Deleted>(e) && _ids.GetFamily(r.NetId) == Family.Mover && IsStale(em, e, r))
+                            {
+                                // the id is still bound here to a mover the host despawned (a lost despawn) and reused for
+                                // another one: the old mover goes the way a despawn removes it (riders released, trailers
+                                // along, motion and links forgotten), the record creates the new one
+                                _staleReplaced++;
+                                NoteFailure("mover #" + r.NetId + " was still bound here to an older mover (generation or prefab differs); replaced");
+                                DeleteLocally(em, e);
+                                if (_ids.GetEntity(r.NetId) == e) _ids.Unbind(r.NetId);
+                                e = Entity.Null;
+                            }
                             // an id bound to something that is not a mover here (ids out of step) is never
                             // turned into one: that would swap a building's or a road's components
                             if (e != Entity.Null && em.Exists(e) && !em.HasComponent<Deleted>(e) && _ids.GetFamily(r.NetId) != Family.Mover)
@@ -490,6 +544,8 @@ namespace SkylineTogether.Sync
                             {
                                 e = Create(em, r.NetId, r.Mover);
                                 if (e == Entity.Null) break;
+                                _ids.NoteGeneration(r.NetId, r.Generation);
+                                ForgetBackoff(r.NetId);
                                 _createdThisFrame.Add(e);
                                 touched.Add((e, r.Mover, true));
                             }
@@ -515,7 +571,9 @@ namespace SkylineTogether.Sync
                             _ids.Unbind(r.NetId);
                             _force.Remove(r.NetId);
                             _pendingLinks.Remove(r.NetId);
+                            ForgetBackoff(r.NetId);
                             if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) break;
+                            despawning = e;
                             // riders of a vehicle (ObjectEmergeSystem's job on the host, gated here) must not
                             // keep a Relative/CurrentVehicle pointing at it once it is destroyed (RelativeObjectSystem
                             // indexes the parent's bone history unchecked)
@@ -529,8 +587,10 @@ namespace SkylineTogether.Sync
                 catch (Exception ex)
                 {
                     NoteFailure("mover record #" + r.NetId + " failed: " + ex.Message);
+                    if (despawning != Entity.Null && !TagDeleted(em, despawning)) despawnsNotApplied++;
                 }
             }
+            if (despawnsOnly) return despawnsNotApplied;
             // states and references after every entity of the batch exists (layouts, riders)
             HashSet<Entity> created = null;
             foreach ((Entity e, MoverRecord rec, bool isNew) in touched)
@@ -575,6 +635,7 @@ namespace SkylineTogether.Sync
                     NoteFailure("mover roster failed: " + ex.Message);
                 }
             }
+            return despawnsNotApplied;
         }
 
         private void ResetRoster()
@@ -773,6 +834,46 @@ namespace SkylineTogether.Sync
                 if (done || now > until) _pendingLinks.Remove(id);
             }
         }
+
+        /// <summary>
+        /// Whether a mover record names another mover than the one its id is bound to here (a despawn this client lost and
+        /// the id reused): by the id's generation when known, else by the prefab (a mover never changes its prefab).
+        /// </summary>
+        private bool IsStale(EntityManager em, Entity e, SyncRecord r)
+        {
+            bool known = _ids.TryGetGeneration(r.NetId, out byte generation);
+            bool prefabsKnown = false, same = true;
+            if (!known && r.Mover != null && em.HasComponent<PrefabRef>(e))
+            {
+                Entity bound = em.GetComponentData<PrefabRef>(e).m_Prefab;
+                Entity named = _ids.GetEntity(r.Mover.PrefabNetId);
+                prefabsKnown = bound != Entity.Null && named != Entity.Null;
+                same = bound == named;
+            }
+            return MoverBindingCheck.Check(r.Generation, known, generation, prefabsKnown, same) == BoundRecordVerdict.Replace;
+        }
+
+        /// <summary>Tags a mover whose despawn threw: deleted anyway (its id is unbound already). False when even that fails.</summary>
+        private bool TagDeleted(EntityManager em, Entity e)
+        {
+            try
+            {
+                if (em.Exists(e) && !em.HasComponent<Deleted>(e)) em.AddComponent<Deleted>(e);
+                return true;
+            }
+            catch (Exception)
+            {
+                return !em.Exists(e) || em.HasComponent<Deleted>(e);
+            }
+        }
+
+        private long _staleReplaced;
+
+        /// <summary>The roster back-off of an id ends with the mover it was for (a reused id starts over).</summary>
+        private void ForgetBackoff(uint id) => _audit.Forget(id);
+
+        /// <summary>Movers still bound under a reused id that a record replaced (diagnostics).</summary>
+        public long StaleReplaced => _staleReplaced;
 
         private Entity Create(EntityManager em, uint netId, MoverRecord rec)
         {

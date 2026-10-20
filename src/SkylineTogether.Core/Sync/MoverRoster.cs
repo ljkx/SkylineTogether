@@ -187,6 +187,16 @@ namespace SkylineTogether.Core.Sync
         /// <summary>Ids currently missing once (waiting for a second roster).</summary>
         public int Pending => _missingOnce.Count;
 
+        /// <summary>
+        /// The host despawned <paramref name="id"/> (or a mover arrived under it): whatever this id waited for belongs to
+        /// the old mover, so a later mover under the reused id is asked for without its back-off.
+        /// </summary>
+        public void Forget(uint id)
+        {
+            _backoff.Remove(id);
+            _missingOnce.Remove(id);
+        }
+
         public void Clear()
         {
             _missingOnce.Clear();

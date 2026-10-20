@@ -1459,6 +1459,29 @@ namespace SkylineTogether.Sync
                 result.Problems.Add("refused to delete #" + netId + " (" + _ids.GetFamily(netId) + ")");
                 return;
             }
+            if (!proposal && e != Entity.Null && em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e) && IsMover(em, e) && DeletionCascade.DeleteMover != null)
+            {
+                // a vehicle or creature (a stale mover binding replaced by a record of another family): deleted the way the
+                // mover channel removes one, its riders released (a rider kept pointing at the destroyed vehicle, which
+                // RelativeObjectSystem indexes unchecked), its trailers along, its motion and pending links forgotten
+                try
+                {
+                    if (DeletionCascade.DeleteMover(em, e))
+                    {
+                        if (_ids.GetEntity(netId) == e) _ids.Unbind(netId);
+                        DeletionCascade.DoneThisFrame.Add(e);
+                        _touch.Remove(e);
+                        result.Touched.Add(e);
+                        result.Despawned++;
+                        _despawnSurvivors.Remove(netId);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Problems.Add("mover removal of #" + netId + ": " + ex.Message);
+                }
+            }
             // the host keeps the binding of a proposed deletion; its capture sees the Deleted tag, broadcasts
             // the despawn to every peer and only then releases the id (unbinding here hid the despawn from the
             // other clients)
@@ -1467,19 +1490,6 @@ namespace SkylineTogether.Sync
             {
                 _despawnSurvivors.Remove(netId);
                 return;
-            }
-            if (!proposal && MoverCleanup != null && IsMover(em, e))
-            {
-                // a vehicle or creature (a stale mover binding replaced by another record, a lost mover despawn): its
-                // riders and passengers are released the way the movers' own despawn does it
-                try
-                {
-                    MoverCleanup(e, result.Touched);
-                }
-                catch (Exception ex)
-                {
-                    result.Problems.Add("mover clean-up of #" + netId + ": " + ex.Message);
-                }
             }
             try
             {
@@ -1565,12 +1575,6 @@ namespace SkylineTogether.Sync
             _despawnSurvivors[netId] = e;
             result.DespawnsNotApplied++;
         }
-
-        /// <summary>
-        /// Client: releases the riders and passengers of a vehicle or creature the codec deletes (a stale mover binding
-        /// replaced by a record of another family); set by the mover sync (the rider pass of its own despawn).
-        /// </summary>
-        public Action<Entity, HashSet<Entity>> MoverCleanup;
 
         private long _staleBindingsTotal;
         private double _lastStaleLog = double.NegativeInfinity;

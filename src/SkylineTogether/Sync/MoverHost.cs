@@ -380,7 +380,7 @@ namespace SkylineTogether.Sync
                         MoverRecord rec = Describe(em, e);
                         if (id == 0 || rec == null) continue;
                         ForgetInterest(id); // a reused id never inherits an old mover's interest
-                        _batch.Mover(SyncRecordKind.MoverSpawn, id, rec);
+                        _batch.Mover(SyncRecordKind.MoverSpawn, id, rec, _ids.GetGeneration(id));
                         HostMover created = Remember(rec);
                         _movers[id] = created;
                         WriteLinks(em, e, id, created, true); // right behind the spawn, same batch
@@ -422,7 +422,7 @@ namespace SkylineTogether.Sync
                         }
                         MoverRecord rec = Describe(em, e);
                         if (rec == null) continue;
-                        _batch.Mover(known == null ? SyncRecordKind.MoverSpawn : SyncRecordKind.MoverState, id, rec);
+                        _batch.Mover(known == null ? SyncRecordKind.MoverSpawn : SyncRecordKind.MoverState, id, rec, _ids.GetGeneration(id));
                         HostMover now = Remember(rec);
                         now.Links = known?.Links;
                         _movers[id] = now;
@@ -491,7 +491,7 @@ namespace SkylineTogether.Sync
                 {
                     MoverRecord rec = Describe(em, e);
                     if (rec == null) continue;
-                    _batch.Mover(SyncRecordKind.MoverState, id, rec);
+                    _batch.Mover(SyncRecordKind.MoverState, id, rec, _ids.GetGeneration(id));
                     HostMover now = Remember(rec);
                     now.Links = known.Links;
                     _movers[id] = now;
@@ -582,7 +582,7 @@ namespace SkylineTogether.Sync
                         if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) continue;
                         MoverRecord rec = Describe(em, e);
                         if (rec == null) continue;
-                        _resendBatch.Mover(SyncRecordKind.MoverSpawn, id, rec);
+                        _resendBatch.Mover(SyncRecordKind.MoverSpawn, id, rec, _ids.GetGeneration(id));
                         MoverAgentLinks links = Links(em, e);
                         if (!links.IsEmpty) _resendBatch.MoverAgents(id, links);
                         _resent++;

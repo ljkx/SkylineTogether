@@ -59,7 +59,17 @@ namespace SkylineTogether.Sync
             if (!SyncController.SessionActive) return;
             if (!Diagnostics.Features.Movers.IsAvailable)
             {
-                MoverSync.Instance?.Client.DropHeld(); // never keep apply acks waiting on a feature that is off
+                // never keep apply acks waiting on a feature that is off; the despawns are still applied (the host
+                // reuses their ids once acknowledged)
+                try
+                {
+                    MoverSync.Instance?.Client.ApplyDespawnsOnly();
+                }
+                catch (Exception ex)
+                {
+                    MoverSync.Instance?.Client.DropHeld();
+                    Diagnostics.Guard.Report(Diagnostics.Features.Replication, "mover despawns (movers off)", ex);
+                }
                 return;
             }
             try

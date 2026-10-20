@@ -129,7 +129,7 @@ namespace SkylineTogether.Core.Tests.Sync
             }
             // update frame above 15
             byte[] bad = (byte[])data.Clone();
-            bad[5 + 1 + 1 + 1 + 1] = 16;   // header(5) | kind | netId | flags | prefab | updateFrame
+            bad[5 + 1 + 1 + 1 + 1 + 1] = 16;   // header(5) | kind | netId | generation | flags | prefab | updateFrame
             Assert.Throws<DecodeException>(() => SyncBatch.Read(bad, 0, bad.Length));
             Assert.Throws<ArgumentException>(() => w.Mover(SyncRecordKind.Spawn, 1, new MoverRecord()));
         }

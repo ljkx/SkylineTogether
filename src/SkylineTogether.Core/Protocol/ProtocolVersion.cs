@@ -28,7 +28,8 @@ namespace SkylineTogether.Core.Protocol
         /// (<c>Session.LocalText</c> in kick, ban, end and drop payloads, keys in chat lines, a "text" record in refusal reports);
         /// 7: the id generation byte in entity records (<see cref="Sync.SyncRecord.Generation"/>), the painted-cell mask of
         /// resource paint patches and statistics appends (<see cref="Sync.StatisticsMessage.TypeMixed"/>); 8: the load heartbeat
-        /// at the end of <see cref="ControlKind.LoadProgress"/> (<see cref="Session.SessionPayloads.WriteLoadProgress"/>).
+        /// at the end of <see cref="ControlKind.LoadProgress"/> (<see cref="Session.SessionPayloads.WriteLoadProgress"/>) and
+        /// the id generation byte in mover records (<see cref="Sync.SyncRecordKind.MoverSpawn"/>, <see cref="Sync.SyncRecordKind.MoverState"/>).
         /// </summary>
         public const int Current = 8;
     }
