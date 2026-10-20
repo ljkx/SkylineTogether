@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using SkylineTogether.Core;
+using SkylineTogether.Core.Modding;
 using SkylineTogether.Sync;
 using Unity.Collections;
 using Unity.Entities;
@@ -21,14 +22,15 @@ namespace SkylineTogether.Compat
     /// enabled bits), except for water sources and mod entities, whose whole replicated state is hashed. A change is
     /// reported with whether the set of watched types changed (the caller sends an upsert) or only values (values).
     /// Changes of ordinary entities are reported at most once a second each (simulation-driven mod values such as a
-    /// lake's height), mod data entities without delay (Traffic's data must arrive with its node).
+    /// lake's height), mod data entities without delay (Traffic's data must arrive with its node). The bookkeeping (known
+    /// states, the limit, the sweep, since when each change may have happened) is Core's <see cref="ModStateLedger"/>; a
+    /// reported change is consumed whether or not the caller sends it.
     /// </para>
     /// Main thread only; the caller catches exceptions.
     /// </summary>
     public sealed class ModStateWatcher
     {
         private const int SweepPerFrame = 256;
-        private const double MinInterval = 1.0;
 
         /// <summary>One detected change.</summary>
         public struct Change
@@ -38,9 +40,8 @@ namespace SkylineTogether.Compat
             public Entity Entity;
             /// <summary>The set of watched types changed (or the entity was not known): send an upsert, not values.</summary>
             public bool PresenceChanged;
-            /// <summary>The state recorded before this change (<see cref="Defer"/>), and whether there was one.</summary>
-            internal (ulong Presence, ulong Value) Old;
-            internal bool Known;
+            /// <summary>The earliest time the change may have happened (<see cref="ModStateLedger.Change.Since"/>).</summary>
+            public double Since;
         }
 
         private readonly EntityCodec _codec;
@@ -48,17 +49,14 @@ namespace SkylineTogether.Compat
         private readonly ILog _log;
         private readonly HashSet<int> _watched = new HashSet<int>();
         private readonly List<ComponentType> _types = new List<ComponentType>();
-        private readonly Dictionary<uint, (ulong Presence, ulong Value)> _shadow = new Dictionary<uint, (ulong, ulong)>();
-        private readonly Dictionary<uint, double> _lastEmit = new Dictionary<uint, double>();
-        private readonly HashSet<uint> _retry = new HashSet<uint>();
-        private readonly List<uint> _retryScratch = new List<uint>();
+        private readonly ModStateLedger _ledger = new ModStateLedger();
+        private readonly List<(uint Id, double Since)> _retries = new List<(uint, double)>();
         private DynamicComponentTypeHandle[] _handles;
         private readonly List<uint> _sweep = new List<uint>();
         private readonly Func<TypeIndex, bool> _isWatched;
         private EntityQuery _query;
         private bool _hasQuery;
         private uint _lastVersion;
-        private int _sweepCursor;
         private bool _bits;
 
         public ModStateWatcher(EntityCodec codec, NetIdSystem ids, ILog log)
@@ -73,16 +71,17 @@ namespace SkylineTogether.Compat
         public bool Active { get; private set; }
 
         /// <summary>Number of entities with a known watched state.</summary>
-        public int Known => _shadow.Count;
+        public int Known => _ledger.Known;
 
         /// <summary>
         /// Starts watching and takes the baseline (host: at session start after binding the city; client: when it went
         /// live). <paramref name="enabledBits"/>: include enabled bits in the hash (host only: a client's local mod
         /// systems may flip bits whose host value arrives anyway).
         /// </summary>
-        public void Start(bool enabledBits)
+        public void Start(bool enabledBits, double now)
         {
             Stop();
+            _ledger.Reset(now);
             _bits = enabledBits;
             BuildTypes();
             if (_types.Count == 0) return;
@@ -102,7 +101,7 @@ namespace SkylineTogether.Compat
                     uint id = _ids.GetNetId(e);
                     if (id == 0) continue;
                     Hash(e, id, out ulong p, out ulong v);
-                    _shadow[id] = (p, v);
+                    _ledger.Set(id, p, v);
                     n++;
                 }
             }
@@ -132,11 +131,9 @@ namespace SkylineTogether.Compat
                 }
                 _hasQuery = false;
             }
-            _shadow.Clear();
-            _lastEmit.Clear();
-            _retry.Clear();
+            _ledger.Reset(0);
+            _retries.Clear();
             _sweep.Clear();
-            _sweepCursor = 0;
         }
 
         private void BuildTypes()
@@ -182,15 +179,10 @@ namespace SkylineTogether.Compat
             uint id = _ids.GetNetId(e);
             if (id == 0 || !_codec.EntityManager.Exists(e)) return;
             Hash(e, id, out ulong p, out ulong v);
-            _shadow[id] = (p, v);
+            _ledger.Set(id, p, v);
         }
 
-        public void Forget(uint id)
-        {
-            _shadow.Remove(id);
-            _lastEmit.Remove(id);
-            _retry.Remove(id);
-        }
+        public void Forget(uint id) => _ledger.Forget(id);
 
         /// <summary>The changes since the previous call.</summary>
         public void Collect(double now, List<Change> output)
@@ -199,6 +191,7 @@ namespace SkylineTogether.Compat
             EntityManager em = _codec.EntityManager;
             _query.CompleteDependency();
             uint since = _lastVersion;
+            double changedSince = _ledger.BeginCollect(now);
             // the handle array is kept (the watched types are fixed between Start calls); handles are fresh
             if (_handles == null || _handles.Length != _types.Count) _handles = new DynamicComponentTypeHandle[_types.Count];
             DynamicComponentTypeHandle[] handles = _handles;
@@ -216,7 +209,7 @@ namespace SkylineTogether.Compat
                     }
                     if (!changed) continue;
                     NativeArray<Entity> entities = chunk.GetNativeArray(entityHandle);
-                    for (int k = 0; k < entities.Length; k++) Check(entities[k], now, output);
+                    for (int k = 0; k < entities.Length; k++) Check(entities[k], changedSince, now, output);
                 }
             }
             finally
@@ -225,74 +218,40 @@ namespace SkylineTogether.Compat
             }
             _lastVersion = em.GlobalSystemVersion;
 
-            if (_retry.Count > 0)
+            _retries.Clear();
+            _ledger.TakeRetries(now, _retries);
+            foreach ((uint id, double heldSince) in _retries)
             {
-                _retryScratch.Clear();
-                _retryScratch.AddRange(_retry);
-                foreach (uint id in _retryScratch)
-                {
-                    if (_lastEmit.TryGetValue(id, out double last) && now - last < MinInterval) continue;
-                    _retry.Remove(id);
-                    Entity e = _ids.GetEntity(id);
-                    if (e != Entity.Null && em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e)) Check(e, now, output);
-                }
+                Entity e = _ids.GetEntity(id);
+                if (e != Entity.Null && em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e)) Check(e, heldSince, now, output);
             }
 
             // slow sweep (removals of the last watched type, anything the change versions missed)
-            if (_sweepCursor >= _sweep.Count)
+            _sweep.Clear();
+            _ledger.NextSweep(SweepPerFrame, now, _sweep, out double sweepSince);
+            foreach (uint id in _sweep)
             {
-                _sweep.Clear();
-                _sweep.AddRange(_shadow.Keys);
-                _sweepCursor = 0;
-            }
-            int end = Math.Min(_sweep.Count, _sweepCursor + SweepPerFrame);
-            for (; _sweepCursor < end; _sweepCursor++)
-            {
-                uint id = _sweep[_sweepCursor];
                 Entity e = _ids.GetEntity(id);
                 if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e))
                 {
                     Forget(id);
                     continue;
                 }
-                Check(e, now, output);
+                Check(e, sweepSince, now, output);
             }
         }
 
-        private void Check(Entity e, double now, List<Change> output)
+        private void Check(Entity e, double since, double now, List<Change> output)
         {
             uint id = _ids.GetNetId(e);
             if (id == 0)
             {
-                output.Add(new Change { NetId = 0, Entity = e, PresenceChanged = true });
+                output.Add(new Change { NetId = 0, Entity = e, PresenceChanged = true, Since = since });
                 return;
             }
             Hash(e, id, out ulong p, out ulong v);
-            bool known = _shadow.TryGetValue(id, out (ulong Presence, ulong Value) old);
-            if (known && old.Presence == p && old.Value == v) return;
-            bool urgent = _ids.GetFamily(id) == Family.ModEntity || !known || old.Presence != p;
-            if (!urgent && _lastEmit.TryGetValue(id, out double last) && now - last < MinInterval)
-            {
-                _retry.Add(id);
-                return;
-            }
-            _shadow[id] = (p, v);
-            _lastEmit[id] = now;
-            output.Add(new Change { NetId = id, Entity = e, PresenceChanged = !known || old.Presence != p, Old = old, Known = known });
-        }
-
-        /// <summary>
-        /// A change the capture did not send (it was not the player's edit, <see cref="Core.Modding.ModStateProposalRule"/>):
-        /// the state before it is recorded again, so the change is not consumed (the next check finds it again). When
-        /// it was the player's edit after all (made without input the rule counts), it is proposed with the player's next
-        /// input; the host's own value, when the applier writes it, replaces it as known.
-        /// </summary>
-        public void Defer(Change c)
-        {
-            if (c.NetId == 0) return;
-            if (c.Known) _shadow[c.NetId] = c.Old;
-            else _shadow.Remove(c.NetId);
-            // found again by the change versions or the slow sweep (no per-frame retry of every derived entity)
+            if (!_ledger.Observe(id, p, v, _ids.GetFamily(id) == Family.ModEntity, since, now, out ModStateLedger.Change c)) return;
+            output.Add(new Change { NetId = id, Entity = e, PresenceChanged = c.PresenceChanged, Since = c.Since });
         }
 
         private void Hash(Entity e, uint id, out ulong presence, out ulong value)

@@ -96,12 +96,12 @@ namespace SkylineTogether.Sync
             {
                 Entity e = c.Entity;
                 if (written.Contains(e) || _appliedThisFrame.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                if (!host && !_modStateIsEdit)
+                if (!host && !Core.Modding.ModStateProposalRule.MayPropose(_modStateToolPath, c.Since, now, _input.LastInput))
                 {
-                    // the client's own copy of a mod system recomputed it (no tool, no input): the host derives its own
-                    // value, which arrives with the host's records; never proposed (ModStateProposalRule)
+                    // the client's own copy of a mod system recomputed it (no tool, no edit input around the time it changed):
+                    // the host derives its own value, which arrives with the host's records. Consumed (the watcher took it
+                    // as known): a later input never proposes it (ModStateProposalRule)
                     if (_derivedModChanges++ == 0) _log.Info(LogCategory.Compat, "mod state changed here without the player's input (a mod system deriving it locally); such changes are not sent to the host");
-                    _watcher.Defer(c); // not consumed: proposed with the player's next input unless the host's value replaces it
                     continue;
                 }
                 uint id = c.NetId;
@@ -130,8 +130,8 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>Client: whether this frame's untagged mod state changes are the player's edits (<see cref="Core.Modding.ModStateProposalRule"/>).</summary>
-        private bool _modStateIsEdit = true;
+        /// <summary>Client: a tool applies this frame, so this frame's untagged mod state changes are the player's edits (<see cref="Core.Modding.ModStateProposalRule"/>).</summary>
+        private bool _modStateToolPath = true;
 
         /// <summary>Client: mod state changes not proposed because no tool or input preceded them (diagnostics).</summary>
         private long _derivedModChanges;

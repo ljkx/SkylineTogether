@@ -106,7 +106,7 @@ namespace SkylineTogether.Sync
             BindCity();
             // mod compatibility: untagged mod state is compared from here on; every mod setting goes out once
             _modSettings.Reset();
-            SafeCall("mod state watcher", () => _watcher.Start(true), Features.ModCompat);
+            SafeCall("mod state watcher", () => _watcher.Start(true, UnityEngine.Time.realtimeSinceStartupAsDouble), Features.ModCompat);
         }
 
         private void OnClientStarted(SessionClient client)
@@ -143,7 +143,7 @@ namespace SkylineTogether.Sync
                 _gate.Close();
                 // mod compatibility: mod systems that would derive host-owned state go off; untagged mod state is watched
                 SafeCall("mod client gates", () => Compat.ModCompat.OnClientLive(_log), Features.ModCompat);
-                SafeCall("mod state watcher", () => _watcher?.Start(false), Features.ModCompat);
+                SafeCall("mod state watcher", () => _watcher?.Start(false, UnityEngine.Time.realtimeSinceStartupAsDouble), Features.ModCompat);
                 Integrity.OnClientLive();
                 _log.Info(LogCategory.Replication, "client live with " + _ids.BoundCount + " bound entities; following the host");
             };
@@ -163,7 +163,7 @@ namespace SkylineTogether.Sync
             _dependencies.Clear();
             _missingNotified = false;
             _derivedModChanges = 0;
-            _modStateIsEdit = true;
+            _modStateToolPath = true;
             _input.Reset();
             _codec?.ResetSession(); // the missing-asset list is per session
             _wasClient = false; // (the id tables are cleared below for host and client alike)

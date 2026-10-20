@@ -48,10 +48,21 @@ namespace SkylineTogether.Core.Tests.Modding
         [Test]
         public void TheWindowFollowsTheLastEditInput()
         {
-            Assert.True(ModStateProposalRule.MayPropose(false, 10, 8));
-            Assert.False(ModStateProposalRule.MayPropose(false, 10, 6.5));
-            Assert.True(ModStateProposalRule.MayPropose(true, 10, double.NegativeInfinity), "a tool applying");
-            Assert.True(ModStateProposalRule.MayPropose(false, 10, double.PositiveInfinity), "input unreadable: as before");
+            // a change seen now that happened since the previous frame (9.98)
+            Assert.True(ModStateProposalRule.MayPropose(false, 9.98, 10, 8));
+            Assert.False(ModStateProposalRule.MayPropose(false, 9.98, 10, 6.5));
+            Assert.True(ModStateProposalRule.MayPropose(true, 9.98, 10, double.NegativeInfinity), "a tool applying");
+            Assert.True(ModStateProposalRule.MayPropose(false, 9.98, 10, double.PositiveInfinity), "input unreadable: as before");
+            Assert.False(ModStateProposalRule.MayPropose(false, 9.98, 10, double.NegativeInfinity), "no input ever");
+        }
+
+        [Test]
+        public void AChangeTheSweepFoundLateCountsInputAroundWhenItMayHaveHappened()
+        {
+            // the slow sweep saw it at 20; it happened after the previous pass started (12)
+            Assert.True(ModStateProposalRule.MayPropose(false, 12, 20, 10), "input up to 3 s before the change may have happened");
+            Assert.True(ModStateProposalRule.MayPropose(false, 12, 20, 19), "input between the change and its detection");
+            Assert.False(ModStateProposalRule.MayPropose(false, 12, 20, 8.9), "input long before");
         }
     }
 }

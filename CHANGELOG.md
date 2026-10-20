@@ -115,8 +115,8 @@ another object.
   switch terrain sync off for everyone; such strokes are checked first, and a player whose strokes keep failing is
   ignored.
 - **Mods behave on joined players.** A joined player's copy of a mod system no longer sends its own recomputed values
-  to the host as the player's edits (moving the camera or chatting no longer counts as editing, and a mod-panel change
-  made by a long slider drag or a held key is no longer lost); mods whose panels write the city count as
+  to the host as the player's edits, not even later when the player clicks something (moving the camera or chatting
+  no longer counts as editing, and a mod-panel change made by a long slider drag or a held key is no longer lost); mods whose panels write the city count as
   world-affecting, mods that only draw things do not; mod systems switched off on joined players stay off from the
   start of the join, and are not switched on at the session end; mods always see the session end.
 - **Events, disasters and chirps** deleted after the events feature switched itself off are deleted for everyone.

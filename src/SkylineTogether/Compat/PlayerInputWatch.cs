@@ -10,7 +10,7 @@ namespace SkylineTogether.Compat
     /// Client: when the local player last gave input that can edit mod state (<see cref="EditInput"/>: the primary button,
     /// held or not, or the wheel over a panel; a key that is no camera key, held or not; gamepad buttons and the d-pad).
     /// Mod state that changes on a client while its player did nothing of that kind is derived by the client's own copy of
-    /// a mod system, not edited by the player, and is not proposed to the host yet (<see cref="ModStateProposalRule"/>).
+    /// a mod system, not edited by the player, and is not proposed to the host (<see cref="ModStateProposalRule"/>).
     /// Polled once per frame at the capture. If the input devices cannot be read, the player always counts as acting (the
     /// behaviour before this rule). Main thread.
     /// </summary>

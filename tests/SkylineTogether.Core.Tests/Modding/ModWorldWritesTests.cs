@@ -73,12 +73,12 @@ namespace SkylineTogether.Core.Tests.Modding
         public void ModStateChangesWithoutToolOrInputAreDerivations()
         {
             const double now = 100;
-            Assert.True(ModStateProposalRule.MayPropose(true, now, double.NegativeInfinity), "a tool applies");
-            Assert.True(ModStateProposalRule.MayPropose(false, now, now - 1), "the player clicked a moment ago (a mod panel)");
-            Assert.True(ModStateProposalRule.MayPropose(false, now, now - ModStateProposalRule.InputWindowSeconds));
-            Assert.False(ModStateProposalRule.MayPropose(false, now, now - ModStateProposalRule.InputWindowSeconds - 0.01), "no input for a while: a local derivation");
-            Assert.False(ModStateProposalRule.MayPropose(false, now, double.NegativeInfinity), "no input this session");
-            Assert.True(ModStateProposalRule.MayPropose(false, now, double.PositiveInfinity), "input unreadable: proposed as before");
+            Assert.True(ModStateProposalRule.MayPropose(true, now, now, double.NegativeInfinity), "a tool applies");
+            Assert.True(ModStateProposalRule.MayPropose(false, now, now, now - 1), "the player clicked a moment ago (a mod panel)");
+            Assert.True(ModStateProposalRule.MayPropose(false, now, now, now - ModStateProposalRule.InputWindowSeconds));
+            Assert.False(ModStateProposalRule.MayPropose(false, now, now, now - ModStateProposalRule.InputWindowSeconds - 0.01), "no input for a while: a local derivation");
+            Assert.False(ModStateProposalRule.MayPropose(false, now, now, double.NegativeInfinity), "no input this session");
+            Assert.True(ModStateProposalRule.MayPropose(false, now, now, double.PositiveInfinity), "input unreadable: proposed as before");
         }
     }
 }

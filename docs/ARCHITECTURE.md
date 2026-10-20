@@ -1460,14 +1460,18 @@ computed with the UI's own functions; clients compare their own rows and re-send
 - **Untagged mod state.** [`ModStateWatcher`](../src/SkylineTogether/Compat/ModStateWatcher.cs) finds mod components
   written without an update tag (chunk change versions plus a slow re-hash sweep) on the host and on clients; mod data
   entities referenced by replicated values are bound and sent with them (dependency binding). A client proposes such
-  a change only while a tool applies or within 3 s of input that can edit
+  a change only while a tool applies or when input that can edit came at most 3 s before the change, or between the
+  change and its detection
   ([`ModStateProposalRule`](../src/SkylineTogether.Core/Modding/ModStateProposalRule.cs),
   [`EditInput`](../src/SkylineTogether.Core/Modding/EditInput.cs): the primary button or the wheel over a panel, held
   or not; keys that are no camera keys, held or not; gamepad buttons and the d-pad; not camera input, world clicks
   without a tool or typing in a text field); otherwise it is the client's own copy of a mod system recomputing it, and
-  the host's value, which arrives with the host's records, is the one that counts. A change that is not proposed is not
-  consumed: the watcher keeps the state before it, so the player's next input proposes it unless the host's value
-  replaced it first. Limit: a mod system that recomputes a saved component while the player edits is still proposed then.
+  the host's value, which arrives with the host's records, is the one that counts. When a change happened is bounded by
+  how it was found ([`ModStateLedger`](../src/SkylineTogether.Core/Modding/ModStateLedger.cs)): after the previous
+  frame's check for the change versions, after the start of the previous sweep pass for the slow sweep, and from its
+  first sighting for a change held back by the once-a-second limit. A change that is not proposed is consumed (taken
+  as known), so input that comes later never proposes it. Limit: a mod system that recomputes a saved component while
+  the player edits is still proposed then.
 - **Edit hold** for direct-write tools ([client apply](#client-apply)).
 - **Mod settings.** [`ModSettingsSync`](../src/SkylineTogether/Compat/ModSettingsSync.cs) applies the host's values of
   listed settings on clients for the session and restores the player's own values afterwards.

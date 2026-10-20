@@ -49,8 +49,9 @@ namespace SkylineTogether.Sync
                              && !Compat.ModCompat.IsPipelineTool(_tools.activeTool.GetType());
             bool toolPath = _toolApplied || localTool;
             // mod compatibility: untagged mod state changed without the player's input is a local mod system's derivation
+            // (decided per change in CaptureModChanges, by when it may have happened)
             _input.Poll(now);
-            _modStateIsEdit = Core.Modding.ModStateProposalRule.MayPropose(toolPath, now, _input.LastInput);
+            _modStateToolPath = toolPath;
             // deletions from the UI (district, service upgrade, line: R10 D1-D3) happen outside any
             // tool; outside a tool path only those are proposed, every other local deletion waits for the host
             ProposalFlags flags = _toolApplied ? ProposalFlags.ToolApply : localTool ? ProposalFlags.DirectTool : ProposalFlags.None;
