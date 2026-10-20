@@ -85,6 +85,13 @@ namespace SkylineTogether.Core.Modding
             }
         }
 
+        /// <summary>
+        /// True for the phases of the UI that a player clicks (<c>UIUpdate</c>, <c>UITooltip</c>): a system there that writes
+        /// entities writes the world when its player uses it (policies, upgrades, names). Rendering, culling, raycasts and
+        /// debug gizmos write entities of their own (batch updates, highlights) and change nothing shared.
+        /// </summary>
+        public static bool IsUiPhase(string phase) => phase == "UIUpdate" || phase == "UITooltip";
+
         /// <summary>True for phases whose systems may change shared state (everything but presentation and the editor).</summary>
         public static bool MayChangeWorld(PhaseKind kind) => kind != PhaseKind.Presentation && kind != PhaseKind.Editor;
 

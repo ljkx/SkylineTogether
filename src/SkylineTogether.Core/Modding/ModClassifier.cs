@@ -489,7 +489,7 @@ namespace SkylineTogether.Core.Modding
                 editor |= kind == PhaseKind.Editor;
                 world |= ModPhases.MayChangeWorld(kind) && kind != PhaseKind.Simulation && kind != PhaseKind.SimulationStep;
                 // a UI system that writes entities writes the world when its player clicks (policies, upgrades, names)
-                world |= kind == PhaseKind.Presentation && s.WritesEntities;
+                world |= kind == PhaseKind.Presentation && s.WritesEntities && ModPhases.IsUiPhase(p);
             }
             if (simulation)
             {
@@ -564,7 +564,7 @@ namespace SkylineTogether.Core.Modding
                 foreach (string p in s.Phases)
                 {
                     PhaseKind kind = ModPhases.KindOf(p);
-                    bool writingUi = kind == PhaseKind.Presentation && s.WritesEntities;
+                    bool writingUi = kind == PhaseKind.Presentation && s.WritesEntities && ModPhases.IsUiPhase(p);
                     if (!ModPhases.MayChangeWorld(kind) && !writingUi) continue;
                     worldPhase++;
                     example = example ?? s.Name + " in " + p + (writingUi ? " (writes entities)" : "");

@@ -190,12 +190,67 @@ namespace SkylineTogether.Compat
                 "AddSharedComponentManaged", "SetSharedComponentManaged",
             };
 
-            /// <summary>An entity write of <c>EntityManager</c> or <c>EntityCommandBuffer</c> (and its parallel writer).</summary>
+            /// <summary>
+            /// An entity write of <c>EntityManager</c> or <c>EntityCommandBuffer</c> (and its parallel writer), except one
+            /// whose component types are all presentation-only (a batch update, a highlight: the game's own UI adds them); or a
+            /// call into the game's systems that change the city (budgets, taxes, loans, map tiles).
+            /// </summary>
             private static bool IsEntityWrite(MethodBase m)
             {
                 Type d = m.DeclaringType;
-                if (d == null || !EntityWriteNames.Contains(m.Name)) return false;
-                return d == typeof(EntityManager) || d == typeof(EntityCommandBuffer) || d == typeof(EntityCommandBuffer.ParallelWriter);
+                if (d == null) return false;
+                if (IsVanillaWorldWrite(d, m.Name)) return true;
+                if (!EntityWriteNames.Contains(m.Name)) return false;
+                if (d != typeof(EntityManager) && d != typeof(EntityCommandBuffer) && d != typeof(EntityCommandBuffer.ParallelWriter)) return false;
+                if (!m.IsGenericMethod) return true; // a ComponentType or a type set: unknown, fail closed
+                Type[] args;
+                try
+                {
+                    args = m.GetGenericArguments();
+                }
+                catch (Exception)
+                {
+                    return true;
+                }
+                foreach (Type a in args)
+                {
+                    if (!PresentationOnly(a)) return true;
+                }
+                return args.Length == 0;
+            }
+
+            /// <summary>Component types that only change what this player sees.</summary>
+            private static bool PresentationOnly(Type t)
+            {
+                if (t == null) return false;
+                if (t == typeof(Game.Common.BatchesUpdated) || t == typeof(Game.Tools.Highlighted)) return true;
+                string ns = t.Namespace ?? "";
+                return ns == "Game.Rendering" || ns.StartsWith("Game.UI", StringComparison.Ordinal);
+            }
+
+            // declared before the table that uses it (static fields are initialised in order)
+            private static readonly string[] TaxSetters = { "SetTaxRate", "SetResidentialTaxRate", "SetCommercialTaxRate", "SetIndustrialTaxRate", "SetOfficeTaxRate" };
+
+            /// <summary>The game's methods that change the city when called (what its own budget, tax, loan and tile panels call).</summary>
+            private static readonly (Type Type, string[] Methods)[] VanillaWorldWrites =
+            {
+                (typeof(Game.Simulation.CityServiceBudgetSystem), new[] { "SetServiceBudget" }),
+                (typeof(Game.Simulation.ICityServiceBudgetSystem), new[] { "SetServiceBudget" }),
+                (typeof(Game.Simulation.TaxSystem), TaxSetters),
+                (typeof(Game.Simulation.ITaxSystem), TaxSetters),
+                (typeof(Game.Tools.LoanSystem), new[] { "ChangeLoan" }),
+                (typeof(Game.Tools.ILoanSystem), new[] { "ChangeLoan" }),
+                (typeof(Game.Simulation.MapTilePurchaseSystem), new[] { "PurchaseSelection" }),
+                (typeof(Game.Simulation.IMapTilePurchaseSystem), new[] { "PurchaseSelection" }),
+            };
+
+            private static bool IsVanillaWorldWrite(Type declaring, string method)
+            {
+                foreach ((Type type, string[] methods) in VanillaWorldWrites)
+                {
+                    if (type == declaring && Array.IndexOf(methods, method) >= 0) return true;
+                }
+                return false;
             }
 
             public CallIndex(Assembly assembly)
