@@ -24,7 +24,8 @@ Bindings (group `skylineTogether`): `state`, `join`, `net`, `presence`, `perf` (
 `ban`, `cancelReconnect`, `chat`, `copySteamId`, `copyText`, `dismissEnd`, `dismissResync`, `host`, `inviteFriend`,
 `inviteFriends`, `join`, `joinAnyway`, `kick`, `leave`, `mainMenu`, `openInviteOverlay`, `reconnect`, `recordStart`,
 `recordStop`, `refreshFriends`, `replayRefresh`, `replayStart`, `replayStop`, `resync`, `retryJoin`, `saveHostOptions`,
-`saveHostSettings`, `setAllowJoinWithDifferentMods`, `setFriendsOnly`, `setRequireSameAssets`, `stayOffline`,
+`saveHostSettings`, `setAllowJoinWithDifferentMods`, `setFriendsOnly`, `setNewPlayersViewer`, `setRequireSameAssets`,
+`stayOffline`,
 `toggleCoHost`, `toggleNetHud`, `togglePerfHud`, `toggleRole`, `unban`, `writeDiagnostics`. `tools/ui_smoke.mjs`
 checks that each is declared on the C# side.
 

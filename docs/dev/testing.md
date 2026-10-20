@@ -53,7 +53,7 @@ the game's `System.IO.Hashing.dll` need it (`HAVE_SYSTEM_IO_HASHING`).
 
 Keep seeds fixed and iteration counts small enough that the whole suite stays well under a minute.
 
-### What is not tested yet
+### Test inventory
 
 ```sh
 python tools/test_inventory.py                 # per Core folder: types, tested directly/indirectly, game-reachable

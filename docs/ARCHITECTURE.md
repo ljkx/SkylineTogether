@@ -129,7 +129,7 @@ Core types declare their thread with `[ThreadAffinity]`
 |---|---|
 | `Buffers` | `ByteWriter`/`ByteReader` (little-endian, LEB128 varints, bounded reads that throw `DecodeException`), `BufferPool` |
 | `Contracts` | Shared value types and interfaces: identity (`NetId`, `PeerId`, `NetSlot`, ...), transport (`ITransport`, `IConnection`, `Lane`, `Delivery`), taxonomies (`MessageKind`, `Family`, `Permission`, `SessionRole`, `RejectReason`), session models (`HandshakeDigests`, `SnapshotManifest`), logging and clock seams. |
-| `Diagnostics` | `FeatureHealth` (trip logic of a feature), `PerfCounters` |
+| `Diagnostics` | `FeatureHealth` (trip logic of a feature), `PerfCounters`, `FrameBudgetService` (the shared per-frame budget), `LogFloodGuard` (log rate limit and size cap), `PeerFaultBook` (per-peer failure counts), `PathRedactor` and `AddressMask` (no user name or full address in logs) |
 | `Fields` | Terrain, water and cell-map tile codecs and grids, brush strength compensation, stroke settling |
 | `Follower` | `FollowerClockModel`, the client's estimate of the host frame |
 | `Hashing` | xxHash64, XXH3-64/128, digests, set hashes |
@@ -141,7 +141,7 @@ Core types declare their thread with `[ThreadAffinity]`
 | `Protocol` | Envelope framing, fragmentation, LZ4 compression, handshake and control messages, `Limits`, `ProtocolVersion`, `ProtocolText` (text sanitising) |
 | `Replay` | Solo test: recording format, `RecorderPeer`, `PlaybackTransport`, checkpoints, `ReplayChecker`, `ReplayVerdict` |
 | `Scheduling` | `TokenBucket`, `PeerByteBudget`, `CoalescingQueue` + `LinkBudget`, `AttentionPlanner`, `AgentPlanner`, `RollingScan`, `SpatialHashGrid`, infoview topics |
-| `Session` | `SessionHost`, `SessionClient`, `PeerChannel`, `JoinSecurity` (bans, join policy, password lockout, moderation rules), `SessionCrypto`, `RejoinController`, `JoinTimeline`, presence and tool-preview codecs, mod-list comparison |
+| `Session` | `SessionHost`, `SessionClient`, `PeerChannel`, `JoinSecurity` (bans, join policy, password lockout, moderation rules), `SessionCrypto`, `PasswordKeyCache`, `InboundQuota`, `LocalText` (texts shown in the receiver's language), `CityDataRule`, `LoadGeneration`, `RejoinController`, `JoinTimeline`, presence and tool-preview codecs, mod-list comparison |
 | `Sync` | `SyncBatch` (the replication record format), `NetIdAllocator`, `ProposalGuard` (rate limits, conflict ledger, rules), `StructureIntegrity` (referential integrity of proposals and batches), apply acknowledgements, global-state, terrain, water, mover, flow-status, integrity and agent records |
 | `Testing` | Fakes for tests (`ManualClock`, `ListLog`, `NullLog`, `DeterministicRandom`) and `StopwatchClock` |
 | `Transport` | `PeerOutbox`, `SendRateController`, blob transfer, `BackgroundPump`, `CompositeTransport`, loopback and network-simulator transports (tests, solo test) |
@@ -153,7 +153,7 @@ Core types declare their thread with `[ThreadAffinity]`
 | [`Mod.cs`](../src/SkylineTogether/Mod.cs) | Entry point: `OnLoad` creates the controllers and registers the systems, each step guarded; `OnDispose` |
 | `Compat` | Mod compatibility: `ModAdapter` and the built-in adapters, `ModCompat` (registry, gates), `ModAssemblyScanner` + `HarmonyPatches` (automatic scan), `GenericModAdapter`, `ModIntegration` (API for other mods), `ModStateWatcher`, `ModSettingsSync`, `AssetSources` |
 | `Data` | Embedded locale tables |
-| `Diagnostics` | `Probes` (self-test), `Features` (the feature registry), `Guard`, `Perf`, `GameLog`, `DiagnosticsDump` |
+| `Diagnostics` | `Probes` (self-test), `Features` (the feature registry), `Guard`, `Perf`, `GameLog`, `DiagnosticsDump`, `InstallInfo` (installed copies, build id source) |
 | `Net` | `SteamSocketsTransport` |
 | `Presence` | Cursors, name tags and other players' tool previews |
 | `Replay` | `ReplayController`: Record test session, Replay & verify |
@@ -232,10 +232,10 @@ Core's [`SessionHost`](../src/SkylineTogether.Core/Session/SessionHost.cs) and
 
 `SessionManager.StartHosting` (only in a loaded city, with Steam logged in) creates a `SteamSocketsTransport` wrapped
 in a `CompositeTransport` (the solo-test recorder attaches there) and a `SessionHost` with `HostOptions` from the
-settings: session name, password, max players (2-16, counting the host), "require the same mods", "require the same
+settings: session name, password, max players (2-16, counting the host; changeable while hosting, the transport's cap follows), "require the same mods", "require the same
 asset packs" (off by default), "let players join with different mods" (on by default), join policy
-(open, or Steam friends and invited players only), the persisted ban list, and the optional direct-IP socket, which
-opens only while a host password is set. A friends-only Steam lobby and rich presence carry the invitation
+(open, or Steam friends and invited players only), new players as viewers (off by default), the persisted ban list,
+and the optional direct-IP socket, which opens only while a session password is set. A friends-only Steam lobby and rich presence carry the invitation
 ([`SteamInvites`](../src/SkylineTogether/Session/SteamInvites.cs)); the session itself always runs over a P2P
 connection to the host's Steam ID (or the direct address).
 
@@ -276,7 +276,7 @@ sequenceDiagram
 Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.cs)):
 
 - The client sends `Hello` on connect, and its manifest (`Control ManifestDetail`) only after the host's
-  `Control Authenticated` (protocol 6). Only the Steam ID that Steam authenticated on the transport is an identity (the
+  `Control Authenticated` (since protocol 6). Only the Steam ID that Steam authenticated on the transport is an identity (the
   Steam transport ignores the Steam ID of a connection flagged unauthenticated); a Steam ID claimed in `Hello` is
   logged and ignored. Display names are made unique and never equal the host's
   ([`PlayerNames`](../src/SkylineTogether.Core/Session/PlayerNames.cs)).
@@ -296,7 +296,8 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   failures by Steam ID and address (IPv6 by /64): three free, then a lockout of 5 s doubling up to 10 minutes, forgotten
   after 15 minutes; at most two open challenges per key. A lockout refusal carries a "retry-after" report record.
 - After the compatibility checks, a player whose last joins did not finish waits (`HostOptions.JoinCooldownSeconds`:
-  the first is free, then 30 s, 2, 10 and 30 minutes; refused with `HostPreparing`), and `ResolveDuplicate` replaces an
+  the first is free, then 30 s, 2, 10 and 30 minutes; refused with `HostPreparing`; forgotten after an hour without a
+  failed join, and after a join that completes), and `ResolveDuplicate` replaces an
   older connection of the same Steam user, unless it is still loading (then the new attempt is refused with
   `HostPreparing`, which the client treats as retryable). The duplicate is resolved only here, after the password.
 - `TryAdmit` then compares the build id (first 48 bits of the SHA-256 of the loaded DLL,
@@ -310,7 +311,7 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   |---|---|---|
   | Code mods | name, version (`ModManager`) | a host mod that stores data in the city and the joiner lacks: always refused (below); otherwise refused with "require the same mods" ([`MismatchReport.CompareMods`](../src/SkylineTogether.Core/Session/MismatchReport.cs); client-local mods never count; overridable, see below), otherwise told |
   | DLC and content packs | DLC id and name of every available `ContentPrefab` with a `DlcRequirement` (or a Paradox login requirement) | refused when the joiner lacks one the host has (the host's city can contain its objects); content only the joiner has is told |
-  | Asset packs | every Paradox Mods id among the loaded prefabs with package name, version, prefab count and the digest of its prefab ids ([`AssetSources.Packages`](../src/SkylineTogether/Compat/AssetSources.cs)) | told (objects of packs the joiner lacks are left out on its side, as before); refused with "require the same asset packs" (overridable) |
+  | Asset packs | every Paradox Mods id among the loaded prefabs with package name, version, prefab count and the digest of its prefab ids ([`AssetSources.Packages`](../src/SkylineTogether/Compat/AssetSources.cs)) | told (objects of packs the joiner lacks are left out on its side); refused with "require the same asset packs" (overridable) |
   | Mod settings | current values of the settings the host pushes ([`ModSettingsSync.CurrentValues`](../src/SkylineTogether/Compat/ModSettingsSync.cs)) | told; the host's values apply for the session |
 
   DLC is compared first, so a joiner is never offered "join anyway" for its mods only to be refused for its DLC next.
@@ -368,10 +369,10 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   refused for different mods (the host changed its options meanwhile, so no choice was remembered) is not offered
   "join anyway": the recovery panel asks as for any other refusal.
   Wire: `Refuse` keeps its layout (the mark is a report record, which readers of every version skip when unknown); the
-  hello's join flags byte (protocol 4) is rejected when it has undefined bits. The city-data and conflict records were
+  hello's join flags byte (since protocol 4) is rejected when it has undefined bits. The city-data and conflict records were
   added to the report the same way, so they changed no layout and need no protocol version.
 - Refuse reasons: `Mismatch`, `Full`, `Banned`, `BadPassword`, `NotInvited`, `HostShuttingDown`, `ProtocolVersion`,
-  `HostPreparing`. Every refusal (protocol 6) carries a report with a "text" record: the detail's locale key and
+  `HostPreparing`. Every refusal (since protocol 6) carries a report with a "text" record: the detail's locale key and
   parameters ([`LocalText`, `NetText`](../src/SkylineTogether.Core/Session/LocalText.cs)), so the joiner shows it in its
   own language; the `Refuse` layout itself is unchanged. Before admission a connection may send only `Hello`, `Control`
   and `Ping` (anything else ends it unread), bodies of at most 64 KiB until the password is proven and 1 MiB after it,
@@ -400,7 +401,9 @@ A joiner receives the host's city as a save game and loads it through the game's
    (XXH3-128 computed while writing). `NetIdSystem.WritingSnapshot` makes this save, and only this save, carry the id
    bindings, so the joiner's loaded entities have the host's net ids without a table transfer. Package-bundled render
    prefabs (climate, water and terrain render prefabs from packages) travel in front of the save data
-   ([`JoinAssetTransfer`](../src/SkylineTogether/Session/JoinAssetTransfer.cs)).
+   ([`JoinAssetTransfer`](../src/SkylineTogether/Session/JoinAssetTransfer.cs)). The joiner adds only `PrefabAsset` and
+   `TextureAsset` entries with a plain file name (no path, no `..`, no device name, at most 128 characters) and a
+   32-hex-digit guid, at most 64 entries and 256 MiB (`JoinAssetBundle`).
 3. **Transfer.** The manifest goes as `Control SnapshotManifest`; the file streams as 256 KiB `BlobChunk` messages on
    the bulk lane ([blob transfer](#blob-transfer)). The client acknowledges with have-bitmaps. The host hands the
    manifest over first, but with Steam lanes (and in the network simulator) lanes are ordered independently, so a
@@ -451,8 +454,9 @@ without a chunk, 20 minutes for the load, 120 s waiting for `Live`.
 ### Leaving, kicks and recovery
 
 A client leaving sends `Disconnecting`; the host's `Stop` sends `SessionEnd` to everyone. Kick and ban are control
-messages with a text; a ban also adds the Steam ID (or address) to the host's ban list, which `SessionManager` persists
-in the settings (`BannedPlayers`).
+messages with a text; a ban adds the authenticated Steam ID to the host's ban list, or the address of a connection
+without one (an IPv6 address as its /64 network); a player connected over direct IP is banned by both. `SessionManager`
+persists the list in the settings (`BannedPlayers`).
 
 When a client session ends unexpectedly while the player is in the host's city,
 [`RejoinController`](../src/SkylineTogether.Core/Session/RejoinController.cs) takes over: the city stays paused and
@@ -488,13 +492,13 @@ below 256 KiB/s.
 **Lanes.** Every connection gets one Steam lane per `Lane` when it is reported connected
 ([`SteamLanes`](../src/SkylineTogether/Net/SteamLanes.cs), [`LanePlan`](../src/SkylineTogether.Core/Transport/LanePlan.cs)):
 R on Steam lane 0, U on 1, B on 2, all with the same priority and weights 4, 2 and 1. Each lane has its own reliable
-ordering, so a lost packet of snapshot chunks no longer holds back a control message, a chat line or presence, and
+ordering, so a lost packet of snapshot chunks does not hold back a control message, a chat line or presence, and
 when every lane has data R gets 4/7 of the send rate; equal priorities mean bulk is never starved. The game's
 Steamworks.NET declares `ConfigureConnectionLanes` with single values instead of per-lane arrays and `SendMessages`
 with an array of structs instead of message pointers, so `SteamLanes` calls the same `steam_api64` exports with the
 native signatures. It does so only after the startup probe `P-STEAMLANES` passed (64-bit, the expected
 `SteamNetworkingMessage_t` layout, and a loopback socket pair that configures three lanes and receives a message on
-lane 2 intact); otherwise, or when Steam refuses a connection's lanes, every message uses lane 0 as before. Reliable
+lane 2 intact); otherwise, or when Steam refuses a connection's lanes, every message uses lane 0. Reliable
 messages of lanes R and U are sent `ReliableNoNagle`, lane B `Reliable`, unreliable ones `Unreliable`.
 
 ### Envelope and message kinds
@@ -510,7 +514,7 @@ peers.
 | Kind (value) | Direction | Content |
 |---|---|---|
 | `Hello` (1), `Welcome` (2), `Refuse` (3) | handshake | see [handshake](#handshake-and-admission) |
-| `Control` (4) | both | `ControlKind` + payload: password, manifest, join notice, players, speed, snapshot manifest, load progress, live, kick, ban, session end, moderation, toast |
+| `Control` (4) | both | `ControlKind` + payload: password challenge and answer, authenticated (host proof), manifest, join notice, players, speed, snapshot manifest, load progress, live, kick, ban, dropped, session end, moderation, toast |
 | `Epoch` (5) | host → client | a `SyncBatch`: structure, values, channels ([batch encoding](#batch-encoding)) |
 | `Ack` (6), `Motion` (8), `MotionControl` (9), `View` (11) | both | mover motion and its acknowledgements, client view reports |
 | `Proposal` (7) | client → host | a `SyncBatch` of the client's edits and requests |
@@ -728,7 +732,7 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
    client's removal clean-up, a client unbinds the id and asks for it again; the host keeps the binding, so its capture
    broadcasts the despawn), repeatedly, since a deletion adds its surviving node's closure. The game's Burst jobs follow
    `Edge`, `ConnectedEdge` and `Owner` unchecked whether an entity is tagged or not, so leaving such an edge untagged
-   (as earlier builds did) still crashed the game. Middle connections (`ConnectedNode`) of a kept edge to a node that is
+   would crash the game. Middle connections (`ConnectedNode`) of a kept edge to a node that is
    gone are dropped;
 8. tags: created entities carry `Created`/`Updated` from their archetype; edits get `Updated` with the net closure (an
    edge's nodes and their edges); agents are never tagged.
@@ -779,14 +783,13 @@ graph, each with the clean-up the game applies when its target goes:
 | `CurrentBuilding` | citizens | component removed (null is normal) |
 | `HouseholdMember`, `HouseholdPet` | citizens, pets | the holder is deleted with its household, as the game does (null is a passing state the game repairs itself) |
 
-A citizen or pet is never left without its household link: removing it (as earlier builds did) left a pet without
-`HouseholdPet`, its update-group marker, and the game logged "UpdateFrame added to unsupported type" for it before a
-crash (observed in a session). The game deletes the members of a removed household (`HouseholdAndCitizenRemoveSystem`,
+A citizen or pet is never left without its household link: removing it would leave a pet without `HouseholdPet`, its
+update-group marker, and the game logs "UpdateFrame added to unsupported type" for it before a crash. The game deletes the members of a removed household (`HouseholdAndCitizenRemoveSystem`,
 `HouseholdPetRemoveSystem`) and a citizen whose household is gone (`CitizenBehaviorSystem`); the client does the same
 and releases their ids, which it asks from the host again unless the batch despawns them anyway.
 
 **Referrers.** The lists do not lead to every link: a citizen inside a building has `CurrentBuilding` and no list names
-it (a demolished building was observed to be named by 540 citizens, found only by the sweep seconds later),
+it (a demolished building can be named by hundreds of citizens, which only the sweep would find seconds later),
 and on a client a household's list, a workplace's list and the members' own links travel on different streams. So the
 client keeps a [`AgentReferrerIndex`](../src/SkylineTogether.Core/Sync/AgentReferrerIndex.cs): for every entity, the
 entities that may name it through an agent link (both ways) and the movers whose owner, citizen or pet it is. It is built
@@ -795,8 +798,8 @@ when the client goes live (`ReferenceAudit`, one pass over every link type and m
 again. The index is a superset (entries are pruned when their referrer is gone, never when a link changes): the cascade
 reads each referrer's real link before it changes anything. A target with many referrers (a large workplace) has a hash
 set, so noting a referrer again costs one lookup. It stays bounded: indexing a mover prunes gone referrers of the same
-target, a deleted mover's pairs are removed, and a background lap prunes the chains of 256 targets a frame (a depot's
-chain no longer holds every vehicle it ever owned).
+target, a deleted mover's pairs are removed, and a background lap prunes the chains of 256 targets a frame (so a
+depot's chain does not hold every vehicle it ever owned).
 
 The client deletes cleanly in these places, all through [`AgentLinkAccess`](../src/SkylineTogether/Sync/AgentLinkAccess.cs):
 
@@ -828,7 +831,7 @@ The client deletes cleanly in these places, all through [`AgentLinkAccess`](../s
   children through their owner's lists, which on a client can be out of step with the children's own `Owner`. The
   children the deleted entities' lists name (sub-objects, sub-nets, sub-areas, owned vehicles, installed upgrades) are
   checked the next frame; the scan over every owned and attached object, which finds the children those lists missed,
-  runs at most once a second (it ran on every frame after any deletion, a hitch of milliseconds in big cities).
+  runs at most once a second (on every frame it would cost milliseconds in big cities).
 - **After every apply** (`ReferenceAudit.AfterApply`): the agent links of the entities the batch or agent value message
   wrote, tagged or cascaded are checked and repaired (an existing entity kept its old link while the new one did not
   resolve; a new entity got a null; a despawn missed a list that was out of date here), and noted in the referrer index.
@@ -847,7 +850,7 @@ host's own state replaces the clean-up.
 **Normalised links** ([`AgentLinkNormalization`](../src/SkylineTogether.Core/Sync/SpawnCompleteness.cs)). The host's own
 state may still hold agent links to targets that are gone (a save writes a worker that is gone as nobody; the game prunes
 some lists lazily). Sent and hashed as they were, they made a repaired client differ from the host forever: every repair
-asked the host, which sent the same record again (a repair loop observed in a session: the same companies on every join).
+asked the host, which sent the same record again (a repair loop: the same companies on every join).
 Both sides therefore leave the same things out: agent lists (`Employee`, `Patient`, `Occupant` and the id lists) never
 write a member that is nobody or gone, and their integrity hash covers live members only; an agent's forward link whose
 target is gone or cannot be named travels the way the reader's repair leaves it (a workplace, school, property or
@@ -1242,7 +1245,7 @@ unlocked-prefab set reaches clients on change (at most once a second) and is rep
   value, coverage, attractiveness, population and availability grids, traffic ambience, soil water. Changed 16×16-cell
   tiles go to each peer within its budget (more while its infoview shows the map); every 10 s the host sends a
   per-map digest of what it sent the peer, and a client whose copy differs requests that map again (paced with
-  back-off, `CellMapResync`). Resource painting is predicted locally and sent to the host as patches, which the host
+  back-off, `CellMapResyncGate`). Resource painting is predicted locally and sent to the host as patches, which the host
   clamps to the brushes' range before merging. A patch carries a mask of the cells the player painted (cells a local
   stamp touched whose painted fields changed since before the first stamp); the host merges only those, since the rest
   of the rectangle is the client's possibly older copy of the map, and keeps groundwater at polluted ≤ amount ≤ maximum.
@@ -1303,11 +1306,11 @@ receivers ([`ToolPreviewRenderer`](../src/SkylineTogether/Presence/ToolPreviewRe
 world space at their height (absolute overlay curves, fading where something hides them) with a faint shadow projected
 onto the ground and thin vertical drop lines (the overlay's cylinder mesh) down to the terrain, which each receiver
 samples from its own (synced) terrain; underground pieces stay on the terrain surface, dashed and dimmer, with a
-downward arrow over each tunnel piece; everything else is projected onto the ground as before. The smoother eases the
+downward arrow over each tunnel piece; everything else is projected onto the ground. The smoother eases the
 heights like the other coordinates, so a road raised by an elevation step rises smoothly. Area outlines, line paths and
 zone cells stay projected onto the ground.
 
-The preview bytes have their own version (the first byte, now 2): a decoder ignores a preview of another version
+The preview bytes have their own version (the first byte, currently 2): a decoder ignores a preview of another version
 instead of failing, and a change confined to the preview layout bumps that version rather than the protocol version
 ([releasing](dev/releasing.md#protocol-version-policy)). Version 2 added the vertical quantisation step, the tool
 elevation and the `Elevated` and `Underground` shape flags; a preview without a tool elevation has the same size as in
@@ -1439,6 +1442,19 @@ computed with the UI's own functions; clients compare their own rows and re-send
 and keeps recent lines for the dump. Every line has a
 [`LogCategory`](../src/SkylineTogether.Core/Contracts/Environment/LogCategory.cs).
 
+The file stays bounded whatever peers send
+([`LogFloodGuard`](../src/SkylineTogether.Core/Diagnostics/LogFloodGuard.cs)): non-error lines are limited to 200 per
+second (burst 2000) and errors to 20 per second (burst 200); after 64 MiB in one run only errors are written, up to a
+further 16 MiB, then nothing. The next line written is preceded by `N log line(s) left out`. Warnings caused by peer
+input are logged once per key.
+
+The log holds no Windows user name and no full network address: every line, exception text, notification and the
+diagnostics file go through [`PathRedactor`](../src/SkylineTogether.Core/Diagnostics/PathRedactor.cs) (a path inside the
+profile folder becomes `%USERPROFILE%\...`, another path segment equal to the user name `%USERNAME%`), and the
+joiner's "connecting to" line, host-name lookups and Steam's connection descriptions go through
+[`AddressMask`](../src/SkylineTogether.Core/Diagnostics/AddressMask.cs) (`203.0.113.x`, `2001:db8:x:x:x:x:x:x`,
+`m***.example.org`). Addresses of address bans are kept: the host needs them to unban.
+
 ### Probes and self-test
 
 [`Probes`](../src/SkylineTogether/Diagnostics/Probes.cs) checks at startup every non-public member and assumption the
@@ -1523,8 +1539,12 @@ the most ids alive at once plus the quarantine and are released at session end.
   through the game's own loader, which was not built for hostile files, and applies whatever the host streams. Only
   join hosts you trust ([SECURITY.md](../SECURITY.md)).
 - **Transport.** Steam P2P connections are encrypted and carry a Steam-authenticated identity; that identity is the
-  only one used for bans, duplicates, the join policy and password lockout. Direct-IP connections may be
-  unauthenticated and unencrypted, so they always need the password, and the port opens only while one is set.
+  only Steam ID used for bans, duplicates, the join policy and password lockout (a Steam ID claimed in `Hello` is
+  ignored); direct and unauthenticated connections are judged by their address, an IPv6 address by its /64 network.
+  Direct-IP connections may be unauthenticated and unencrypted, so they always need the password, and the port opens
+  only while one is set.
+- **Invites.** A Steam lobby invite is followed only while the lobby's owner is the host it names
+  (`LobbyInfo.CheckOwner`).
 - **Admission.** Before admission only `Hello`, `Control` and `Ping` are read (64 KiB before the password, 1 MiB after
   it, 4 MiB decompressed in total, 10 s for the hello, 30 s for the handshake; the Steam transport allows 8 handshakes
   at once, 2 per remote, besides the players); chat needs admission; presence and application messages need a live
@@ -1627,4 +1647,4 @@ the beacon-based repair ladder, the bandwidth controllers `HostUploadBudget`, `L
 `ResumeResult`, `ProposalReceived`, `RepairThrottled`, `LineRowsRequest` and `LineRows` are defined but never sent.
 They are marked "reserved" in the code (`Limits.IsReservedKind`, `ControlMessage.IsReservedKind`); both session ends
 drop them like unknown values, without disconnecting the sender (`ReservedKindTests`). Keep their values reserved; new
-kinds are appended (the last control kind is `JoinNotice`, 31).
+kinds are appended (the last control kind is `Dropped`, 33).

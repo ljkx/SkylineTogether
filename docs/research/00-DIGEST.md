@@ -1,6 +1,6 @@
 # Research digest
 
-> Research notes on the game's internals, written before and during the implementation; they describe the game, not the mod. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
+> **Historical research digest.** Written before and during the implementation; it describes the game, not the mod, and is not maintained. For how the mod works, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
 
 Summaries, key findings, risks and open questions of every research report. Full reports (with code citations) are the numbered files next to this one.
 

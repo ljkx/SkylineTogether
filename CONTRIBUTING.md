@@ -59,7 +59,8 @@ Rules that keep the architecture intact:
   game update switches a feature off instead of crashing.
 - **Feature code runs guarded** (`Guard`), so one failing part does not take the session down.
 - **Wire format.** A change of any envelope, message or sync batch layout increments `ProtocolVersion.Current` and
-  updates the golden tests (`tests/.../Protocol/*GoldenTests.cs`).
+  the pinned value in `Protocol/LimitsAndTextTests.cs`, and updates the golden tests
+  (`tests/.../Protocol/*GoldenTests.cs`).
 - **Never change `AssemblyVersion`** (1.0.0.0): the network id system is saved in cities by assembly-qualified name.
 
 ## Tests

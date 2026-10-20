@@ -39,15 +39,12 @@ reference-assembly packages nor test frameworks.
    chunks on the main thread and complete the game's job dependencies before touching component data (ECS safety
    checks are compiled out of the game build). Every game type or member used is verified against the decompiled
    code; reflection is used only where the design lists a probe, always with a fallback and a log line.
-6. **Agents build and test only through a snapshot checker** that copies the repository into a private temporary
-   folder, so parallel work never shares `obj`/`bin` folders; nobody runs `dotnet build` inside the repository while
-   others work on it.
 
 ## Consequences
 
 - There is no `net472` test run. The .NET Framework/Mono API surface is covered at compile time instead: Core is
-  compiled against the game's own `mscorlib`, and the game project compiles against Core. `tools/ApiCheck` (when it
-  exists) adds the metadata check that every referenced member resolves in the game's assemblies.
+  compiled against the game's own `mscorlib`, and the game project compiles against Core, which covers the API surface
+  at compile time.
 - xUnit features (theories, fixtures, parallel runs) are not available; tests are plain methods. Data-driven tests
   loop over their cases and name the failing case in the assertion message.
 - The Core assembly is built for `net472` (the game's profile) instead of `netstandard2.0`; it is loaded by the game's

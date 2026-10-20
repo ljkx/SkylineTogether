@@ -36,7 +36,7 @@ When a proposal is refused, the originator receives `ProposalResult` and then a 
 
 The player sees a toast such as "The host undid your last change: another player changed the same thing first."
 The toast is localized (`st.toast.rejected` with the reason's `st.reject.*` text).
-Floods, malformed and host-only proposals count as violations, and 20 of them within 10 s kick the player.
+Rate, size, malformed and host-only refusals count as violations, and 20 of them within 10 s kick the player.
 
 A client edit of an existing entity never writes host-owned types (`EntityCodec.HostOwnedTypes`):
 
@@ -71,7 +71,7 @@ Status values:
 | 9 | Lot editing (`toggleLotTool`) | Tool | OK | Area node edits. |
 | 10 | Demolish (bulldozer, main elements) | Tool | OK | Refunds through the `Recent` cost and the cost check. |
 | 11 | Bulldozer "sub-elements" and "everything" modes | Tool + Intent `DeleteSubElements` | OK | Derived props and fences have no net id. They are sent as derived keys, which are resolved strictly (same kind, prefab and owner, ≤ 1 m). The host replays them to every other client. |
-| 12 | Zoning (paint, fill, marquee, dezone) | Tool (zone cells) | Partial | Last writer wins per block. There is no per-block revision check yet. |
+| 12 | Zoning (paint, fill, marquee, dezone) | Tool (zone cells) | Partial | Last writer wins per block. There is no per-block revision check. |
 | 13 | District painting and editing (area tool) | Tool | OK | |
 | 14 | District delete (`ActionsSection.delete`, D1) | UI delete | OK | |
 | 15 | Map tile purchase (G2) | Intent `PurchaseMapTiles` | OK | Detected at frame start from the un-`Native`-ed tiles and the money the vanilla handler took. The host checks permits (`GetAvailableTiles`, which honours mod patches), the tiles and the money. Refused purchases re-add `Native`. |
@@ -108,7 +108,7 @@ Status values:
 
 ## Integration notes
 
-- New record kinds use the reserved range: `SyncRecordKind.Epoch` = 80, `ProposalHeader` = 81, `ProposalResult` = 82. Global channel ids are string hashes: `"Action"`, `"Unlocks"`. No new `MessageKind`.
+- The action records use the reserved range: `SyncRecordKind.Epoch` = 80, `ProposalHeader` = 81, `ProposalResult` = 82. Global channel ids are string hashes: `"Action"`, `"Unlocks"`. No new `MessageKind`.
 - The host stamps every structural broadcast with its epoch number. This is the last record, so routing by first record still works. Joiners get the current epoch in their first per-peer batch.
 - `ActionSync.AfterWrite` is the applier hook for state that vanilla keeps beside a component value.
 - `EntityCodec.Apply` skips `HostOwnedTypes` only when the host applies a client proposal to an entity that already exists.

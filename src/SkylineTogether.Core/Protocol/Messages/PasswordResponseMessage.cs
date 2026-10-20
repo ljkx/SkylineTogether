@@ -4,8 +4,8 @@ namespace SkylineTogether.Core.Protocol
 {
     /// <summary>
     /// The payload of <see cref="ControlKind.PasswordResponse"/> (client → host, ARCHITECTURE.md#security-model): the client's nonce and
-    /// <c>HMAC-SHA256(PBKDF2-SHA256(password, salt, 10 000), hostNonce ‖ clientNonce ‖ sessionId)</c>; the password never
-    /// crosses the wire.
+    /// <c>HMAC-SHA256(PBKDF2-SHA256(password, salt, 200 000), label ‖ sessionId ‖ hostNonce ‖ clientNonce ‖ salt ‖ host Steam ID)</c>
+    /// (<see cref="Session.SessionCrypto"/>); the password never crosses the wire.
     /// <code>
     /// bytes clientNonce (≤ 64) | bytes mac (≤ 64)
     /// </code>

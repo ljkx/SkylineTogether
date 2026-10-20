@@ -15,7 +15,7 @@ using Unity.Entities;
 namespace SkylineTogether.Sync
 {
     /// <summary>
-    /// The UI-level line check (ARCHITECTURE.md#line-check-and-icon-digest, the user's main complaint): per transport line, one
+    /// The UI-level line check (ARCHITECTURE.md#line-check-and-icon-digest): per transport line, one
     /// <see cref="LineStateRow"/> of exactly what the vanilla line UI shows, computed with the UI's own functions on both
     /// sides: the stop count (<c>TransportUIUtils.GetStopCount</c>), the length (<c>GetRouteLength</c>), schedule and
     /// active state (<c>Route</c> options as in <c>BuildTransportLine</c>), <c>Route.m_Flags</c> (complete), the broken

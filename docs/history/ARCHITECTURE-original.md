@@ -2044,7 +2044,7 @@ The game runs single-instance (R06 §1), so the client path needs single-machine
 
 ### 13.6 Diagnostics dump
 
-One zip (JSON plus logs) under `ModsData/SkylineTogether/dumps/`: session state, peers, versions and manifests, catalog and policy digests, per-rule family counts, gate state (incl. preview-window history), probe and self-test reports, slot statistics, budgets, staleness, hash health, repair and leak history, icon repairs per owner, the icon authority filter's dropped commands per producer, route-guard restores, road-choice reconciles, re-resolutions, the current `LineStateProbe` rows, pending references, unresolved prefabs, timing histograms, the last 1000 log lines and the last 200 errors with context. Written from the settings page, the HUD, or automatically on `Faulted`. This is what the user sends back after each in-game test.
+One zip (JSON plus logs) under `ModsData/SkylineTogether/dumps/`: session state, peers, versions and manifests, catalog and policy digests, per-rule family counts, gate state (incl. preview-window history), probe and self-test reports, slot statistics, budgets, staleness, hash health, repair and leak history, icon repairs per owner, the icon authority filter's dropped commands per producer, route-guard restores, road-choice reconciles, re-resolutions, the current `LineStateProbe` rows, pending references, unresolved prefabs, timing histograms, the last 1000 log lines and the last 200 errors with context. Written from the settings page, the HUD, or automatically on `Faulted`. This is the evidence returned after each in-game test.
 
 ### 13.7 Measurement mode
 
