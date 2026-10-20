@@ -26,7 +26,8 @@ namespace SkylineTogether.Core.Protocol
         /// password proof bound to the connection and answered by the host, <see cref="ControlKind.Authenticated"/>, the
         /// manifest sent only after it, 200 000 PBKDF2 rounds), <see cref="ControlKind.Dropped"/>, and localizable texts
         /// (<c>Session.LocalText</c> in kick, ban, end and drop payloads, keys in chat lines, a "text" record in refusal reports);
-        /// 7: the id generation byte in entity records (<see cref="Sync.SyncRecord.Generation"/>).
+        /// 7: the id generation byte in entity records (<see cref="Sync.SyncRecord.Generation"/>) and the painted-cell mask
+        /// of resource paint patches.
         /// </summary>
         public const int Current = 7;
     }

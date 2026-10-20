@@ -77,6 +77,14 @@ namespace SkylineTogether.Sync
             public bool Painted;
             public int PaintX0, PaintY0, PaintX1, PaintY1;
             public double NextPatch;
+            // client: the cells local stamps touched since their last patch, and their values before the first such stamp
+            // (only cells whose painted fields changed are merged by the host; the rest of the rectangle is the client's
+            // possibly older copy of the host's map)
+            public bool[] PaintTouched;
+            public byte[] PaintBaseline;
+            public byte[] PaintedBits;
+            /// <summary>Field offsets kept in order after a merge (low &lt;= mid &lt;= high; groundwater), or null.</summary>
+            public int[] OrderedFields;
 
             public abstract bool TryGetLayout(out int width, out int height, out int cellBytes);
 
@@ -159,6 +167,7 @@ namespace SkylineTogether.Sync
         private EntityQuery _brushes;
         private byte[] _scratch = new byte[16 * 1024];
         private byte[] _patchCells;
+        private byte[] _patchPainted;
         private int _scanIndex;
         private double _lastSend = -1;
         private long _tilesSent, _tilesApplied, _patches;
@@ -225,6 +234,8 @@ namespace SkylineTogether.Sync
             Add<GroundPollution>(world.GetOrCreateSystemManaged<GroundPollutionSystem>(), "GroundPollution", AttentionTopic.Pollution, null, 4);
             Add<NoisePollution>(world.GetOrCreateSystemManaged<NoisePollutionSystem>(), "NoisePollution", AttentionTopic.Noise, null, 4);
             Add<GroundWater>(world.GetOrCreateSystemManaged<GroundWaterSystem>(), "GroundWater", AttentionTopic.Groundwater, groundwater, 6, groundwaterClamps);
+            // GroundWaterSystem relies on m_Polluted <= m_Amount <= m_Max
+            if (_byId.TryGetValue(CellMapMessage.MapId("GroundWater"), out Channel water)) water.OrderedFields = new[] { 2, 0, 4 };
             Add<NaturalResourceCell>(world.GetOrCreateSystemManaged<NaturalResourceSystem>(), "NaturalResources", AttentionTopic.NaturalResources, resources, 16, resourceClamps);
             Add<LandValueCell>(world.GetOrCreateSystemManaged<LandValueSystem>(), "LandValue", AttentionTopic.LandValue, null, 4);
             Add<TelecomCoverage>(world.GetOrCreateSystemManaged<TelecomCoverageSystem>(), "TelecomCoverage", AttentionTopic.Telecom, null, 2);
@@ -422,6 +433,7 @@ namespace SkylineTogether.Sync
                             continue;
                         }
                         _lastPaint = Now; // the client's own prediction differs from the host's tiles for a while
+                        RecordPaintBaseline(c, layout, x0, y0, x1, y1);
                         if (!c.Painted)
                         {
                             c.Painted = true;
@@ -447,6 +459,33 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 _log.Error(LogCategory.Fields, "resource paint capture failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// Client, before the game's brush writes this frame's stamps: the cells of the stamp's rectangle not touched
+        /// since the last patch keep their current values as the baseline the patch compares against.
+        /// </summary>
+        private static void RecordPaintBaseline(Channel c, CellMapLayout layout, int x0, int y0, int x1, int y1)
+        {
+            int cells = layout.Width * layout.Height;
+            if (c.PaintTouched == null || c.PaintTouched.Length != cells || c.PaintBaseline == null || c.PaintBaseline.Length != layout.MapBytes)
+            {
+                c.PaintTouched = new bool[cells];
+                c.PaintBaseline = new byte[layout.MapBytes];
+            }
+            if (c.Current.Length != layout.MapBytes) c.Current = new byte[layout.MapBytes];
+            c.CopyOut(c.Current);
+            int cellBytes = layout.CellBytes;
+            for (int y = y0; y <= y1; y++)
+            {
+                for (int x = x0; x <= x1; x++)
+                {
+                    int cell = y * layout.Width + x;
+                    if (c.PaintTouched[cell]) continue;
+                    c.PaintTouched[cell] = true;
+                    Buffer.BlockCopy(c.Current, cell * cellBytes, c.PaintBaseline, cell * cellBytes, cellBytes);
+                }
             }
         }
 
@@ -544,7 +583,7 @@ namespace SkylineTogether.Sync
                 // periodic per-peer audit gives its replica the host's tiles back)
                 SessionHost host = _sessions.Host;
                 if (peer != PeerId.Host && host != null && !RolePermissions.Allows(host.GetRole(peer), Permission.Terraform)) return;
-                CellMapMessage.ReadPatch(r, layout, out int x0, out int y0, out int w, out int hgt, ref _patchCells);
+                CellMapMessage.ReadPatch(r, layout, out int x0, out int y0, out int w, out int hgt, ref _patchCells, ref _patchPainted);
                 c.CopyOut(c.Current);
                 // painted values beyond what the game's brushes produce are clamped before the merge
                 int clamped = CellMapMessage.ClampPatch(layout, c.Current, x0, y0, w, hgt, _patchCells, c.PaintClamps);
@@ -553,7 +592,9 @@ namespace SkylineTogether.Sync
                     if (_clamped == 0) _log.Warn(LogCategory.Fields, peer + " painted " + c.Name + " values outside the brush range; they were clamped");
                     _clamped += clamped;
                 }
-                int changed = CellMapMessage.MergeMasked(layout, c.Current, x0, y0, w, hgt, _patchCells, c.PaintMask);
+                // only the cells the player painted: the rest of the rectangle is the client's older copy of this map
+                int changed = CellMapMessage.MergeMasked(layout, c.Current, x0, y0, w, hgt, _patchCells, c.PaintMask, _patchPainted);
+                if (changed > 0 && c.OrderedFields != null) CellMapMessage.EnforceOrder(layout, c.Current, x0, y0, w, hgt, c.OrderedFields[0], c.OrderedFields[1], c.OrderedFields[2]);
                 if (changed > 0) c.CopyIn(c.Current);
                 // Current no longer matches the tile hashes: rescanned at this frame's end, then streamed to everyone
                 c.Valid = false;
@@ -847,6 +888,7 @@ namespace SkylineTogether.Sync
                 c.Painted = false;
                 c.NextPatch = now + PatchInterval;
                 c.CopyOut(c.Current);
+                if (c.PaintTouched == null || c.PaintBaseline == null || c.PaintBaseline.Length != c.Current.Length) continue; // nothing recorded
                 int maxEdge = CellMapMessage.MaxPatchCells;
                 for (int y = c.PaintY0; y <= c.PaintY1; y += maxEdge)
                 {
@@ -855,11 +897,19 @@ namespace SkylineTogether.Sync
                         int w = Math.Min(maxEdge, c.PaintX1 - x + 1), h = Math.Min(maxEdge, c.PaintY1 - y + 1);
                         int need = w * h * c.Layout.CellBytes;
                         if (_patchCells == null || _patchCells.Length < need) _patchCells = new byte[need];
+                        int maskBytes = CellMapMessage.PaintedMaskBytes(w, h);
+                        if (c.PaintedBits == null || c.PaintedBits.Length < maskBytes) c.PaintedBits = new byte[maskBytes];
+                        // only the cells whose painted fields changed since before the first stamp touched them
+                        if (CellMapMessage.MarkPainted(c.Layout, c.Current, c.PaintBaseline, c.PaintTouched, c.PaintMask, x, y, w, h, c.PaintedBits) == 0) continue;
                         _out.Reset();
-                        CellMapMessage.WritePatch(_out, c.Id, c.Layout, x, y, w, h, c.Current, _patchCells);
+                        CellMapMessage.WritePatch(_out, c.Id, c.Layout, x, y, w, h, c.Current, _patchCells, c.PaintedBits);
                         client.SendToHost(MessageKind.CellMaps, _out.Buffer, 0, _out.Length);
                         _patches++;
                     }
+                }
+                for (int y = c.PaintY0; y <= c.PaintY1; y++)
+                {
+                    for (int x = c.PaintX0; x <= c.PaintX1; x++) c.PaintTouched[y * c.Layout.Width + x] = false;
                 }
             }
         }

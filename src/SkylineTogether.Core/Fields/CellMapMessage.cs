@@ -190,11 +190,24 @@ namespace SkylineTogether.Core.Fields
 
         // ------------------------------------------------------------------ patches
 
-        /// <summary>A patch: the cell rectangle [x0, x0 + w) × [y0, y0 + h) of the map, raw cells row-major.</summary>
-        public static void WritePatch(ByteWriter w, uint mapId, CellMapLayout layout, int x0, int y0, int width, int height, byte[] map, byte[] scratch)
+        /// <summary>The bytes of a patch's painted-cell mask: one bit per cell of the rectangle, row-major.</summary>
+        public static int PaintedMaskBytes(int width, int height) => (width * height + 7) / 8;
+
+        /// <summary>Whether cell <paramref name="index"/> (row-major in the patch rectangle) is marked in a painted mask (null: all are).</summary>
+        public static bool IsPainted(byte[] painted, int index) => painted == null || (painted[index >> 3] & (1 << (index & 7))) != 0;
+
+        /// <summary>
+        /// A patch: the cell rectangle [x0, x0 + w) × [y0, y0 + h) of the map, raw cells row-major, then the mask of the
+        /// cells the player painted (<paramref name="painted"/>, <see cref="PaintedMaskBytes"/>; null: every cell). Only
+        /// painted cells are merged: the other cells of the rectangle carry the client's possibly older copy of the
+        /// host's map.
+        /// </summary>
+        public static void WritePatch(ByteWriter w, uint mapId, CellMapLayout layout, int x0, int y0, int width, int height, byte[] map, byte[] scratch, byte[] painted = null)
         {
             if (layout == null) throw new ArgumentNullException(nameof(layout));
             if (width < 1 || height < 1 || width > MaxPatchCells || height > MaxPatchCells) throw new ArgumentOutOfRangeException(nameof(width), "1 to " + MaxPatchCells + " cells per edge");
+            int maskBytes = PaintedMaskBytes(width, height);
+            if (painted != null && painted.Length < maskBytes) throw new ArgumentException("the painted mask is too small", nameof(painted));
             int n = layout.ExtractRect(map, x0, y0, width, height, scratch, 0);
             WriteHeader(w, TypePatch, mapId, layout);
             w.WriteUInt16((ushort)x0);
@@ -202,10 +215,27 @@ namespace SkylineTogether.Core.Fields
             w.WriteUInt16((ushort)width);
             w.WriteUInt16((ushort)height);
             TileBodyCodec.Write(scratch, n, null, w, null, What);
+            for (int i = 0; i < maskBytes; i++)
+            {
+                int bits = painted != null ? painted[i] : 0xFF;
+                int last = width * height - i * 8;
+                if (last < 8) bits &= (1 << last) - 1; // no bits beyond the rectangle
+                w.WriteByte((byte)bits);
+            }
         }
 
-        /// <summary>Reads a patch after <see cref="ReadHeader"/>; the raw cells go to <paramref name="cells"/> (resized when small).</summary>
+        /// <summary>Reads a patch after <see cref="ReadHeader"/>, dropping its painted mask (see the overload).</summary>
         public static void ReadPatch(ByteReader r, CellMapLayout layout, out int x0, out int y0, out int width, out int height, ref byte[] cells)
+        {
+            byte[] painted = null;
+            ReadPatch(r, layout, out x0, out y0, out width, out height, ref cells, ref painted);
+        }
+
+        /// <summary>
+        /// Reads a patch after <see cref="ReadHeader"/>; the raw cells go to <paramref name="cells"/> and the painted mask to
+        /// <paramref name="painted"/> (both resized when small). Bits beyond the rectangle are malformed.
+        /// </summary>
+        public static void ReadPatch(ByteReader r, CellMapLayout layout, out int x0, out int y0, out int width, out int height, ref byte[] cells, ref byte[] painted)
         {
             if (r == null) throw new ArgumentNullException(nameof(r));
             if (layout == null) throw new ArgumentNullException(nameof(layout));
@@ -220,6 +250,93 @@ namespace SkylineTogether.Core.Fields
             int n = width * height * layout.CellBytes;
             if (cells == null || cells.Length < n) cells = new byte[n];
             TileBodyCodec.Read(r, n, null, cells, What);
+            int maskBytes = PaintedMaskBytes(width, height);
+            if (painted == null || painted.Length < maskBytes) painted = new byte[maskBytes];
+            r.ReadBytes(painted, 0, maskBytes);
+            int last = width * height - (maskBytes - 1) * 8;
+            if (last < 8 && (painted[maskBytes - 1] >> last) != 0) throw new DecodeException(What + ": painted mask bits beyond the patch");
+        }
+
+        /// <summary>
+        /// Client: marks in <paramref name="painted"/> (<see cref="PaintedMaskBytes"/>) the cells of the rectangle the player
+        /// painted: cells <paramref name="touched"/> by a local stamp (one flag per map cell) whose painted fields
+        /// (<paramref name="fieldMask"/>) differ from <paramref name="baseline"/>, the copy taken before the first stamp touched
+        /// them. Returns the number of painted cells.
+        /// </summary>
+        public static int MarkPainted(CellMapLayout layout, byte[] map, byte[] baseline, bool[] touched, byte[] fieldMask, int x0, int y0, int width, int height, byte[] painted)
+        {
+            if (layout == null) throw new ArgumentNullException(nameof(layout));
+            if (map == null || baseline == null || map.Length < layout.MapBytes || baseline.Length < layout.MapBytes) throw new ArgumentException("the map is smaller than the layout", nameof(map));
+            if (touched == null || touched.Length < layout.Width * layout.Height) throw new ArgumentException("one flag per cell", nameof(touched));
+            if (fieldMask == null || fieldMask.Length != layout.CellBytes) throw new ArgumentException("one mask entry per cell byte", nameof(fieldMask));
+            if (x0 < 0 || y0 < 0 || width < 1 || height < 1 || x0 > layout.Width - width || y0 > layout.Height - height) throw new ArgumentOutOfRangeException(nameof(width));
+            int maskBytes = PaintedMaskBytes(width, height);
+            if (painted == null || painted.Length < maskBytes) throw new ArgumentException("the painted mask is too small", nameof(painted));
+            Array.Clear(painted, 0, maskBytes);
+            int cellBytes = layout.CellBytes, count = 0;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int cell = (y0 + y) * layout.Width + x0 + x;
+                    if (!touched[cell]) continue;
+                    int at = cell * cellBytes;
+                    bool differs = false;
+                    for (int b = 0; b < cellBytes && !differs; b++) differs = fieldMask[b] != 0 && map[at + b] != baseline[at + b];
+                    if (!differs) continue;
+                    int index = y * width + x;
+                    painted[index >> 3] |= (byte)(1 << (index & 7));
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Keeps three signed 16-bit fields of every cell of a rectangle in order, <c>low &lt;= mid &lt;= high</c> (groundwater:
+        /// polluted, amount, maximum, an invariant the game's groundwater simulation relies on): a mid above high raises
+        /// high, a low above mid lowers low. Returns the number of cells fixed.
+        /// </summary>
+        public static int EnforceOrder(CellMapLayout layout, byte[] map, int x0, int y0, int width, int height, int lowOffset, int midOffset, int highOffset)
+        {
+            if (layout == null) throw new ArgumentNullException(nameof(layout));
+            if (map == null || map.Length < layout.MapBytes) throw new ArgumentException("the map is smaller than the layout", nameof(map));
+            if (x0 < 0 || y0 < 0 || width < 0 || height < 0 || x0 > layout.Width - width || y0 > layout.Height - height) throw new ArgumentOutOfRangeException(nameof(width));
+            int cellBytes = layout.CellBytes;
+            foreach (int o in new[] { lowOffset, midOffset, highOffset })
+            {
+                if (o < 0 || o + 2 > cellBytes) throw new ArgumentOutOfRangeException(nameof(lowOffset));
+            }
+            int fixedCells = 0;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int at = ((y0 + y) * layout.Width + x0 + x) * cellBytes;
+                    short low = Short(map, at + lowOffset), mid = Short(map, at + midOffset), high = Short(map, at + highOffset);
+                    bool changed = false;
+                    if (mid > high)
+                    {
+                        PutShort(map, at + highOffset, mid);
+                        changed = true;
+                    }
+                    if (low > mid)
+                    {
+                        PutShort(map, at + lowOffset, mid);
+                        changed = true;
+                    }
+                    if (changed) fixedCells++;
+                }
+            }
+            return fixedCells;
+        }
+
+        private static short Short(byte[] b, int at) => (short)(b[at] | (b[at + 1] << 8));
+
+        private static void PutShort(byte[] b, int at, short v)
+        {
+            b[at] = (byte)v;
+            b[at + 1] = (byte)(v >> 8);
         }
 
         /// <summary>
@@ -299,8 +416,10 @@ namespace SkylineTogether.Core.Fields
         /// the host's consumed amounts). <paramref name="fieldMask"/> has one entry per cell byte. Returns the number of
         /// cells that changed.
         /// </summary>
-        public static int MergeMasked(CellMapLayout layout, byte[] map, int x0, int y0, int width, int height, byte[] patch, byte[] fieldMask)
+        /// <remarks>Only the cells marked in <paramref name="painted"/> are merged (null: every cell).</remarks>
+        public static int MergeMasked(CellMapLayout layout, byte[] map, int x0, int y0, int width, int height, byte[] patch, byte[] fieldMask, byte[] painted = null)
         {
+            if (painted != null && painted.Length < PaintedMaskBytes(width, height)) throw new ArgumentException("the painted mask is too small", nameof(painted));
             if (layout == null) throw new ArgumentNullException(nameof(layout));
             if (map == null || map.Length < layout.MapBytes) throw new ArgumentException("the map is smaller than the layout", nameof(map));
             if (fieldMask == null || fieldMask.Length != layout.CellBytes) throw new ArgumentException("one mask entry per cell byte", nameof(fieldMask));
@@ -312,6 +431,7 @@ namespace SkylineTogether.Core.Fields
             {
                 for (int x = 0; x < width; x++)
                 {
+                    if (!IsPainted(painted, y * width + x)) continue;
                     int src = (y * width + x) * cellBytes;
                     int dst = ((y0 + y) * layout.Width + x0 + x) * cellBytes;
                     bool any = false;
