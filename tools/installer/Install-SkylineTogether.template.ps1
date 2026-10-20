@@ -129,13 +129,17 @@ if ($CollectLogs) {
     Remove-Dir $stage
     Write-Ok "Saved $count log file(s) to:"
     Write-Host "        $zip"
+    $size = (Get-Item -LiteralPath $zip).Length
+    if ($size -gt 25MB) {
+        Write-Warn2 ('The zip is {0:N0} MB; GitHub accepts at most 25 MB per file. Attach the files from the zip separately.' -f ($size / 1MB))
+    }
     if ($dumps -gt 0) {
-        Write-Host '   It contains player names and Steam IDs; your Windows user name was replaced in the text files.'
+        Write-Host '   It contains player names, Steam IDs and the session name; paths to your user folder were replaced by %USERPROFILE%.'
         Write-Warn2 "It also contains $dumps crash dump(s): snapshots of the game's memory, which can include passwords and chat."
         Write-Host  '        Send this zip privately to the person who asked for it, not as an attachment to a public bug report.'
     } else {
         Write-Host '   Attach this zip to your bug report on GitHub: https://github.com/ljkx/SkylineTogether/issues'
-        Write-Host '   It contains player names and Steam IDs (no passwords, no chat); your Windows user name was replaced.'
+        Write-Host '   It contains player names, Steam IDs and the session name (no passwords, no chat); paths to your user folder were replaced by %USERPROFILE%.'
         Write-Host '   Crash dumps are not included. Add -IncludeDumps only when asked, and send dumps privately.'
     }
     Finish 0
@@ -260,8 +264,8 @@ $pdx = Join-Path $UserData '.cache\mods\pdx_mods'
 $old = @()
 if (Test-Path -LiteralPath $pdx) { $old = @(Get-ChildItem -LiteralPath $pdx -Directory -Filter "$($OldMultiplayerModId)_*" -ErrorAction SilentlyContinue) }
 if ($old.Count -gt 0) {
-    Write-Warn2 'The old "CS2 Multiplayer Mod" is subscribed. Disable it (or unsubscribe) in Paradox Mods /'
-    Write-Host  '        your playset before playing - two multiplayer mods at once conflict.'
+    Write-Warn2 'The old "CS2 Multiplayer Mod" is subscribed. Disable it (or unsubscribe) in your playset before playing:'
+    Write-Host  '        two multiplayer mods cannot run at the same time.'
 } else {
     Write-Ok 'No conflicting multiplayer mod found'
 }
@@ -273,8 +277,8 @@ if (Test-Path -LiteralPath $pdx) {
     })
 }
 if ($subscribed.Count -gt 0) {
-    Write-Warn2 'Skyline Together is also subscribed on Paradox Mods. Two copies at once can break the game, and'
-    Write-Host  '        the game loads only one of them (this local copy). Keep one: unsubscribe on Paradox Mods,'
+    Write-Warn2 'Skyline Together is also subscribed on Paradox Mods. The game loads only one copy (this local one),'
+    Write-Host  '        and two different builds can break your sessions. Keep one: unsubscribe on Paradox Mods,'
     Write-Host  '        or uninstall this copy (-Uninstall) and use the subscription. Every player needs the same build.'
 }
 $libs = @('0Harmony', 'Colossal.Mathematics', 'Markdig', 'Reinforced.Typings', 'Extensions', 'External')

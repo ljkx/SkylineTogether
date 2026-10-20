@@ -106,10 +106,13 @@ python tools/installer/make_installer.py
   it as ANSI); the script checks that.
 - `Install.cmd` and `Collect-Logs.cmd`: double-click wrappers (`Collect-Logs.cmd` runs the installer with
   `-CollectLogs`).
-- `HOW-TO-TEST.txt`: the two-player checklist from `tools/installer/HOW-TO-TEST.txt`.
+- `TWO-PLAYER-CHECKLIST.txt`: the two-player checklist from `tools/installer/TWO-PLAYER-CHECKLIST.txt`.
 
-The **build id** printed by the installer and written into `HOW-TO-TEST.txt` is the first 12 hex digits of the SHA-256
-of `SkylineTogether.dll`. The game computes the same value from the DLL it loaded and compares it when a player joins;
+The installer also takes `-Uninstall` (with `-RemoveSettings`) and, with `-CollectLogs`, `-IncludeDumps` (crash dumps
+are left out by default).
+
+The **build id** printed by the installer and written into `TWO-PLAYER-CHECKLIST.txt` is the first 12 hex digits of the
+SHA-256 of `SkylineTogether.dll`. The game computes the same value from the DLL it loaded and compares it when a player joins;
 it changes with every compile. See [releasing.md](releasing.md).
 
 For Paradox Mods, `python tools/paradox/publish_paradox.py` uploads the files of the same release zip with the game's

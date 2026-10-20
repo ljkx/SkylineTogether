@@ -107,7 +107,7 @@ and [ARCHITECTURE.md](../ARCHITECTURE.md#solo-test-record-and-replay).
 ## Build identity
 
 One value identifies a build: the **build id**, the first 12 hex digits of the SHA-256 of `SkylineTogether.dll`. The
-installer prints it (`tools/installer/make_installer.py`, `Install.cmd`, `HOW-TO-TEST.txt`), and
+installer prints it (`tools/installer/make_installer.py`, `Install.cmd`, `TWO-PLAYER-CHECKLIST.txt`), and
 `publish_paradox.py` prints it for the Paradox Mods upload. The game computes it from the DLL it loaded
 (`Session/GameInfoProvider.cs`), compares it when a player joins and shows it in the panel's footer, refusals, the log
 and the diagnostics dump. It changes with every compile.

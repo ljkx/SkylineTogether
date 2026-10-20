@@ -1,6 +1,6 @@
 # Checking a build
 
-This page describes the two-player checklist for checking a build (`HOW-TO-TEST.txt` in the setup zip has the same
+This page describes the two-player checklist for checking a build (`TWO-PLAYER-CHECKLIST.txt` in the setup zip has the same
 steps with the same numbers) and the solo test that needs only one PC. How to report what you find:
 [Troubleshooting → Reporting a bug](troubleshooting.md#reporting-a-bug).
 
@@ -11,8 +11,8 @@ steps with the same numbers) and the solo test that needs only one PC. How to re
 1. Close Cities: Skylines II.
 2. Install the same release on both PCs: the same Paradox Mods version, or `Install.cmd` from the same setup zip. Both
    players must see the **same build id** (at the bottom of the Skyline Together panel; the installer prints it too).
-3. For the simplest setup, turn your Paradox playset off (or use an empty playset) on both PCs, so the mod lists match.
-   Disable any other multiplayer mod.
+3. For the simplest setup, use an empty playset on both PCs, so the mod lists match. Disable any other multiplayer
+   mod.
 4. Start Steam and log in on both PCs.
 
 ### Connect

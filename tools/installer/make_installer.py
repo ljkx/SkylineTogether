@@ -47,17 +47,20 @@ install_cmd = ('@echo off\r\n'
                'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-SkylineTogether.ps1" %*\r\n')
 logs_cmd = ('@echo off\r\n'
             'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-SkylineTogether.ps1" -CollectLogs %*\r\n')
-howto = open(os.path.join(here, 'HOW-TO-TEST.txt'), encoding='utf-8').read().replace('__BUILDID__', build).replace('\n', '\r\n')
+checklist = open(os.path.join(here, 'TWO-PLAYER-CHECKLIST.txt'), encoding='utf-8').read().replace('__BUILDID__', build).replace('\n', '\r\n')
 out = os.path.join(dist, 'SkylineTogether-Setup.zip')
 with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
     z.writestr('SkylineTogether-Setup/Install-SkylineTogether.ps1', script)
     z.writestr('SkylineTogether-Setup/Install.cmd', install_cmd)
     z.writestr('SkylineTogether-Setup/Collect-Logs.cmd', logs_cmd)
-    z.writestr('SkylineTogether-Setup/HOW-TO-TEST.txt', howto)
+    z.writestr('SkylineTogether-Setup/TWO-PLAYER-CHECKLIST.txt', checklist)
 # a loose copy for the host's own use
 loose = os.path.join(dist, 'SkylineTogether-Setup')
 os.makedirs(loose, exist_ok=True)
-for name, data in (('Install-SkylineTogether.ps1', script), ('Install.cmd', install_cmd), ('Collect-Logs.cmd', logs_cmd), ('HOW-TO-TEST.txt', howto)):
+stale = os.path.join(loose, 'HOW-TO-TEST.txt')  # the checklist's name before 0.2.0
+if os.path.isfile(stale):
+    os.remove(stale)
+for name, data in (('Install-SkylineTogether.ps1', script), ('Install.cmd', install_cmd), ('Collect-Logs.cmd', logs_cmd), ('TWO-PLAYER-CHECKLIST.txt', checklist)):
     with open(os.path.join(loose, name), 'w', encoding='ascii', newline='') as f:
         f.write(data)
 print('built', out, 'version', version, 'build', build, 'size', os.path.getsize(out))
