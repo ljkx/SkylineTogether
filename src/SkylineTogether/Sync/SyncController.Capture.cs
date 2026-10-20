@@ -284,6 +284,7 @@ namespace SkylineTogether.Sync
                 _staged.Rewrite(_writeDespawn ?? (_writeDespawn = id => _batch.Despawn(id)));
             }
             _writtenThisFrame.Clear();
+            _codec.BeginCaptureFrame();
             SettleNetCharges(); // the nets of this frame's proposals, now that the game composed them
             // mod compatibility: mod data entities that replicated values reference are bound and sent with them
             _codec.DependencyBinder = HostBindDependency;
@@ -339,6 +340,7 @@ namespace SkylineTogether.Sync
                             // one entity that fails never costs the frame's batch (and the despawns in it)
                             SyncBatch.Writer.Mark mark = _batch.GetMark();
                             int staged = _staged.Mark;
+                            int prefabs = _codec.PrefabMark;
                             try
                             {
                                 Family family = known ? chunkFamily : _codec.Families.Classify(em, e);
@@ -346,7 +348,7 @@ namespace SkylineTogether.Sync
                             }
                             catch (Exception ex)
                             {
-                                RollBackCapture(mark, staged);
+                                RollBackCapture(mark, staged, prefabs);
                                 if (deleted) DespawnAfterFailure(e);
                                 CaptureFailed("capture of a changed entity", ex);
                             }
@@ -379,6 +381,7 @@ namespace SkylineTogether.Sync
             {
                 SyncBatch.Writer.Mark mark = _batch.GetMark();
                 int staged = _staged.Mark;
+                int prefabs = _codec.PrefabMark;
                 try
                 {
                     if (_writtenThisFrame.Contains(e) || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
@@ -387,7 +390,7 @@ namespace SkylineTogether.Sync
                 }
                 catch (Exception ex)
                 {
-                    RollBackCapture(mark, staged);
+                    RollBackCapture(mark, staged, prefabs);
                     CaptureFailed("capture of an untagged change", ex);
                 }
             }
@@ -463,21 +466,31 @@ namespace SkylineTogether.Sync
             if (step == null) return;
             SyncBatch.Writer.Mark mark = _batch.GetMark();
             int staged = _staged.Mark;
+            int prefabs = _codec.PrefabMark;
             try
             {
                 step();
             }
             catch (Exception ex)
             {
-                RollBackCapture(mark, staged);
+                RollBackCapture(mark, staged, prefabs);
                 CaptureFailed(what, ex, feature);
             }
         }
 
-        private void RollBackCapture(SyncBatch.Writer.Mark mark, int staged)
+        private void RollBackCapture(SyncBatch.Writer.Mark mark, int staged, int prefabs)
         {
             _batch.RollBack(mark);
             _staged.Rewrite(_writeDespawn ?? (_writeDespawn = id => _batch.Despawn(id)), staged); // unbound and staged: their despawns must go out
+            // prefabs the step bound stay bound: their records go out again (every peer skipped what used them otherwise)
+            try
+            {
+                _codec.RewritePrefabsSince(prefabs, _batch);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn(LogCategory.Replication, "writing the prefab records of a rolled-back capture step again failed", ex);
+            }
         }
 
         private void CaptureFailed(string what, Exception ex, FeatureHealth feature = null)

@@ -763,8 +763,29 @@ namespace SkylineTogether.Sync
             if (id != 0) return id;
             id = _ids.BindNew(prefab, Family.Prefab);
             if (id == 0) return 0;
+            _newPrefabs.Add((id, prefab));
             WritePrefab(w, id, prefab);
             return id;
+        }
+
+        // host: prefabs bound by EnsurePrefab since the frame's capture started, with their ids (a rolled-back capture step
+        // must not drop their records: the prefab stays bound, and every peer would skip what uses it as a missing asset)
+        private readonly List<(uint Id, Entity Prefab)> _newPrefabs = new List<(uint, Entity)>();
+
+        /// <summary>Host: the frame's capture starts (<see cref="PrefabMark"/>).</summary>
+        public void BeginCaptureFrame() => _newPrefabs.Clear();
+
+        /// <summary>Host: a mark of the prefabs bound so far in this frame's capture.</summary>
+        public int PrefabMark => _newPrefabs.Count;
+
+        /// <summary>Host: writes again the prefab records of the prefabs bound since <paramref name="mark"/> (their records were rolled back).</summary>
+        public void RewritePrefabsSince(int mark, SyncBatch.Writer w)
+        {
+            for (int i = Math.Max(0, mark); i < _newPrefabs.Count; i++)
+            {
+                (uint id, Entity prefab) = _newPrefabs[i];
+                if (_ids.GetEntity(id) == prefab) WritePrefab(w, id, prefab);
+            }
         }
 
         public void WritePrefab(SyncBatch.Writer w, uint id, Entity prefab)
