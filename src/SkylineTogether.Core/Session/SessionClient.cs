@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Threading.Tasks;
 using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Transport;
@@ -44,6 +45,9 @@ namespace SkylineTogether.Core.Session
         /// waits). Off: at once, on the calling thread (tests, tools).
         /// </summary>
         public bool DeriveKeyInBackground;
+
+        /// <summary>Starts a background derivation (null: a thread-pool task). Tests set it to drive the derivation themselves.</summary>
+        internal Func<Func<byte[]>, Task<byte[]>> KeyDerivationScheduler { get; set; }
 
         /// <summary>
         /// Check the host's proof that it knows the password (<see cref="ControlKind.Authenticated"/>) and end the join when
@@ -771,7 +775,7 @@ namespace SkylineTogether.Core.Session
                         return;
                     }
                     _challenge = ch;
-                    _keyCache = new PasswordKeyCache(ch.Salt, _options.DeriveKeyInBackground);
+                    _keyCache = new PasswordKeyCache(ch.Salt, _options.DeriveKeyInBackground, _options.KeyDerivationScheduler);
                     AnswerChallenge();
                     return;
                 }

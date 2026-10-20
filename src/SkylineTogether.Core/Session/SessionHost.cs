@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Transport;
@@ -143,6 +144,9 @@ namespace SkylineTogether.Core.Session
         /// waits). Off: at once, on the calling thread (tests, tools).
         /// </summary>
         public bool DeriveKeysInBackground;
+
+        /// <summary>Starts a background derivation (null: a thread-pool task). Tests set it to drive the derivation themselves.</summary>
+        internal Func<Func<byte[]>, Task<byte[]>> KeyDerivationScheduler { get; set; }
 
         /// <summary>
         /// Bytes a connection's messages may decompress to in total before it is admitted (its hello, manifest and password
@@ -356,7 +360,7 @@ namespace SkylineTogether.Core.Session
             _log = log ?? throw new ArgumentNullException(nameof(log));
             _sessionId = (uint)_random.Next(1, int.MaxValue);
             _salt = SessionCrypto.RandomBytes(16);
-            _keys = new PasswordKeyCache(_salt, options.DeriveKeysInBackground);
+            _keys = new PasswordKeyCache(_salt, options.DeriveKeysInBackground, options.KeyDerivationScheduler);
         }
 
         public HostOptions Options => _options;

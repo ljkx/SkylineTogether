@@ -12,15 +12,26 @@ namespace SkylineTogether.Core.Session
     {
         private readonly byte[] _salt;
         private readonly bool _background;
+        private readonly Func<Func<byte[]>, Task<byte[]>> _scheduler;
         private string _keyFor;
         private byte[] _key;
         private Task<byte[]> _task;
         private string _taskFor;
 
         public PasswordKeyCache(byte[] salt, bool background)
+            : this(salt, background, null)
+        {
+        }
+
+        /// <summary>
+        /// <paramref name="scheduler"/> starts a background derivation and returns its task (null: <c>Task.Run</c>);
+        /// tests pass one they drive themselves, so they need no wall-clock waits.
+        /// </summary>
+        internal PasswordKeyCache(byte[] salt, bool background, Func<Func<byte[]>, Task<byte[]>> scheduler)
         {
             _salt = salt ?? Array.Empty<byte>();
             _background = background;
+            _scheduler = scheduler ?? (work => Task.Run(work));
         }
 
         /// <summary>True while a derivation runs on the worker thread.</summary>
@@ -45,7 +56,7 @@ namespace SkylineTogether.Core.Session
                 byte[] salt = _salt;
                 string p = password;
                 _taskFor = password;
-                _task = Task.Run(() => SessionCrypto.DeriveKey(p, salt));
+                _task = _scheduler(() => SessionCrypto.DeriveKey(p, salt));
             }
             if (!_task.IsCompleted) return null;
             Task<byte[]> done = _task;

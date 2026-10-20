@@ -174,17 +174,31 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void KeysAreDerivedInTheBackgroundOnBothSides()
         {
-            var rig = new SessionRig(new HostOptions { HostName = "Hosty", Password = "slow but sure", DeriveKeysInBackground = true });
+            // both sides hand the derivation to a scheduler the test drives (ManualDeriveScheduler): it runs only when
+            // the test says so, on a thread of its own, so the handshake must wait for it without blocking a frame
+            var hostKeys = new ManualDeriveScheduler();
+            var clientKeys = new ManualDeriveScheduler();
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty", Password = "slow but sure", DeriveKeysInBackground = true, KeyDerivationScheduler = hostKeys.Schedule });
+            Assert.Equal(1, hostKeys.Started, "the host starts deriving when it starts hosting");
             LoopbackTransport t = rig.HostTransport.CreateClient(new PeerIdentity(9301, "loop:Anna", "Anna"));
-            var client = new SessionClient(t, new FakeInfo(), new FakeLoader(), new ClientOptions { PlayerName = "Anna", Password = "slow but sure", DeriveKeyInBackground = true }, rig.Clock, rig.Log);
+            var options = new ClientOptions { PlayerName = "Anna", Password = "slow but sure", DeriveKeyInBackground = true, KeyDerivationScheduler = clientKeys.Schedule };
+            var client = new SessionClient(t, new FakeInfo(), new FakeLoader(), options, rig.Clock, rig.Log);
             client.Connect(new Endpoint());
             rig.Clients.Add((client, new FakeLoader(), new FakeInfo()));
-            for (int i = 0; i < 3000 && client.State != ClientState.Live && client.State != ClientState.Ended; i++)
-            {
-                rig.Run(1);
-                if (client.State == ClientState.Handshaking) Thread.Sleep(2); // the derivations run on worker threads
-            }
+            for (int i = 0; i < 200 && clientKeys.Started == 0; i++) rig.Run(1);
+            Assert.Equal(1, clientKeys.Started, "the client derives when the challenge arrives");
+            rig.Run(100);
+            Assert.Equal(ClientState.Handshaking, client.State, "nothing proceeds while both derivations wait");
+            clientKeys.RunPending();
+            rig.Run(100);
+            Assert.Equal(ClientState.Handshaking, client.State, "the host still derives; the answer waits");
+            hostKeys.RunPending();
+            rig.Run(400);
             Assert.Equal(ClientState.Live, client.State, client.EndReason);
+            Assert.Equal(1, hostKeys.Started);
+            Assert.Equal(1, clientKeys.Started);
+            Assert.NotEqual(Environment.CurrentManagedThreadId, hostKeys.WorkerThreads[0], "the host derived on another thread");
+            Assert.NotEqual(Environment.CurrentManagedThreadId, clientKeys.WorkerThreads[0], "the client derived on another thread");
         }
 
         [Test]
