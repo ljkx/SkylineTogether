@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Offline API check (docs/dev/building.md#api-check): every type and member SkylineTogether.dll and
+    SkylineTogether.Core.dll reference must resolve in the game's managed assemblies, and every "Game.*" type name the
+    game layer looks up by string must exist. A net8.0 console without any package: System.Reflection.Metadata ships
+    with the .NET runtime. Usage: see Program.cs (tools/build.sh runs it when the game is installed).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>ApiCheck</AssemblyName>
+    <RootNamespace>SkylineTogether.ApiCheck</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+</Project>

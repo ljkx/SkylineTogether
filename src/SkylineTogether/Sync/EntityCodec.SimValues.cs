@@ -54,7 +54,7 @@ namespace SkylineTogether.Sync
             "Game.Buildings.Building",
             // policies travel on the global-state channel, which detects client edits by comparison
             "Game.Policies.Policy",
-            "Game.Objects.CustomMeshColor",
+            "Game.Rendering.CustomMeshColor",
             // cosmetic or derived locally on every peer (ARCHITECTURE.md#zone-cells-cell-maps-terrain-and-water, #host-capture, #events-chirps-and-traffic-lights, #gated-systems)
             "Game.Objects.Surface",
             "Game.Objects.StreetLight",
@@ -81,6 +81,16 @@ namespace SkylineTogether.Sync
             "Game.Routes.RouteSegment",
             "Game.Simulation.WaterSourceData",
         };
+
+        /// <summary>Every type name of the simulation-value rules (P-SIMVALUES): a renamed type would silently change what is sent.</summary>
+        internal static IEnumerable<string> SimValueTypeNames
+        {
+            get
+            {
+                foreach (string name in SimExcluded) yield return name;
+                foreach (string name in MoverAllowed) yield return name;
+            }
+        }
 
         /// <summary>Namespaces whose types are never simulation values of structure entities.</summary>
         private static readonly string[] SimExcludedNamespaces =

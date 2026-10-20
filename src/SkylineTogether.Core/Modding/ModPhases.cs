@@ -101,8 +101,8 @@ namespace SkylineTogether.Core.Modding
         private static readonly string[] WorldWritingUiTypes =
         {
             "Game.UI.InGame.PoliciesUISystem", "Game.UI.InGame.UpgradesSection", "Game.UI.InGame.ActionsSection", "Game.UI.NameSystem",
-            "Game.UI.InGame.ColorSection", "Game.UI.InGame.VisualCustomizeSection", "Game.UI.InGame.MapPanelSystem",
-            "Game.UI.InGame.WaterPanelSystem", "Game.UI.InGame.TransportationOverviewUISystem",
+            "Game.UI.InGame.ColorSection", "Game.UI.InGame.VisualCustomizeSection", "Game.UI.Editor.MapPanelSystem",
+            "Game.UI.Editor.WaterPanelSystem", "Game.UI.InGame.TransportationOverviewUISystem",
         };
 
         /// <summary>

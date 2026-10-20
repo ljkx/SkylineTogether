@@ -58,6 +58,10 @@ namespace SkylineTogether.Core.Tests.Modding
             Assert.False(ModPhases.IsPresentationTarget("Game.UI.InGame.ActionsSection+Job.Execute"));
             Assert.True(ModPhases.IsPresentationTarget("Game.UI.InGame.ActionsSectionHelper.Format"), "a prefix of a type name is not the type");
             Assert.True(ModPhases.IsWorldWritingUiTarget("Game.UI.InGame.ColorSection.OnSetColor"));
+            // the editor's map tile and water source panels live in Game.UI.Editor (tools/ApiCheck found the old names)
+            Assert.True(ModPhases.IsWorldWritingUiTarget("Game.UI.Editor.MapPanelSystem.OnUpdate"));
+            Assert.True(ModPhases.IsWorldWritingUiTarget("Game.UI.Editor.WaterPanelSystem.OnUpdate"));
+            Assert.False(ModPhases.IsPresentationTarget("Game.UI.Editor.WaterPanelSystem.OnUpdate"));
 
             ModFacts f = Facts();
             f.ReferencesHarmony = true;

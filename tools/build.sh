@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Skyline Together build script (docs/dev/building.md).
 #
-#   tools/build.sh [--deploy] [--package] [--game-dir <path>] [--deploy-dir <path>] [--skip-ui-checks]
+#   tools/build.sh [--deploy] [--package] [--game-dir <path>] [--deploy-dir <path>] [--skip-ui-checks] [--skip-api-check]
 #
-# Order: Release build -> UI checks (when node is installed) -> Core tests
-# -> deploy (--deploy) -> package (--package). Any failure stops the script before anything is deployed or packaged.
+# Order: Release build -> API check (tools/ApiCheck: every referenced game type and member exists) -> UI checks (when
+# node is installed) -> Core tests -> deploy (--deploy) -> package (--package). Any failure stops the script before
+# anything is deployed or packaged.
 #
 #   --deploy        copy the mod into the local Mods folder (default:
 #                   %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether)
@@ -13,6 +14,7 @@
 #                   with Python the zip is reproducible (tools/release_common.py)
 #   --game-dir      the game's install folder (default: the Steam path of Directory.Build.props; env GameDir)
 #   --deploy-dir    deploy target (env ModDeployDir)
+#   --skip-ui-checks / --skip-api-check   leave out the UI checks / the API check
 #
 # Works in Git Bash on Windows (and with any shell that has the .NET SDK on the PATH). No NuGet package is used.
 set -euo pipefail
@@ -24,16 +26,18 @@ cd "$ROOT"
 DEPLOY=0
 PACKAGE=0
 UI_CHECKS=1
+API_CHECK=1
 GAME_DIR="${GameDir:-}"
 DEPLOY_DIR="${ModDeployDir:-}"
 
-usage() { sed -n '2,16p' "$SCRIPT" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,19p' "$SCRIPT" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --deploy) DEPLOY=1 ;;
     --package) PACKAGE=1 ;;
     --skip-ui-checks) UI_CHECKS=0 ;;
+    --skip-api-check) API_CHECK=0 ;;
     --game-dir) shift; GAME_DIR="${1:?--game-dir needs a path}" ;;
     --deploy-dir) shift; DEPLOY_DIR="${1:?--deploy-dir needs a path}" ;;
     -h|--help) usage; exit 0 ;;
@@ -93,6 +97,24 @@ echo ".NET SDK $(cd "$ROOT" && "$DOTNET" --version)"
 for f in SkylineTogether.dll SkylineTogether.Core.dll; do
   [ -f "$OUT/$f" ] || fail "missing build output $OUT/$f"
 done
+
+# ---------- API check (docs/dev/building.md#api-check) ----------
+# every type and member the DLLs reference, and every "Game.*" type name the game layer looks up, must exist in the
+# game's assemblies; a game update that breaks one is found here instead of mid-session
+if [ "$API_CHECK" = 1 ]; then
+  MANAGED=""
+  if [ -n "${GameManagedPath:-}" ]; then MANAGED="$(to_unix "$GameManagedPath")"
+  elif [ -n "$GAME_DIR" ]; then MANAGED="$(to_unix "$GAME_DIR")/Cities2_Data/Managed"
+  else MANAGED="$(to_unix "$(sed -n 's:.*<GameDir[^>]*>\(.*\)</GameDir>.*:\1:p' Directory.Build.props | head -n 1)")/Cities2_Data/Managed"
+  fi
+  if [ -f "$MANAGED/Game.dll" ]; then
+    step "API check against the game's assemblies"
+    "$DOTNET" build tools/ApiCheck/ApiCheck.csproj -c Release -nologo -v q || fail "dotnet build tools/ApiCheck"
+    "$DOTNET" tools/ApiCheck/bin/Release/net8.0/ApiCheck.dll --managed "$(to_native "$MANAGED")"       --dll "$OUT/SkylineTogether.dll" --dll "$OUT/SkylineTogether.Core.dll" || fail "API check (see MISSING above)"
+  else
+    step "API check skipped: no Game.dll in $MANAGED"
+  fi
+fi
 
 # ---------- UI checks (optional Node) ----------
 if [ "$UI_CHECKS" = 1 ] && [ -f ui/SkylineTogether.mjs ]; then
