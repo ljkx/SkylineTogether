@@ -34,9 +34,10 @@
     <ProjectReference Include="..\SkylineTogether.Core\SkylineTogether.Core.csproj" />
     <EmbeddedResource Include="Data\*.json" LogicalName="SkylineTogether.Data.%(Filename)%(Extension)" />
   </ItemGroup>
-  <!-- Local deployment into the game's Mods folder after every build; disable with /p:DeployMod=false
-       (the agent snapshot checker and tools/build.sh do, build.sh deploys only after the tests passed). -->
-  <Target Name="DeployMod" AfterTargets="Build" Condition="'$(DeployMod)' != 'false'">
+  <!-- Local deployment into the game's Mods folder after a build, only when asked for (-p:DeployMod=true): a plain or IDE
+       build must not replace a tested release build in the live Mods folder. tools/build.sh -deploy copies the files
+       itself, and only after the tests passed. -->
+  <Target Name="DeployMod" AfterTargets="Build" Condition="'$(DeployMod)' == 'true'">
     <ItemGroup>
       <DeployFile Include="$(TargetDir)SkylineTogether.dll;$(TargetDir)SkylineTogether.pdb;$(TargetDir)SkylineTogether.Core.dll;$(TargetDir)SkylineTogether.Core.pdb" />
       <DeployFile Include="$(MSBuildThisFileDirectory)..\..\ui\SkylineTogether.mjs" Condition="Exists('$(MSBuildThisFileDirectory)..\..\ui\SkylineTogether.mjs')" />

@@ -86,8 +86,9 @@ except test assemblies. Core references only `mscorlib`, `System`, `System.Core`
 `System.Runtime.CompilerServices.Unsafe` and `System.IO.Compression`. Core code must only use APIs that exist in
 netstandard2.0, so it also compiles for the net8.0 tests (decision 0001 lists the usual traps).
 
-A plain `dotnet build` of the game project also deploys to `ModDeployDir` after every build (the `DeployMod` target);
-add `-p:DeployMod=false` to skip that.
+A plain `dotnet build` (or an IDE build) does not touch the Mods folder. `-p:DeployMod=true` copies the build into
+`ModDeployDir` afterwards (the `DeployMod` target); `tools/build.sh --deploy` does the same, but only after the checks
+and tests passed. (Before 0.2.0 a plain build deployed by default, which could replace a tested release build.)
 
 ## Without the game
 

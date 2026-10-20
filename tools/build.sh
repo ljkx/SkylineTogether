@@ -84,7 +84,7 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPE
 VERSION="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
 [ -n "$VERSION" ] || VERSION="0.0.0"
 
-PROPS=(-c Release -p:DeployMod=false -nologo)
+PROPS=(-c Release -p:DeployMod=false -nologo)  # never deploy before the tests (even with DeployMod=true in the environment)
 if [ -n "$GAME_DIR" ]; then PROPS+=("-p:GameDir=$(to_native "$GAME_DIR")"); fi
 
 OUT="src/SkylineTogether/bin/Release/net472"

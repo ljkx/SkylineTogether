@@ -40,4 +40,5 @@ game components, including malformed and extreme data; checks bindings and trigg
 texts against the locale tables and, with the game installed, the CSS tokens against the game's stylesheet).
 `node tools/ui_smoke.mjs --html <folder>` writes HTML snapshots of every state to look at in a browser.
 
-The game project's `DeployMod` target copies `SkylineTogether.mjs` next to the DLLs when the file exists.
+The game project's `DeployMod` target (`dotnet build -p:DeployMod=true`, or `tools/build.sh --deploy`) copies
+`SkylineTogether.mjs` next to the DLLs when the file exists.
