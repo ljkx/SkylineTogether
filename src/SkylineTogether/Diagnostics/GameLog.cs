@@ -27,6 +27,8 @@ namespace SkylineTogether.Diagnostics
         public GameLog(string name)
         {
             _log = LogManager.GetLogger(name).SetShowsErrorsInUI(false);
+            // before the first line: the redactor also knows the exact 8.3 short form of the profile folder
+            ShortPaths.Install();
         }
 
         public CoreLevel Minimum { get; set; } = CoreLevel.Info;
