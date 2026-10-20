@@ -70,8 +70,9 @@ Joining and passwords are harder to abuse. Details: [SECURITY.md](SECURITY.md).
   200 000 PBKDF2 rounds instead of 10 000.
   - The proof covers the host's Steam ID as dialled, both nonces and the session; the host proves the password back
     before the joining game sends its mod lists; the key is derived off the main thread.
-  - On a direct (IP) join, a host that skips the password check is left at once ("Couldn't confirm the host"), and a
-    joining game reads nothing from a host before it is authenticated.
+  - On a direct (IP) join, and on a Steam join to a session known to have a password (its invite says so, or its
+    host asked for the password before), a host that skips the password check is left at once ("Couldn't confirm the
+    host"), and a joining game reads nothing from a host before it is authenticated.
 - **No one can take over a player's place.** A connection with the Steam ID of a player in the session can no longer
   replace that player before it has proven the password.
   - Connections Steam flags as unauthenticated are identified by their address, and only the direct-IP socket accepts

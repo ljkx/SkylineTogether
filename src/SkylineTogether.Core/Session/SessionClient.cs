@@ -56,9 +56,9 @@ namespace SkylineTogether.Core.Session
         public bool VerifyHostProof = true;
 
         /// <summary>
-        /// The session is known to have a password (its Steam lobby says so): the host must challenge this game and prove
-        /// that it knows the password, as on every direct (IP) connection, where the host always challenges
-        /// (<see cref="SessionClient.HostProofRequired"/>).
+        /// The session is known to have a password (its Steam lobby says so, or its host challenged this game before:
+        /// <see cref="HostProofExpectation"/>): the host must challenge this game and prove that it knows the password, as
+        /// on every direct (IP) connection, where the host always challenges (<see cref="SessionClient.HostProofRequired"/>).
         /// </summary>
         public bool ExpectPassword;
     }
@@ -662,6 +662,9 @@ namespace SkylineTogether.Core.Session
         /// (Steam authenticates it), and a password kept in the join settings must not stop joins of a session without one.
         /// </summary>
         public bool HostProofRequired => _transport.Kind == TransportKind.SteamIp || _options.ExpectPassword;
+
+        /// <summary>The host sent this game a password challenge (the session has a password; <see cref="HostProofExpectation"/>).</summary>
+        public bool WasChallenged => _challenge != null || EndKind == ClientEndKind.PasswordRequired;
 
         void ITransportEventSink.OnDisconnected(IConnection connection, int reason, string text)
         {

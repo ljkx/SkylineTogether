@@ -92,7 +92,9 @@ is detected and learns no mod lists. On a direct (IP) connection the joining pla
 a host there always needs a password, so one that skips the challenge (a spoofed address or host name) is left before
 the joiner sends anything, with the "Couldn't confirm the host" screen; until the host authenticated it, the joining
 game reads nothing but refusals, pings and the password messages (no welcome, no city). Over Steam the host is the
-Steam account the player dialled, which Steam authenticates. An answer relayed through another Steam ID fails, because
+Steam account the player dialled, which Steam authenticates; the challenge is required there too when the session is
+known to have a password (the invite's lobby says so, or the host asked for the password in an earlier join), but not
+merely because a password is saved in the join settings. An answer relayed through another Steam ID fails, because
 it names the Steam ID the player dialled.
 
 Wrong answers are limited per Steam ID and per address (for direct and unauthenticated connections; an IPv6 address

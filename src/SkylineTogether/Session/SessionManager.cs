@@ -87,6 +87,17 @@ namespace SkylineTogether.Session
         private int _playersVersion;
         private int _recoveryVersion;
         private Endpoint _lastEndpoint;
+
+        // Steam P2P hosts known to have a session password: a join to them requires the host's proof (A1)
+        private readonly HostProofExpectation _proofExpected = new HostProofExpectation();
+        // the Steam ID the current client dialled (0: direct, or a replay)
+        private ulong _clientHost;
+
+        /// <summary>
+        /// A Steam invite's lobby was read: whether its session has a password (a join to that host then requires the
+        /// host to prove it, <see cref="HostProofExpectation"/>).
+        /// </summary>
+        public void NoteLobbyPassword(ulong host, bool passwordRequired) => _proofExpected.OnLobby(host, passwordRequired);
         // a host name the player typed, resolved on a worker thread (never DNS on the main thread), and what to join then
         private HostLookup _lookup;
         private int _lookupPort;
@@ -512,6 +523,7 @@ namespace SkylineTogether.Session
             {
                 Features.Registry.RearmAll();
                 _rejoin.Reset();
+                _clientHost = 0; // a recording's host is no host to remember
                 var client = new SessionClient(transport, _info, _loader, new ClientOptions
                 {
                     PlayerName = PlayerName,
@@ -640,12 +652,17 @@ namespace SkylineTogether.Session
             try
             {
                 Features.Registry.RearmAll();
+                _clientHost = endpoint.SteamId;
                 transport = new SteamSocketsTransport(endpoint.SteamId != 0 ? TransportKind.SteamP2P : TransportKind.SteamIp, _log);
                 bool joinAnyway = _joinAnywayTarget != null && string.Equals(_joinAnywayTarget, endpoint.ToString(), StringComparison.Ordinal);
                 var client = new SessionClient(transport, _info, _loader, new ClientOptions
                 {
                     PlayerName = PlayerName, SteamId = LocalSteamId, Password = _lastPassword, AcceptModMismatch = joinAnyway,
                     DeriveKeyInBackground = true, // 200 000 PBKDF2 rounds: never on the main thread
+                    // Steam P2P: the host must prove the password only when the session is known to have one (its lobby
+                    // said so, or it challenged this game before); a saved password alone never requires it. Direct joins
+                    // always require it (SessionClient.HostProofRequired)
+                    ExpectPassword = endpoint.SteamId != 0 && _proofExpected.Expects(endpoint.SteamId),
                 }, _clock, _log);
                 transport = null; // the client owns it
                 client.ChatReceived += AddChat;
@@ -1026,6 +1043,8 @@ namespace SkylineTogether.Session
             if (client == null) return;
             Client = null;
             ClientEndKind kind = client.EndKind;
+            _proofExpected.OnEnded(_clientHost, kind, client.RefusedFor, client.WasChallenged);
+            _clientHost = 0;
             // what the host said, in this player's language (the English text when the key is unknown here)
             string reason = LocalizedEnd(client);
             bool entered = client.EnteredCity;

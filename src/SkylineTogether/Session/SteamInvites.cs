@@ -878,6 +878,8 @@ namespace SkylineTogether.Session
             {
                 _log.Warn(LogCategory.Session, "the host runs protocol " + info.Protocol + ", this game " + ProtocolVersion.Current + "; the host will refuse the join with the details");
             }
+            // a session whose lobby says it has a password must see its host prove it (a P2P join otherwise does not)
+            _sessions.NoteLobbyPassword(info.HostSteamId, info.PasswordRequired);
             QueueJoin(info.HostSteamId, string.IsNullOrEmpty(friend) ? info.SessionName : friend, lobby);
         }
 

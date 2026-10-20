@@ -295,8 +295,13 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   `Control Authenticated`, which the client checks before it sends its manifest
   ([`SessionCrypto`](../src/SkylineTogether.Core/Session/SessionCrypto.cs)). On a direct connection, whose real host
   always challenges, and for a session known to have a password (`ClientOptions.ExpectPassword`) the client also ends a
-  join whose host authenticates it without a challenge (`HostNotProven`); over Steam P2P the dialled host is the Steam
-  account Steam authenticated, and a password kept in the join settings does not stop joins of a session without one.
+  join whose host authenticates it without a challenge (`HostNotProven`). Over Steam P2P the dialled host is the Steam
+  account Steam authenticated, so the proof is required only when the session is known to have a password
+  ([`HostProofExpectation`](../src/SkylineTogether.Core/Session/HostProofExpectation.cs)): the invite's lobby says
+  "password required" (its latest data), or that host challenged this game earlier in this game session (a retry with
+  the typed password, a rejoin). A password kept in the join settings never requires it on its own, so it does not stop
+  joins of a session without one; a `HostNotProven` end forgets the host, so a host that removed its password is
+  joinable again on the next try.
   Until the host authenticated it the client reads only refusals, pings and the password controls; the welcome is
   accepted once, at the end of the handshake. The session id is random (`SessionCrypto.RandomBytes`). The host binds
   direct and in-process connections to Steam ID 0. [`PasswordAttemptLimiter`](../src/SkylineTogether.Core/Session/JoinSecurity.cs) keys
