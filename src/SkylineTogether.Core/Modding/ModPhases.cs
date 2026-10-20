@@ -96,13 +96,16 @@ namespace SkylineTogether.Core.Modding
         };
 
         // the game's UI types that write shared state when the player uses them (policies, upgrades, the info panel's
-        // actions, names, colours, visual customisation, map tiles, water sources, transport lines): patching one of them
-        // changes what the world becomes, not only what a player sees
+        // actions, names, colours, visual customisation, transport lines, service budgets, taxes, loans, map tiles, chirp
+        // likes, districts; the editor's map and water panels): patching one of them changes what the world becomes, not
+        // only what a player sees
         private static readonly string[] WorldWritingUiTypes =
         {
             "Game.UI.InGame.PoliciesUISystem", "Game.UI.InGame.UpgradesSection", "Game.UI.InGame.ActionsSection", "Game.UI.NameSystem",
-            "Game.UI.InGame.ColorSection", "Game.UI.InGame.VisualCustomizeSection", "Game.UI.Editor.MapPanelSystem",
-            "Game.UI.Editor.WaterPanelSystem", "Game.UI.InGame.TransportationOverviewUISystem",
+            "Game.UI.InGame.ColorSection", "Game.UI.InGame.VisualCustomizeSection", "Game.UI.InGame.TransportationOverviewUISystem",
+            "Game.UI.InGame.ServiceBudgetUISystem", "Game.UI.InGame.TaxationUISystem", "Game.UI.InGame.LoanUISystem",
+            "Game.UI.InGame.MapTilesUISystem", "Game.UI.InGame.ChirperUISystem", "Game.UI.InGame.DistrictsSection",
+            "Game.UI.Editor.MapPanelSystem", "Game.UI.Editor.WaterPanelSystem",
         };
 
         /// <summary>
