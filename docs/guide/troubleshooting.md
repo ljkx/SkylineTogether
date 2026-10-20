@@ -19,11 +19,12 @@
 When the host's game refuses a join, the joining player sees a screen with a title, an explanation and, for most
 reasons, a box **Details** with the host's own text. **Copy details** copies everything for a bug report.
 
-The host checks, in this order: bans, **Friends and invited only**, protocol version, a second connection of the same
-player, password (always for direct IP joiners), and only then build, game version, the old "CS2 Multiplayer Mod" on
-either side, DLC and content packs, mods that store data in the host's city (always), the other mods (only with
-**Require the same mods** on), asset packs (only with **Require the same asset packs** on) and the player limit. A
-player who has not passed the password learns nothing about versions, mods, DLC or assets.
+The host checks, in this order: bans, **Friends and invited only**, protocol version, password (always for direct IP
+joiners), and only then build, game version, the old "CS2 Multiplayer Mod" on either side, DLC and content packs, mods
+that store data in the host's city (always), the other mods (only with **Require the same mods** on), asset packs (only
+with **Require the same asset packs** on), joins of yours that did not finish, a second connection of the same player
+and the player limit. A player who has not passed the password learns nothing about versions, mods, DLC or assets.
+The texts on these screens come from the host in your game's language (English when your game has no translation).
 
 | Screen title | Cause | What to do |
 |---|---|---|
@@ -35,10 +36,11 @@ player who has not passed the password learns nothing about versions, mods, DLC 
 | **You're missing DLC or content packs the host has** | The host owns DLC or content packs that you don't; the host's city can contain objects from them, which your game can't load. The screen lists them under **Get these** (and, for information, what only you have). | Get the listed DLC (Steam or the Paradox launcher), restart the game and join again. See [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings). |
 | **Your asset packs don't match the host's** | The host turned on **Require the same asset packs** and yours differ. The screen lists what to **Subscribe**, **Disable (the host doesn't have them)** and **Update to the host's version**, each with its Paradox Mods id. "The asset packs differ (too many to list)" in the details means one side has too many packs to compare one by one. | Change the asset packs as listed, restart the game, join again; or ask the host to turn the option off. |
 | **The session is full** | The session already has as many players as **Max players** (which counts the host). | Ask the host to raise the limit, or wait until someone leaves. |
-| **Wrong password** | The password does not match, or there were too many wrong passwords ("Try again in N s": three wrong guesses are free, then each one locks you out longer, up to 10 minutes). | Enter the right password in the field on the screen and click **Join with this password** (after the wait). |
+| **Wrong password** | The password does not match. | Enter the right password in the field on the screen and click **Join with this password**. |
+| **Too many wrong passwords** | There were too many wrong passwords from your Steam ID or address ("Try again in N s": three wrong guesses are free, then each one locks you out longer, up to 10 minutes). | Wait the time shown in **Details**, check the password with the host, then try again. |
 | **This session needs a password** | No password was entered (for example after accepting a Steam invite, which does not carry the password). | Ask the host for it and enter it on the screen. |
-| **The host isn't ready yet** | An earlier join attempt of yours is still running on the host (the host heard from it in the last 15 seconds). | Wait a moment and click **Try again**, or restart the game. |
-| **You are banned from this session** | The host banned you (by Steam ID, or by address for direct joiners). | Only the host can lift it (host options, **Banned players**, **Unban**). |
+| **The host isn't ready yet** | An earlier join attempt of yours is still running on the host (the host heard from it in the last 15 seconds), or your last joins did not finish ("You can join again in N s": the first such join costs nothing, then 30 seconds, 2, 10 and up to 30 minutes). | Wait the time shown and click **Try again**, or restart the game. |
+| **You are banned from this session** | The host banned you (by Steam ID, and by address if you joined by direct IP). | Only the host can lift it (host options, **Banned players**, **Unban**). |
 | **You can't join this session** | The host allows only Steam friends and invited players, or you connected by direct IP to a host without a password. | Ask the host for an invite (or to set a password for direct IP). |
 | **The host is closing the session** | The host stopped hosting or left the city while you were joining. | Join again when the host hosts again. |
 
@@ -52,11 +54,15 @@ player who has not passed the password learns nothing about versions, mods, DLC 
 | "The city download stalled (nothing received for 120 s). Try joining again." | The download stopped. | Usually a network problem on either side; try again. |
 | "The host did not confirm the join after the city loaded. Try joining again." | Your game loaded the city but the host did not confirm within 2 minutes. | Try again; if it repeats, [report it](#reporting-a-bug) with both players' logs. |
 | "The downloaded city is damaged (checksum mismatch). Try joining again." | The download arrived corrupted. | Try again. |
-| **Connection lost** / **Joining failed** | The connection broke, or something failed while joining. The details line says what. | Try again; if it repeats, [collect logs](#reporting-a-bug) from both PCs. |
+| **Connection lost** / **Joining failed** | The connection broke, or something failed while joining, or the host disconnected your game for a technical reason (it stopped responding, could not keep up, its join stopped making progress). The details line says what. | Try again (a joined player's game reconnects by itself); if it repeats, [collect logs](#reporting-a-bug) from both PCs. |
+| "The host could not prove that it knows the session password …" | The host answered the password check wrongly: you may have connected to someone else, or the host changed the password. | Check the Steam ID or address and the password with the host. |
+| "Looking up …" (joining by host name) | The name is resolved in the background before the connection starts. | Wait; if the name cannot be resolved, check it or use the IP address. |
 | "The host's city uses map or climate assets you do not have (…)" | The host's map or climate comes from a Paradox Mods asset you lack. | Subscribe to the same map on Paradox Mods (or use a vanilla map) and join again. |
 
 On the host, a player that sends nothing for 3 minutes while joining is dropped, with the chat line "&lt;name&gt; stopped
-responding while joining."
+responding while joining." A join is also dropped when its download makes no progress for 3 minutes, its load makes no
+progress for 5 minutes or takes more than 20, or it keeps asking for the city again ("&lt;name&gt; could not finish
+joining."); the joining player is told why and can try again.
 
 ## Different builds, game versions or mods
 
@@ -235,8 +241,8 @@ Each part of Skyline Together runs behind a guard. When a part fails 5 times wit
   (github.com/ljkx/SkylineTogether/issues)."
 - if the replication on a joined player's game fails repeatedly, that game leaves the session: "This game hit repeated
   errors in …, so it left the session. Reconnect to get a fresh copy of the city."
-- if the host cannot apply one player's changes repeatedly, that player is removed: "The host could not apply your
-  changes. Join again to get a fresh copy of the city."
+- if the host cannot apply one player's changes repeatedly, that player is disconnected (not kicked: their game
+  offers to join again): "The host could not apply your changes. Join again to get a fresh copy of the city."
 - a critical failure on the host ends the session, and diagnostics are written automatically.
 
 All of these are bugs. Please [report them](#reporting-a-bug) with the diagnostics file and logs.

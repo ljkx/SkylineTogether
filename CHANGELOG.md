@@ -14,6 +14,10 @@ of both can play together. Everyone in a session must use this version.
 - **Third-party notices** (`THIRD-PARTY-NOTICES.txt`, also in the release zip) credit the LZ4 block format and the
   xxHash specification that Core's own implementations follow, and the game components Skyline Together uses.
 - Release notes list the **SHA-256 checksums** of both zips, with a `Get-FileHash` line to check a download.
+- Host option **New players join as viewers** (off by default): players who join a session for the first time can
+  watch but not build until the host makes them builders.
+- The installer's uninstall also removes the mod's temporary files, and its settings (host password, ban list) after
+  a confirmation or with `-RemoveSettings`.
 
 ### Changed
 
@@ -28,6 +32,48 @@ of both can play together. Everyone in a session must use this version.
   and German quotation marks.
 - New screenshots on the Paradox Mods page.
 - Versions follow Semantic Versioning without a pre-release suffix from this release on.
+- **Protocol 6** (a hardened handshake, see Security): players of earlier versions cannot join, and solo test
+  recordings of earlier versions cannot be replayed.
+- The host's messages (chat lines such as "… joined the city", kick, ban and end reasons, refusal details) appear in
+  each player's own language. A password lockout has its own screen ("Too many wrong passwords") instead of "Wrong
+  password".
+- A player who stops responding, cannot keep up or whose changes keep failing is disconnected rather than kicked, so
+  their game offers to join again.
+- Player names are unique in a session and never the host's; the host's chat lines carry a badge, the session's own
+  lines an info mark. A joining player's load error is no longer posted to everyone.
+- Raising **Max players** while hosting takes effect at once (later joiners were refused at the old limit).
+- Joining by host name no longer freezes the game while the name is looked up.
+- Joining is not possible while an earlier join's city is still loading, and an earlier join's asset import no longer
+  starts loading a newer, incomplete download.
+
+### Security
+
+These changes follow an adversarial review of the network code. Details: [SECURITY.md](SECURITY.md).
+
+- Before admission the host accepts only hello, control and ping messages (64 KiB until the password is proven), and
+  each side reads only the message kinds the other side sends, checked before anything is decompressed. Each player's
+  messages may decompress to 8 MiB per frame, the network poll keeps its time budget after every message, and
+  unfinished fragmented messages are dropped after two minutes.
+- The password proof is bound to the connection (the host's Steam ID as dialled, both nonces, the session) and mutual:
+  the host proves the password back before the joining game sends its mod lists. PBKDF2 uses 200 000 rounds instead of
+  10 000, derived off the main thread.
+- A connection with the Steam ID of a player in the session can no longer replace that player before it has proven the
+  password; connections Steam flags as unauthenticated are identified by their address, and only the direct-IP
+  socket accepts them.
+- Bans and the join policy are checked before the protocol version; pings are not answered before admission.
+- Roles are remembered for the session: a player made a viewer is a viewer again when they rejoin.
+- A join can no longer hold the host's simulation for half an hour: the host drops a join whose download or load makes
+  no progress, caps re-sends of the city, and makes a player whose joins keep failing wait (30 seconds up to 30
+  minutes).
+- Handshakes are limited separately from players (8 at once, 2 per Steam ID or address, 10 seconds for the hello), and
+  the large receive buffer is given only to admitted players.
+- Banning a player who joined by direct IP also bans the address; IPv6 bans and password lockouts cover the /64.
+- A host's bundled assets are added only as prefab and texture assets with plain names inside the join folder.
+- A Steam invite is followed only while its lobby belongs to the host it names.
+- The mod's log is rate-limited and capped at 64 MiB per game start, and per-peer warnings no longer grow with names a
+  peer chooses.
+- The installer handles user folders with `[` `]` in their names, keeps the installed copy when an update fails, and
+  with `-NoPause` stops instead of waiting when the game is running.
 
 ## [0.1.0-alpha.4] - 2026-10-16
 

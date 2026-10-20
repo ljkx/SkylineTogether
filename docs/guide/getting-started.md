@@ -66,7 +66,8 @@ To uninstall, run in the setup folder:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-SkylineTogether.ps1 -Uninstall
 ```
 
-or delete the `Mods\SkylineTogether` folder.
+or delete the `Mods\SkylineTogether` folder. The uninstall also removes the mod's temporary files and asks whether to
+delete its settings (player name, host password, ban list); add `-RemoveSettings` to delete them without asking.
 
 ### Manually
 

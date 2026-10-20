@@ -253,14 +253,16 @@ sequenceDiagram
   participant C as Client
   participant H as Host
   C->>H: Hello (protocol version, build id, game version, name, join flags)
-  C->>H: Control ManifestDetail (mods, DLC, asset packs, mod settings)
+  Note over H: Screen: ban list, join policy (transport identity)
   Note over H: protocol version differs: Refuse (no host version<br/>while a password is still owed)
-  Note over H: Screen: ban list, join policy (transport identity)<br/>Duplicate Steam ID: replace or refuse
   opt password needed
     H->>C: Control PasswordChallenge (host nonce, salt, session id)
-    C->>H: Control PasswordResponse (client nonce, HMAC)
+    C->>H: Control PasswordResponse (client nonce, client proof)
   end
-  Note over H: TryAdmit: build id, game version, old multiplayer mod, DLC,<br/>mods with city data (always), mods (if required),<br/>asset packs (if required), session full;<br/>"join anyway" passes only the other mods and asset packs
+  H->>C: Control Authenticated (host proof; empty without a password)
+  Note over C: checks the host proof
+  C->>H: Control ManifestDetail (mods, DLC, asset packs, mod settings)
+  Note over H: TryAdmit: build id, game version, old multiplayer mod, DLC,<br/>mods with city data (always), mods (if required),<br/>asset packs (if required), join cooldown,<br/>duplicate Steam ID (replace or refuse), session full;<br/>"join anyway" passes only the other mods and asset packs
   H->>C: Welcome (peer id, role, permissions, session info)
   H->>C: Control JoinNotice (differences that do not block, if any)
   H->>C: Epoch batch: prefab table, id range, ledger epoch
@@ -273,20 +275,30 @@ sequenceDiagram
 
 Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.cs)):
 
-- The client sends `Hello` and its manifest (`Control ManifestDetail`) at once on connect. Only the Steam ID that Steam
-  authenticated on the transport is an identity; a Steam ID claimed in `Hello` is logged and ignored.
-- A protocol mismatch is refused at once; while the peer still owes a password the refusal names no host version
-  (`HelloMessage.PeekProtocolVersion` reads the version before parsing the rest).
-- `Screen` checks the ban list (Steam ID, or address for connections without Steam identity) and the join policy.
-  `ResolveDuplicate` replaces an older connection of the same Steam user, unless it is still loading (then the new
-  attempt is refused with `HostPreparing`, which the client treats as retryable).
+- The client sends `Hello` on connect, and its manifest (`Control ManifestDetail`) only after the host's
+  `Control Authenticated` (protocol 6). Only the Steam ID that Steam authenticated on the transport is an identity (the
+  Steam transport ignores the Steam ID of a connection flagged unauthenticated); a Steam ID claimed in `Hello` is
+  logged and ignored. Display names are made unique and never equal the host's
+  ([`PlayerNames`](../src/SkylineTogether.Core/Session/PlayerNames.cs)).
+- `Screen` checks the ban list (Steam ID, and the address, an IPv6 address by its /64 network, for direct and
+  unauthenticated connections) and the join policy first; then a protocol mismatch is refused; while the peer still
+  owes a password the refusal names no host version (`HelloMessage.PeekProtocolVersion` reads the version before
+  parsing the rest).
 - A password is needed when one is set, and always for direct or unauthenticated connections
-  (`HostOptions.PasswordForUnauthenticated`; without a password those are refused as `NotInvited`). The proof is
-  `HMAC-SHA256(PBKDF2-HMAC-SHA256(password, salt, 10 000), hostNonce ‖ clientNonce ‖ sessionId)`
-  ([`SessionCrypto`](../src/SkylineTogether.Core/Session/SessionCrypto.cs)); one answer per challenge; constant-time
-  compare. [`PasswordAttemptLimiter`](../src/SkylineTogether.Core/Session/JoinSecurity.cs) keys failures by Steam ID
-  and address: three free, then a lockout of 5 s doubling up to 10 minutes, forgotten after 15 minutes; at most two
-  open challenges per key.
+  (`HostOptions.PasswordForUnauthenticated`; without a password those are refused as `NotInvited`). Both sides derive
+  `key = PBKDF2-HMAC-SHA256(password, salt, 200 000)` on a worker thread
+  ([`PasswordKeyCache`](../src/SkylineTogether.Core/Session/PasswordKeyCache.cs)); the client answers with
+  `HMAC-SHA256(key, "client" label ‖ sessionId ‖ hostNonce ‖ clientNonce ‖ salt ‖ host Steam ID as dialled)`, the host
+  checks it (one answer per challenge, constant-time compare) and sends the same with the "host" label in
+  `Control Authenticated`, which the client checks before it sends its manifest
+  ([`SessionCrypto`](../src/SkylineTogether.Core/Session/SessionCrypto.cs)). The host binds direct and in-process
+  connections to Steam ID 0. [`PasswordAttemptLimiter`](../src/SkylineTogether.Core/Session/JoinSecurity.cs) keys
+  failures by Steam ID and address (IPv6 by /64): three free, then a lockout of 5 s doubling up to 10 minutes, forgotten
+  after 15 minutes; at most two open challenges per key. A lockout refusal carries a "retry-after" report record.
+- After the compatibility checks, a player whose last joins did not finish waits (`HostOptions.JoinCooldownSeconds`:
+  the first is free, then 30 s, 2, 10 and 30 minutes; refused with `HostPreparing`), and `ResolveDuplicate` replaces an
+  older connection of the same Steam user, unless it is still loading (then the new attempt is refused with
+  `HostPreparing`, which the client treats as retryable). The duplicate is resolved only here, after the password.
 - `TryAdmit` then compares the build id (first 48 bits of the SHA-256 of the loaded DLL,
   [`BuildId`](../src/SkylineTogether.Core/Session/BuildId.cs)) and the game version, and hands the rest to
   [`CompatibilityCheck`](../src/SkylineTogether.Core/Session/CompatibilityCheck.cs). The hello carries one digest per
@@ -359,10 +371,15 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   hello's join flags byte (protocol 4) is rejected when it has undefined bits. The city-data and conflict records were
   added to the report the same way, so they changed no layout and need no protocol version.
 - Refuse reasons: `Mismatch`, `Full`, `Banned`, `BadPassword`, `NotInvited`, `HostShuttingDown`, `ProtocolVersion`,
-  `HostPreparing`. Before admission a connection may send bodies of at most 1 MiB, and the handshake must finish within
-  30 s.
-- `Admit` assigns the lowest free peer id (1-254) and the default role (builder), sends `Welcome`, raises
-  `PeerJoining` and lengthens the connection timeouts (the joiner's main thread stalls while it loads).
+  `HostPreparing`. Every refusal (protocol 6) carries a report with a "text" record: the detail's locale key and
+  parameters ([`LocalText`, `NetText`](../src/SkylineTogether.Core/Session/LocalText.cs)), so the joiner shows it in its
+  own language; the `Refuse` layout itself is unchanged. Before admission a connection may send only `Hello`, `Control`
+  and `Ping` (anything else ends it unread), bodies of at most 64 KiB until the password is proven and 1 MiB after it,
+  4 MiB of decompressed data in total; it must send its hello within 10 s and finish the handshake within 30 s.
+- `Admit` assigns the lowest free peer id (1-254) and the role the player had earlier in the session, else builder (or
+  viewer with `HostOptions.NewPlayersJoinAsViewer`), sends `Welcome`, tells the transport (`IAdmissionAware`: the
+  player slot and the large receive buffer), raises `PeerJoining` and lengthens the connection timeouts (the joiner's
+  main thread stalls while it loads).
 
 ### Snapshot join
 
@@ -409,8 +426,12 @@ Changes broadcast between the admission and the moment the snapshot was written 
 because a `Spawn` of a bound id reconciles in place and a despawn of an unknown id is a no-op.
 
 Timeouts on the host: snapshot not delivered by the save system after 360 s (abandoned; waiting joiners told), a joiner
-silent for 180 s, a join longer than 30 minutes in total. On the client: 30 s to connect and handshake, 300 s waiting
-for the snapshot, 120 s without a chunk, 20 minutes for the load, 120 s waiting for `Live`.
+silent for 180 s, a download without progress on the host's side (no snapshot bytes leave it, and the joiner does not
+move on to loading) for 180 s, a load whose reported progress does not grow for 300 s or that takes more than
+20 minutes, re-sends of more than twice the snapshot (have-bitmaps), a join longer than 30 minutes in total. A dropped
+joiner gets `Control Dropped` (a technical removal; its game may rejoin), and a join that ends before the player is live
+counts towards the join cooldown. On the client: 30 s to connect and handshake, 300 s waiting for the snapshot, 120 s
+without a chunk, 20 minutes for the load, 120 s waiting for `Live`.
 
 ### Live session
 
@@ -1430,8 +1451,15 @@ the most ids alive at once plus the quarantine and are released at session end.
 - **Transport.** Steam P2P connections are encrypted and carry a Steam-authenticated identity; that identity is the
   only one used for bans, duplicates, the join policy and password lockout. Direct-IP connections may be
   unauthenticated and unencrypted, so they always need the password, and the port opens only while one is set.
-- **Admission.** Before admission only handshake messages are handled (1 MiB body limit, 30 s timeout); chat needs
-  admission; presence and application messages need a live player.
+- **Admission.** Before admission only `Hello`, `Control` and `Ping` are read (64 KiB before the password, 1 MiB after
+  it, 4 MiB decompressed in total, 10 s for the hello, 30 s for the handshake; the Steam transport allows 8 handshakes
+  at once, 2 per remote, besides the players); chat needs admission; presence and application messages need a live
+  player.
+- **Receive budgets.** Each side reads only the kinds the other side sends (`Limits.MaxClientBodyBytes`,
+  `Limits.MaxHostBodyBytes`), judged on the envelope's first byte before anything is decompressed or reassembled.
+  Each peer's messages may decompress to 8 MiB per host frame (the rest waits raw, up to 16 MiB, for the next
+  frames), the Steam transport checks its 25 ms poll budget after every message, and a fragmented message whose next
+  fragment does not come for 120 s is dropped.
 
 ### What the host validates
 
@@ -1460,6 +1488,9 @@ the most ids alive at once plus the quarantine and are released at session end.
 - The mod, DLC, asset pack and setting lists a client reports are a compatibility check, not a security barrier. The
   hello's "join anyway" flag is trusted only for the code mod and asset pack verdict, and only when the host allows it.
 - Passwords are stored in plain text in each player's settings file.
+- Between two direct connections without Steam authentication nothing binds the password proof to the connection: a
+  relay the joiner connects to instead of the host could pass the challenge on. Proofs over Steam P2P name the Steam ID
+  the joiner dialled.
 
 ## Known limitations
 
