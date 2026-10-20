@@ -89,7 +89,7 @@ namespace SkylineTogether.Sync
                     {
                         _kicks.Add((peer, peer + " sends changes faster than the host applies them (" + _hostInboxQuota.Pending(peer) + " waiting, "
                                           + (_hostInboxQuota.PendingBytes(peer) >> 10) + " KiB)",
-                                    "Your game sent changes faster than the host could apply them. Join again to continue."));
+                                    Core.Session.NetText.DropTooFast));
                     }
                     return;
                 }

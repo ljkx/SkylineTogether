@@ -409,7 +409,7 @@ namespace SkylineTogether.Core.Tests.Protocol
                 byte[] k = Encode<ControlMessage>(ControlMessage.Write, control);
                 ControlMessage kr = ControlMessage.Decode(k, 0, k.Length);
                 Assert.Equal(control.Kind, kr.Kind, "unknown kinds are read for the router to drop");
-                Assert.Equal((int)control.Kind <= (int)ControlKind.JoinNotice, ControlMessage.IsKnownKind(kr.Kind));
+                Assert.Equal((int)control.Kind <= (int)ControlKind.Dropped, ControlMessage.IsKnownKind(kr.Kind));
                 Assert.SequenceEqual(control.Payload, kr.Payload);
                 if (round == 0)
                 {

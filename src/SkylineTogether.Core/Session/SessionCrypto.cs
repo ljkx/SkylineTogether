@@ -5,44 +5,64 @@ using System.Text;
 namespace SkylineTogether.Core.Session
 {
     /// <summary>
-    /// Password proof: the password never crosses the network. The client answers the host's challenge with
-    /// <c>HMAC-SHA256(key = PBKDF2-HMAC-SHA256(UTF-8 password, salt, 10 000), hostNonce ‖ clientNonce ‖ sessionId)</c>.
+    /// Password proof: the password never crosses the network. Both sides derive
+    /// <c>key = PBKDF2-HMAC-SHA256(UTF-8 password, salt, 200 000)</c> and prove it with HMAC-SHA256 over the handshake's
+    /// transcript: a label for the direction, the host's random session id, the host's fresh nonce, the client's nonce,
+    /// the salt and the host's Steam ID as the client dialled it (0 for a direct connection). The client answers the
+    /// host's challenge with <see cref="ClientProof"/>; the host checks it and answers with <see cref="HostProof"/>, which
+    /// the client checks before it sends anything else (mutual: an impostor host learns nothing and is detected).
     /// <para>
-    /// Replay safety: the host draws a fresh 16-byte nonce for every challenge, accepts at most one answer per challenge
-    /// (a wrong answer ends the connection, a right one admits it) and binds the MAC to its random session id, so an
-    /// answer recorded from one connection proves nothing on another. The salt is random per session and the key
-    /// derivation is slow on purpose: a captured challenge and answer cost 10 000 HMAC rounds per guessed password.
+    /// Replay and relay safety: the host draws a fresh 16-byte nonce for every challenge, accepts at most one answer per
+    /// challenge and binds the proofs to its session id and to its Steam ID, so an answer recorded from one connection
+    /// proves nothing on another, and an answer relayed through someone else's Steam ID fails. Between two direct
+    /// connections without Steam authentication nothing binds the proof to the connection (Steam exposes no channel
+    /// binding), which SECURITY.md documents. The salt is random per session and the key derivation is slow on purpose:
+    /// a captured challenge and answer cost 200 000 HMAC rounds per guessed password. Derive it off the main thread
+    /// (<see cref="PasswordKeyCache"/>).
     /// </para>
     /// </summary>
     public static class SessionCrypto
     {
-        /// <summary>PBKDF2 rounds of the password key (before, a single SHA-256 was used).</summary>
-        public const int Pbkdf2Iterations = 10000;
+        /// <summary>PBKDF2 rounds of the password key (10 000 until protocol 6).</summary>
+        public const int Pbkdf2Iterations = 200000;
 
         /// <summary>Shortest client nonce the host accepts in an answer.</summary>
         public const int MinNonceBytes = 8;
 
-        /// <summary>The password key: PBKDF2-HMAC-SHA256 of the UTF-8 password with the salt, one 32-byte block.</summary>
+        /// <summary>The password key: PBKDF2-HMAC-SHA256 of the UTF-8 password with the salt, one 32-byte block (slow).</summary>
         public static byte[] DeriveKey(string password, byte[] salt) => Pbkdf2Sha256(Encoding.UTF8.GetBytes(password ?? ""), salt ?? Array.Empty<byte>(), Pbkdf2Iterations);
 
-        /// <summary>The answer to a challenge with an already derived key (<see cref="DeriveKey"/>).</summary>
-        public static byte[] PasswordMac(byte[] key, byte[] hostNonce, byte[] clientNonce, uint sessionId)
+        /// <summary>The client's answer to a challenge, with the derived key (<see cref="DeriveKey"/>).</summary>
+        public static byte[] ClientProof(byte[] key, uint sessionId, byte[] hostNonce, byte[] clientNonce, byte[] salt, ulong hostSteamId)
+            => Proof("SkylineTogether client proof", key, sessionId, hostNonce, clientNonce, salt, hostSteamId);
+
+        /// <summary>The host's answer to a right client proof: it knows the password too.</summary>
+        public static byte[] HostProof(byte[] key, uint sessionId, byte[] hostNonce, byte[] clientNonce, byte[] salt, ulong hostSteamId)
+            => Proof("SkylineTogether host proof", key, sessionId, hostNonce, clientNonce, salt, hostSteamId);
+
+        private static byte[] Proof(string label, byte[] key, uint sessionId, byte[] hostNonce, byte[] clientNonce, byte[] salt, ulong hostSteamId)
         {
-            int hn = hostNonce?.Length ?? 0, cn = clientNonce?.Length ?? 0;
-            byte[] msg = new byte[hn + cn + 4];
-            if (hn > 0) Buffer.BlockCopy(hostNonce, 0, msg, 0, hn);
-            if (cn > 0) Buffer.BlockCopy(clientNonce, 0, msg, hn, cn);
-            msg[hn + cn] = (byte)sessionId;
-            msg[hn + cn + 1] = (byte)(sessionId >> 8);
-            msg[hn + cn + 2] = (byte)(sessionId >> 16);
-            msg[hn + cn + 3] = (byte)(sessionId >> 24);
-            using (var hmac = new HMACSHA256(key ?? Array.Empty<byte>())) return hmac.ComputeHash(msg);
+            using (var m = new System.IO.MemoryStream(128))
+            {
+                byte[] l = Encoding.ASCII.GetBytes(label);
+                m.Write(l, 0, l.Length);
+                m.WriteByte(0);
+                for (int i = 0; i < 4; i++) m.WriteByte((byte)(sessionId >> (8 * i)));
+                Field(m, hostNonce);
+                Field(m, clientNonce);
+                Field(m, salt);
+                for (int i = 0; i < 8; i++) m.WriteByte((byte)(hostSteamId >> (8 * i)));
+                using (var hmac = new HMACSHA256(key ?? Array.Empty<byte>())) return hmac.ComputeHash(m.ToArray());
+            }
         }
 
-        /// <summary>The answer to a challenge: derives the key (slow) and MACs the nonces and the session id.</summary>
-        public static byte[] PasswordMac(string password, byte[] hostNonce, byte[] clientNonce, byte[] salt, uint sessionId)
+        // length-prefixed, so no two transcripts encode alike
+        private static void Field(System.IO.Stream s, byte[] data)
         {
-            return PasswordMac(DeriveKey(password, salt), hostNonce, clientNonce, sessionId);
+            data = data ?? Array.Empty<byte>();
+            int n = Math.Min(255, data.Length);
+            s.WriteByte((byte)n);
+            s.Write(data, 0, n);
         }
 
         /// <summary>

@@ -96,6 +96,7 @@ namespace SkylineTogether.Sync
             if (!despawning) _audit.RequestLater(id, Perf.Now);
         }
         private readonly AckStallWatch _ackStall = new AckStallWatch(AckStallSeconds);
+        // Reason: a NetText key (the player reads it in its own language)
         private readonly List<(PeerId Peer, string Log, string Reason)> _kicks = new List<(PeerId, string, string)>();
         private readonly List<byte> _livePeerScratch = new List<byte>();
         private const double AckStallSeconds = 120;

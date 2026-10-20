@@ -58,7 +58,9 @@ namespace SkylineTogether.Core.Tests.Session
             rig.Run(300);
             Assert.Equal(ClientEndKind.Refused, wrong.EndKind);
             Assert.Equal(RefuseReason.BadPassword, wrong.RefusedFor);
-            Assert.Null(wrong.EndReport);
+            Assert.True(wrong.EndReport.CarriesNoDetails);
+            Assert.Equal(0, wrong.EndReport.RetryAfterSeconds, "a wrong password, not a lockout");
+            Assert.Equal(NetText.RefuseWrongPassword, wrong.EndText.Key);
             Assert.Equal(ClientEndKind.PasswordRequired, none.EndKind);
         }
 

@@ -205,7 +205,7 @@ namespace SkylineTogether.Core.Tests.Session
             }
             Assert.False(rig.Host.HoldSimulation, "released by the load watchdog");
             Assert.True(rig.Clock.Seconds - 100 < 420, "after about five minutes without progress, not thirty minutes");
-            Assert.Contains("loading made no progress", string.Join("\n", rig.Log.Lines));
+            Assert.Contains("Loading the city made no progress", string.Join("\n", rig.Log.Lines));
         }
 
         [Test]
@@ -244,7 +244,7 @@ namespace SkylineTogether.Core.Tests.Session
                 raw.Poll();
             }
             Assert.False(rig.Host.HoldSimulation);
-            Assert.Contains("the download made no progress", string.Join("\n", rig.Log.Lines));
+            Assert.Contains("The city download made no progress", string.Join("\n", rig.Log.Lines));
         }
 
         [Test]
@@ -266,7 +266,7 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Contains("You can join again in", third.EndReason);
             Assert.True(SessionClient.IsRetryable(third.EndKind), "an automatic rejoin tries again later");
             Assert.Equal(requests, rig.Snapshots.Requests, "no snapshot was taken for the refused attempt");
-            rig.RunHostOnly(61);
+            rig.RunHostOnly(31);
             SessionClient fourth = Attempt(false);
             Assert.Equal(ClientState.Live, fourth.State, fourth.EndReason);
             // a completed join wipes the slate: another failure is free again

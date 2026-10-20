@@ -38,6 +38,18 @@ namespace SkylineTogether.Core.Session
         /// a join notice; any other host refuses as before.
         /// </summary>
         public bool AcceptModMismatch;
+
+        /// <summary>
+        /// Derive the password key on a worker thread (200 000 PBKDF2 rounds; the game sets it so its main thread never
+        /// waits). Off: at once, on the calling thread (tests, tools).
+        /// </summary>
+        public bool DeriveKeyInBackground;
+
+        /// <summary>
+        /// Check the host's proof that it knows the password (<see cref="ControlKind.Authenticated"/>) and end the join when
+        /// it is wrong. Off only for replaying a recording (whose host answered someone else's nonce).
+        /// </summary>
+        public bool VerifyHostProof = true;
     }
 
     /// <summary>Stages of a client session, in order; Ended is final (why: <see cref="ClientEndKind"/>).</summary>
@@ -95,7 +107,13 @@ namespace SkylineTogether.Core.Session
         /// This game left on purpose to rejoin with a fresh snapshot, because its city differs from the
         /// host's in too many places for object repairs (the player accepted the resync). Retryable.
         /// </summary>
-        Resync
+        Resync,
+
+        /// <summary>
+        /// The host disconnected this game for a technical reason (it stopped responding, could not keep up, its join
+        /// stopped making progress, its messages kept failing): not a kick, so joining again is offered. Retryable.
+        /// </summary>
+        Dropped
     }
 
     /// <summary>
@@ -141,6 +159,14 @@ namespace SkylineTogether.Core.Session
         private float _loadProgress;
         private double _lastChunkAt;
         private double _loadedAt = -1;
+        // the handshake: the manifest goes out once the host said the password is right (or not needed); the password
+        // key is derived (maybe in the background) for the host's challenge, and the host's proof checked with it
+        private HandshakeManifest _manifestToSend;
+        private bool _manifestSent;
+        private PasswordChallengeMessage _challenge;
+        private PasswordKeyCache _keyCache;
+        private byte[] _answerKey;
+        private ulong _boundHost;
         // when anything last arrived from the host (live silence watchdog)
         private double _lastHeard;
         private bool _disposed;
@@ -171,6 +197,12 @@ namespace SkylineTogether.Core.Session
         public MismatchReport EndReport { get; private set; }
 
         /// <summary>
+        /// What the host said about the end (a kick, ban, end or drop reason, a refusal's detail) with its locale key, so
+        /// the game shows it in the player's language; null when the end has a local reason.
+        /// </summary>
+        public LocalText EndText { get; private set; }
+
+        /// <summary>
         /// What differs from the host without blocking the join (asset packs, extra DLC, mods the host allows, mod settings
         /// the host's values replace), from the host's <see cref="ControlKind.JoinNotice"/>; null when nothing differs.
         /// </summary>
@@ -195,7 +227,7 @@ namespace SkylineTogether.Core.Session
         public static bool IsRetryable(ClientEndKind kind)
         {
             return kind == ClientEndKind.Unreachable || kind == ClientEndKind.ConnectionLost || kind == ClientEndKind.Timeout || kind == ClientEndKind.JoinFailed || kind == ClientEndKind.RefusedTemporarily
-                   || kind == ClientEndKind.Resync;
+                   || kind == ClientEndKind.Resync || kind == ClientEndKind.Dropped;
         }
 
         public PeerId LocalPeer { get; private set; }
@@ -308,6 +340,8 @@ namespace SkylineTogether.Core.Session
             if (State != ClientState.Idle) throw new InvalidOperationException("already connecting");
             SetState(ClientState.Connecting);
             Timeline.Mark(JoinStage.Start, _clock.Seconds);
+            // the password proof is bound to the host's Steam ID as dialled (0 for a direct connection)
+            _boundHost = endpoint != null ? endpoint.SteamId : 0;
             _log.Info(LogCategory.Session, "connecting to " + endpoint);
             _connection = _transport.Connect(endpoint);
             if (_connection == null)
@@ -361,6 +395,8 @@ namespace SkylineTogether.Core.Session
                 End("The host did not confirm the join after the city loaded. Try joining again.", ClientEndKind.Timeout);
                 return;
             }
+            if (_challenge != null && _answerKey == null) AnswerChallenge(); // the key may have been derived meanwhile
+            if (State == ClientState.Ended) return;
             if (State == ClientState.Downloading && _receiver != null && _receiver.ResendRequested && now - _lastHaveSent > 0.5)
             {
                 SendHave();
@@ -492,6 +528,18 @@ namespace SkylineTogether.Core.Session
                 JoinFlags = _options.AcceptModMismatch ? HelloJoinFlags.AcceptModMismatch : (byte)0,
             });
             _channel.Send(MessageKind.Hello, _body);
+            _channel.Pump();
+            // the manifest (mods, DLC, asset packs) follows once the host accepted the password or said none is needed
+            _manifestToSend = manifest;
+            _log.Info(LogCategory.Session, "connected; sent hello" + (_options.AcceptModMismatch ? " (joining anyway with different mods)" : ""));
+        }
+
+        /// <summary>Sends this game's manifest (once), after the host's <see cref="ControlKind.Authenticated"/>.</summary>
+        private void SendManifest()
+        {
+            if (_manifestSent || _manifestToSend == null) return;
+            _manifestSent = true;
+            HandshakeManifest manifest = _manifestToSend;
             _payload.Reset();
             try
             {
@@ -501,14 +549,69 @@ namespace SkylineTogether.Core.Session
             {
                 // far too many mods to list: the digests alone still let the host compare (it reports what it cannot name)
                 _log.Warn(LogCategory.Session, "the manifest does not fit the handshake (" + ex.Message + "); sending the digests only");
-                manifest = new HandshakeManifest { Digests = digests, Mods = null, Content = null, AssetPacks = null, Settings = null };
+                manifest = new HandshakeManifest { Digests = manifest.Digests, Mods = null, Content = null, AssetPacks = null, Settings = null };
                 ManifestDetailMessage.Write(_payload, new ManifestDetailMessage { Manifest = manifest });
             }
             SendControl(ControlKind.ManifestDetail, _payload);
+            _channel?.Pump();
+            _log.Info(LogCategory.Session, "sent the manifest (" + (manifest.Mods?.Count ?? 0) + " mods, " + (manifest.Content?.Count ?? 0) + " DLC, "
+                                           + (manifest.AssetPacks != null ? manifest.AssetPacks.Count.ToString(CultureInfo.InvariantCulture) : "too many") + " asset packs)");
+        }
+
+        /// <summary>Answers the host's password challenge once the key is derived (maybe in the background).</summary>
+        private void AnswerChallenge()
+        {
+            PasswordChallengeMessage ch = _challenge;
+            if (ch == null || _answerKey != null || _channel == null || State == ClientState.Ended) return;
+            byte[] key = _keyCache.TryGet(_options.Password);
+            if (key == null) return; // still deriving
+            _answerKey = key;
+            _body.Reset();
+            PasswordResponseMessage.Write(_body, new PasswordResponseMessage
+            {
+                ClientNonce = _clientNonce,
+                Mac = SessionCrypto.ClientProof(key, ch.SessionId, ch.HostNonce, _clientNonce, ch.Salt, _boundHost),
+            });
+            var wrapped = new ByteWriter(_body.Length + 8);
+            ControlMessage.Write(wrapped, ControlKind.PasswordResponse, _body.Buffer, 0, _body.Length);
+            _channel.Send(MessageKind.Control, wrapped);
             _channel.Pump();
-            _log.Info(LogCategory.Session, "connected; sent hello (" + (manifest.Mods?.Count ?? 0) + " mods, " + (manifest.Content?.Count ?? 0) + " DLC, "
-                                           + (manifest.AssetPacks != null ? manifest.AssetPacks.Count.ToString(CultureInfo.InvariantCulture) : "too many") + " asset packs"
-                                           + (_options.AcceptModMismatch ? ", joining anyway with different mods" : "") + ")");
+        }
+
+        /// <summary>
+        /// The host accepted the password (or needs none). When this game answered a challenge, the host must prove that it
+        /// knows the password too; only then is anything else (the manifest) sent.
+        /// </summary>
+        private void OnAuthenticated(byte[] payload)
+        {
+            if (_manifestSent) return;
+            byte[] proof;
+            try
+            {
+                _reader.Reset(payload, 0, payload.Length);
+                uint length = _reader.ReadVarUInt32();
+                if (length > 64 || length > (uint)_reader.Remaining) throw new DecodeException("Authenticated: proof of " + length + " bytes");
+                proof = new byte[length];
+                _reader.ReadBytes(proof, 0, (int)length);
+            }
+            catch (Exception ex) when (!(ex is DecodeException))
+            {
+                throw new DecodeException("Authenticated: " + ex.Message);
+            }
+            // a replayed recording's host answered the recorder's nonce, not this one: nothing to verify there
+            if (_challenge != null && _options.VerifyHostProof && _transport.Kind != TransportKind.Playback)
+            {
+                byte[] expected = _answerKey != null
+                    ? SessionCrypto.HostProof(_answerKey, _challenge.SessionId, _challenge.HostNonce, _clientNonce, _challenge.Salt, _boundHost)
+                    : null;
+                if (expected == null || !SessionCrypto.FixedTimeEquals(expected, proof))
+                {
+                    _log.Warn(LogCategory.Session, "the host could not prove that it knows the session password; not joining");
+                    End("The host could not prove that it knows the session password, so this may not be the host you meant. Check the Steam ID or address and the password.", ClientEndKind.Failed);
+                    return;
+                }
+            }
+            SendManifest();
         }
 
         void ITransportEventSink.OnDisconnected(IConnection connection, int reason, string text)
@@ -552,6 +655,7 @@ namespace SkylineTogether.Core.Session
                     RefuseMessage r = RefuseMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
                     RefusedFor = r.Reason;
                     EndReport = MismatchReport.Decode(r.MismatchReport);
+                    EndText = new LocalText { Text = r.Detail ?? "", Key = EndReport?.TextKey, Args = EndReport?.TextArgs ?? Array.Empty<string>() };
                     End(string.IsNullOrEmpty(r.Detail) ? "The host refused the connection (" + r.Reason + ")." : r.Detail, r.Reason == RefuseReason.HostPreparing ? ClientEndKind.RefusedTemporarily : ClientEndKind.Refused);
                     return;
                 }
@@ -617,7 +721,12 @@ namespace SkylineTogether.Core.Session
                 case MessageKind.Chat:
                 {
                     ChatMessage chat = ChatMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
-                    ChatReceived?.Invoke(new ChatEntry { From = chat.From, Name = chat.IsSystem ? "" : NameOf(chat.From), Text = chat.Text, IsSystem = chat.IsSystem });
+                    // a key and its parameters only on the host's own system lines (a player's line is plain text)
+                    ChatReceived?.Invoke(new ChatEntry
+                    {
+                        From = chat.From, Name = chat.IsSystem ? "" : NameOf(chat.From), Text = chat.Text, IsSystem = chat.IsSystem,
+                        Key = chat.IsSystem ? chat.Key : null, Args = chat.IsSystem ? chat.Args : null,
+                    });
                     return;
                 }
                 default:
@@ -647,22 +756,20 @@ namespace SkylineTogether.Core.Session
                 case ControlKind.PasswordChallenge:
                 {
                     PasswordChallengeMessage ch = PasswordChallengeMessage.Decode(payload, 0, payload.Length);
+                    if (_challenge != null) return; // one challenge per connection
                     if (string.IsNullOrEmpty(_options.Password))
                     {
                         End("This session needs a password. Enter it in the Join settings and try again.", ClientEndKind.PasswordRequired);
                         return;
                     }
-                    _body.Reset();
-                    PasswordResponseMessage.Write(_body, new PasswordResponseMessage
-                    {
-                        ClientNonce = _clientNonce,
-                        Mac = SessionCrypto.PasswordMac(_options.Password, ch.HostNonce, _clientNonce, ch.Salt, ch.SessionId),
-                    });
-                    var wrapped = new ByteWriter(_body.Length + 8);
-                    ControlMessage.Write(wrapped, ControlKind.PasswordResponse, _body.Buffer, 0, _body.Length);
-                    _channel.Send(MessageKind.Control, wrapped);
+                    _challenge = ch;
+                    _keyCache = new PasswordKeyCache(ch.Salt, _options.DeriveKeyInBackground);
+                    AnswerChallenge();
                     return;
                 }
+                case ControlKind.Authenticated:
+                    OnAuthenticated(payload);
+                    return;
                 case ControlKind.Players:
                     _players = SessionPayloads.ReadPlayers(_reader);
                     foreach (PlayerInfo p in _players)
@@ -697,13 +804,21 @@ namespace SkylineTogether.Core.Session
                     GoLive();
                     return;
                 case ControlKind.Kick:
-                    End("The host removed you from the session: " + SessionPayloads.ReadText(_reader), ClientEndKind.Kicked);
+                    EndText = LocalText.Read(_reader);
+                    End(NetText.Format(NetText.English[NetText.ClientKicked], new[] { "REASON", EndText.Text }), ClientEndKind.Kicked);
                     return;
                 case ControlKind.Ban:
-                    End("The host removed you from the session and banned you: " + SessionPayloads.ReadText(_reader), ClientEndKind.Banned);
+                    EndText = LocalText.Read(_reader);
+                    End(NetText.Format(NetText.English[NetText.ClientBanned], new[] { "REASON", EndText.Text }), ClientEndKind.Banned);
                     return;
                 case ControlKind.SessionEnd:
-                    End(SessionPayloads.ReadText(_reader), ClientEndKind.SessionEnded);
+                    EndText = LocalText.Read(_reader);
+                    End(EndText.Text, ClientEndKind.SessionEnded);
+                    return;
+                case ControlKind.Dropped:
+                    // a technical removal, not a kick: joining again is offered
+                    EndText = LocalText.Read(_reader);
+                    End(EndText.Text, ClientEndKind.Dropped);
                     return;
                 default:
                     return;

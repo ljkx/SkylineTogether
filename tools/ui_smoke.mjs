@@ -216,7 +216,8 @@ const players = [{ id: 0, name: "Host", host: true, you: true, state: "Live", pi
   { id: 1, name: "Anna", host: false, you: false, state: "Downloading", ping: 30, progress: 0.4, color: "#3fb6e8", role: "builder" },
   { id: 2, name: "Bo", host: false, you: false, state: "Live", ping: 155, progress: 1, color: "#5fcf7a", role: "builder" },
   { id: 3, name: "Cy", host: false, you: false, state: "WaitingForSnapshot", ping: 300, progress: 0, color: "#ef6a6a", role: "viewer" }];
-const chat = [{ name: "", text: "You are hosting", system: true, seq: 1, you: false, color: "" }, { name: "Anna", text: "yo", system: false, seq: 2, you: false, color: "#3fb6e8" }];
+const chat = [{ name: "", text: "You are hosting", system: true, seq: 1, you: false, color: "" }, { name: "Anna", text: "yo", system: false, seq: 2, you: false, color: "#3fb6e8" },
+  { name: "Hosty", text: "welcome", system: false, seq: 3, you: false, host: true, color: "#e8a23f" }];
 const mods = { seq: 3, kind: "refused", refuse: "Mismatch", text: "Your mods differ from the host's.", target: "76561190000000009", reportKind: "mods",
   missing: [{ name: "Anarchy", version: "3.1", id: "300" }], extra: [{ name: "Traffic", version: "2.0", id: "200" }], versions: [{ name: "Move It", host: "1.0", you: "0.9" }],
   hostGame: "", yourGame: "", hostProto: "", yourProto: "" };
@@ -280,6 +281,7 @@ const cases = {
     extra: [{ name: "Fences", version: "", id: "90001" }], versions: [{ name: "Trees", id: "80010", host: "2.1", you: "2.2" }] }) } },
   endAssetsUnknown: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "assets", text: "The host requires the same asset packs. The asset packs differ (too many to list)." }) } },
   endPassword: { state: { ...base, mode: "None", end: end("refused", "BadPassword") } },
+  endLockout: { state: { ...base, mode: "None", end: { ...end("refused", "BadPassword"), lockout: true, retryAfter: 40, text: "Too many wrong passwords. Try again in 40 s." } } },
   endPasswordRequired: { state: { ...base, mode: "None", end: end("passwordRequired") } },
   endGame: { state: { ...base, mode: "None", end: end("refused", "Mismatch", { reportKind: "game", hostGame: "1.2.3", yourGame: "1.2.2" }) } },
   endBuild: { state: { ...base, mode: "None", end: end("refused", "ProtocolVersion", { reportKind: "protocol", hostProto: "2", yourProto: "1" }) } },

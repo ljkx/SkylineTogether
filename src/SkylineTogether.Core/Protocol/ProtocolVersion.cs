@@ -22,8 +22,11 @@ namespace SkylineTogether.Core.Protocol
         /// and <c>ManifestDetail</c> of the compatibility check (DLC, asset pack and mod setting lists instead of the
         /// never-filled format-tag, type-catalog and data-file fields) and <see cref="ControlKind.JoinNotice"/>; 4: the join flags
         /// byte at the end of <see cref="HelloMessage"/> ("join anyway" with different mods, <see cref="HelloJoinFlags"/>);
-        /// 5: the mover roster record (<see cref="Sync.SyncRecordKind.MoverRoster"/>).
+        /// 5: the mover roster record (<see cref="Sync.SyncRecordKind.MoverRoster"/>); 6: the hardened handshake (the
+        /// password proof bound to the connection and answered by the host, <see cref="ControlKind.Authenticated"/>, the
+        /// manifest sent only after it, 200 000 PBKDF2 rounds), <see cref="ControlKind.Dropped"/>, and localizable texts
+        /// (<c>Session.LocalText</c> in kick, ban, end and drop payloads, keys in chat lines, a "text" record in refusal reports).
         /// </summary>
-        public const int Current = 5;
+        public const int Current = 6;
     }
 }

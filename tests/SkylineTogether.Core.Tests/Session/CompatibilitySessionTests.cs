@@ -34,7 +34,7 @@ namespace SkylineTogether.Core.Tests.Session
             var (wrong, _, _) = rig.AddClient("Anna", "nope", tweak: i => i.Content.Clear());
             rig.Run(100);
             Assert.Equal(RefuseReason.BadPassword, wrong.RefusedFor, wrong.EndReason);
-            Assert.Null(wrong.EndReport, "a wrong password learns nothing about the host's content");
+            Assert.True(wrong.EndReport == null || wrong.EndReport.CarriesNoDetails, "a wrong password learns nothing about the host's content");
             var (right, _, _) = rig.AddClient("Ben", "hunter2", tweak: i => i.Content.Clear());
             rig.Run(100);
             Assert.Equal("content", right.EndReport?.Kind, right.EndReason);

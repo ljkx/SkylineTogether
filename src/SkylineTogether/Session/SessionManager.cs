@@ -351,6 +351,8 @@ namespace SkylineTogether.Session
                     NewPlayersJoinAsViewer = _settings.NewPlayersJoinAsViewer,
                     IsFriendOrInvited = id => Mod.Invites != null && Mod.Invites.IsFriendOrInvited(id),
                     Bans = BanList.Parse(_settings.BannedPlayers),
+                    // 200 000 PBKDF2 rounds: never on the main thread
+                    DeriveKeysInBackground = true,
                 };
                 var composite = new CompositeTransport(transport); // solo testing: the test recorder attaches here
                 var host = new SessionHost(composite, _info, _snapshots, options, _clock, _log);
@@ -395,7 +397,7 @@ namespace SkylineTogether.Session
                 });
                 if (!RaiseStarted(HostStarted, host, "host"))
                 {
-                    StopHost("The host's game could not start the session.");
+                    StopHost(LocalText.Plain("The host's game could not start the session."));
                     Notify(LocaleSource.Resolve("st.toast.startFailed"), ProgressState.Failed);
                     return;
                 }
@@ -466,7 +468,7 @@ namespace SkylineTogether.Session
                 AddChat(new ChatEntry { IsSystem = true, Text = LocaleSource.Resolve("st.chat.soloHost") });
                 if (!RaiseStarted(HostStarted, host, "host"))
                 {
-                    StopHost("The host's game could not start the session.");
+                    StopHost(LocalText.Plain("The host's game could not start the session."));
                     Notify(LocaleSource.Resolve("st.toast.startFailed"), ProgressState.Failed);
                     return false;
                 }
@@ -514,6 +516,7 @@ namespace SkylineTogether.Session
                 {
                     PlayerName = PlayerName,
                     Password = Core.Replay.PlaybackTransport.AnyPassword,
+                    VerifyHostProof = false, // the recording's host answered the recorder's nonce
                     ConnectTimeoutSeconds = 120,
                     SnapshotWaitTimeoutSeconds = 900,
                     DownloadStallTimeoutSeconds = 900,
@@ -639,6 +642,7 @@ namespace SkylineTogether.Session
                 var client = new SessionClient(transport, _info, _loader, new ClientOptions
                 {
                     PlayerName = PlayerName, SteamId = LocalSteamId, Password = _lastPassword, AcceptModMismatch = joinAnyway,
+                    DeriveKeyInBackground = true, // 200 000 PBKDF2 rounds: never on the main thread
                 }, _clock, _log);
                 transport = null; // the client owns it
                 client.ChatReceived += AddChat;
@@ -690,7 +694,7 @@ namespace SkylineTogether.Session
         public void Leave()
         {
             _lookup = null; // a host name still being resolved: no join follows
-            if (Host != null) StopHost("The host ended the session.");
+            if (Host != null) StopHost(NetText.Of(NetText.EndByHost));
             if (Client != null)
             {
                 Client.Leave();
@@ -742,7 +746,7 @@ namespace SkylineTogether.Session
         /// <summary>Recovery (or any time): leave the session and return to the main menu.</summary>
         public void ReturnToMainMenu()
         {
-            if (Host != null) StopHost("The host ended the session.");
+            if (Host != null) StopHost(NetText.Of(NetText.EndByHost));
             if (Client != null)
             {
                 Client.Leave();
@@ -827,7 +831,7 @@ namespace SkylineTogether.Session
         public void Kick(byte peer)
         {
             if (peer == 0) return;
-            if (Host != null) Host.Kick(new PeerId(peer), "Removed by the host");
+            if (Host != null) Host.Kick(new PeerId(peer), NetText.Of(NetText.KickByHost));
             else if (Client != null && Client.LocalRole == SessionRole.CoHost) Client.RequestKick(new PeerId(peer));
         }
 
@@ -835,7 +839,7 @@ namespace SkylineTogether.Session
         public void Ban(byte peer)
         {
             if (Host == null || peer == 0) return;
-            Host.Ban(new PeerId(peer), "Banned by the host");
+            Host.Ban(new PeerId(peer), null);
         }
 
         /// <summary>The host makes a player co-host, or a co-host a builder again.</summary>
@@ -1019,7 +1023,8 @@ namespace SkylineTogether.Session
             if (client == null) return;
             Client = null;
             ClientEndKind kind = client.EndKind;
-            string reason = client.EndReason;
+            // what the host said, in this player's language (the English text when the key is unknown here)
+            string reason = LocalizedEnd(client);
             bool entered = client.EnteredCity;
             if (client.Players != null && client.Players.Count > 0) _lastPlayers = new List<PlayerInfo>(client.Players);
             LastEndReason = reason;
@@ -1155,7 +1160,7 @@ namespace SkylineTogether.Session
             }
         }
 
-        private void StopHost(string reason)
+        private void StopHost(LocalText reason)
         {
             SessionHost host = Host;
             if (host == null) return;
@@ -1171,7 +1176,7 @@ namespace SkylineTogether.Session
                 _log.Warn(LogCategory.Session, "stopping the host failed", ex);
             }
             _snapshots.ReleaseAll(); // no snapshot temp file outlives the session
-            LastEndReason = reason;
+            LastEndReason = reason != null ? LocaleSource.Localize(reason) : null;
             _playersVersion++;
             RaiseSessionEnded();
         }
@@ -1189,7 +1194,7 @@ namespace SkylineTogether.Session
                 {
                     _log.Error(LogCategory.Session, "critical failure in " + feature.Title + "; ending the session");
                     DiagnosticsDump.Write();
-                    StopHost("The host's game hit an error (" + feature.Title + "), so the session ended. The host can start it again.");
+                    StopHost(NetText.Of(NetText.EndHostError, "FEATURE", feature.Title));
                     Notify(LocaleSource.Resolve("st.toast.critical.host", "FEATURE", feature.Title), ProgressState.Failed);
                 }
                 else if (Client != null)
@@ -1265,7 +1270,7 @@ namespace SkylineTogether.Session
                 if (Host != null)
                 {
                     _log.Info(LogCategory.Session, "the host is leaving the city (" + purpose + ", " + mode + "); ending the session");
-                    StopHost("The host left the city.");
+                    StopHost(NetText.Of(NetText.EndHostLeftCity));
                 }
                 if (Client != null && Client.State != ClientState.Connecting && Client.State != ClientState.Handshaking
                     && Client.State != ClientState.WaitingForSnapshot && Client.State != ClientState.Downloading)
@@ -1317,8 +1322,33 @@ namespace SkylineTogether.Session
             }
         }
 
+        /// <summary>The end reason in the player's language: the host's own words (kick, ban, end, drop, refusal) when it sent a key.</summary>
+        private static string LocalizedEnd(SessionClient client)
+        {
+            LocalText said = client.EndText;
+            if (said == null) return client.EndReason;
+            string text = LocaleSource.Localize(said);
+            switch (client.EndKind)
+            {
+                case ClientEndKind.Kicked: return LocaleSource.Resolve(NetText.ClientKicked, "REASON", text);
+                case ClientEndKind.Banned: return LocaleSource.Resolve(NetText.ClientBanned, "REASON", text);
+                case ClientEndKind.Refused:
+                case ClientEndKind.RefusedTemporarily:
+                case ClientEndKind.SessionEnded:
+                case ClientEndKind.Dropped:
+                    return string.IsNullOrEmpty(text) ? client.EndReason : text;
+                default:
+                    return client.EndReason;
+            }
+        }
+
         private void AddChat(ChatEntry entry)
         {
+            // the host's system lines carry a key: each player reads them in their own language
+            if (entry != null && entry.IsSystem && entry.Key != null)
+            {
+                entry.Text = LocaleSource.Localize(new LocalText { Key = entry.Key, Args = entry.Args ?? new string[0], Text = entry.Text });
+            }
             _chat.Add(entry);
             _chatSeq.Add(++_chatCounter);
             if (_chat.Count > MaxChatLines)

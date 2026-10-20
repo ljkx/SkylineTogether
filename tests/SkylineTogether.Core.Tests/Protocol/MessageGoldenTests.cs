@@ -195,14 +195,23 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void Chat()
         {
-            // from 3 | "hi" | system
-            const string hex = "03 | 02 6869 | 01";
+            // from 3 | "hi" | system | no key | no parameters
+            const string hex = "03 | 02 6869 | 01 | 00 | 00";
             AssertBytes(hex, Write<ChatMessage>(ChatMessage.Write, new ChatMessage { From = new PeerId(3), Text = "hi", IsSystem = true }));
             byte[] bytes = Hex(hex);
             ChatMessage read = ChatMessage.Decode(bytes, 0, bytes.Length);
             Assert.Equal(new PeerId(3), read.From);
             Assert.Equal("hi", read.Text);
             Assert.True(read.IsSystem);
+            Assert.Null(read.Key);
+
+            // a localizable system line: from 0 | "x" | system | key "st.net.k" | 1 parameter NAME = "A"
+            const string keyed = "00 | 01 78 | 01 | 08 73742e6e65742e6b | 01 | 04 4e414d45 | 01 41";
+            AssertBytes(keyed, Write<ChatMessage>(ChatMessage.Write, new ChatMessage { From = PeerId.Host, Text = "x", IsSystem = true, Key = "st.net.k", Args = new[] { "NAME", "A" } }));
+            bytes = Hex(keyed);
+            read = ChatMessage.Decode(bytes, 0, bytes.Length);
+            Assert.Equal("st.net.k", read.Key);
+            Assert.SequenceEqual(new[] { "NAME", "A" }, read.Args);
         }
 
         [Test]

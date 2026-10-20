@@ -270,6 +270,8 @@ const EN = {
   "st.ui.end.details": "Details",
   "st.ui.end.title.badPassword": "Wrong password",
   "st.ui.end.text.badPassword": "The host didn't accept the password. Check it with the host and try again. After several wrong tries the host's game blocks new attempts for a while.",
+  "st.ui.end.title.lockout": "Too many wrong passwords",
+  "st.ui.end.text.lockout": "The host's game blocks new attempts from your connection for a while after several wrong passwords. Wait until the time below has passed, check the password with the host, then try again.",
   "st.ui.end.title.passwordRequired": "This session needs a password",
   "st.ui.end.text.passwordRequired": "Ask the host for the password and enter it below.",
   "st.ui.end.title.mods": "Your mods don't match the host's",
@@ -394,6 +396,7 @@ const EN = {
   "st.ui.settings.livePassword": "New password",
   "st.ui.settings.apply": "Apply",
   "st.ui.chat.title": "Chat",
+  "st.ui.chat.hostBadge": "Host",
   "st.ui.chat.placeholder": "Message (Enter to send)",
   "st.ui.chat.overlayPlaceholder": "Say something… (Enter to send, Esc to close)",
   "st.ui.chat.hint": "Press Enter to chat",
@@ -2779,7 +2782,8 @@ function endCopy(e) {
   if (e.kind === "left") return null;
   if (e.kind === "passwordRequired") return "passwordRequired";
   if (e.kind === "refused") {
-    if (r === "BadPassword") return "badPassword";
+    // a lockout (the host says when to try again) is not a wrong password: waiting is what helps
+    if (r === "BadPassword") return e.lockout === true ? "lockout" : "badPassword";
     if (r === "Mismatch") {
       if (e.reportKind === "game") return "game";
       if (e.reportKind === "build" || e.reportKind === "protocol") return "build";
@@ -2913,7 +2917,7 @@ function EndOverlay(p) {
   const e = obj(s.end);
   const copy = str(e.kind) ? endCopy(e) : null;
   const shown = !!copy && st.dismissedEnd !== e.seq;
-  const needsPassword = copy === "badPassword" || copy === "passwordRequired";
+  const needsPassword = copy === "badPassword" || copy === "passwordRequired" || copy === "lockout";
   const canRetry = !!copy && !NO_RETRY[copy];
   // the host refused different mods or asset packs but lets players join anyway (the lists stay; the choice is the player's)
   const canJoinAnyway = (copy === "mods" || copy === "assets") && e.overridable === true && objs(e.required).length === 0;
@@ -3021,9 +3025,12 @@ function ChatLine(p) {
       "div",
       { style: merge({ flex: 1, minWidth: 0, overflow: "hidden", fontSize: FS.s, lineHeight: 1.35 }, WRAP) },
       l.system
-        ? h("span", { style: { color: T.textDim, fontStyle: "italic" } }, str(l.text))
-        : // the name is isolated from the text, so a right-to-left name or message does not swap them around
-          [h("span", { key: "n", style: { color: str(l.color) || T.accent, fontWeight: "bold", unicodeBidi: "isolate" } }, str(l.name) || "?"), h("span", { key: "c", style: { color: str(l.color) || T.accent, fontWeight: "bold" } }, ": "), h("span", { key: "t", style: { color: T.text, unicodeBidi: "isolate" } }, str(l.text))]
+        ? // the session's own lines: an info mark and italics, never a name a player could choose
+          [h(Glyph, { key: "i", src: G.info, size: 12, color: T.textDim, style: { marginRight: "4rem", display: "inline-block", verticalAlign: "middle" } }), h("span", { key: "s", style: { color: T.textDim, fontStyle: "italic" } }, str(l.text))]
+        : // the name is isolated from the text, so a right-to-left name or message does not swap them around; the host's
+          // lines carry a badge no player name can imitate
+          [l.host === true ? h("span", { key: "b", style: { marginRight: "4rem", padding: "0 4rem", borderRadius: "3rem", fontSize: FS.xs, fontWeight: "bold", textTransform: "uppercase", color: T.text, backgroundColor: str(l.color) || T.accent } }, t("st.ui.chat.hostBadge")) : null,
+           h("span", { key: "n", style: { color: str(l.color) || T.accent, fontWeight: "bold", unicodeBidi: "isolate" } }, str(l.name) || "?"), h("span", { key: "c", style: { color: str(l.color) || T.accent, fontWeight: "bold" } }, ": "), h("span", { key: "t", style: { color: T.text, unicodeBidi: "isolate" } }, str(l.text))]
     ),
     time ? h("div", { style: { marginLeft: "8rem", fontSize: FS.xs, color: T.textDimmer, flexShrink: 0, paddingTop: "1rem" } }, time) : null
   );

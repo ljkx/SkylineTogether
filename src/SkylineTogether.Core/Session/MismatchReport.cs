@@ -115,6 +115,27 @@ namespace SkylineTogether.Core.Session
         /// <summary>Kind "conflict": the joiner runs the old multiplayer mod (this entry), or null.</summary>
         public ModEntry ClientConflict;
 
+        /// <summary>
+        /// The locale key of the refusal's detail text (<c>NetText</c>; null: none) and its parameters (name, value, ...),
+        /// so the joiner reads the detail in its own language ("text" record). Carried in every refusal of protocol 6 and
+        /// later (kind "refusal" when nothing else is reported).
+        /// </summary>
+        public string TextKey;
+        public string[] TextArgs = Array.Empty<string>();
+
+        /// <summary>
+        /// True for a report that carries only a refusal's text and retry time (kind "refusal"): nothing about versions,
+        /// builds, mods, DLC, asset packs or settings (what a joiner learns before the password).
+        /// </summary>
+        public bool CarriesNoDetails => Kind == "refusal" && HostGameVersion == null && ClientGameVersion == null && HostProtocol == null && ClientProtocol == null
+                                        && HostBuild == null && ClientBuild == null && Missing.Count == 0 && Extra.Count == 0 && Versions.Count == 0
+                                        && ContentMissing.Count == 0 && ContentExtra.Count == 0 && AssetsMissing.Count == 0 && AssetsExtra.Count == 0
+                                        && AssetVersions.Count == 0 && Settings.Count == 0 && CityData.Count == 0 && HostCityData.Count == 0
+                                        && HostConflict == null && ClientConflict == null;
+
+        /// <summary>Seconds after which a new attempt may succeed (a password lockout, a join cooldown; "retry-after" record); 0: none.</summary>
+        public int RetryAfterSeconds;
+
         /// <summary>The entries of <see cref="Missing"/> that are not in <see cref="CityData"/> (the overridable ones).</summary>
         public List<ModEntry> OtherMissing()
         {
@@ -276,6 +297,18 @@ namespace SkylineTogether.Core.Session
             if (r.RestOverridable) Line(sb, "rest-overridable");
             if (r.HostConflict != null) Line(sb, "conflict-host", r.HostConflict.Name, r.HostConflict.Version, r.HostConflict.PlatformId);
             if (r.ClientConflict != null) Line(sb, "conflict-you", r.ClientConflict.Name, r.ClientConflict.Version, r.ClientConflict.PlatformId);
+            if (!string.IsNullOrEmpty(r.TextKey))
+            {
+                var fields = new List<string> { r.TextKey };
+                string[] args = r.TextArgs ?? Array.Empty<string>();
+                for (int i = 0; i + 1 < args.Length && i < 16; i += 2)
+                {
+                    fields.Add(args[i] ?? "");
+                    fields.Add(args[i + 1] ?? "");
+                }
+                Line(sb, "text", fields.ToArray());
+            }
+            if (r.RetryAfterSeconds > 0) Line(sb, "retry-after", r.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
@@ -323,6 +356,18 @@ namespace SkylineTogether.Core.Session
                     case "rest-overridable": r.RestOverridable = true; break;
                     case "conflict-host": r.HostConflict = new ModEntry { Name = Field(f, 1), Version = Field(f, 2), PlatformId = Field(f, 3) }; break;
                     case "conflict-you": r.ClientConflict = new ModEntry { Name = Field(f, 1), Version = Field(f, 2), PlatformId = Field(f, 3) }; break;
+                    case "text":
+                    {
+                        r.TextKey = Field(f, 1);
+                        int pairs = Math.Min(8, Math.Max(0, (f.Length - 2) / 2));
+                        r.TextArgs = new string[pairs * 2];
+                        for (int i = 0; i < pairs * 2; i++) r.TextArgs[i] = Field(f, 2 + i) ?? "";
+                        break;
+                    }
+                    case "retry-after":
+                        int.TryParse(Field(f, 1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int seconds);
+                        r.RetryAfterSeconds = Math.Max(0, Math.Min(seconds, 86400));
+                        break;
                 }
             }
             return r;

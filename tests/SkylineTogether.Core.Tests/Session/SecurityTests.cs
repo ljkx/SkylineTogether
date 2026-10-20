@@ -54,7 +54,7 @@ namespace SkylineTogether.Core.Tests.Session
             var eve = Handshake(rig, new RawPeer(rig, DirectEve, 0));
             Assert.Equal(RefuseReason.NotInvited, ReasonOf(eve), "a direct joiner needs the password, and there is none");
             Assert.Null(eve.Challenge(), "no challenge without a password");
-            Assert.Null(MismatchReport.Decode(eve.Refusal().MismatchReport), "no compatibility report");
+            Assert.True(MismatchReport.Decode(eve.Refusal().MismatchReport).CarriesNoDetails, "no compatibility report");
             Assert.False(eve.Got(MessageKind.Welcome));
             Assert.True(eve.Disconnected);
 
@@ -128,7 +128,7 @@ namespace SkylineTogether.Core.Tests.Session
             Pump(rig, new[] { stranger });
             RefuseMessage r = stranger.Refusal();
             Assert.Equal(RefuseReason.BadPassword, r.Reason);
-            Assert.Null(MismatchReport.Decode(r.MismatchReport));
+            Assert.True(MismatchReport.Decode(r.MismatchReport).CarriesNoDetails);
             Assert.DoesNotContain("9.9.9", r.Detail ?? "");
             Assert.DoesNotContain("1.2.3", r.Detail ?? "");
 
@@ -153,7 +153,7 @@ namespace SkylineTogether.Core.Tests.Session
             Pump(rig, new[] { peer });
             RefuseMessage r = peer.Refusal();
             Assert.Equal(RefuseReason.ProtocolVersion, r.Reason);
-            Assert.Null(MismatchReport.Decode(r.MismatchReport));
+            Assert.True(MismatchReport.Decode(r.MismatchReport).CarriesNoDetails);
             Assert.DoesNotContain(ProtocolVersion.Current.ToString(), r.Detail);
         }
 
@@ -165,7 +165,7 @@ namespace SkylineTogether.Core.Tests.Session
             PasswordChallengeMessage ch = peer.Challenge();
             var shortNonce = new byte[2];
             var body = new ByteWriter();
-            PasswordResponseMessage.Write(body, new PasswordResponseMessage { ClientNonce = shortNonce, Mac = SessionCrypto.PasswordMac("pw", ch.HostNonce, shortNonce, ch.Salt, ch.SessionId) });
+            PasswordResponseMessage.Write(body, new PasswordResponseMessage { ClientNonce = shortNonce, Mac = SessionCrypto.ClientProof(SessionCrypto.DeriveKey("pw", ch.Salt), ch.SessionId, ch.HostNonce, shortNonce, ch.Salt, 0) });
             peer.Control(ControlKind.PasswordResponse, body.ToArray());
             Pump(rig, new[] { peer });
             Assert.Equal(RefuseReason.BadPassword, ReasonOf(peer), "a two-byte nonce is refused even with the right password");
@@ -290,10 +290,15 @@ namespace SkylineTogether.Core.Tests.Session
             byte[] mine = SessionCrypto.DeriveKey("Grün & 7", salt);
             byte[] reference;
             using (var kdf = new Rfc2898DeriveBytes(Encoding.UTF8.GetBytes("Grün & 7"), salt, SessionCrypto.Pbkdf2Iterations, HashAlgorithmName.SHA256)) reference = kdf.GetBytes(32);
-            Assert.Equal(Hex(reference), Hex(mine), "matches the framework's PBKDF2 with 10 000 rounds");
+            Assert.Equal(Hex(reference), Hex(mine), "matches the framework's PBKDF2 with the same rounds");
+            Assert.Equal(200000, SessionCrypto.Pbkdf2Iterations, "raised from 10 000 with protocol 6");
             byte[] hn = { 9, 9, 9 }, cn = { 8, 8, 8, 8, 8, 8, 8, 8 };
-            Assert.Equal(Hex(SessionCrypto.PasswordMac(mine, hn, cn, 77)), Hex(SessionCrypto.PasswordMac("Grün & 7", hn, cn, salt, 77)));
-            Assert.NotEqual(Hex(SessionCrypto.PasswordMac(mine, hn, cn, 77)), Hex(SessionCrypto.PasswordMac(mine, hn, cn, 78)), "bound to the session id");
+            string proof = Hex(SessionCrypto.ClientProof(mine, 77, hn, cn, salt, 5));
+            Assert.Equal(proof, Hex(SessionCrypto.ClientProof(mine, 77, hn, cn, salt, 5)), "deterministic");
+            Assert.NotEqual(proof, Hex(SessionCrypto.ClientProof(mine, 78, hn, cn, salt, 5)), "bound to the session id");
+            Assert.NotEqual(proof, Hex(SessionCrypto.ClientProof(mine, 77, hn, cn, salt, 6)), "bound to the host's Steam ID");
+            Assert.NotEqual(proof, Hex(SessionCrypto.ClientProof(mine, 77, new byte[] { 9, 9 }, new byte[] { 9, 8, 8, 8, 8, 8, 8, 8, 8 }, salt, 5)), "nonces are length-prefixed");
+            Assert.NotEqual(proof, Hex(SessionCrypto.HostProof(mine, 77, hn, cn, salt, 5)), "the host's proof is not the client's reflected");
             Assert.True(SessionCrypto.FixedTimeEquals(new byte[] { 1, 2 }, new byte[] { 1, 2 }));
             Assert.False(SessionCrypto.FixedTimeEquals(new byte[] { 1, 2 }, new byte[] { 1, 3 }));
             Assert.False(SessionCrypto.FixedTimeEquals(new byte[] { 1 }, new byte[] { 1, 2 }));

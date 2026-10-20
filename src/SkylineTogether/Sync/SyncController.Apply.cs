@@ -252,7 +252,7 @@ namespace SkylineTogether.Sync
             if (v.JustTripped)
             {
                 _log.Error(LogCategory.Replication, peer + ": its changes keep failing on the host; removing it from the session", ex);
-                _sessions.Host?.Kick(peer, "The host could not apply your changes. Join again to get a fresh copy of the city.");
+                _sessions.Host?.Drop(peer, Core.Session.NetText.Of(Core.Session.NetText.DropApplyFailed)); // a rejoin repairs it: not a kick
             }
         }
 
@@ -299,7 +299,7 @@ namespace SkylineTogether.Sync
             {
                 var peer = new PeerId(stalled);
                 _kicks.Add((peer, peer + " has applied nothing for " + (int)AckStallSeconds + " s (" + (_acks.CurrentFrame - _acks.AckedFrame(stalled)) + " release frames behind)",
-                            "Your game stopped applying the host's updates. Join again to get a fresh copy of the city."));
+                            Core.Session.NetText.DropNotApplying));
             }
         }
 
@@ -311,7 +311,7 @@ namespace SkylineTogether.Sync
             foreach ((PeerId peer, string log, string reason) in _kicks)
             {
                 _log.Warn(LogCategory.Replication, log + "; removing it from the session");
-                host?.Kick(peer, reason);
+                host?.Drop(peer, Core.Session.NetText.Of(reason)); // a technical removal: the player is offered a rejoin
             }
             _kicks.Clear();
         }

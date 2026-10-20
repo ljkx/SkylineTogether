@@ -72,6 +72,27 @@ namespace SkylineTogether.Settings
             return Format(text, args);
         }
 
+        /// <summary>The text of <paramref name="key"/> in the active language, else English; null when no table has it.</summary>
+        public static string Lookup(string key)
+        {
+            string text = null;
+            try
+            {
+                var dictionary = GameManager.instance?.localizationManager?.activeDictionary;
+                if (dictionary != null && dictionary.TryGetValue(key, out string t)) text = t;
+            }
+            catch (Exception)
+            {
+                text = null;
+            }
+            if (!string.IsNullOrEmpty(text)) return text;
+            LoadTables();
+            return _english?.Entries != null && _english.Entries.TryGetValue(key, out text) ? text : null;
+        }
+
+        /// <summary>A text the host sent (<see cref="Core.Session.LocalText"/>) in this player's language, else its English text.</summary>
+        public static string Localize(Core.Session.LocalText text) => text == null ? "" : text.Render(Lookup);
+
         /// <summary>Replaces <c>{NAME}</c> placeholders (pairs of name and value).</summary>
         public static string Format(string text, params string[] args)
         {

@@ -255,7 +255,7 @@ namespace SkylineTogether.Core.Tests.Session
             Pump(rig, new[] { peer });
             RefuseMessage r = peer.Refusal();
             Assert.Equal(RefuseReason.BadPassword, r?.Reason);
-            Assert.Null(MismatchReport.Decode(r.MismatchReport), "nothing about the host's mods before the password");
+            Assert.True(MismatchReport.Decode(r.MismatchReport)?.CarriesNoDetails ?? true, "nothing about the host's mods before the password");
             Assert.Equal(0, AdmittedCount(rig.Host));
 
             // with the right password the flag counts again

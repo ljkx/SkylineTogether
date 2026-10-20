@@ -691,6 +691,8 @@ namespace SkylineTogether.UI
                 Prop(sb, "system", e.IsSystem).Append(',');
                 Prop(sb, "seq", s.ChatSeqAt(i)).Append(',');
                 Prop(sb, "you", !e.IsSystem && e.From == local).Append(',');
+                // the host's own lines are marked (names are unique, but the badge cannot be copied)
+                Prop(sb, "host", !e.IsSystem && e.From == PeerId.Host).Append(',');
                 Prop(sb, "color", e.IsSystem ? "" : Presence.PresenceController.CssColor(Presence.PresenceController.ColorOf(e.From)));
                 sb.Append('}');
             }
@@ -724,6 +726,9 @@ namespace SkylineTogether.UI
             Prop(sb, "text", end.Text ?? "").Append(',');
             Prop(sb, "target", end.Target ?? "").Append(',');
             MismatchReport r = end.Report;
+            // a password lockout (or a join cooldown) says when to try again: the screen tells it from a wrong password
+            Prop(sb, "lockout", end.Refuse == Core.Protocol.RefuseReason.BadPassword && r != null && r.RetryAfterSeconds > 0).Append(',');
+            Prop(sb, "retryAfter", r != null ? r.RetryAfterSeconds : 0).Append(',');
             Prop(sb, "reportKind", r?.Kind ?? "").Append(',');
             Prop(sb, "overridable", end.Kind == ClientEndKind.Refused && end.Refuse == Core.Protocol.RefuseReason.Mismatch && r != null && r.Overridable
                                     && (r.Kind == "mods" || r.Kind == "assets") && r.CityData.Count == 0).Append(',');
@@ -810,6 +815,7 @@ namespace SkylineTogether.UI
                 case ClientEndKind.SessionEnded: return "sessionEnded";
                 case ClientEndKind.Timeout: return "timeout";
                 case ClientEndKind.ConnectionLost: return "connectionLost";
+                case ClientEndKind.Dropped: return "connectionLost"; // a technical removal: joining again is offered
                 case ClientEndKind.Failed: return "failed";
                 // the finer kinds map onto the error screen's categories
                 case ClientEndKind.Unreachable: return "timeout"; // never connected ("check the Steam ID or address")

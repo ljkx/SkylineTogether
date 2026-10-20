@@ -121,7 +121,7 @@ namespace SkylineTogether.Core.Tests.Session
             PasswordChallengeMessage ch = Challenge();
             Assert.NotNull(ch, Name + " was challenged");
             var body = new ByteWriter();
-            PasswordResponseMessage.Write(body, new PasswordResponseMessage { ClientNonce = ClientNonce, Mac = SessionCrypto.PasswordMac(password, ch.HostNonce, ClientNonce, ch.Salt, ch.SessionId) });
+            PasswordResponseMessage.Write(body, new PasswordResponseMessage { ClientNonce = ClientNonce, Mac = SessionCrypto.ClientProof(SessionCrypto.DeriveKey(password, ch.Salt), ch.SessionId, ch.HostNonce, ClientNonce, ch.Salt, 0) });
             Control(ControlKind.PasswordResponse, body.ToArray());
         }
 
@@ -392,7 +392,7 @@ namespace SkylineTogether.Core.Tests.Session
             Pump(rig, new[] { replay });
             PasswordChallengeMessage first = early.Challenge();
             var replayed = new ByteWriter();
-            PasswordResponseMessage.Write(replayed, new PasswordResponseMessage { ClientNonce = early.ClientNonce, Mac = SessionCrypto.PasswordMac("open sesame", first.HostNonce, early.ClientNonce, first.Salt, first.SessionId) });
+            PasswordResponseMessage.Write(replayed, new PasswordResponseMessage { ClientNonce = early.ClientNonce, Mac = SessionCrypto.ClientProof(SessionCrypto.DeriveKey("open sesame", first.Salt), first.SessionId, first.HostNonce, early.ClientNonce, first.Salt, 0) });
             replay.Control(ControlKind.PasswordResponse, replayed.ToArray());
             Pump(rig, new[] { replay });
             Assert.Equal(RefuseReason.BadPassword, replay.Refusal()?.Reason ?? (RefuseReason)255, "a replayed response is refused");

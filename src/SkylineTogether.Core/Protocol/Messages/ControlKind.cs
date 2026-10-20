@@ -72,6 +72,18 @@ namespace SkylineTogether.Core.Protocol
         /// the join (asset packs, extra DLC, mods the host allows, mod settings the host's values replace); payload: a
         /// <c>Session.MismatchReport</c> of kind "notice" (ARCHITECTURE.md#handshake-and-admission).
         /// </summary>
-        JoinNotice
+        JoinNotice,
+        /// <summary>
+        /// Host → client: the password was right, or none was needed (payload: bytes hostProof, ≤ 64; empty when no
+        /// password was asked). The host's proof that it knows the password too
+        /// (<c>Session.SessionCrypto.HostProof</c>); the client verifies it and only then sends its manifest.
+        /// </summary>
+        Authenticated,
+        /// <summary>
+        /// Host → client: the player was disconnected for a technical reason (not responding, too slow, a join that stopped
+        /// making progress, messages that keep failing); unlike a kick, joining again is expected (payload:
+        /// <c>Session.LocalText</c>).
+        /// </summary>
+        Dropped
     }
 }

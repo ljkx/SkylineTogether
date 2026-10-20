@@ -114,10 +114,10 @@ namespace SkylineTogether.Core.Session
         /// <summary>
         /// Wait before the same player (Steam ID or address) may be admitted again after joins that failed or were
         /// abandoned (dropped, cancelled, connection lost, load failed), by the number of such joins in a row: the first
-        /// costs nothing, then 1, 5 and 30 minutes. Forgotten after <see cref="JoinFailureForgetSeconds"/> without one,
+        /// costs nothing, then 30 seconds, 2, 10 and 30 minutes. Forgotten after <see cref="JoinFailureForgetSeconds"/> without one,
         /// and after a join that completes.
         /// </summary>
-        public double[] JoinCooldownSeconds = { 0, 60, 300, 1800 };
+        public double[] JoinCooldownSeconds = { 0, 30, 120, 600, 1800 };
 
         /// <summary>A player's failed joins are forgotten after this long without another one.</summary>
         public double JoinFailureForgetSeconds = 3600;
@@ -130,6 +130,19 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>The largest message a connection may send before it is admitted (handshake messages only).</summary>
         public int UnadmittedMaxBodyBytes = 1024 * 1024;
+
+        /// <summary>
+        /// The largest message a connection may send before it proved the password (or was told none is needed): its hello,
+        /// its password answer and pings. The manifest follows only after <see cref="ControlKind.Authenticated"/>, under
+        /// <see cref="UnadmittedMaxBodyBytes"/>.
+        /// </summary>
+        public int UnauthenticatedMaxBodyBytes = 64 * 1024;
+
+        /// <summary>
+        /// Derive the password key on a worker thread (200 000 PBKDF2 rounds; the game sets it so the main thread never
+        /// waits). Off: at once, on the calling thread (tests, tools).
+        /// </summary>
+        public bool DeriveKeysInBackground;
 
         /// <summary>
         /// Bytes a connection's messages may decompress to in total before it is admitted (its hello, manifest and password
@@ -170,6 +183,9 @@ namespace SkylineTogether.Core.Session
         public string Name;
         public string Text;
         public bool IsSystem;
+        /// <summary>A system line's locale key (<see cref="NetText"/>; null: plain text) and its parameters (name, value, ...).</summary>
+        public string Key;
+        public string[] Args;
     }
 
     /// <summary>
@@ -204,8 +220,10 @@ namespace SkylineTogether.Core.Session
             public bool Authenticated;
             /// <summary>The keys of the password attempt limiter (Steam ID and/or address).</summary>
             public string[] AuthKeys;
-            /// <summary>The chat line when this player is removed (" was removed", " was banned"); null: " left".</summary>
-            public string LeaveText;
+            /// <summary>The chat line's key when this player is removed (<see cref="NetText.ChatRemoved"/>, banned); null: left.</summary>
+            public string LeaveKey;
+            /// <summary>A password answer waiting for the key (derived in the background).</summary>
+            public PasswordResponseMessage PendingAnswer;
             public double Since;
             public BlobSender Sender;
             public FileStream SenderStream;
@@ -317,9 +335,8 @@ namespace SkylineTogether.Core.Session
         private SpeedState _sentSpeed;
         private bool _disposed;
         private bool _stopping;
-        // the PBKDF2 key of the current password (derived once per password, not per answer)
-        private string _keyFor;
-        private byte[] _key;
+        // the PBKDF2 key of the current password (derived once per password, not per answer; maybe in the background)
+        private readonly PasswordKeyCache _keys;
         private Action<PeerId, Envelope> _appMessage;
         // frame stalls of the host itself (a long save, a hitch, a minimised game): the silence and age limits
         // are suspended for a while afterwards, because the peers' messages were waiting for this side
@@ -339,6 +356,7 @@ namespace SkylineTogether.Core.Session
             _log = log ?? throw new ArgumentNullException(nameof(log));
             _sessionId = (uint)_random.Next(1, int.MaxValue);
             _salt = SessionCrypto.RandomBytes(16);
+            _keys = new PasswordKeyCache(_salt, options.DeriveKeysInBackground);
         }
 
         public HostOptions Options => _options;
@@ -425,6 +443,8 @@ namespace SkylineTogether.Core.Session
         public void Start()
         {
             _transport.Listen(_options.Listen);
+            // the password key is ready before the first joiner answers (a background derivation starts now)
+            if (!string.IsNullOrEmpty(_options.Password)) _keys.TryGet(_options.Password);
             _log.Info(LogCategory.Session, "hosting \"" + _options.SessionName + "\" (" + _transport.Kind + ", up to " + _options.MaxPlayers + " players"
                                            + (string.IsNullOrEmpty(_options.Password) ? "" : ", password") + ")");
             _playersDirty = true;
@@ -453,6 +473,7 @@ namespace SkylineTogether.Core.Session
             DrainDeferred();
             if (_disposed) return;
             _transport.Poll(this);
+            CheckPendingAnswers();
             double now = _clock.Seconds;
             // after a stall of this side, give the peers time to be heard before anything is judged silent
             if (!double.IsNaN(_lastTickAt) && now - _lastTickAt > StallSeconds)
@@ -484,18 +505,18 @@ namespace SkylineTogether.Core.Session
                 {
                     // an absolute deadline, whatever progress the joiner reports
                     _log.Warn(LogCategory.Join, p.Name + ": still joining after " + (int)(now - p.AdmittedAt) + " s (" + p.State + "); dropping it");
-                    SystemMessage(p.Name + " took too long to join.");
-                    SendText(p, ControlKind.SessionEnd, "Joining took too long (more than " + (int)(_options.MaxJoinSeconds / 60) + " minutes). Try joining again.");
+                    SystemLine(NetText.ChatTookTooLong, "NAME", p.Name);
+                    SendNotice(p, ControlKind.Dropped, NetText.Of(NetText.DropTookTooLong, "MINUTES", Num((int)(_options.MaxJoinSeconds / 60))));
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "join took too long"));
                     continue;
                 }
-                string stalled = p.Admitted && p.State != PlayerState.Live && !grace ? JoinStalled(p, now) : null;
+                LocalText stalled = p.Admitted && p.State != PlayerState.Live && !grace ? JoinStalled(p, now) : null;
                 if (stalled != null)
                 {
                     // the watchdog judges what the host itself sees (snapshot bytes leaving), not just what the joiner claims
-                    _log.Warn(LogCategory.Join, p.Name + ": " + stalled + " (" + p.State + "); dropping it");
-                    SystemMessage(p.Name + " could not finish joining.");
-                    SendText(p, ControlKind.SessionEnd, "Joining stopped making progress (" + stalled + "). Try joining again.");
+                    _log.Warn(LogCategory.Join, p.Name + ": " + stalled.Text + " (" + p.State + "); dropping it");
+                    SystemLine(NetText.ChatJoinStalled, "NAME", p.Name);
+                    SendNotice(p, ControlKind.Dropped, stalled);
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "join made no progress"));
                     continue;
                 }
@@ -503,8 +524,9 @@ namespace SkylineTogether.Core.Session
                 {
                     // live clients answer pings every second; total silence means its game froze or is gone
                     _log.Warn(LogCategory.Session, p.Name + ": nothing received for " + (int)(now - p.LastHeard) + " s; dropping it as not responding");
-                    SystemMessage(p.Name + " stopped responding.");
-                    SendText(p, ControlKind.Kick, "The host received nothing from your game for " + (int)_options.LiveSilenceTimeoutSeconds + " s. Join again to continue.");
+                    SystemLine(NetText.ChatNotResponding, "NAME", p.Name);
+                    // not a kick: its game is offered a rejoin
+                    SendNotice(p, ControlKind.Dropped, NetText.Of(NetText.DropNotResponding, "SECONDS", Num((int)_options.LiveSilenceTimeoutSeconds)));
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "not responding"));
                     continue;
                 }
@@ -512,7 +534,7 @@ namespace SkylineTogether.Core.Session
                 {
                     // a hung joiner would otherwise hold the host's simulation forever
                     _log.Warn(LogCategory.Join, p.Name + ": nothing received for " + (int)(now - p.LastHeard) + " s while joining (" + p.State + "); dropping it");
-                    SystemMessage(p.Name + " stopped responding while joining.");
+                    SystemLine(NetText.ChatNotRespondingJoining, "NAME", p.Name);
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "stopped responding while joining"));
                     continue;
                 }
@@ -555,7 +577,11 @@ namespace SkylineTogether.Core.Session
                 {
                     _log.Warn(LogCategory.Net, p.Name + ": the connection is too slow to keep up; disconnecting");
                     // the players learn why (the dropped player rejoins with a fresh snapshot: its catch-up)
-                    if (p.Admitted) SystemMessage(p.Name + " could not keep up with the session and was disconnected; joining again catches up.");
+                    if (p.Admitted)
+                    {
+                        SystemLine(NetText.ChatTooSlow, "NAME", p.Name);
+                        SendNotice(p, ControlKind.Dropped, NetText.Of(NetText.DropTooSlow));
+                    }
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "connection too slow"));
                     continue;
                 }
@@ -790,6 +816,15 @@ namespace SkylineTogether.Core.Session
 
         public void SystemMessage(string text) => DistributeChat(new ChatEntry { From = PeerId.Host, Name = "", Text = text, IsSystem = true });
 
+        /// <summary>A system chat line every player reads in their own language (<see cref="NetText"/>).</summary>
+        private void SystemLine(string key, params string[] args)
+        {
+            LocalText t = NetText.Of(key, args);
+            DistributeChat(new ChatEntry { From = PeerId.Host, Name = "", Text = t.Text, IsSystem = true, Key = t.Key, Args = t.Args });
+        }
+
+        private static string Num(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
         /// <summary>Shows a toast on every client.</summary>
         public void Toast(string text)
         {
@@ -841,7 +876,7 @@ namespace SkylineTogether.Core.Session
                 p.Role = role;
                 _playersDirty = true;
                 _log.Info(LogCategory.Session, p.Name + " is now a " + role.ToString().ToLowerInvariant());
-                SystemMessage(p.Name + " is now a " + role.ToString().ToLowerInvariant() + ".");
+                SystemLine(role == SessionRole.Viewer ? NetText.ChatRoleViewer : role == SessionRole.CoHost ? NetText.ChatRoleCoHost : NetText.ChatRoleBuilder, "NAME", p.Name);
                 RoleChanged?.Invoke(id, role);
                 return true;
             }
@@ -890,16 +925,35 @@ namespace SkylineTogether.Core.Session
             return _options.NewPlayersJoinAsViewer && !p.Local ? SessionRole.Viewer : SessionRole.Builder;
         }
 
-        public void Kick(PeerId id, string reason)
+        public void Kick(PeerId id, string reason) => Kick(id, reason != null ? LocalText.Plain(reason) : NetText.Of(NetText.KickByHost));
+
+        /// <summary>
+        /// Disconnects an admitted player for a technical reason (its changes keep failing, it stopped applying updates):
+        /// unlike a kick, its game offers to join again (<see cref="ControlKind.Dropped"/>).
+        /// </summary>
+        public void Drop(PeerId id, LocalText reason)
         {
+            reason = reason ?? NetText.Of(NetText.DropFailing);
             foreach (Peer p in new List<Peer>(_peers.Values))
             {
                 if (p.Id != id || !p.Admitted) continue;
-                _payload.Reset();
-                SessionPayloads.WriteText(_payload, reason ?? "Kicked by the host");
-                SendControl(p, ControlKind.Kick, _payload);
-                _log.Info(LogCategory.Session, p.Name + " was removed: " + (reason ?? "kicked by the host"));
-                p.LeaveText = " was removed";
+                SendNotice(p, ControlKind.Dropped, reason);
+                _log.Info(LogCategory.Session, p.Name + " was disconnected: " + reason.Text);
+                p.LeaveKey = NetText.ChatDropped;
+                Remove(p, 0, "dropped", true);
+            }
+        }
+
+        /// <summary>Removes an admitted player with a reason it reads in its own language.</summary>
+        public void Kick(PeerId id, LocalText reason)
+        {
+            reason = reason ?? NetText.Of(NetText.KickByHost);
+            foreach (Peer p in new List<Peer>(_peers.Values))
+            {
+                if (p.Id != id || !p.Admitted) continue;
+                SendNotice(p, ControlKind.Kick, reason);
+                _log.Info(LogCategory.Session, p.Name + " was removed: " + reason.Text);
+                p.LeaveKey = NetText.ChatRemoved;
                 Remove(p, 0, "kicked", true);
             }
         }
@@ -919,12 +973,10 @@ namespace SkylineTogether.Core.Session
             // a direct connection is also banned by its address (IPv6: its /64), so the player cannot come back over direct
             // IP without a Steam identity
             if (p.SteamAuthenticated && p.Direct && BanList.AddressKey(p.Address) != null) added |= _options.Bans.Add(0, p.Address, p.Name, bannedAt);
-            _payload.Reset();
-            SessionPayloads.WriteText(_payload, reason ?? "Banned by the host");
-            SendControl(p, ControlKind.Ban, _payload);
+            SendNotice(p, ControlKind.Ban, reason != null ? LocalText.Plain(reason) : NetText.Of(NetText.BanByHost));
             _log.Info(LogCategory.Session, p.Name + " was banned (" + (p.SteamAuthenticated ? "Steam ID " + p.SteamId : "") + (p.SteamAuthenticated && p.Direct ? " and " : "")
                                            + (!p.SteamAuthenticated || p.Direct ? "address " + BanList.AddressKey(p.Address) : "") + ")" + (added ? "" : "; already on the list"));
-            p.LeaveText = " was banned";
+            p.LeaveKey = NetText.ChatBanned;
             Remove(p, 0, "banned", true);
             if (added) BansChanged?.Invoke();
             EnforceBans();
@@ -948,20 +1000,29 @@ namespace SkylineTogether.Core.Session
                 if (!IsBanned(p)) continue;
                 if (p.Admitted)
                 {
-                    _payload.Reset();
-                    SessionPayloads.WriteText(_payload, "Banned by the host");
-                    SendControl(p, ControlKind.Ban, _payload);
-                    p.LeaveText = " was banned";
+                    SendNotice(p, ControlKind.Ban, NetText.Of(NetText.BanByHost));
+                    p.LeaveKey = NetText.ChatBanned;
                     Remove(p, 0, "banned", true);
                 }
                 else
                 {
-                    Refuse(p, RefuseReason.Banned, "You are banned from this session.");
+                    Refuse(p, RefuseReason.Banned, NetText.Of(NetText.RefuseBanned));
                 }
             }
         }
 
         private bool IsBanned(Peer p) => _options.Bans != null && _options.Bans.IsBanned(p.SteamAuthenticated ? p.SteamId : 0, p.Direct || !p.SteamAuthenticated ? p.Address : null);
+
+        /// <summary>The names already taken in the session: the host's and every other connection's that sent a hello.</summary>
+        private List<string> OtherNames(Peer self)
+        {
+            var names = new List<string> { _options.HostName ?? "" };
+            foreach (Peer o in _peers.Values)
+            {
+                if (o != self && (o.Admitted || o.Hello != null)) names.Add(o.Name);
+            }
+            return names;
+        }
 
         private Peer FindAdmitted(PeerId id)
         {
@@ -977,17 +1038,21 @@ namespace SkylineTogether.Core.Session
         /// handshake a <see cref="RefuseReason.HostShuttingDown"/> refusal (before, they only saw the
         /// connection drop).
         /// </summary>
-        public void Stop(string reason)
+        public void Stop(string reason) => Stop(reason != null ? LocalText.Plain(reason) : NetText.Of(NetText.EndByHost));
+
+        /// <summary>Ends the session with a reason every player reads in their own language.</summary>
+        public void Stop(LocalText reason)
         {
             if (_disposed) return;
             _stopping = true;
+            reason = reason ?? NetText.Of(NetText.EndByHost);
             _payload.Reset();
-            SessionPayloads.WriteText(_payload, reason ?? "The host ended the session");
+            LocalText.Write(_payload, reason);
             BroadcastControl(ControlKind.SessionEnd, _payload, live: false);
             foreach (Peer p in new List<Peer>(_peers.Values))
             {
                 if (p.Admitted) Remove(p, 0, "session ended", true);
-                else Refuse(p, RefuseReason.HostShuttingDown, reason ?? "The host ended the session.");
+                else Refuse(p, RefuseReason.HostShuttingDown, reason);
             }
             Dispose();
         }
@@ -1028,7 +1093,7 @@ namespace SkylineTogether.Core.Session
             };
             // until it is admitted a connection may only send small handshake messages: any other kind ends the
             // connection before a byte of it is decompressed
-            peer.Channel.MaxBodyBytes = _options.UnadmittedMaxBodyBytes;
+            peer.Channel.MaxBodyBytes = _options.UnauthenticatedMaxBodyBytes;
             peer.Channel.InboundLimit = UnadmittedLimit;
             peer.Channel.RejectUnexpectedKinds = true;
             _peers[connection] = peer;
@@ -1041,7 +1106,7 @@ namespace SkylineTogether.Core.Session
             _log.Info(LogCategory.Session, p.Name + " disconnected (" + reason + ": " + text + ")");
             bool wasJoining = p.Admitted && p.State != PlayerState.Live;
             Remove(p, reason, text, false);
-            if (wasJoining) SystemMessage(p.Name + " lost the connection while joining.");
+            if (wasJoining) SystemLine(NetText.ChatLostJoining, "NAME", p.Name);
         }
 
         void ITransportEventSink.OnMessage(IConnection connection, Lane lane, byte[] buffer, int offset, int count)
@@ -1132,7 +1197,7 @@ namespace SkylineTogether.Core.Session
                 if (p.Failures >= _options.MaxHandlingFailures && _peers.ContainsKey(connection))
                 {
                     _log.Warn(LogCategory.Session, p.Name + ": " + p.Failures + " messages could not be handled; disconnecting");
-                    SendText(p, ControlKind.Kick, "The host could not handle the data your game sends. Join again to get a fresh copy of the city.");
+                    SendNotice(p, ControlKind.Dropped, NetText.Of(NetText.DropFailing));
                     Remove(p, TransportCloseReason.ProtocolError, "messages keep failing", true);
                 }
             }
@@ -1144,7 +1209,7 @@ namespace SkylineTogether.Core.Session
         /// and the joiner did not move on to loading. Loading: the reported progress does not grow, or the load takes
         /// longer than the joiner's own game would wait.
         /// </summary>
-        private string JoinStalled(Peer p, double now)
+        private LocalText JoinStalled(Peer p, double now)
         {
             switch (p.State)
             {
@@ -1158,7 +1223,7 @@ namespace SkylineTogether.Core.Session
                     }
                     if (_options.DownloadStallSeconds > 0 && now - p.ProgressAt > _options.DownloadStallSeconds)
                     {
-                        return "the download made no progress for " + (int)(now - p.ProgressAt) + " s";
+                        return NetText.Of(NetText.DropDownloadStalled, "SECONDS", Num((int)(now - p.ProgressAt)));
                     }
                     return null;
                 }
@@ -1166,11 +1231,11 @@ namespace SkylineTogether.Core.Session
                     if (double.IsNaN(p.LoadingSince)) p.LoadingSince = p.ProgressAt = now;
                     if (_options.MaxLoadSeconds > 0 && now - p.LoadingSince > _options.MaxLoadSeconds)
                     {
-                        return "loading took more than " + (int)(_options.MaxLoadSeconds / 60) + " minutes";
+                        return NetText.Of(NetText.DropLoadTooLong, "MINUTES", Num((int)(_options.MaxLoadSeconds / 60)));
                     }
                     if (_options.LoadStallSeconds > 0 && now - p.ProgressAt > _options.LoadStallSeconds)
                     {
-                        return "loading made no progress for " + (int)(now - p.ProgressAt) + " s";
+                        return NetText.Of(NetText.DropLoadStalled, "SECONDS", Num((int)(now - p.ProgressAt)));
                     }
                     return null;
                 default:
@@ -1226,12 +1291,13 @@ namespace SkylineTogether.Core.Session
         /// <summary>Total exceptions thrown by app-message listeners (diagnostics).</summary>
         public long ListenerFailures => _listenerFailures;
 
-        private void SendText(Peer p, ControlKind kind, string text)
+        /// <summary>Sends a <see cref="LocalText"/> payload (kick, ban, end, drop).</summary>
+        private void SendNotice(Peer p, ControlKind kind, LocalText text)
         {
             try
             {
                 _payload.Reset();
-                SessionPayloads.WriteText(_payload, text);
+                LocalText.Write(_payload, text);
                 SendControl(p, kind, _payload);
             }
             catch (Exception)
@@ -1287,7 +1353,7 @@ namespace SkylineTogether.Core.Session
                     if (p.Hello != null) return;
                     if (_stopping)
                     {
-                        Refuse(p, RefuseReason.HostShuttingDown, "The host is ending the session.");
+                        Refuse(p, RefuseReason.HostShuttingDown, NetText.Of(NetText.RefuseShuttingDown));
                         return;
                     }
                     // bans and the join policy come first, judged on the transport's identity: a banned or not-invited
@@ -1299,17 +1365,18 @@ namespace SkylineTogether.Core.Session
                         // a peer that still has to prove the password learns no version of the host
                         if (NeedsPassword(p))
                         {
-                            Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Update both games to the same mod version.");
+                            Refuse(p, RefuseReason.ProtocolVersion, NetText.Of(NetText.RefuseProtocol));
                         }
                         else
                         {
-                            Refuse(p, RefuseReason.ProtocolVersion, "Skyline Together versions differ. Host: " + ProtocolVersion.Current + ". Update both games to the same mod version.",
+                            Refuse(p, RefuseReason.ProtocolVersion, NetText.Of(NetText.RefuseProtocolVersions, "HOST", Num(ProtocolVersion.Current)),
                                 new MismatchReport { Kind = "protocol", HostProtocol = ProtocolVersion.Current.ToString(System.Globalization.CultureInfo.InvariantCulture), ClientProtocol = theirProtocol.ToString(System.Globalization.CultureInfo.InvariantCulture) });
                         }
                         return;
                     }
                     p.Hello = HelloMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
-                    if (!string.IsNullOrEmpty(p.Hello.DisplayName)) p.Name = p.Hello.DisplayName;
+                    // names are unique in the session and never the host's, so no one can pose as the host or another player
+                    p.Name = PlayerNames.Unique(string.IsNullOrEmpty(p.Hello.DisplayName) ? p.Name : p.Hello.DisplayName, OtherNames(p));
                     // only the transport's authenticated Steam ID is an identity; before, the hello's claim
                     // replaced it, so anyone could pose as (and replace the connection of) another player
                     if (p.Hello.SteamId != 0 && p.Hello.SteamId != p.SteamId)
@@ -1379,8 +1446,8 @@ namespace SkylineTogether.Core.Session
                     if (resent > (long)(_options.MaxResendFactor * p.SnapshotSize) + 16L * 1024 * 1024)
                     {
                         _log.Warn(LogCategory.Join, p.Name + ": asked for " + resent + " bytes of the city again (snapshot " + p.SnapshotSize + " bytes); dropping it");
-                        SystemMessage(p.Name + " could not finish joining.");
-                        SendText(p, ControlKind.SessionEnd, "The city download kept failing. Try joining again.");
+                        SystemLine(NetText.ChatJoinStalled, "NAME", p.Name);
+                        SendNotice(p, ControlKind.Dropped, NetText.Of(NetText.DropResends));
                         Remove(p, TransportCloseReason.ProtocolError, "too many resends", true);
                         return;
                     }
@@ -1411,8 +1478,7 @@ namespace SkylineTogether.Core.Session
             bool stillJoining = old.State != PlayerState.Live && _clock.Seconds - old.LastHeard < 15;
             if (stillJoining)
             {
-                Refuse(p, RefuseReason.HostPreparing, "You are still joining this session from an earlier attempt (" + old.State.ToString().ToLowerInvariant()
-                                                      + "). Wait for it to finish, or restart the game and join again.");
+                Refuse(p, RefuseReason.HostPreparing, NetText.Of(NetText.RefuseStillJoining));
                 return false;
             }
             _log.Info(LogCategory.Session, p.Name + " connected again; dropping the old connection (" + old.State + ")");
@@ -1443,6 +1509,7 @@ namespace SkylineTogether.Core.Session
             switch (c.Kind)
             {
                 case ControlKind.ManifestDetail:
+                    // (before the password only a small one fits: the joiner sends it after ControlKind.Authenticated)
                     if (p.Manifest != null) return;
                     p.Manifest = ManifestDetailMessage.Decode(payload, 0, payload.Length).Manifest ?? new HandshakeManifest();
                     TryAdmit(p);
@@ -1464,8 +1531,10 @@ namespace SkylineTogether.Core.Session
                     string detail = SessionPayloads.ReadText(_reader);
                     if (!ok)
                     {
-                        _log.Warn(LogCategory.Join, p.Name + ": loading the city failed: " + detail);
-                        SystemMessage(p.Name + " could not load the city: " + detail);
+                        // the joiner's own words go to the host's log only (sanitized, shortened), never to the others as a
+                        // line of the host
+                        _log.Warn(LogCategory.Join, p.Name + ": loading the city failed: " + ProtocolText.Truncate(ProtocolText.Sanitize(detail ?? ""), 300));
+                        SystemLine(NetText.ChatLoadFailed, "NAME", p.Name);
                         Remove(p, 0, "load failed", true);
                         return;
                     }
@@ -1492,7 +1561,7 @@ namespace SkylineTogether.Core.Session
                     SendControl(p, ControlKind.SpeedChanged, _payload);
                     _payload.Reset();
                     SendControl(p, ControlKind.Live, _payload);
-                    SystemMessage(p.Name + " joined the city");
+                    SystemLine(NetText.ChatJoined, "NAME", p.Name);
                     PeerLive?.Invoke(p.Id);
                     return;
                 }
@@ -1533,7 +1602,7 @@ namespace SkylineTogether.Core.Session
                 {
                     bool wasJoining = p.Admitted && p.State != PlayerState.Live;
                     Remove(p, 0, "left", false);
-                    if (wasJoining) SystemMessage(p.Name + " cancelled joining.");
+                    if (wasJoining) SystemLine(NetText.ChatCancelled, "NAME", p.Name);
                     return;
                 }
                 case ControlKind.SpeedRequest:
@@ -1570,12 +1639,12 @@ namespace SkylineTogether.Core.Session
         {
             if (IsBanned(p))
             {
-                Refuse(p, RefuseReason.Banned, "You are banned from this session.");
+                Refuse(p, RefuseReason.Banned, NetText.Of(NetText.RefuseBanned));
                 return false;
             }
             if (_options.JoinPolicy == JoinPolicy.FriendsAndInvited && p.SteamAuthenticated && !p.Local && !FriendOrInvited(p.SteamId))
             {
-                Refuse(p, RefuseReason.NotInvited, "This session is open to the host's Steam friends and invited players only.");
+                Refuse(p, RefuseReason.NotInvited, NetText.Of(NetText.RefuseNotInvited));
                 return false;
             }
             return true;
@@ -1619,25 +1688,24 @@ namespace SkylineTogether.Core.Session
         {
             if (!NeedsPassword(p))
             {
-                p.Authenticated = true;
-                TryAdmit(p);
+                Authenticated(p, Array.Empty<byte>());
                 return;
             }
             if (string.IsNullOrEmpty(_options.Password))
             {
-                Refuse(p, RefuseReason.NotInvited, "This host accepts direct connections only with a session password. Join through Steam instead.");
+                Refuse(p, RefuseReason.NotInvited, NetText.Of(NetText.RefuseDirectNeedsPassword));
                 return;
             }
             p.AuthKeys = AuthKeysOf(p);
             double now = _clock.Seconds;
             if (PasswordAttempts.IsLocked(p.AuthKeys, now, out double wait))
             {
-                Refuse(p, RefuseReason.BadPassword, LockoutText(wait));
+                Refuse(p, RefuseReason.BadPassword, Lockout(NetText.RefuseLockout, wait), RetryReport(wait));
                 return;
             }
             if (PendingChallenges(p.AuthKeys) >= Math.Max(1, _options.MaxPendingChallengesPerKey))
             {
-                Refuse(p, RefuseReason.BadPassword, "Too many join attempts at once. Try again in a few seconds.");
+                Refuse(p, RefuseReason.BadPassword, NetText.Of(NetText.RefuseTooManyAttempts));
                 return;
             }
             p.AwaitingPassword = true;
@@ -1652,7 +1720,7 @@ namespace SkylineTogether.Core.Session
             int n = 0;
             foreach (Peer o in _peers.Values)
             {
-                if (!o.AwaitingPassword || o.AuthKeys == null) continue;
+                if ((!o.AwaitingPassword && o.PendingAnswer == null) || o.AuthKeys == null) continue;
                 foreach (string k in o.AuthKeys)
                 {
                     if (Array.IndexOf(keys, k) < 0) continue;
@@ -1663,45 +1731,79 @@ namespace SkylineTogether.Core.Session
             return n;
         }
 
-        private static string LockoutText(double seconds)
-        {
-            return "Too many wrong passwords. Try again in " + Math.Max(1, (int)Math.Ceiling(seconds)).ToString(System.Globalization.CultureInfo.InvariantCulture) + " s.";
-        }
+        private static LocalText Lockout(string key, double seconds) => NetText.Of(key, "SECONDS", Num(Math.Max(1, (int)Math.Ceiling(seconds))));
 
-        private byte[] PasswordKey()
-        {
-            string password = _options.Password ?? "";
-            if (_key == null || !string.Equals(_keyFor, password, StringComparison.Ordinal))
-            {
-                _key = SessionCrypto.DeriveKey(password, _salt);
-                _keyFor = password;
-            }
-            return _key;
-        }
+        /// <summary>A refusal report that says when to try again (the joiner's screen tells a lockout from a wrong password).</summary>
+        private static MismatchReport RetryReport(double seconds) => new MismatchReport { Kind = "refusal", RetryAfterSeconds = Math.Max(1, (int)Math.Ceiling(seconds)) };
+
+        /// <summary>The Steam ID the joiner's proof is bound to: the host's own as the joiner dialled it; 0 for a direct (or in-process) connection.</summary>
+        private ulong BoundHost(Peer p) => p.Direct || p.Local ? 0 : _options.HostSteamId;
 
         private void OnPasswordResponse(Peer p, byte[] payload)
         {
             if (!p.AwaitingPassword) return;
             p.AwaitingPassword = false; // one answer per challenge: the nonce is spent
-            PasswordResponseMessage r = PasswordResponseMessage.Decode(payload, 0, payload.Length);
+            p.PendingAnswer = PasswordResponseMessage.Decode(payload, 0, payload.Length);
+            CheckAnswer(p);
+        }
+
+        /// <summary>Answers that waited for the password key (derived in the background) are checked once it is ready.</summary>
+        private void CheckPendingAnswers()
+        {
+            List<Peer> waiting = null;
+            foreach (Peer p in _peers.Values)
+            {
+                if (p.PendingAnswer != null) (waiting ?? (waiting = new List<Peer>())).Add(p);
+            }
+            if (waiting == null) return;
+            foreach (Peer p in waiting)
+            {
+                if (_peers.ContainsKey(p.Channel.Connection)) CheckAnswer(p);
+            }
+        }
+
+        private void CheckAnswer(Peer p)
+        {
+            PasswordResponseMessage r = p.PendingAnswer;
+            if (r == null) return;
+            bool havePassword = !string.IsNullOrEmpty(_options.Password);
+            byte[] key = havePassword ? _keys.TryGet(_options.Password) : null;
+            if (havePassword && key == null) return; // still deriving: checked again next frame
+            p.PendingAnswer = null;
             double now = _clock.Seconds;
             // another connection of the same player or address may have locked it out meanwhile
             if (PasswordAttempts.IsLocked(p.AuthKeys, now, out double wait))
             {
-                Refuse(p, RefuseReason.BadPassword, LockoutText(wait));
+                Refuse(p, RefuseReason.BadPassword, Lockout(NetText.RefuseLockout, wait), RetryReport(wait));
                 return;
             }
-            bool right = !string.IsNullOrEmpty(_options.Password) && r.ClientNonce != null && r.ClientNonce.Length >= SessionCrypto.MinNonceBytes
-                         && SessionCrypto.FixedTimeEquals(SessionCrypto.PasswordMac(PasswordKey(), p.HostNonce, r.ClientNonce, _sessionId), r.Mac);
+            bool right = havePassword && r.ClientNonce != null && r.ClientNonce.Length >= SessionCrypto.MinNonceBytes
+                         && SessionCrypto.FixedTimeEquals(SessionCrypto.ClientProof(key, _sessionId, p.HostNonce, r.ClientNonce, _salt, BoundHost(p)), r.Mac);
             if (!right)
             {
                 double lockout = PasswordAttempts.OnFailure(p.AuthKeys, now);
                 _log.Warn(LogCategory.Session, p.Name + ": wrong password (" + string.Join(", ", p.AuthKeys ?? new string[0]) + ")" + (lockout > 0 ? "; locked out for " + (int)Math.Ceiling(lockout) + " s" : ""));
-                Refuse(p, RefuseReason.BadPassword, lockout > 0 ? "Wrong password. " + LockoutText(lockout) : "Wrong password.");
+                if (lockout > 0) Refuse(p, RefuseReason.BadPassword, Lockout(NetText.RefuseWrongPasswordLocked, lockout), RetryReport(lockout));
+                else Refuse(p, RefuseReason.BadPassword, NetText.Of(NetText.RefuseWrongPassword));
                 return;
             }
             PasswordAttempts.OnSuccess(p.AuthKeys);
+            // the host proves the password too: the joiner checks it before it sends anything else
+            Authenticated(p, SessionCrypto.HostProof(key, _sessionId, p.HostNonce, r.ClientNonce, _salt, BoundHost(p)));
+        }
+
+        /// <summary>
+        /// The connection proved the password (or needs none): tells it so (with the host's proof) and allows the larger
+        /// handshake messages (its manifest), then admits it once the manifest is there.
+        /// </summary>
+        private void Authenticated(Peer p, byte[] hostProof)
+        {
             p.Authenticated = true;
+            p.Channel.MaxBodyBytes = _options.UnadmittedMaxBodyBytes;
+            _payload.Reset();
+            _payload.WriteVarUInt32((uint)hostProof.Length);
+            _payload.WriteBytes(hostProof, 0, hostProof.Length);
+            SendControl(p, ControlKind.Authenticated, _payload);
             TryAdmit(p);
         }
 
@@ -1729,7 +1831,7 @@ namespace SkylineTogether.Core.Session
             if (action == PlayerActionKind.Kick)
             {
                 _log.Info(LogCategory.Session, p.Name + " (co-host) removes " + t.Name);
-                Kick(target, "Removed by " + p.Name);
+                Kick(target, NetText.Of(NetText.KickByCoHost, "NAME", p.Name));
             }
             else
             {
@@ -1746,13 +1848,13 @@ namespace SkylineTogether.Core.Session
             if (theirs.ModBuild != mine.ModBuild)
             {
                 string hostBuild = BuildId.Format(mine.ModBuild), clientBuild = BuildId.Format(theirs.ModBuild);
-                Refuse(p, RefuseReason.Mismatch, "Skyline Together builds differ (host build " + hostBuild + ", yours " + clientBuild + "). Both players need exactly the same mod version.",
+                Refuse(p, RefuseReason.Mismatch, NetText.Of(NetText.RefuseBuild, "HOST", hostBuild, "YOU", clientBuild),
                     new MismatchReport { Kind = "build", HostBuild = hostBuild, ClientBuild = clientBuild });
                 return;
             }
             if (!string.Equals(theirs.GameVersion, mine.GameVersion, StringComparison.Ordinal))
             {
-                Refuse(p, RefuseReason.Mismatch, "Game versions differ (host " + mine.GameVersion + ", you " + theirs.GameVersion + "). Update both games.",
+                Refuse(p, RefuseReason.Mismatch, NetText.Of(NetText.RefuseGame, "HOST", mine.GameVersion ?? "", "YOU", theirs.GameVersion ?? ""),
                     new MismatchReport { Kind = "game", HostGameVersion = mine.GameVersion, ClientGameVersion = theirs.GameVersion });
                 return;
             }
@@ -1778,7 +1880,7 @@ namespace SkylineTogether.Core.Session
                     _log.Info(LogCategory.Join, p.Name + " asked to join anyway with different mods, but this host does not let players join with different mods");
                 }
                 // the detail text is cut at 1024 characters; the report carries the complete lists for the UI
-                Refuse(p, RefuseReason.Mismatch, compat.RefusalDetail, compat.Refusal);
+                Refuse(p, RefuseReason.Mismatch, LocalText.Plain(compat.RefusalDetail), compat.Refusal);
                 if (compat.Refusal.CityData.Count > 0 || compat.Refusal.Kind == "conflict")
                 {
                     if (joinAnyway) _log.Info(LogCategory.Join, p.Name + " asked to join anyway, but no option lets a player join without mods that store data in this city or with the old multiplayer mod");
@@ -1797,8 +1899,7 @@ namespace SkylineTogether.Core.Session
             // snapshot and holds its simulation)
             if (CoolingDown(p, _clock.Seconds, out double cooldown))
             {
-                Refuse(p, RefuseReason.HostPreparing, "Your last attempts to join this session did not finish. You can join again in "
-                                                      + Math.Max(1, (int)Math.Ceiling(cooldown)).ToString(System.Globalization.CultureInfo.InvariantCulture) + " s.");
+                Refuse(p, RefuseReason.HostPreparing, Lockout(NetText.RefuseCooldown, cooldown), RetryReport(cooldown));
                 return;
             }
             // the same player connected again (their game crashed, the old connection is dying): only now, with the
@@ -1807,7 +1908,7 @@ namespace SkylineTogether.Core.Session
             // several handshakes may pass the password at once; each is checked here, after its own answer
             if (IsFull())
             {
-                Refuse(p, RefuseReason.Full, "The session is full.");
+                Refuse(p, RefuseReason.Full, NetText.Of(NetText.RefuseFull));
                 return;
             }
             Admit(p, compat.Notice);
@@ -1860,7 +1961,7 @@ namespace SkylineTogether.Core.Session
             p.Id = AllocatePeerId();
             if (p.Id == PeerId.Host)
             {
-                Refuse(p, RefuseReason.Full, "The session is full.");
+                Refuse(p, RefuseReason.Full, NetText.Of(NetText.RefuseFull));
                 return;
             }
             p.Admitted = true;
@@ -1907,7 +2008,7 @@ namespace SkylineTogether.Core.Session
             _playersDirty = true;
             _log.Info(LogCategory.Session, "admitted " + p.Name + " as " + p.Id);
             if (notice != null) SendJoinNotice(p, notice);
-            SystemMessage(p.Name + " is joining…");
+            SystemLine(NetText.ChatJoining, "NAME", p.Name);
             PeerJoining?.Invoke(p.Id);
             // nothing changed since the last request (no broadcast, simulation held or paused throughout):
             // that snapshot is this city too, and the peer's stream (from now on) has no gap behind it
@@ -2042,9 +2143,7 @@ namespace SkylineTogether.Core.Session
                 if (p.Admitted && p.State == PlayerState.WaitingForSnapshot)
                 {
                     p.NotJoinersFault = true;
-                    _payload.Reset();
-                    SessionPayloads.WriteText(_payload, "The host could not save the city: " + reason);
-                    SendControl(p, ControlKind.SessionEnd, _payload);
+                    SendNotice(p, ControlKind.Dropped, NetText.Of(NetText.DropSnapshotFailed, "DETAIL", reason ?? ""));
                     Remove(p, 0, "snapshot failed", true);
                 }
             }
@@ -2171,7 +2270,7 @@ namespace SkylineTogether.Core.Session
         private void DistributeChat(ChatEntry entry)
         {
             _body.Reset();
-            ChatMessage.Write(_body, new ChatMessage { From = entry.From, Text = entry.Text, IsSystem = entry.IsSystem });
+            ChatMessage.Write(_body, new ChatMessage { From = entry.From, Text = entry.Text, IsSystem = entry.IsSystem, Key = entry.Key, Args = entry.Args });
             foreach (Peer p in _peers.Values)
             {
                 if (p.Admitted) p.Channel.Send(MessageKind.Chat, _body);
@@ -2196,13 +2295,19 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        private void Refuse(Peer p, RefuseReason reason, string detail, MismatchReport report = null)
+        private void Refuse(Peer p, RefuseReason reason, LocalText detail, MismatchReport report = null)
         {
-            _log.Info(LogCategory.Session, "refused " + p.Name + " (" + reason + "): " + detail);
+            detail = detail ?? LocalText.Plain("");
+            _log.Info(LogCategory.Session, "refused " + p.Name + " (" + reason + "): " + detail.Text);
             _body.Reset();
+            // the report carries the detail's key so the joiner reads it in its own language (the layout of the
+            // refusal itself never changes)
+            report = report ?? new MismatchReport { Kind = "refusal" };
+            report.TextKey = detail.Key;
+            report.TextArgs = detail.Args;
             byte[] encoded = MismatchReport.Encode(report);
             if (encoded != null && encoded.Length > RefuseMessage.MaxMismatchReportBytes) encoded = null;
-            RefuseMessage.Write(_body, new RefuseMessage { Reason = reason, Detail = ProtocolText.Truncate(detail, RefuseMessage.MaxDetailChars), MismatchReport = encoded });
+            RefuseMessage.Write(_body, new RefuseMessage { Reason = reason, Detail = ProtocolText.Truncate(detail.Text, RefuseMessage.MaxDetailChars), MismatchReport = encoded });
             p.Channel.Send(MessageKind.Refuse, _body);
             Remove(p, 0, "refused: " + reason, true);
         }
@@ -2218,7 +2323,7 @@ namespace SkylineTogether.Core.Session
             if (p.Admitted)
             {
                 _playersDirty = true;
-                if (p.State == PlayerState.Live || p.LeaveText != null) SystemMessage(p.Name + (p.LeaveText ?? " left"));
+                if (p.State == PlayerState.Live || p.LeaveKey != null) SystemLine(p.LeaveKey ?? NetText.ChatLeft, "NAME", p.Name);
                 PeerLeft?.Invoke(p.Id);
             }
         }

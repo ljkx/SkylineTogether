@@ -86,7 +86,8 @@ namespace SkylineTogether.Core.Tests.Session
             Snapshots = new FakeSnapshots(snapshotBytes);
             HostLoop = LoopbackTransport.CreatePair().host;
             HostNet = new NetSimTransport(HostLoop, hostOptions, Clock);
-            Host = new SessionHost(HostNet, Info, Snapshots, new HostOptions { HostName = "Host", MaxPlayers = 16 }, Clock, Log);
+            // the join cooldown is off: the churn test joins and abandons a dozen times in a row on purpose (HardeningTests cover it)
+            Host = new SessionHost(HostNet, Info, Snapshots, new HostOptions { HostName = "Host", MaxPlayers = 16, JoinCooldownSeconds = new double[0] }, Clock, Log);
             Host.AppMessage += (peer, e) =>
             {
                 if (e.Kind != MessageKind.Proposal || e.BodyCount < 4) return;
