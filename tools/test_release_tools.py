@@ -63,6 +63,111 @@ class ReleaseContents(unittest.TestCase):
         self.assertIsNone(rc.dll_commit(b'0.1.0-alpha.4 without a hash', '0.1.0-alpha.4'))
 
 
+class CleanPushedHead(unittest.TestCase):
+    """verify_built_from_clean_head in a scratch repository with a local bare 'origin' (no network)."""
+
+    VERSION = '0.2.0'
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='st-release-git-')
+        self.repo = os.path.join(self.base, 'repo')
+        self.origin = os.path.join(self.base, 'origin.git')
+        self.run_git('init', '-q', '--bare', self.origin, cwd=self.base)
+        self.run_git('init', '-q', '-b', 'main', self.repo, cwd=self.base)
+        self.write('src/SkylineTogether.Core/A.cs', 'class A {}\n')
+        self.write('docs/notes.md', 'notes\n')
+        self.write('.gitignore', 'bin/\nobj/\ndist/\n')
+        self.run_git('add', '-A')
+        self.run_git('commit', '-q', '-m', 'first')
+        self.run_git('remote', 'add', 'origin', self.origin)
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def run_git(self, *args, cwd=None):
+        import subprocess
+        subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false',
+                        '-c', 'core.autocrlf=false'] + list(args), cwd=cwd or self.repo, check=True, capture_output=True)
+
+    def write(self, rel, text):
+        path = os.path.join(self.repo, *rel.split('/'))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(text)
+
+    def dll(self):
+        """A stand-in DLL whose informational version names HEAD."""
+        return b'\x00' + (self.VERSION + '+' + rc.git('rev-parse', 'HEAD', root=self.repo)).encode() + b'\x00'
+
+    def verify(self, **kwargs):
+        return rc.verify_built_from_clean_head(self.dll(), self.VERSION, root=self.repo, **kwargs)
+
+    def test_an_untracked_source_file_is_refused_like_a_modified_one(self):
+        self.assertEqual([], rc.dirty_files(root=self.repo))
+        self.write('src/SkylineTogether.Core/UntrackedProbe.cs', 'class Probe {}\n')
+        self.assertEqual(['src/SkylineTogether.Core/UntrackedProbe.cs (untracked)'], rc.dirty_files(root=self.repo))
+        with self.assertRaises(rc.ReleaseError) as e:
+            self.verify(require_pushed=False)
+        self.assertIn('UntrackedProbe.cs (untracked)', str(e.exception))
+        self.verify(require_pushed=False, allow_dirty=True)  # a local test may
+        os.remove(os.path.join(self.repo, 'src', 'SkylineTogether.Core', 'UntrackedProbe.cs'))
+        self.verify(require_pushed=False)
+
+    def test_untracked_build_inputs_count_and_other_untracked_files_do_not(self):
+        for rel in ('Directory.Build.targets', 'directory.build.props', 'global.json', 'ui/extra.mjs', 'tools/installer/x.ps1'):
+            self.write(rel, 'x\n')
+        self.write('docs/draft.md', 'x\n')
+        self.write('notes.txt', 'x\n')
+        self.write('src/SkylineTogether.Core/bin/Release/A.dll', 'x\n')  # build output: ignored
+        found = sorted(f[:-len(' (untracked)')] for f in rc.dirty_files(root=self.repo) if f.endswith(' (untracked)'))
+        self.assertEqual(['Directory.Build.targets', 'directory.build.props', 'global.json', 'tools/installer/x.ps1', 'ui/extra.mjs'], found)
+
+    def test_a_modified_tracked_file_anywhere_is_listed_with_its_first_letter(self):
+        self.write('docs/notes.md', 'changed\n')
+        self.assertEqual(['docs/notes.md'], rc.dirty_files(root=self.repo))
+
+    def test_an_unpushed_head_is_refused_until_origin_main_contains_it(self):
+        pushed, why = rc.head_is_pushed(root=self.repo)
+        self.assertFalse(pushed)
+        self.assertIn('git fetch origin', why, 'no origin/main yet')
+        self.run_git('push', '-q', 'origin', 'main')
+        self.assertEqual((True, ''), rc.head_is_pushed(root=self.repo))
+        self.verify()
+        self.write('docs/notes.md', 'two\n')
+        self.run_git('commit', '-q', '-am', 'second')
+        pushed, why = rc.head_is_pushed(root=self.repo)
+        self.assertFalse(pushed)
+        self.assertIn('push it first', why)
+        with self.assertRaises(rc.ReleaseError) as e:
+            self.verify()
+        self.assertIn('not on origin/main', str(e.exception))
+        self.verify(require_pushed=False)
+        self.run_git('push', '-q', 'origin', 'main')
+        self.verify()
+
+    def test_a_dll_of_another_commit_is_refused(self):
+        dll = b'\x00' + (self.VERSION + '+' + '1' * 40).encode()
+        with self.assertRaises(rc.ReleaseError) as e:
+            rc.verify_built_from_clean_head(dll, self.VERSION, require_pushed=False, root=self.repo)
+        self.assertIn('built from commit 111111111111', str(e.exception))
+
+
+class ReleaseRules(unittest.TestCase):
+    def test_build_sh_warns_with_the_same_rule(self):
+        with open(os.path.join(rc.ROOT, 'tools', 'build.sh'), encoding='utf-8') as f:
+            self.assertIn('tools/release_common.py dirty', f.read())
+
+    def test_only_regular_releases_go_to_paradox_mods(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('publish_paradox', os.path.join(rc.ROOT, 'tools', 'paradox', 'publish_paradox.py'))
+        pp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pp)
+        self.assertTrue(pp.is_prerelease('0.1.0-alpha.4'))
+        self.assertTrue(pp.is_prerelease('0.2.0-beta.1'))
+        self.assertFalse(pp.is_prerelease('0.2.0'))
+        self.assertFalse(pp.is_prerelease('1.10.3'))
+
+
 class ReproducibleZips(unittest.TestCase):
     def test_the_same_entries_give_the_same_bytes_in_any_order(self):
         d = tempfile.mkdtemp(prefix='st-zip-test-')

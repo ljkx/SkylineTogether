@@ -1,10 +1,11 @@
 """Builds dist/SkylineTogether-Setup.zip: a self-contained installer for players (the release zip embedded as base64).
 
-Usage (repo root):  python tools/installer/make_installer.py [--zip <release zip>] [--allow-dirty]
+Usage (repo root):  python tools/installer/make_installer.py [--zip <release zip>] [--allow-dirty] [--allow-unpushed]
 Run after tools/build.sh --package. It takes the release zip of the <Version> in Directory.Build.props (never
 another version's zip that is still in dist/), and refuses a zip whose SkylineTogether.dll was not built from the
-current HEAD, or a working tree with uncommitted changes (--allow-dirty: for a local test only). The setup zip is
-reproducible: the same release zip and commit give the same bytes.
+current HEAD, a working tree with uncommitted changes or untracked build inputs (--allow-dirty), or a HEAD that is not
+on origin/main (--allow-unpushed); both options are for local tests only. The setup zip is reproducible: the same
+release zip and commit give the same bytes.
 """
 import argparse, base64, hashlib, io, os, sys, zipfile
 
@@ -14,7 +15,8 @@ import release_common  # noqa: E402
 
 ap = argparse.ArgumentParser(description='Build the player installer from the release zip.')
 ap.add_argument('--zip', help='the release zip (default: dist/SkylineTogether-<Version>.zip)')
-ap.add_argument('--allow-dirty', action='store_true', help='accept uncommitted changes (local tests only)')
+ap.add_argument('--allow-dirty', action='store_true', help='accept uncommitted changes and untracked build inputs (local tests only)')
+ap.add_argument('--allow-unpushed', action='store_true', help='accept a HEAD that is not on origin/main (local tests only)')
 args = ap.parse_args()
 dist = release_common.DIST
 try:
@@ -33,7 +35,7 @@ with zipfile.ZipFile(io.BytesIO(payload)) as z:
     # installed file, so all three print the same id.
     build = hashlib.sha256(dll).hexdigest()[:12]
 try:
-    commit = release_common.verify_built_from_clean_head(dll, version, args.allow_dirty)
+    commit = release_common.verify_built_from_clean_head(dll, version, args.allow_dirty, require_pushed=not args.allow_unpushed)
 except release_common.ReleaseError as e:
     sys.exit('the release zip is not a build of the clean HEAD:' + str(e))
 

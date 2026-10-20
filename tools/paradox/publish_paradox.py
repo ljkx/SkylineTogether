@@ -20,7 +20,11 @@ Usage (repo root, after tools/build.sh --package):
             --publisher <p>  ModPublisher.exe (default: env CSII_MODPUBLISHERPATH, else the one inside the game folder)
             --zip <p>        the release zip to upload (default: dist/SkylineTogether-<Version>.zip)
             --for <command>  check only: the command whose rules apply (Release, Publish, NewVersion, Update)
-            --allow-dirty    accept uncommitted changes (check and --dry-run only)
+            --allow-dirty    accept uncommitted changes and untracked build inputs (check and --dry-run only)
+            --allow-prerelease  upload a <Version> with a pre-release suffix (-beta.1); without it only regular
+                             releases go to Paradox Mods (docs/dev/releasing.md#version-numbers)
+            --config-only    check only: validate PublishConfiguration.xml against Directory.Build.props and
+                             CHANGELOG.md, without a release zip (CI runs it)
 
 What it does (docs/dev/publishing-paradox-mods.md):
   1. reads <Version> from Directory.Build.props and src/SkylineTogether/Properties/PublishConfiguration.xml and checks
@@ -29,7 +33,8 @@ What it does (docs/dev/publishing-paradox-mods.md):
   2. extracts the content folder dist/paradox/SkylineTogether from the release zip (the exact files that were tested and
      that the GitHub setup installs, without the zip's README.txt), so a Paradox Mods player and a GitHub player have the
      same build id; prints that build id; refuses a zip whose SkylineTogether.dll was not built from the current HEAD,
-     or a working tree with uncommitted changes;
+     a working tree with uncommitted changes or untracked build inputs, and (to upload) a HEAD that is not on
+     origin/main or a <Version> with a pre-release suffix;
   3. scans the content folder and the configuration for personal data (tools/check_personal_data.py patterns);
   4. writes dist/paradox/PublishConfiguration.xml: the configuration with absolute image paths and without the
      indentation of multi-line texts;
@@ -135,7 +140,12 @@ def check_config(command, version):
     return images
 
 
-def stage_content(zip_path, version, allow_dirty):
+def is_prerelease(version):
+    """A version with a pre-release suffix (0.2.0-beta.1): GitHub only (docs/dev/releasing.md#version-numbers)."""
+    return '-' in version
+
+
+def stage_content(zip_path, version, allow_dirty, require_pushed=True):
     try:
         zip_path = release_common.release_zip(version, zip_path)
     except release_common.ReleaseError as e:
@@ -145,10 +155,15 @@ def stage_content(zip_path, version, allow_dirty):
         if missing:
             fail('the release zip lacks ' + ', '.join(missing))
         try:
-            commit = release_common.verify_built_from_clean_head(z.read('SkylineTogether/SkylineTogether.dll'), version, allow_dirty)
+            commit = release_common.verify_built_from_clean_head(z.read('SkylineTogether/SkylineTogether.dll'), version, allow_dirty,
+                                                                 require_pushed=require_pushed)
         except release_common.ReleaseError as e:
             fail('the release zip is not a build of the clean HEAD:' + str(e))
     print('release zip: %s, built from commit %s' % (os.path.relpath(zip_path, ROOT), commit[:12]))
+    if not require_pushed:
+        pushed, why = release_common.head_is_pushed()
+        if not pushed:
+            print('warning: ' + why + ' (an upload refuses it)')
     if os.path.isdir(CONTENT):
         shutil.rmtree(CONTENT)
     os.makedirs(CONTENT)
@@ -246,6 +261,8 @@ def main():
     ap.add_argument('--zip')
     ap.add_argument('--for', dest='for_command')
     ap.add_argument('--allow-dirty', action='store_true')
+    ap.add_argument('--allow-prerelease', action='store_true')
+    ap.add_argument('--config-only', action='store_true')
     args = ap.parse_args()
     command = COMMANDS.get(args.command.lower())
     if not command:
@@ -254,6 +271,8 @@ def main():
         fail('--for applies to check only')
     if args.allow_dirty and command != 'check' and not args.dry_run:
         fail('--allow-dirty applies to check and --dry-run only: an upload is built from a clean commit')
+    if args.config_only and command != 'check':
+        fail('--config-only applies to check only')
     rules = command
     if command == 'check':
         rules = COMMANDS.get((args.for_command or implied_command()).lower())
@@ -265,7 +284,15 @@ def main():
         fail('no <Version> in Directory.Build.props')
     print('Skyline Together %s -> Paradox Mods (%s)' % (version, command if command != 'check' else 'check for ' + rules))
     check_config(rules, version)
-    stage_content(args.zip, version, args.allow_dirty)
+    uploading = command != 'check' and not args.dry_run
+    if is_prerelease(version):
+        if uploading and not args.allow_prerelease:
+            fail('%s is a pre-release: only regular releases go to Paradox Mods (docs/dev/releasing.md#version-numbers); '
+                 'pass --allow-prerelease to upload it anyway' % version)
+        print('note: %s is a pre-release; uploading it needs --allow-prerelease' % version)
+    if args.config_only:
+        return
+    stage_content(args.zip, version, args.allow_dirty, require_pushed=uploading)
     scan_personal_data()
     write_effective_config()
     publisher = find_publisher(args.publisher, args.game_dir)

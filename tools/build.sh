@@ -201,15 +201,26 @@ EOF
   for f in SkylineTogether.dll SkylineTogether.pdb SkylineTogether.Core.dll SkylineTogether.Core.pdb SkylineTogether.mjs            LICENSE THIRD-PARTY-NOTICES.txt README.txt; do
     [ -f "$STAGE/$f" ] || fail "the package would lack $f"
   done
-  if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
-    echo "WARNING: uncommitted changes; make_installer.py and publish_paradox.py refuse this package (a release is built from a clean commit)"
-  fi
-  # Python's zipfile through tools/release_common.py (reproducible: sorted entries, the commit time as every timestamp),
-  # else zip, else the bsdtar that ships with Windows 10+, else PowerShell (which writes backslashes into entry names)
   PY=""
   for candidate in python3 python py; do
     if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import zipfile" >/dev/null 2>&1; then PY="$candidate"; break; fi
   done
+  # what make_installer.py and publish_paradox.py refuse: modified tracked files, and untracked files among the build
+  # inputs (the projects compile every .cs below their folder, so an untracked file is in these DLLs); the list of
+  # inputs is BUILD_INPUTS of tools/release_common.py
+  if [ -n "$PY" ]; then
+    DIRTY="$("$PY" tools/release_common.py dirty 2>/dev/null || true)"
+  else
+    DIRTY="$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null; git -C "$ROOT" status --porcelain --untracked-files=all -- src ui 2>/dev/null | grep '^??' || true)"
+  fi
+  if [ -n "$DIRTY" ]; then
+    echo "WARNING: uncommitted changes or untracked build inputs; make_installer.py and publish_paradox.py refuse this package"
+    echo "         (a release is built from a clean commit):"
+    printf '%s\n' "$DIRTY" | sed -n '1,10s/^/           /p'
+  fi
+  # Python's zipfile through tools/release_common.py (reproducible: sorted entries, the commit time as every timestamp),
+  # else zip, else the bsdtar that ships with Windows 10+, else PowerShell (which writes backslashes into entry names);
+  # every fallback warns, since its zip is not reproducible
   if [ -n "$PY" ]; then
     "$PY" tools/release_common.py zip "$STAGE" "$ZIP" || fail "zip (tools/release_common.py)"
     "$PY" tools/release_common.py check-zip "$ZIP" || fail "the package is incomplete"
@@ -217,8 +228,11 @@ EOF
     echo "WARNING: no Python; the zip is not reproducible (it records the current time)"
     (cd "$STAGE_ROOT" && zip -qr "../$NAME.zip" SkylineTogether) || fail "zip"
   elif [ -x /c/Windows/System32/tar.exe ]; then
+    echo "WARNING: no Python and no zip; Windows tar writes the zip, which is not reproducible (it records the current time)"
     (cd "$STAGE_ROOT" && /c/Windows/System32/tar.exe -a -c -f "../$NAME.zip" SkylineTogether) || fail "tar -a"
   elif command -v powershell.exe >/dev/null 2>&1 || command -v pwsh >/dev/null 2>&1; then
+    echo "WARNING: no Python, zip or Windows tar; PowerShell writes the zip, which is not reproducible (it records the current"
+    echo "         time) and has backslashes in its entry names"
     PS="$(command -v powershell.exe || command -v pwsh)"
     "$PS" -NoProfile -NonInteractive -Command \
       "Compress-Archive -Path '$(to_native "$ROOT/$STAGE")' -DestinationPath '$(to_native "$ROOT/$ZIP")' -Force" \

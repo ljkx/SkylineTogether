@@ -4,13 +4,16 @@ tools/paradox/publish_paradox.py); docs/dev/releasing.md.
 - the release version (<Version> of Directory.Build.props) and the release zip of exactly that version;
 - the files a release zip must contain;
 - the commit a DLL was built from (its informational version ends in +<commit sha>, written by Source Link), and a
-  check that it is the clean HEAD of this repository;
+  check that it is the clean, pushed HEAD of this repository (no tracked file modified, no untracked file among the
+  inputs of the build, HEAD contained in origin/main);
 - reproducible zips: sorted entries, every timestamp set to the commit time, fixed attributes;
 - the personal-data scan of packaged bytes (8-bit text and UTF-16 at both byte alignments).
 
 Command line (used by tools/build.sh):
   python tools/release_common.py zip <folder> <zip>      zips <folder> (its name is the top folder) reproducibly
   python tools/release_common.py check-zip <zip>         checks that a release zip holds every required file
+  python tools/release_common.py dirty                   lists what keeps the working tree from being a release build
+                                                         (modified tracked files, untracked build inputs)
 """
 import os
 import re
@@ -32,6 +35,22 @@ REQUIRED_RELEASE_FILES = [
     'SkylineTogether/SkylineTogether.pdb',
     'SkylineTogether/THIRD-PARTY-NOTICES.txt',
 ]
+
+# what a build reads besides the tracked files: an untracked file below one of these reaches the DLLs or the package
+# (the SDK projects compile every **/*.cs below their folder; Directory.Build.* and global.json change how everything
+# is built; tools/build.sh, this file, the installer and the Paradox tools write what ships). Git pathspecs relative to
+# the repository root, ":(icase)" where Windows and MSBuild ignore the case of a name.
+BUILD_INPUTS = [
+    'src', 'ui',
+    ':(icase)Directory.Build.props', ':(icase)Directory.Build.targets', ':(icase)Directory.Build.rsp',
+    ':(icase)Directory.Packages.props', ':(icase)NuGet.config', ':(icase)global.json', '.editorconfig',
+    ':(icase)SkylineTogether.sln', 'LICENSE', 'THIRD-PARTY-NOTICES.txt',
+    'tools/build.sh', 'tools/release_common.py', 'tools/installer', 'tools/paradox',
+]
+
+# the branch a release commit must be on, as last fetched: Source Link points players' stack traces at the commit on
+# GitHub, and the release tag names it
+RELEASE_BRANCH = 'origin/main'
 
 
 class ReleaseError(Exception):
@@ -74,33 +93,70 @@ def dll_commit(dll_bytes, version):
     return m.group(1).decode('ascii') if m else None
 
 
-def git(*args):
-    proc = subprocess.run(['git', '-C', ROOT] + list(args), capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        raise ReleaseError('git %s failed: %s' % (' '.join(args), proc.stderr.strip()))
-    return proc.stdout.strip()
+def git_run(*args, root=None):
+    """(exit code, stdout, stderr) of a git command in the repository (or in <root>)."""
+    proc = subprocess.run(['git', '-C', root or ROOT] + list(args), capture_output=True, text=True, check=False)
+    # only trailing white space goes: a porcelain status line starts with a space (" M file")
+    return proc.returncode, proc.stdout.rstrip(), proc.stderr.strip()
 
 
-def dirty_files():
-    """Tracked files with uncommitted changes (untracked files do not reach a build: every source is tracked)."""
-    out = git('status', '--porcelain', '--untracked-files=no')
-    return [line[3:] for line in out.splitlines() if line.strip()]
+def git(*args, root=None):
+    code, out, err = git_run(*args, root=root)
+    if code != 0:
+        raise ReleaseError('git %s failed: %s' % (' '.join(args), err))
+    return out
 
 
-def verify_built_from_clean_head(dll_bytes, version, allow_dirty=False):
-    """Fails unless the DLL was built from this repository's HEAD and nothing tracked is modified; returns the sha."""
+def dirty_files(root=None):
+    """
+    What keeps the working tree from being its commit: tracked files with uncommitted changes (anywhere), and untracked,
+    not ignored files below the inputs of the build (BUILD_INPUTS), marked "(untracked)". An untracked file does reach a
+    build: the projects compile every .cs file below their folder, so a leftover experiment or a merge backup would ship
+    in a DLL that names the clean commit, and nobody could rebuild that release from its tag.
+    """
+    tracked = git('status', '--porcelain', '--untracked-files=no', root=root)
+    untracked = git('status', '--porcelain', '--untracked-files=all', '--', *BUILD_INPUTS, root=root)
+    files = [line[3:] for line in tracked.splitlines() if line.strip()]
+    files += [line[3:] + ' (untracked)' for line in untracked.splitlines() if line.startswith('??')]
+    return files
+
+
+def head_is_pushed(root=None, branch=RELEASE_BRANCH):
+    """(True, '') when HEAD is contained in <branch> (as last fetched), else (False, why)."""
+    code, _, _ = git_run('rev-parse', '--verify', '--quiet', branch + '^{commit}', root=root)
+    if code != 0:
+        return False, 'there is no %s to compare HEAD with (git fetch origin)' % branch
+    code, _, err = git_run('merge-base', '--is-ancestor', 'HEAD', branch, root=root)
+    if code == 0:
+        return True, ''
+    if code == 1:
+        return False, 'HEAD is not on %s: push it first (git push; if it is pushed already, git fetch origin)' % branch
+    return False, 'cannot compare HEAD with %s: %s' % (branch, err)
+
+
+def verify_built_from_clean_head(dll_bytes, version, allow_dirty=False, require_pushed=True, root=None):
+    """
+    Fails unless the DLL was built from this repository's HEAD, nothing tracked is modified and no untracked file lies
+    among the build inputs (dirty_files; allow_dirty: a local test), and HEAD is pushed (head_is_pushed;
+    require_pushed=False for a check before the push); returns the sha.
+    """
     commit = dll_commit(dll_bytes, version)
-    head = git('rev-parse', 'HEAD')
+    head = git('rev-parse', 'HEAD', root=root)
     problems = []
     if commit is None:
         problems.append('SkylineTogether.dll carries no "%s+<commit>" version: it was not built from this version with Source Link' % version)
     elif commit != head:
         problems.append('SkylineTogether.dll was built from commit %s, but HEAD is %s: build again from HEAD (tools/build.sh --package)'
                         % (commit[:12], head[:12]))
-    dirty = dirty_files()
+    dirty = dirty_files(root=root)
     if dirty and not allow_dirty:
-        problems.append('uncommitted changes (%s): a release is built from a clean, pushed commit (--allow-dirty for a local test)'
+        problems.append('uncommitted changes or untracked build inputs (%s): a release is built from a clean, pushed commit; '
+                        'commit or remove them (--allow-dirty for a local test)'
                         % ', '.join(dirty[:5] + (['...'] if len(dirty) > 5 else [])))
+    if require_pushed:
+        pushed, why = head_is_pushed(root=root)
+        if not pushed:
+            problems.append(why + ' (Source Link and the release tag name this commit on GitHub)')
     if problems:
         raise ReleaseError('\n  - ' + '\n  - '.join(problems))
     return commit
@@ -177,6 +233,10 @@ def main(argv):
     try:
         if len(argv) == 3 and argv[0] == 'zip':
             zip_folder(argv[1], argv[2])
+            return 0
+        if len(argv) == 1 and argv[0] == 'dirty':
+            for f in dirty_files():
+                print(f)
             return 0
         if len(argv) == 2 and argv[0] == 'check-zip':
             with zipfile.ZipFile(argv[1]) as z:
