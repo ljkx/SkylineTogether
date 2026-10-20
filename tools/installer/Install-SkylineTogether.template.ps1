@@ -30,6 +30,15 @@ function Write-Step([string]$text) { Write-Host ''; Write-Host "== $text" -Foreg
 function Write-Ok([string]$text) { Write-Host "   OK   $text" -ForegroundColor Green }
 function Write-Warn2([string]$text) { Write-Host "   WARN $text" -ForegroundColor Yellow }
 function Write-Bad([string]$text) { Write-Host "   FAIL $text" -ForegroundColor Red }
+# Hashing and zip handling use .NET directly: the Get-FileHash and *-Archive cmdlets live in modules that fail to
+# load when Windows PowerShell is started from PowerShell 7 (its PSModulePath leaks into the child process).
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+function Get-Sha256([string]$path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($path)
+    try { return ([BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() }
+    finally { $stream.Dispose(); $sha.Dispose() }
+}
 function Finish([int]$code) {
     if (-not $NoPause) { Write-Host ''; [void](Read-Host 'Press Enter to close') }
     exit $code
@@ -124,8 +133,8 @@ if ($CollectLogs) {
     Get-ChildItem -LiteralPath $stage -File -Recurse | Where-Object { $_.Extension -in '.log', '.txt', '.json' } | ForEach-Object { Hide-UserFolder $_.FullName }
     $desktop = if ($OutDir) { $OutDir } else { [Environment]::GetFolderPath('Desktop') }
     $zip = Join-Path $desktop "SkylineTogether-logs-$stamp.zip"
-    $items = @(Get-ChildItem -LiteralPath $stage | ForEach-Object { $_.FullName })
-    Compress-Archive -LiteralPath $items -DestinationPath $zip -Force
+    if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip)
     Remove-Dir $stage
     Write-Ok "Saved $count log file(s) to:"
     Write-Host "        $zip"
@@ -216,12 +225,12 @@ try {
     if ($i -lt 0 -or $j -le $i) { Write-Bad 'The embedded mod is missing from this script. Download the setup again.'; Finish 1 }
     $b64 = $self.Substring($i + $open.Length, $j - $i - $open.Length) -replace '\s', ''
     [IO.File]::WriteAllBytes($zipPath, [Convert]::FromBase64String($b64))
-    $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actual = Get-Sha256 $zipPath
     if ($actual -ne $PayloadSha256) {
         Write-Bad 'The embedded mod is damaged (checksum mismatch). Download the setup again.'
         Finish 1
     }
-    Expand-Archive -LiteralPath $zipPath -DestinationPath (Join-Path $tmp 'x') -Force
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, (Join-Path $tmp 'x'))
     $source = Join-Path $tmp "x\$ModName"
     if (-not (Test-Path -LiteralPath (Join-Path $source 'SkylineTogether.dll'))) {
         Write-Bad 'The embedded mod is incomplete. Download the setup again.'
@@ -254,7 +263,7 @@ finally {
     Remove-Dir $previous
 }
 $dll = Join-Path $ModDir 'SkylineTogether.dll'
-$installedBuild = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.Substring(0, 12).ToLowerInvariant()
+$installedBuild = (Get-Sha256 $dll).Substring(0, 12)
 Write-Ok "Installed to $ModDir"
 Write-Ok "Build id: $installedBuild  (the host must show the same build id)"
 
