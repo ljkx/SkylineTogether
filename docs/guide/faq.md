@@ -18,7 +18,7 @@ Yes. Every player runs their own copy of Cities: Skylines II (Steam version) wit
 ### Do I need to forward ports?
 
 No, not for joining by Steam ID or Steam invite: those connections go through Steam's relay network. Only the optional
-direct IP connections need a UDP port (default 27015) forwarded on the host's router.
+direct IP connections need a session password and a UDP port (default 27015) forwarded on the host's router.
 
 ### Can I play without Steam?
 
@@ -49,12 +49,14 @@ applies it for everyone. Viewers cannot change the speed.
 
 ### Can I stop a player from building?
 
-Yes: in the player list, **…** → **Make viewer**. A viewer can only chat. **Make builder** gives the permissions back.
+Yes: in the player list, **…** → **Make viewer**. A viewer can only watch and chat. **Make builder** gives the
+permissions back. To let new players only watch at first, turn on **New players join as viewers** in the host options.
 
 ### Can I ban a player?
 
 Yes. In the player list, **…** → **Ban** (click twice to confirm) removes the player and keeps them out of your sessions:
-by Steam ID, or by address for a player who joined by direct IP without a Steam identity. **Kick** only removes them;
+by Steam ID, and also by address for a player who joined by direct IP (an IPv6 address by its /64 network). **Kick**
+only removes them;
 they may join again. The **Banned players** list in the host options has an **Unban** button per entry. To keep
 strangers out from the start, use a password or **Friends and invited only**.
 
@@ -68,18 +70,18 @@ co-host cannot remove the host or another co-host, cannot ban and cannot change 
 Yes. Skyline Together is built to be played with mods. Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller,
 Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It have dedicated
 support: their data, tools and simulation settings are shared by all players. Every other code mod is analysed
-automatically when a session starts, so its saved data replicates and its simulation runs on the host. Settings that
-change the simulation use the host's values during the session. All players should enable the same gameplay mods;
+automatically when a session starts and handled by conservative rules, so its saved data replicates and its simulation
+runs on the host. For those mods (and mods that declare it), settings that change the simulation use the host's values
+during the session. All players should enable the same gameplay mods;
 if they differ, the join screen lists exactly what to enable, disable or update. See
 [Mods](getting-started.md#mods) and [MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md).
 
 ### Do all players need the same mods?
 
 With **Require the same mods** on (the default), every player must enable the same code mods in the same versions.
-Mods that only change a player's own screen (translations, tooltips, icon libraries, overlays) may differ. Several
-popular gameplay mods (for example Traffic, Move It, Anarchy, Better Bulldozer, Line Tool) have dedicated compatibility
-code, and every other mod is analysed automatically (its saved data replicates, its simulation runs on the host); see
-[MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md) for the list and the known limits. Asset mods (buildings, props)
+Mods that only change a player's own screen (translations, tooltips, icon libraries, overlays) may differ. The mods
+with dedicated support and the automatic analysis are described in the previous answer; see
+[MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md) for details and known limits. Asset mods (buildings, props)
 should be the same on every PC, or objects using a missing asset are not created on the PC that lacks it; right after
 joining, the player is told which of the host's asset packs are missing (the host can require the same asset packs
 instead). A player without one of the host's DLC or content packs cannot join; see
@@ -88,8 +90,8 @@ instead). A player without one of the host's DLC or content packs cannot join; s
 ### Can I play with friends who have different mods?
 
 Yes, if the host allows it. With **Let players join with different mods** on (the default), a player refused for
-different code mods or asset packs sees the list of differences and can click **Join anyway**. The host's city stays
-authoritative and differences are repaired where possible, but parts of the city can look or behave differently, and
+different code mods or asset packs sees the list of differences and can click **Join anyway**. The host's city always
+takes priority and differences are fixed where possible, but parts of the city can look or behave differently, and
 the cities can drift apart where a mod runs on one PC only. Missing DLC, another game version or another Skyline
 Together build still refuse the join. See
 [Troubleshooting](troubleshooting.md#joining-anyway-with-different-mods).
@@ -138,5 +140,5 @@ routes, and what they contain.
 
 ### Which languages does the UI support?
 
-English and German. Some texts (player activity on name tags, some system chat lines and the host's refusal details)
+English and German. The activity on name tags ("building", "zoning", …) and some technical details on the join screens
 are English only.

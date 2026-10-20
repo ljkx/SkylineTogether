@@ -32,7 +32,7 @@ including the unrelated "CS2 Multiplayer Mod", and attacks that need control of 
   game also listens on a UDP port (default 27015). Steam may accept these connections without authentication (the remote
   side's Steam identity is then not verified, and the connection may be unencrypted), so the host's game **requires the
   session password** for every direct connection and for any connection without a Steam-authenticated identity: the
-  port only opens while a host password is set, and a direct joiner is refused ("not invited") when there is none.
+  port only opens while a session password is set, and a direct joiner is refused ("not invited") when there is none.
   Only the direct-IP socket accepts connections without authentication, and a connection Steam flags as
   unauthenticated is identified by its address, whatever Steam ID it presents.
   Steam P2P connections are identified by the Steam ID Steam authenticated; a Steam ID a message claims is never trusted.
@@ -99,7 +99,7 @@ identity. A locked-out player is told how long to wait (not "wrong password").
   settings and can be edited in the host options (unban).
 - **Roles are remembered** for the session: a player the host made a viewer (or co-host) gets the same role when they
   join again. With **New players join as viewers** (host option, off by default) players who join for the first time in
-  a session start as viewers.
+  a session start as viewers until the host or a co-host makes them builders.
 - A player who stops responding, cannot keep up or whose changes keep failing is **dropped**, not kicked: their game
   offers to join again. Names are unique in a session and never the host's; the host's chat lines carry a badge and
   the session's own lines an info mark.
@@ -126,14 +126,15 @@ These are known and accepted for now; reports about them are welcome only if you
   player connects to instead of the host could pass the host's challenge on. Join by Steam ID where you can.
 - **Address bans** are as good as the address: a player without a Steam identity who changes their IP address is not
   recognised again.
-- **Passwords are stored in plain text** in the game's settings file on each PC (the host password and the last join
-  password).
+- **Passwords are stored in plain text** in the game's settings file on each PC (the session password the host set and
+  the last join password).
 - **Visible identifiers.** Players in a session see each other's Steam IDs. With direct IP connections, joining players
   know the host's IP address. A hosted session creates a friends-only Steam lobby whose data includes the session name
   and whether a password is set.
 - **Logs and diagnostics** contain player names, Steam IDs, session names and, for direct-IP bans, IP addresses (not
-  passwords or chat). The game's `Player.log` contains paths with your Windows user name; `Collect-Logs.cmd` replaces
-  it in the files it collects. Crash dumps (`.dmp`) can contain anything that was in the game's memory, including
+  passwords or chat). Other direct-IP addresses are shortened (`203.0.113.x`), and paths in the user folder are written
+  as `%USERPROFILE%`, so Skyline Together's own files do not contain the Windows user name. The game's `Player.log`
+  does; `Collect-Logs.cmd` replaces the user folder in the files it collects. Crash dumps (`.dmp`) can contain anything that was in the game's memory, including
   passwords: share them only privately (`Collect-Logs.cmd` includes them only with `-IncludeDumps`). The mod's own log
   is rate-limited and capped at 64 MiB per game start. Think before attaching files to a public issue; see
   [Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug).

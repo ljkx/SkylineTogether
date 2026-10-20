@@ -170,7 +170,9 @@ To report a bug, click "Write diagnostics" in the panel and attach these files o
 (https://github.com/ljkx/SkylineTogether/issues):
   %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Logs\\SkylineTogether.log
   %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Logs\\SkylineTogether-diagnostics-*.txt
-They contain player names and Steam IDs, but no passwords or chat.
+They contain player names, Steam IDs and the session name, but no passwords or chat; your user folder is written
+as %USERPROFILE%. Never attach crash dumps (.dmp): they can contain passwords. Details:
+https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug
 EOF
   # zip, else the bsdtar that ships with Windows 10+, else PowerShell (which writes backslashes into entry names)
   if command -v zip >/dev/null 2>&1; then

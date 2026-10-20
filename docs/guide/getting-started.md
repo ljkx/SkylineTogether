@@ -58,7 +58,7 @@ disable the mod in your playset) and use the installer below. Everyone in the se
 4. If you use another multiplayer mod, disable it in your playset. Two multiplayer mods at once conflict.
 
 The setup folder also contains `Collect-Logs.cmd` (see [Troubleshooting](troubleshooting.md#reporting-a-bug)) and
-`HOW-TO-TEST.txt`, a two-player checklist (also in [testing.md](testing.md)).
+`TWO-PLAYER-CHECKLIST.txt` (also in [testing.md](testing.md)).
 
 To uninstall, run in the setup folder:
 
@@ -67,7 +67,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-SkylineTogether.ps
 ```
 
 or delete the `Mods\SkylineTogether` folder. The uninstall also removes the mod's temporary files and asks whether to
-delete its settings (player name, host password, ban list); add `-RemoveSettings` to delete them without asking.
+delete its settings (player name, session password, ban list); add `-RemoveSettings` to delete them without asking.
+Solo test recordings in `ModsData\SkylineTogether` are kept; delete that folder by hand if you don't need them.
 
 ### Manually
 
@@ -85,8 +86,8 @@ Hosting always starts from inside a loaded city.
 3. Optional settings (saved as soon as you leave a field):
    - **Your name**: empty uses your Steam name.
    - **Session name**: what joining players see; empty means "&lt;your name&gt;'s city".
-   - **Password**: leave empty for no password. Three wrong guesses in a row lock the guesser out for a while (longer
-     with every further wrong guess).
+   - **Password**: leave empty for no password. After three wrong guesses, every further wrong guess locks the guesser
+     out for a while (5 seconds, doubling up to 10 minutes).
    - **Max players**: 2 to 16, including you (default 8).
    - **Require the same mods**: on by default. See [Mods](#mods).
    - **Require the same asset packs**: off by default. When on, players whose asset packs (Paradox Mods packages
@@ -96,12 +97,16 @@ Hosting always starts from inside a loaded city.
      [Mods](#mods).
    - **Friends and invited only**: off by default. When on, only your Steam friends and players you invite from the
      panel can join through Steam; others are told they are not invited.
-   - **Enforce build checks on other players**: off by default. When on, the host undoes other players' builds that a
-     normal game could not make (locked buildings, unbought map tiles, impossible shapes). When off, such builds are
-     kept and only written to the log.
+   - **New players join as viewers**: off by default. When on, players who join this session for the first time can
+     watch and chat but not build until you (or a co-host) make them builders in the player list. Players who were in
+     the session before keep their role when they rejoin.
    - **Allow direct IP connections**: off by default, and only available while a password is set (Steam does not check
      direct joiners, so the password does). Also accepts connections on a UDP port (default 27015), which needs port
      forwarding on your router. Steam connections work without it.
+
+   **Enforce build checks on other players** is on the Options page only (Options → Skyline Together → Multiplayer):
+   off by default. When on, the host undoes other players' builds that a normal game could not make (locked buildings,
+   map tiles the city has not bought, impossible shapes). When off, such builds are kept and only written to the log.
 4. Click **Host this city**.
 5. Invite your friends:
    - click **Invite friends** and then **Invite** next to a Steam friend, or
@@ -171,11 +176,12 @@ and Esc goes back.
 |---|---|---|
 | Host | The player who hosts | Everything, plus player management (kick, ban, roles, co-hosts) and session settings |
 | Co-host | Appointed by the host | Everything a builder can do, plus kick builders and viewers and switch them between builder and viewer. Not: the host or other co-hosts, bans, the host's settings |
-| Builder | Every player who joins (default) | Everything a player can do in the city: build, demolish, terraform, zone, economy, policies, progression, map tiles, game speed, mod tools, names, chat |
-| Viewer | Set by the host | Chat only. A viewer's tools are disabled, their speed requests are ignored and they cannot follow citizens |
+| Builder | Every player who joins (unless **New players join as viewers** is on) | Everything a player can do in the city: build, demolish, terraform, zone, economy, policies, progression, map tiles, game speed, mod tools, names, chat |
+| Viewer | Set by the host or a co-host, or every new player with **New players join as viewers** | Watch and chat only. A viewer's tools are disabled, their speed requests are ignored and they cannot follow citizens |
 
 The host changes a role with **…** → **Make viewer** / **Make builder** / **Make co-host** in the player list, for
-players who are fully in. A kicked player can join again; a banned one cannot until the host unbans them (host options,
+players who are fully in. Roles are remembered for the session: a player who leaves and joins again gets the same
+role. A kicked player can join again; a banned one cannot until the host unbans them (host options,
 **Banned players**). A player removed after loading the city sees "You were removed from the session" (or "removed and
 banned") and can return to the main menu or keep an offline copy.
 
@@ -222,12 +228,13 @@ Options → **Skyline Together**, tab **Multiplayer**:
 | Hosting | Require the same asset packs | off |
 | Hosting | Let players join with different mods | on |
 | Hosting | Friends and invited only | off |
-| Hosting | Enforce build checks on other players | off |
+| Hosting | New players join as viewers | off |
+| Hosting | Enforce build checks on other players (Options page only) | off |
 | Hosting | Allow direct IP connections | off |
 | Hosting | Direct connection port (1024-65535) | 27015 |
 | Joining | Host's Steam ID or IP:port, Password | empty |
 | Session | Host this city / Join / Leave session buttons | – |
-| Diagnostics | Show network line | off |
+| Diagnostics | Show network stats | off |
 | Diagnostics | Write diagnostics (button) | – |
 
 The Options page also works as a fallback when the Skyline Together panel does not load.
@@ -238,8 +245,8 @@ Skyline Together works with mods. Traffic, Move It, Anarchy, Better Bulldozer, T
 the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It have dedicated support: their saved
 data, their tools and the settings that affect the simulation are shared by all players. Every other code mod is
 analysed when a session starts: its saved data replicates, its simulation runs on the host and its tools are captured
-like player edits. Settings that change the simulation use the host's values while you play together; your own values
-come back when you leave.
+like player edits. For the mods above (and mods that declare it), settings that change the simulation use the host's
+values while you play together; your own values come back when you leave.
 
 With **Require the same mods** on (the default), the host refuses players whose code mods differ, and the joining
 player gets a list of mods to enable, disable or update. Mods that only change the player's own screen (translations,
@@ -255,8 +262,8 @@ See [docs/design/MOD-COMPATIBILITY.md](../design/MOD-COMPATIBILITY.md) for the p
 
 With **Let players join with different mods** on (the default), a player whose mods differ can decide for themselves:
 the refusal screen keeps the list of what to enable, disable or update and adds **Join anyway**, with the warning that
-different mods can make the cities drift apart or behave differently. The host's city stays authoritative and
-differences are repaired where possible; the host sees who joined with which differences. **Join anyway** never skips
+different mods can make the cities drift apart or behave differently. The host's city always takes priority and
+differences are fixed where possible; the host sees who joined with which differences. **Join anyway** never skips
 a different Skyline Together build or game version, missing DLC, mods that store data in the host's city (the game
 would crash loading the city without them; see
 [Mods required for this city](troubleshooting.md#mods-required-for-this-city)), the old "CS2 Multiplayer Mod", the

@@ -28,6 +28,11 @@ The minimum level is Info and is not configurable. Categories (`Contracts/Enviro
 capture, apply, motion, join, gate, probe, ui, config, protocol, replication, integrity, fields, compat,
 diagnostics. Error pop-ups of the game's logger are suppressed for this log.
 
+The log is rate-limited and capped at 64 MiB per game run (then errors only); a line such as `N log line(s) left out
+(too many at once)` or `the log reached 64 MiB in this run` marks suppressed lines. Paths in the user folder are
+written as `%USERPROFILE%` (`PathRedactor`), and the host's address after a direct join is shortened (`203.0.113.x`,
+`AddressMask`), so the file can be attached to a public issue as it is.
+
 The first line after start is `Skyline Together <assembly version> loading`. The assembly version is pinned to
 `1.0.0.0` (the network id system is saved by assembly-qualified name), so it does not tell builds apart; see
 [Build identity](#build-identity).
@@ -75,7 +80,7 @@ leaves it (client), and diagnostics are written.
 - **Panel → Network & diagnostics** shows the sync status line (`SyncController.Status`): queued updates, terrain,
   water, values, agents, flow, the integrity state ("verified N objects, M repairs"), movers, the follower clock and
   missing assets.
-- **Show network** (panel, or Options → Show network line) adds "ping · in KB/s · out KB/s" and the queued bytes.
+- **Show network stats** (panel, or Options → Show network stats) adds "ping · in KB/s · out KB/s" and the queued bytes.
 
 ## Integrity and desync
 

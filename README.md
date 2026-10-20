@@ -14,15 +14,16 @@ which checks and applies them for everyone. Differences are detected and repaire
 
 ## Features
 
-- **Host and join** by Steam ID, Steam invite or (optionally) direct IP. Optional session password, 2 to 16 players
-  (default 8).
+- **Host and join** by Steam ID, Steam invite or (optionally, with a password) direct IP. Optional session password,
+  **Friends and invited only**, 2 to 16 players (default 8).
 - **Shared city**: roads, buildings, zoning, districts, transport lines, terrain, water, budget, taxes, policies,
   milestones, traffic, citizens and the numbers in the info panels.
-- **Works with your mods**: dedicated support for 12 popular mods, automatic handling of any other code mod, and a
+- **Works with your mods**: dedicated support for 12 popular mods, automatic analysis of every other code mod, and a
   join screen that lists exactly what to change ([details below](#works-with-your-mods)).
 - **Every player builds** with the normal game tools; your own actions show instantly and the host confirms them.
-- **Roles**: builders can do everything; viewers can only watch and chat; co-hosts help manage players. The host can
-  also have other players' builds checked against what a normal game allows (off by default).
+- **Roles**: builders can do everything; viewers can only watch and chat; co-hosts help manage players. New players can
+  start as viewers, and the host can have other players' builds checked against what a normal game allows (both off by
+  default). Kick and ban, with an unban list.
 - **Presence**: other players' cursors with name tags, their building previews in their colour, and chat.
 - **Host-controlled game speed** that builders can change for everyone.
 - **Automatic integrity checks** that find and repair objects that differ from the host.
@@ -52,11 +53,13 @@ Skyline Together is built to be played with mods, not only with the base game.
   | Line Tool | Objects placed along lines and curves |
   | Find It | Objects placed from it, including its generated variants |
 
-- **Any other code mod** is analysed automatically when a session starts: its saved data replicates with the objects
-  it belongs to, its simulation runs on the host, and its tools are captured like player edits. The diagnostics file
-  explains the decision for every mod.
-- **Mod settings from the host.** Settings that change the simulation use the host's values for everyone during the
-  session; each player's own values come back afterwards.
+- **Any other code mod** is analysed automatically when a session starts and handled by conservative rules: its saved
+  data replicates with the objects it belongs to, its simulation runs on the host, and its tools are captured like
+  player edits. Most mods work this way; the diagnostics file explains the decision for every mod, and mod authors can
+  declare what their mod does.
+- **Mod settings from the host.** For the 12 supported mods (and mods that declare it through the integration API),
+  settings that change the simulation use the host's values for everyone during the session; each player's own values
+  come back afterwards.
 - **A clear join screen.** When mods differ, the joining player sees exactly what to enable, disable or update.
   Mods that only change a player's own screen (translations, tooltips, icon libraries, overlays) may differ.
 - **Join anyway.** The host can let players join with harmless differences. Mods that store data in the city are
@@ -74,8 +77,11 @@ Details per mod: [MOD-COMPATIBILITY.md](docs/design/MOD-COMPATIBILITY.md).
 
 ## Known limitations
 
-- Every player needs the same Skyline Together version, the same game version and the same gameplay mods.
+- Play with people you trust: builders can change anything in the city, and joining loads a save file from the host.
 - A game update can switch features off until the mod is updated; the self-test in the panel shows which.
+- A mod update can switch its dedicated support off until Skyline Together is updated (the diagnostics say so); the
+  mod then gets the automatic handling.
+- Options-menu buttons of other mods that change the whole city ("apply to all") work only when the host presses them.
 - Objects from assets a player lacks are left out on that player's game.
 - Repairs of differences happen in the background and can take a moment.
 - The host's upload speed limits large sessions.
@@ -148,13 +154,13 @@ To report a bug, every player clicks **Write diagnostics** in the panel, then:
   `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`.
 
 Open a [bug report](https://github.com/ljkx/SkylineTogether/issues/new/choose) with the files of every player. They
-contain player names and Steam IDs; see [Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug) for what else
-is in them.
+contain player names, Steam IDs and the session name, but no passwords or chat; Skyline Together writes your user folder
+as `%USERPROFILE%`, so its files do not contain your Windows user name. Never attach crash dumps (`.dmp`). See
+[Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug) for the details.
 
 ## Compatibility
 
-- **Game**: built and tested against game version 1.6.2f1 (Steam). A game update can switch features off until the mod
-  is updated; the startup self-test shows which.
+- **Game**: built and tested against game version 1.6.2f1 (Steam).
 - **Code mods**: every player needs the same world-affecting mods in the same versions (the host can turn this check
   off). See [Works with your mods](#works-with-your-mods).
 - **Assets**: use the same asset subscriptions on every PC; objects whose asset a player lacks are not created on that

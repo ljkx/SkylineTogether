@@ -7,13 +7,16 @@ body:
       value: |
         Thanks for the report. Please check the [troubleshooting guide](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md) first.
         Logs from **every** player make most bugs fixable. In the Skyline Together panel click **Write diagnostics**, then:
-        - **Installed from GitHub:** run `Collect-Logs.cmd` from the setup folder and attach the zip it puts on your Desktop.
+        - **Installed from GitHub:** run `Collect-Logs.cmd` from the setup folder and attach the zip it puts on your Desktop
+          (with a setup older than 0.2.0, delete any `.dmp` files from the zip first).
         - **Installed from Paradox Mods:** attach `Logs\SkylineTogether.log` and the newest `Logs\SkylineTogether-diagnostics-*.txt`
           from `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`.
 
-        **Privacy:** issues are public. The files contain player names, Steam IDs and, for direct-IP bans, IP addresses (never
-        passwords or chat). `Player.log` contains your Windows user name in file paths unless it was collected with
-        `Collect-Logs.cmd`. If you do not want this public, say so and we will arrange another way to send the files.
+        **Privacy:** issues are public. The files contain player names, Steam IDs, the session name and, for direct-IP bans,
+        IP addresses (never passwords or chat). Skyline Together 0.2.0 and later write your user folder as `%USERPROFILE%` in
+        their own files. `Player.log`, and the logs of older versions, contain your Windows user name in file paths unless
+        they were collected with the `Collect-Logs.cmd` of 0.2.0 or later; replace it before you attach them. If you do not
+        want this public, say so and we will arrange another way to send the files.
         **Never attach crash dumps (`.dmp`) here**: they can contain passwords. Send them only privately, and only when asked.
         Details: [Reporting a bug](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug).
   - type: dropdown
@@ -71,7 +74,7 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: If you were following the two-player checklist (docs/guide/testing.md or HOW-TO-TEST.txt), name the step number.
+      description: If you were following the two-player checklist (docs/guide/testing.md or TWO-PLAYER-CHECKLIST.txt), name the step number.
       placeholder: |
         1. Host loads a city and hosts
         2. The other player joins
