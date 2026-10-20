@@ -38,6 +38,9 @@ namespace SkylineTogether.Compat
             public Entity Entity;
             /// <summary>The set of watched types changed (or the entity was not known): send an upsert, not values.</summary>
             public bool PresenceChanged;
+            /// <summary>The state recorded before this change (<see cref="Defer"/>), and whether there was one.</summary>
+            internal (ulong Presence, ulong Value) Old;
+            internal bool Known;
         }
 
         private readonly EntityCodec _codec;
@@ -275,7 +278,21 @@ namespace SkylineTogether.Compat
             }
             _shadow[id] = (p, v);
             _lastEmit[id] = now;
-            output.Add(new Change { NetId = id, Entity = e, PresenceChanged = !known || old.Presence != p });
+            output.Add(new Change { NetId = id, Entity = e, PresenceChanged = !known || old.Presence != p, Old = old, Known = known });
+        }
+
+        /// <summary>
+        /// A change the capture did not send (it was not the player's edit, <see cref="Core.Modding.ModStateProposalRule"/>):
+        /// the state before it is recorded again, so the change is not consumed (the next check finds it again). When
+        /// it was the player's edit after all (made without input the rule counts), it is proposed with the player's next
+        /// input; the host's own value, when the applier writes it, replaces it as known.
+        /// </summary>
+        public void Defer(Change c)
+        {
+            if (c.NetId == 0) return;
+            if (c.Known) _shadow[c.NetId] = c.Old;
+            else _shadow.Remove(c.NetId);
+            // found again by the change versions or the slow sweep (no per-frame retry of every derived entity)
         }
 
         private void Hash(Entity e, uint id, out ulong presence, out ulong value)

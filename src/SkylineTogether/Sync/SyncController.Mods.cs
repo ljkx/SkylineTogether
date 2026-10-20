@@ -101,6 +101,7 @@ namespace SkylineTogether.Sync
                     // the client's own copy of a mod system recomputed it (no tool, no input): the host derives its own
                     // value, which arrives with the host's records; never proposed (ModStateProposalRule)
                     if (_derivedModChanges++ == 0) _log.Info(LogCategory.Compat, "mod state changed here without the player's input (a mod system deriving it locally); such changes are not sent to the host");
+                    _watcher.Defer(c); // not consumed: proposed with the player's next input unless the host's value replaces it
                     continue;
                 }
                 uint id = c.NetId;
