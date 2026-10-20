@@ -32,8 +32,11 @@ of both can play together. Everyone in a session must use this version.
   and German quotation marks.
 - New screenshots on the Paradox Mods page.
 - Versions follow Semantic Versioning without a pre-release suffix from this release on.
-- **Protocol 6** (a hardened handshake, see Security): players of earlier versions cannot join, and solo test
-  recordings of earlier versions cannot be replayed.
+- **Protocol 7** (a hardened handshake, see Security; id generations in entity records, painted-cell masks in resource
+  paint patches and statistics appends, see Fixed): players of earlier versions cannot join, and solo test recordings
+  of earlier versions cannot be replayed.
+- Statistics no longer re-send each series' whole history to every player at every sample (megabytes in an older
+  city); only the new samples travel.
 - The host's messages (chat lines such as "… joined the city", kick, ban and end reasons, refusal details) appear in
   each player's own language. A password lockout has its own screen ("Too many wrong passwords") instead of "Wrong
   password".
@@ -74,6 +77,38 @@ These changes follow an adversarial review of the network code. Details: [SECURI
   peer chooses.
 - The installer handles user folders with `[` `]` in their names, keeps the installed copy when an update fails, and
   with `-NoPause` stops instead of waiting when the game is running.
+
+### Fixed
+
+These changes follow an adversarial review of the replication code; most of them close ways a joined player's game
+could end up writing one object's data into another (a crash of the game's own jobs).
+
+- The host frees the id of a deleted object only after the update carrying the deletion was sent; an error later in
+  the same frame no longer loses deletions while their ids are reused, and one failing object no longer costs the
+  frame's whole update.
+- Every object record carries its id's generation: a joined player whose game still holds an older object under a
+  reused id deletes it cleanly and creates the new one instead of turning a building into a road.
+- Citizen, company and attention values that wait behind a catch-up can no longer be applied to ids reused meanwhile.
+- A joined player's game acknowledges a failed update only after applying its deletions; otherwise it offers a
+  rejoin. New objects are never kept half made when an update fails, and a change the host fails to apply is rolled
+  back on the player's game.
+- One player's terrain strokes the host cannot replay (another mod's brush) no longer switch terrain sync off for
+  everyone; such strokes are checked first, and a player whose strokes keep failing is ignored.
+- Mods: a joined player's copy of a mod system no longer sends its own recomputed values to the host as the player's
+  edits, mods whose panels write the city count as world-affecting, mod systems switched off on joined players stay
+  off when the mod switches them on again, and mods always see the session end.
+- Events, disasters and chirps deleted after the events feature switched itself off are deleted for everyone.
+- Kept values never point at objects deleted in the same update, and a line whose stops are gone is re-sent.
+- Resource painting merges only the painted cells (it overwrote nearby groundwater with older values) and keeps
+  groundwater consistent.
+- Riders of a deleted vehicle that its passenger list missed leave it; a vehicle a player's game cannot create (a
+  missing asset) is asked for less and less often; no duplicate passenger entries while catching up.
+- The integrity check no longer re-sends whole areas during a host's bulk edit or a catch-up, and the resync offer no
+  longer counts objects given up in earlier sessions.
+- Less work per frame on joined players: the orphan check reads the deleted objects' own lists and scans everything at
+  most once a second, and the index of who references whom no longer grows for the whole session.
+- Smaller fixes: GPU readbacks time out, flow status messages are dropped while that feature is off, a tool edit of an
+  object the host updated in the same frame is sent, and the icon filter and viewer gate recover in the next session.
 
 ## [0.1.0-alpha.4] - 2026-10-16
 

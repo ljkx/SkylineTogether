@@ -611,7 +611,13 @@ flowchart TB
 - **Clock.** Every 0.25 s the batch carries the host's `frameIndex` (`SyncRecordKind.Clock`).
 - **Integrity.** Icon sets and line rows go into the broadcast batch, bucket digests into a per-peer digest batch
   ([integrity](#integrity)).
-- The batch ends with the ledger epoch (`SyncRecordKind.Epoch`) and is broadcast as one `Epoch` message.
+- The batch ends with the ledger epoch (`SyncRecordKind.Epoch`) and is broadcast as one `Epoch` message. The ids it
+  despawns enter the quarantine only after this broadcast ([quarantine](#quarantine-and-reuse)).
+
+Each step of the capture (every changed entity, the untagged changes, agents, dependencies, mod state, the value scan)
+runs in its own guard: a step that throws rolls the batch back to the record boundary before it
+(`SyncBatch.Writer.RollBack`; a half-written record would make the batch undecodable), writes the despawns it had staged
+again, and the rest of the frame's batch still goes out. A deleted entity whose capture threw still gets its despawn.
 
 Global state, intents and their results go in a separate batch after the entity batch, so a peer that cannot decode a
 global record never loses entity data. Every channel runs in its own guard and feature
@@ -620,7 +626,8 @@ global record never loses entity data. Every channel runs in its own guard and f
 ### Batch encoding
 
 A [`SyncBatch`](../src/SkylineTogether.Core/Sync/SyncBatch.cs) is `u8 version | u32 record count | records`. Entity
-records are `kind | varint netId | u8 family | bool completeSet | u16 count | components`, each component
+records are `kind | varint netId | u8 family | bool completeSet | u8 generation | u16 count | components` (the
+generation of the id on the sender, [net ids](#net-ids)), each component
 `u64 StableTypeHash | u8 kind (data, buffer, presence) | varint length | bytes`. Other records: `Prefab`,
 `PrefabSource`, `ZoneCells`, `IdRange`, `Cost`, `Clock`, `Request`, `Global`, `IdCeiling`, integrity and icon records (40-46), mover
 records (20-23, 120), `EnabledBits` and `ModSettings` (110-111), `Epoch`, `ProposalHeader`, `ProposalResult`
@@ -678,7 +685,13 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
 1. despawns of the batch first (their entities count as dying for every reference read below; a despawn before a
    spawn of the same id is applied first);
 2. creates the entities of spawns, from the prefab's own archetype, all before any value is written, so references
-   inside the batch resolve; records of missing prefabs are skipped and reported ([missing assets](#mod-compatibility));
+   inside the batch resolve; records of missing prefabs are skipped and reported ([missing assets](#mod-compatibility)).
+   A client first checks a record whose id is already bound here
+   ([`BoundRecordCheck`](../src/SkylineTogether.Core/Sync/IdGenerations.cs)): by the id's generation when this client
+   knows it (from the host's records and the join snapshot), else by the family the id was bound with and the class of
+   the two prefabs. A stale binding (the host reused the id after a despawn this client never applied) is never written
+   into: the old entity is despawned with the full clean-up of step 6 and the record creates the new one (a values
+   record, which cannot create, asks for the id again);
 3. drops new entities whose structural references (owner, edge nodes, parent) do not resolve here, a new edge whose
    `Edge` value is missing or presence only (the sender could not name a node) or does not name two nodes that exist and
    are not being deleted, and a new entity whose owner travelled as presence only; new entities that reference a dropped
@@ -695,15 +708,23 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
    `UpdateFrameGuardSystem` checks every created entity once more right before that system (any source: the applier,
    the mover channel, the player's tools): it deletes such an entity (a client releases the id and asks the host) and
    logs each archetype once with its component type names;
-5. writes the values; enabled bits of enableable components;
+5. writes the values; enabled bits of enableable components. New entities are atomic
+   ([`SpawnTransaction`](../src/SkylineTogether.Core/Sync/ApplyTransaction.cs)): one whose component set or values
+   failed is destroyed and unbound right after that step and asked for again, and when the apply throws outside the
+   per-record guards every new entity whose values were not written is destroyed (never a new entity with default
+   values, a null `PrefabRef` or zero edge nodes). An existing entity keeps its value when the new one names something
+   not here, unless the kept value itself names an entity that is gone, deleted or despawned by this batch (its own
+   `Serialize` names its references, `EntityRefCollector`): then the new value is written with the unresolved
+   references null;
 6. applies despawns with `Deleted`, and on clients
    [`DeletionCascade`](../src/SkylineTogether/Sync/DeletionCascade.cs) removes references to the despawned entity
    (renters, workers, students, household members, hotel guests, ...) that the gated vanilla cleanup systems would have
    removed ([reference safety](#reference-safety)). A despawned node takes every edge that still ends at it and that
    the batch does not despawn itself with it;
 7. **never keeps a dangling entity**: every entity of the touch set (the records' entities and their net closure) that
-   would dangle after the batch, an edge whose start or end node is missing, no node or being deleted, or an entity
-   whose owner is gone, is deleted the way a despawn is (references made safe for the game's reference systems, the
+   would dangle after the batch, an edge whose start or end node is missing, no node or being deleted, an entity
+   whose owner is gone, or a line whose (kept) waypoint or segment list names an element that is gone or deleted, is
+   deleted the way a despawn is (references made safe for the game's reference systems, the
    client's removal clean-up, a client unbinds the id and asks for it again; the host keeps the binding, so its capture
    broadcasts the despawn), repeatedly, since a deletion adds its surviving node's closure. The game's Burst jobs follow
    `Edge`, `ConnectedEdge` and `Owner` unchecked whether an entity is tagged or not, so leaving such an edge untagged
@@ -726,14 +747,21 @@ frame. Batches decode into pooled records ([`SyncRecordPool`](../src/SkylineToge
 host's despawn for up to 20 s (records the host sent before it applied the deletion do not bring them back); an
 entity the player is dragging with a direct-write mod tool is held against the host's echoes for 0.6 s
 (`EditHold`). An apply failure on a client counts against `Features.Replication`; repeated failures end the session
-with a rejoin offer.
+with a rejoin offer. Acknowledging a batch tells the host it may reuse the ids the batch despawned, so a batch whose
+apply threw is acknowledged only once its despawns are applied
+([`FailedBatchRecovery`](../src/SkylineTogether.Core/Sync/ApplyTransaction.cs): every despawn except one followed by a
+record of the same id; the rest of the batch is asked for again). A batch that cannot be decoded, or whose despawns
+cannot be applied, is never acknowledged: replication is switched off, which ends the session with a rejoin offer.
+On the host, a proposal that throws while being committed is rolled back on its client like a refused one
+(`RejectReason.HostError`).
 
 ### Reference safety
 
 The game's jobs and panels follow many entity references without a check; a reference to a destroyed entity (or a null
 where the game never keeps one) is a native crash in a Burst job. The applier never writes such a reference: an
 unknown, destroyed or deleted target resolves to nothing (`NetReaderState.CheckLiveness`, `Dying` for the batch's own
-despawns); an existing entity keeps its value, a new one gets a null; a buffer element that does not resolve is left out.
+despawns); an existing entity keeps its value (unless that value itself names something gone or despawned by the
+batch, [client apply](#client-apply)), a new one gets a null; a buffer element that does not resolve is left out.
 
 Agents need more, because the game's removal systems are off on clients and several reverse lists are only pruned by
 the simulation. [`AgentLinkGraph`](../src/SkylineTogether.Core/Sync/AgentLinkGraph.cs) lists the links of the agent
@@ -766,7 +794,9 @@ when the client goes live (`ReferenceAudit`, one pass over every link type and m
 ...`), and every holder the apply writes, every chunk the sweep visits and every mover the mover channel links is noted
 again. The index is a superset (entries are pruned when their referrer is gone, never when a link changes): the cascade
 reads each referrer's real link before it changes anything. A target with many referrers (a large workplace) has a hash
-set, so noting a referrer again costs one lookup.
+set, so noting a referrer again costs one lookup. It stays bounded: indexing a mover prunes gone referrers of the same
+target, a deleted mover's pairs are removed, and a background lap prunes the chains of 256 targets a frame (a depot's
+chain no longer holds every vehicle it ever owned).
 
 The client deletes cleanly in these places, all through [`AgentLinkAccess`](../src/SkylineTogether/Sync/AgentLinkAccess.cs):
 
@@ -787,13 +817,18 @@ The client deletes cleanly in these places, all through [`AgentLinkAccess`](../s
   (the vehicles of a demolished building, `SubElementDeleteSystem`) lets its riders out the way the game's
   `ObjectEmergeSystem` (off on clients) does: without it they kept `CurrentVehicle` and `Relative` naming the destroyed
   vehicle, which `RelativeObjectSystem` indexes unchecked; a creature that leaves a vehicle gets its moving state back
-  (without `CurrentVehicle` and `Moving` it had no update-group marker). Every building, net, area and owner of sub-objects or vehicles deleted in the frame
-  is noted for the orphan sweep.
+  (without `CurrentVehicle` and `Moving` it had no update-group marker). At the end of the mover apply, riders still
+  attached (`Relative`, `CurrentVehicle`) to a vehicle deleted here that its passenger list did not name are released
+  too. Every building, net, area and owner of sub-objects or vehicles deleted in the frame
+  is noted for the orphan sweep, with the children its own lists name.
 - **Orphan sweep** ([`OrphanSweep`](../src/SkylineTogether/Sync/OrphanSweep.cs), the start of the next frame, before
   any game system): an owned object (lanes excepted, the game regenerates them) whose `Owner` is one of them and no
   longer exists is made safe and deleted with it, an owned vehicle through the mover channel; an object whose
   `Attached.m_Parent` is gone is deleted, or, when it is replicated, detached and asked from the host. The game deletes
-  children through their owner's lists, which on a client can be out of step with the children's own `Owner`.
+  children through their owner's lists, which on a client can be out of step with the children's own `Owner`. The
+  children the deleted entities' lists name (sub-objects, sub-nets, sub-areas, owned vehicles, installed upgrades) are
+  checked the next frame; the scan over every owned and attached object, which finds the children those lists missed,
+  runs at most once a second (it ran on every frame after any deletion, a hitch of milliseconds in big cities).
 - **After every apply** (`ReferenceAudit.AfterApply`): the agent links of the entities the batch or agent value message
   wrote, tagged or cascaded are checked and repaired (an existing entity kept its old link while the new one did not
   resolve; a new entity got a null; a despawn missed a list that was out of date here), and noted in the referrer index.
@@ -963,16 +998,30 @@ announces its id frontier (in the snapshot, with every grant and as an `IdCeilin
 refuses ids more than 2^20 above it ([`NetIdCeiling`](../src/SkylineTogether.Core/Sync/NetIdCeiling.cs)), so a
 corrupted or hostile record cannot grow its id tables to the full 24-bit range.
 
+Entity records carry the id's generation, and a client keeps the host's generation of each id it bound from a record
+or the snapshot ([`IdGenerationTable`](../src/SkylineTogether.Core/Sync/IdGenerations.cs); its own predictions have
+none until the host's record arrives). A record for an id this client still binds to another generation is a stale
+binding: the old entity is despawned cleanly and the new one created ([client apply](#client-apply)).
+
 ### Quarantine and reuse
 
 A released id is not reused until nobody can still name it:
 
-1. the despawn is written: `Release` parks the id in the open release frame;
+1. the despawn is written into a batch: the id is staged
+   ([`StagedReleases`](../src/SkylineTogether.Core/Sync/StagedReleases.cs)) and `Release` parks it in the open release
+   frame only once that batch was handed to the peers. A frame whose capture threw before the broadcast keeps its ids
+   allocated and writes their despawns again in the next batch, so an id is never freed while its despawn is lost;
 2. `Seal`, once per frame after the frame's batches were queued, stamps it with the release frame number
    ([`ApplyAckBook`](../src/SkylineTogether.Core/Sync/ApplyAcks.cs) records each peer's `Epoch` watermark);
 3. `Update` frees it once every peer acknowledged (`MessageKind.ApplyAck`, sent at most every 0.1 s, in order with
    the proposals) applying that frame, no join is in progress (the join barrier: a snapshot may still contain the
    old binding) and at least 3 s have passed.
+
+A client acknowledges an `Epoch` message once it is applied. Messages that name ids but are applied later (agent
+values, attention values, inspection samples) hold the acknowledgement from their arrival until they are applied or
+dropped ([`AckHeldQueue`](../src/SkylineTogether.Core/Sync/ApplyAcks.cs), `ApplyAckTracker.HoldNext`): no epoch received
+after them is acknowledged meanwhile, so the host cannot reuse an id they name before they applied. A batch whose
+apply failed is acknowledged only once its despawns are applied ([client apply](#client-apply)).
 
 Free ids are reused lowest first. Ids granted to a client that leaves unused return through the quarantine.
 
@@ -1137,7 +1186,10 @@ so movers its snapshot holds but the host no longer has are gone within the firs
 movers batches strictly in order, so at the roster it holds exactly the host's movers of the window unless a record was
 lost or failed: movers only it has are removed at once (riders released, ids unbound), movers it lacks are asked for when
 they were missing in two rosters in a row ([`MoverRosterAudit`](../src/SkylineTogether.Core/Sync/MoverRoster.cs), sent as
-an integrity `ResendEntities` request; the host answers with the mover's spawn and agent links to that client only). On
+an integrity `ResendEntities` request; the host answers with the mover's spawn and agent links to that client only). A
+mover that keeps not arriving (a vehicle asset this client lacks) is asked for again with doubling pauses, up to 64
+rosters of its window, and starts over once it arrived. A mover record creates an entity only from a vehicle or
+creature prefab. On
 the host, a tracked mover whose entity vanished without a `Deleted` tag (so no despawn was ever captured) is despawned
 when its window comes up. The client's orphan sweep at going live only removes snapshot movers without a host id;
 movers with an id the host no longer uses are the roster's job. [`MoverClient`](../src/SkylineTogether/Sync/MoverClient.cs) applies the records after the
@@ -1191,10 +1243,15 @@ unlocked-prefab set reaches clients on change (at most once a second) and is rep
   tiles go to each peer within its budget (more while its infoview shows the map); every 10 s the host sends a
   per-map digest of what it sent the peer, and a client whose copy differs requests that map again (paced with
   back-off, `CellMapResync`). Resource painting is predicted locally and sent to the host as patches, which the host
-  clamps to the brushes' range before merging.
+  clamps to the brushes' range before merging. A patch carries a mask of the cells the player painted (cells a local
+  stamp touched whose painted fields changed since before the first stamp); the host merges only those, since the rest
+  of the rectangle is the client's possibly older copy of the map, and keeps groundwater at polluted ≤ amount ≤ maximum.
 - **Terrain** ([`TerrainSync`](../src/SkylineTogether/Sync/TerrainSync.cs)): brush stamps are captured at ApplyTool; a
   client's stroke is predicted, replayed by the host (frame-time compensated, at most 600 stamps per second and peer)
-  and forwarded. When a stroke settles the
+  and forwarded. Every stamp's brush is checked to be a brush prefab before either the height or the material path,
+  each stamp replays in its own guard, and a client whose terrain input keeps failing on the host is ignored until it
+  leaves ([`PeerFaultBook`](../src/SkylineTogether.Core/Diagnostics/PeerFaultBook.cs)), so one client cannot switch
+  terrain sync off for everyone. GPU readbacks that do not complete within 10 s count as failed. When a stroke settles the
   host reads back the touched 64×64 tiles without blocking and broadcasts the changed ones; a rolling audit of tile
   hashes catches the rest. Without GPU readback only stamp replay runs.
 - **Water** ([`WaterSync`](../src/SkylineTogether/Sync/WaterSync.cs)) is a per-machine GPU simulation; the host sends
@@ -1204,7 +1261,11 @@ unlocked-prefab set reaches clients on change (at most once a second) and is rep
 ### Statistics, icons and flow status
 
 - **Statistics** ([`StatisticsSync`](../src/SkylineTogether/Sync/StatisticsSync.cs)): changed series keyed by
-  (statistic, parameter), written into the entities the client's own lookup names (none created or destroyed).
+  (statistic, parameter), written into the entities the client's own lookup names (none created or destroyed). After
+  the first whole series only the appended samples travel
+  ([`StatisticsDelta`](../src/SkylineTogether.Core/Sync/StatisticsMessage.cs)); each message names the host buffer
+  length its samples end at, so a receiver appends exactly what it lacks, and a series that does not continue the last
+  one sent goes whole.
 - **Icons** ([`IconSync`](../src/SkylineTogether/Sync/IconSync.cs)) are host data: complete icon sets of changed
   owners (targets by net id or derived key) plus a periodic digest. On clients `IconAuthorityFilterSystem` drops local
   icon decisions from the vanilla command queues and reconciles changed owners through one command buffer; repeated
@@ -1305,10 +1366,12 @@ stateDiagram-v2
   ResyncOffer --> Rejoin: player accepts
 ```
 
-[`RepairEscalation`](../src/SkylineTogether.Core/Integrity/RepairEscalation.cs): a bucket with more differences than
-object repair is meant for (64), or still differing after two detail rounds, is **rebaselined** (every object of it
-re-sent; once per bucket per 10 minutes, at most 4 a minute). **Massive divergence** (more than 10 % of at least 20
-compared buckets mismatching in two consecutive cycles, 8 rebaselines within 10 minutes, or 50 given-up entities)
+[`RepairEscalation`](../src/SkylineTogether.Core/Integrity/RepairEscalation.cs): a bucket with more confirmed
+differences than object repair is meant for (64; a host bulk edit still in flight differs everywhere for a moment and
+does not count), or still differing after two detail rounds, is **rebaselined** (every object of it re-sent; once per
+bucket per 10 minutes, at most 4 a minute; never while the client catches up). **Massive divergence** (more than 10 %
+of at least 20 compared buckets mismatching in two consecutive cycles, 8 rebaselines within 10 minutes, or 50
+entities given up in the current session)
 offers the player a resync: a rejoin with a fresh snapshot through `SessionManager.Resync`. It is never forced, at
 most once per 30 minutes, and not again after two accepted resyncs within an hour.
 
@@ -1332,17 +1395,26 @@ computed with the UI's own functions; clients compare their own rows and re-send
   its code. Core's [`ModClassifier`](../src/SkylineTogether.Core/Modding/ModClassifier.cs) turns the facts and the
   mod's own declarations into decisions: scope (client-local only when declared or provably unable to touch shared
   state; a failed scan is world-affecting), component treatment, system treatment on clients, tool capture
-  (direct-write unless declared pipeline) and host settings. The result becomes a
+  (direct-write unless declared pipeline) and host settings. A system in a UI phase that calls an `EntityManager` or
+  `EntityCommandBuffer` write (its own code or its nested jobs) writes the world when its player clicks, so it is
+  world-affecting and runs everywhere; Harmony patches of the game's UI types that write shared state (policies,
+  upgrades, the info panel's actions, names, colours, visual customisation, map tiles, the water panel, the line
+  overview) do not count as presentation. The result becomes a
   [`GenericModAdapter`](../src/SkylineTogether/Compat/GenericModAdapter.cs).
 - **Built-in adapters** ([`ModAdapter`](../src/SkylineTogether/Compat/ModAdapter.cs), names resolved by reflection and
   checked at startup, an adapter whose names no longer match turns itself off): Traffic, Move It, Anarchy, Better
   Bulldozer, Plop the Growables, Tree Controller, Water Features, 529 Tiles, Historical Start, Zoning Toolkit, Line
   Tool, Find It ([`ModCompat`](../src/SkylineTogether/Compat/ModCompat.cs)).
 - **Gates.** Mod systems that must not run on a joining or live client are switched off and restored at session end;
-  mod systems declared as simulation can stay on.
+  mod systems declared as simulation can stay on. A gated system its mod switches back on (for example when a city
+  finished loading) is held off again every frame; the mod's wish is what it gets back at session end.
 - **Untagged mod state.** [`ModStateWatcher`](../src/SkylineTogether/Compat/ModStateWatcher.cs) finds mod components
   written without an update tag (chunk change versions plus a slow re-hash sweep) on the host and on clients; mod data
-  entities referenced by replicated values are bound and sent with them (dependency binding).
+  entities referenced by replicated values are bound and sent with them (dependency binding). A client proposes such
+  a change only while a tool applies or when its player pressed or released a button within 3 s
+  ([`ModStateProposalRule`](../src/SkylineTogether.Core/Modding/ModStateProposalRule.cs)); otherwise it is the client's
+  own copy of a mod system recomputing it, and the host's value, which arrives with the host's records, is the one that
+  counts. Limit: a mod system that recomputes a saved component while the player is clicking is still proposed then.
 - **Edit hold** for direct-write tools ([client apply](#client-apply)).
 - **Mod settings.** [`ModSettingsSync`](../src/SkylineTogether/Compat/ModSettingsSync.cs) applies the host's values of
   listed settings on clients for the session and restores the player's own values afterwards.
@@ -1380,11 +1452,13 @@ only warns; the summary is in the log, the panel and the dump.
 Every entry point the game calls runs inside [`Guard`](../src/SkylineTogether/Diagnostics/Guard.cs) for one feature of
 the registry ([`Features`](../src/SkylineTogether/Diagnostics/Features.cs)): session, Steam, replication, speed, gate,
 clock, global state, icons, movers, terrain, water, integrity, simulation values, agents, flow status, actions,
-events, presence, previews, invites, mod integration, UI. [`FeatureHealth`](../src/SkylineTogether.Core/Diagnostics/FeatureHealth.cs)
+events, presence, previews, invites, mod integration, mod compatibility, UI. [`FeatureHealth`](../src/SkylineTogether.Core/Diagnostics/FeatureHealth.cs)
 logs the first failure with its stack, then at most one line per 10 s, and switches the feature off after 5 failures
 within 30 s (with a toast). Critical features (session, Steam, replication, speed) cannot be degraded: a failed probe
 blocks hosting and joining, and a run-time trip ends the session (a client is offered a rejoin). Features are re-armed
-when a session starts.
+when a session starts. On the host, failures caused by one client's input to a shared feature (terrain stamps) count
+against that client ([`PeerFaultBook`](../src/SkylineTogether.Core/Diagnostics/PeerFaultBook.cs): same rule, the client's
+input is then ignored until it leaves), never against the feature that serves every player.
 
 ### Diagnostics dump
 
