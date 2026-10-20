@@ -462,9 +462,25 @@ namespace SkylineTogether.Sync
             {
                 _log.Info(LogCategory.Integrity, "reference repair: " + summary + "; session total " + _stats.Repaired + ", " + _stats.Requested + " objects asked from the host");
             }
-            if (_failed) return; // the sweep stopped; the targeted pass and the requests go on
             EntityManager em = _world.EntityManager;
             _access.EntityManager = em;
+            if (_failed)
+            {
+                // the sweep stopped; the targeted pass and the requests go on, and the referrer index is still pruned (it
+                // only grows otherwise)
+                if (_indexBuilt && _index != null)
+                {
+                    try
+                    {
+                        _index.Sweep(_alive, IndexSweepTargetsPerFrame);
+                    }
+                    catch (Exception)
+                    {
+                        // pruning only; the index stays usable
+                    }
+                }
+                return;
+            }
             long start = Stopwatch.GetTimestamp();
             long perf = Perf.Start();
             try

@@ -37,6 +37,12 @@ namespace SkylineTogether.Sync
         /// <summary>The scan over every owned and attached object runs at most this often (seconds).</summary>
         public const double FullScanSeconds = 1.0;
 
+        /// <summary>
+        /// Children noted for the direct check at most (they pile up while the client is not live yet and nothing sweeps);
+        /// beyond it they are left to the full scan, which finds every child.
+        /// </summary>
+        public const int MaxCandidates = 1 << 16;
+
         private readonly IndexVersionSet _deleted = new IndexVersionSet();
         private readonly List<Entity> _orphans = new List<Entity>();
         private readonly List<Entity> _detach = new List<Entity>();
@@ -81,7 +87,9 @@ namespace SkylineTogether.Sync
             for (int i = 0; i < buffer.Length; i++)
             {
                 Entity c = child(buffer[i]);
-                if (c != Entity.Null) _candidates.Add(c);
+                if (c == Entity.Null) continue;
+                if (_candidates.Count >= MaxCandidates) return; // the full scan finds the rest
+                _candidates.Add(c);
             }
         }
 

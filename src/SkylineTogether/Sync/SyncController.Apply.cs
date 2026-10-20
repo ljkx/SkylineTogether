@@ -77,6 +77,10 @@ namespace SkylineTogether.Sync
                 }
                 Perf.Budget.End(Perf.BudgetMaps, Perf.Stop(Perf.Maps, maps));
             }
+            // client: mod systems gated here that their mod switched back on stay off, from the start of the join on (a
+            // mod that re-enables them when the joined city finished loading ran them through the snapshot apply and the
+            // catch-up before)
+            if (!IsHost && _sessions.Client != null) SafeCall("mod gates", _reassertCall ?? (_reassertCall = ReassertGates), Features.ModCompat);
             if (_codec == null || !Features.Replication.IsAvailable) return;
             if (!IsHost && !IsLiveClient)
             {
@@ -92,8 +96,6 @@ namespace SkylineTogether.Sync
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
-                // mod systems gated here that their mod switched back on stay off for the session
-                if (_clientLive) SafeCall("mod gates", _reassertCall ?? (_reassertCall = ReassertGates), Features.ModCompat);
                 // the children of what was deleted last frame (bulldozing, despawns) whose owner or parent is gone now go
                 // first, before any game system of this frame follows their Owner or Attached (ARCHITECTURE.md#reference-safety)
                 if (Orphans.HasWork) SafeCall("orphan sweep", _orphanCall);
