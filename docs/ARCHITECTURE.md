@@ -790,7 +790,8 @@ and its entity is gone or tagged `Deleted` (`FailedBatchRecovery.CountNotApplied
 throws finishes it best effort and tags the entity anyway, and a batch that leaves an untagged entity behind is handled
 as a failed one). A batch that cannot be decoded, or whose despawns cannot be applied, is never acknowledged:
 replication is switched off, which ends the session with a rejoin offer. Mover batches follow the same rule, and their
-despawns are applied even while the movers feature is off. Value messages wait for queued structure batches at most
+despawns are applied (and only then acknowledged) even while the movers feature is off, including batches that arrive
+after it switched off. Value messages wait for queued structure batches at most
 10 s ([`ValueHoldRule`](../src/SkylineTogether.Core/Sync/ValueHoldRule.cs)): their acknowledgement holds block every
 later acknowledgement.
 On the host, a proposal that throws while being committed is rolled back on its client like a refused one
@@ -1232,7 +1233,11 @@ rosters of its window, and starts over once it arrived or the host despawned its
 only from a vehicle or creature prefab. Mover records carry their id's generation: a client replaces a mover still bound
 under a reused id (by generation, else by prefab: a mover never changes its prefab) the way a despawn removes it, and the
 codec removes a mover it deletes (a stale binding replaced by a record of another family) through the same path, riders
-released and trailers along. Stray riders of a vehicle deleted on a client are released in the same frame, at the end
+released and its whole layout along: a controller's trailers, and for a trailer its controller and the other trailers
+([`LayoutCascade`](../src/SkylineTogether.Core/Sync/LayoutCascade.cs), as the game's `VehicleUtils.DeleteVehicle`
+deletes a layout), so no live controller keeps a `LayoutElement` naming a destroyed trailer; a despawn of a trailer
+does the same. While the movers feature is off, mover batches are still queued and held, their despawns applied (and
+the batch acknowledged only then), the rest dropped. Stray riders of a vehicle deleted on a client are released in the same frame, at the end
 of the Modification phases. On
 the host, a tracked mover whose entity vanished without a `Deleted` tag (so no despawn was ever captured) is despawned
 when its window comes up. The client's orphan sweep at going live only removes snapshot movers without a host id;

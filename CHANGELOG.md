@@ -125,7 +125,9 @@ another object.
 - **Vehicles and passengers.** Riders of a deleted vehicle that its passenger list missed leave it, in the same frame;
   a vehicle still held under a reused id is replaced (its passengers released) instead of taking another vehicle's
   data; vehicle updates that fail are not confirmed to the host; a vehicle a player's game cannot create (a missing
-  asset) is asked for less and less often; no duplicate passenger entries while catching up.
+  asset) is asked for less and less often; no duplicate passenger entries while catching up. Vehicles deleted on the
+  host keep disappearing for joined players after their vehicle sync switched itself off (they stayed, frozen), and a
+  truck's or train's trailer replaced on a joined player's game takes the rest of its vehicle with it (a crash).
 - **Fewer needless repairs.** The integrity check no longer re-sends whole areas during a host's bulk edit or a
   catch-up, and the resync offer no longer counts objects given up in earlier sessions.
 - **Smoother play on joined players.** The orphan check reads the deleted objects' own lists and scans everything at

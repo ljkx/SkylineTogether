@@ -59,15 +59,15 @@ namespace SkylineTogether.Sync
             if (!SyncController.SessionActive) return;
             if (!Diagnostics.Features.Movers.IsAvailable)
             {
-                // never keep apply acks waiting on a feature that is off; the despawns are still applied (the host
-                // reuses their ids once acknowledged)
+                // the despawns are still applied while the feature is off, and only then acknowledged (the host reuses
+                // their ids once acknowledged); a batch that cannot be applied stays held, and repeated failures end
+                // the session through the replication feature (a rejoin repairs it)
                 try
                 {
                     MoverSync.Instance?.Client.ApplyDespawnsOnly();
                 }
                 catch (Exception ex)
                 {
-                    MoverSync.Instance?.Client.DropHeld();
                     Diagnostics.Guard.Report(Diagnostics.Features.Replication, "mover despawns (movers off)", ex);
                 }
                 return;

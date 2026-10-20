@@ -192,10 +192,11 @@ namespace SkylineTogether.Sync
             switch (e.Kind)
             {
                 case MessageKind.Epoch:
-                    // only the movers' own batches (their first record is a mover record); SyncController skips them
-                    // with the movers feature off nothing applies (or releases) these batches; holding
-                    // them froze the apply acks, so the host never reused a released net id again
-                    if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount) && Diagnostics.Features.Movers.IsAvailable)
+                    // only the movers' own batches (their first record is a mover record); SyncController skips them.
+                    // Queued and held whatever the movers feature's state: while it is off, ApplyDespawnsOnly still
+                    // applies their despawns (the host reuses those ids once this game acknowledges the batch; a
+                    // dropped despawn left a frozen vehicle behind, and a stale binding for the id's next family)
+                    if (SyncBatch.IsMoverBatch(e.Body, e.BodyOffset, e.BodyCount))
                     {
                         // held until applied, so the host reuses a despawned mover's id only after this batch
                         long seq = 0;
@@ -220,19 +221,6 @@ namespace SkylineTogether.Sync
                     }
                     _motion.Enqueue((e.Kind, Copy(e)));
                     break;
-            }
-        }
-
-        /// <summary>The movers feature switched itself off: releases the held batches so the apply acks move on.</summary>
-        public void DropHeld()
-        {
-            _motion.Clear(); // the feature is off, nothing will drain it
-            if (_batches.Count == 0) return;
-            SessionClient client = _sessions.Client;
-            while (_batches.Count > 0)
-            {
-                (byte[] _, long seq) = _batches.Dequeue();
-                if (seq != 0) client?.ApplyAcks.Release(seq);
             }
         }
 
@@ -322,19 +310,29 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Client with the movers feature off (it tripped): the mover batches' despawns are still applied (the host reuses
-        /// those ids once this client acknowledges them, and a stale mover binding is what a later record of another
-        /// family would find), everything else in them is dropped.
+        /// Client with the movers feature off (it tripped, or a probe failed): the mover batches' despawns are still applied
+        /// (the host reuses those ids once this client acknowledges them, and a stale mover binding is what a later record
+        /// of another family would find), everything else in them is dropped. A batch is acknowledged only once its
+        /// despawns are applied (<see cref="ApplyOrRefuse"/>); until this game is live, the batches wait like the
+        /// structure batches do.
         /// </summary>
         public void ApplyDespawnsOnly()
         {
             _motion.Clear(); // nothing will drain it
-            if (_batches.Count == 0) return;
-            if (_sessions.Client == null || !EnsureWorld())
+            if (_sessions.Client == null)
             {
-                DropHeld();
+                _batches.Clear(); // the session is over: no acknowledgement follows
                 return;
             }
+            if (!EnsureWorld()) return; // held: no world to apply them to yet
+            if (_pendingLive)
+            {
+                // live without the movers feature: nothing is pinned or gated, the despawns apply from now on
+                _pendingLive = false;
+                _active = true;
+                _log.Info(LogCategory.Replication, "movers: live with the movers feature off; only the host's vehicle and pedestrian deletions are applied");
+            }
+            if (!_active || _batches.Count == 0) return;
             EntityManager em = _world.EntityManager;
             int n = 0;
             while (_batches.Count > 0 && n < MaxBatchesPerFrame)
@@ -593,10 +591,10 @@ namespace SkylineTogether.Sync
                             despawning = e;
                             // riders of a vehicle (ObjectEmergeSystem's job on the host, gated here) must not
                             // keep a Relative/CurrentVehicle pointing at it once it is destroyed (RelativeObjectSystem
-                            // indexes the parent's bone history unchecked)
-                            ReleaseRiders(em, e);
-                            em.AddComponent<Deleted>(e);
-                            _despawned++;
+                            // indexes the parent's bone history unchecked); its layout goes with it (the host deleted
+                            // it whole: a controller kept alive here, because its own despawn is in a later batch or
+                            // was lost, would name the destroyed trailer)
+                            DeleteLocally(em, e);
                             break;
                         }
                     }
@@ -1056,30 +1054,56 @@ namespace SkylineTogether.Sync
         /// <summary>
         /// Removes a mover on this client the way a host despawn does (<see cref="DeletionCascade.DeleteMover"/>): its id is
         /// released (the roster asks the host for it again if the host still has it), its riders leave it, a creature leaves
-        /// its vehicle's passenger list, the trailers of a vehicle go with it (the game's <c>VehicleUtils.DeleteVehicle</c>).
+        /// its vehicle's passenger list, and its whole layout goes with it (<see cref="LayoutCascade"/>, the game's
+        /// <c>VehicleUtils.DeleteVehicle</c>): the trailers of a controller, and for a trailer its controller and the other
+        /// trailers, so no live controller keeps a <c>LayoutElement</c> naming a destroyed trailer (the game's interpolation
+        /// reads the layout unchecked).
         /// </summary>
         public bool DeleteLocally(EntityManager em, Entity e)
         {
             if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Deleted>(e)) return false;
-            ForgetLocal(em, e);
-            if (em.HasBuffer<LayoutElement>(e))
+            List<Entity> cascade = _cascade;
+            cascade.Clear();
+            LayoutCascade.Collect(e, Entity.Null, v => ControllerOf(em, v), v => LayoutOf(em, v), v => em.Exists(v) && !em.HasComponent<Deleted>(v), cascade);
+            bool root = true;
+            foreach (Entity v in cascade)
             {
-                DynamicBuffer<LayoutElement> layout = em.GetBuffer<LayoutElement>(e, true);
-                var members = new Entity[layout.Length];
-                for (int i = 0; i < layout.Length; i++) members[i] = layout[i].m_Vehicle;
-                foreach (Entity member in members)
+                if (!em.Exists(v) || em.HasComponent<Deleted>(v)) continue;
+                ForgetLocal(em, v);
+                if (root)
                 {
-                    if (member == e || member == Entity.Null || !em.Exists(member) || em.HasComponent<Deleted>(member)) continue;
-                    ForgetLocal(em, member);
-                    ReleasePassengers(em, member);
-                    em.AddComponent<Deleted>(member);
-                    _despawned++;
+                    ReleaseRiders(em, v); // its riders and the passengers of every vehicle of its layout
                 }
+                else
+                {
+                    _releasedVehicles.Add(v); // riders its list does not name are released at the end of the apply
+                    DeletionCascade.UnindexMover(em, v);
+                }
+                root = false;
+                em.AddComponent<Deleted>(v);
+                _despawned++;
             }
-            ReleaseRiders(em, e);
-            em.AddComponent<Deleted>(e);
-            _despawned++;
+            if (cascade.Count > 1 && cascade[0] != e) _trailerLayouts++;
             return true;
+        }
+
+        private readonly List<Entity> _cascade = new List<Entity>();
+
+        // trailers deleted with their controller's whole layout (diagnostics)
+        private long _trailerLayouts;
+
+        private static Entity ControllerOf(EntityManager em, Entity vehicle)
+        {
+            return em.HasComponent<Controller>(vehicle) ? em.GetComponentData<Controller>(vehicle).m_Controller : Entity.Null;
+        }
+
+        private static IReadOnlyList<Entity> LayoutOf(EntityManager em, Entity vehicle)
+        {
+            if (!em.HasBuffer<LayoutElement>(vehicle)) return null;
+            DynamicBuffer<LayoutElement> layout = em.GetBuffer<LayoutElement>(vehicle, true);
+            var members = new Entity[layout.Length];
+            for (int i = 0; i < layout.Length; i++) members[i] = layout[i].m_Vehicle;
+            return members;
         }
 
         /// <summary>
@@ -1549,6 +1573,7 @@ namespace SkylineTogether.Sync
         /// <summary>One line for diagnostics.</summary>
         public string Status => _active ? "movers +" + _spawned + " -" + _despawned + ", " + _stager.AssignedCount + " in motion" + (_linksApplied > 0 ? ", " + _linksApplied + " agent links" : "")
                                           + (_recordFailures + _motionDropped + _ridersReleased > 0 ? ", " + _recordFailures + " failures, " + _familyMismatches + " family mismatches, "
-                                             + _motionDropped + " motion dropped, " + _ridersReleased + " riders released" : "") : "";
+                                             + _motionDropped + " motion dropped, " + _ridersReleased + " riders released" : "")
+                                          + (_trailerLayouts > 0 ? ", " + _trailerLayouts + " trailers deleted with their whole layout" : "") : "";
     }
 }
