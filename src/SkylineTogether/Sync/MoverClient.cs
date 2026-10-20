@@ -271,6 +271,7 @@ namespace SkylineTogether.Sync
             if (!_active) return;
             long start = Perf.Start();
             double allowance = _applyBudget.BeginFrame();
+            _createdThisFrame.Clear();
             int n = 0;
             while (_batches.Count > 0 && n < MaxBatchesPerFrame)
             {
@@ -305,6 +306,9 @@ namespace SkylineTogether.Sync
             if (_rosterRequests.Count > 0) SendRosterRequests();
             if (_releasedVehicles.Count > 0) ReleaseStrayRiders(em);
         }
+
+        /// <summary>Movers created by this frame's batches (several per frame while catching up).</summary>
+        private readonly HashSet<Entity> _createdThisFrame = new HashSet<Entity>();
 
         /// <summary>Vehicles deleted here since the last stray-rider pass (<see cref="ReleaseStrayRiders"/>).</summary>
         private readonly HashSet<Entity> _releasedVehicles = new HashSet<Entity>();
@@ -486,11 +490,15 @@ namespace SkylineTogether.Sync
                             {
                                 e = Create(em, r.NetId, r.Mover);
                                 if (e == Entity.Null) break;
+                                _createdThisFrame.Add(e);
                                 touched.Add((e, r.Mover, true));
                             }
                             else
                             {
-                                touched.Add((e, r.Mover, false));
+                                // created by an earlier batch of this frame (catch-up applies several): still new, the
+                                // game's reference systems add it to its vehicle's passenger list (adding it here too made
+                                // a duplicate entry that stayed stale after the creature was deleted)
+                                touched.Add((e, r.Mover, _createdThisFrame.Contains(e)));
                             }
                             break;
                         }
@@ -531,7 +539,7 @@ namespace SkylineTogether.Sync
                 {
                     // a mover the same batch despawned stays deleted (no components, no passenger entry)
                     if (em.Exists(e) && !em.HasComponent<Deleted>(e)) ApplyState(em, e, rec, isNew);
-                    if (isNew) (created ?? (created = new HashSet<Entity>())).Add(e);
+                    if (isNew) (created ?? (created = new HashSet<Entity>())).Add(e); // (created this frame)
                 }
                 catch (Exception ex)
                 {
