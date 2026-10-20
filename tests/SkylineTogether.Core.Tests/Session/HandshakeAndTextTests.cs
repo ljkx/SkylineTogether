@@ -215,6 +215,24 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.True(peer.Disconnected, "200 KiB before the password: the connection ends");
         }
 
+        [Test]
+        public void TheLimitBeforeThePasswordIsTheUnauthenticatedOne()
+        {
+            // 80 KiB: above UnauthenticatedMaxBodyBytes (64 KiB), far below UnadmittedMaxBodyBytes (1 MiB); the decoder
+            // refuses it for its size, before any handler sees it
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty", Password = "pw" });
+            var peer = new RawPeer(rig, "Big", 9402);
+            peer.Hello(rig.HostInfo);
+            Pump(rig, new[] { peer });
+            Assert.False(peer.Disconnected);
+            var big = new byte[80 * 1024];
+            new Random(4).NextBytes(big);
+            peer.Control(ControlKind.ManifestDetail, big);
+            Pump(rig, new[] { peer });
+            Assert.True(peer.Disconnected, "80 KiB before the password: the connection ends");
+            Assert.True(rig.Log.Contains("65536"), "refused by the 64 KiB limit: " + string.Join(" | ", rig.Log.Lines));
+        }
+
         // ---------------------------------------------------------------------- drops, texts and names (7, 17, 20)
 
         [Test]

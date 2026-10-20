@@ -192,6 +192,32 @@ namespace SkylineTogether.Core.Tests.Protocol
         }
 
         [Test]
+        public void AFragmentOfAnotherKindCannotCompleteAMessage()
+        {
+            // fragment 0 of an Epoch message, then fragment 1 with the same id, count and total but the kind Proposal: the
+            // bytes would make a well-formed Epoch envelope, yet a peer must not finish one kind's message with another's
+            static byte[] Part(byte kind, int index, byte[] chunk)
+            {
+                var w = new ByteWriter();
+                w.WriteByte(kind);
+                w.WriteByte(2);                              // flags: fragment
+                w.WriteVarUInt32(9);                         // message id
+                w.WriteVarUInt32((uint)index);
+                w.WriteVarUInt32(2);                         // count
+                w.WriteVarUInt32(Limits.FragmentThreshold + 2);
+                w.WriteBytes(chunk, 0, chunk.Length);
+                return w.ToArray();
+            }
+            var head = new byte[Limits.FragmentThreshold - 8];
+            head[0] = (byte)MessageKind.Epoch;               // the reassembled bytes: an unfragmented Epoch envelope
+            var reassembler = new Reassembler();
+            Assert.False(reassembler.Accept(Fragment(Part((byte)MessageKind.Epoch, 0, head)), out _, out _));
+            var e = Assert.Throws<DecodeException>(() => reassembler.Accept(Fragment(Part((byte)MessageKind.Proposal, 1, new byte[10])), out _, out _));
+            Assert.Contains("differs from the first fragment", e.Message);
+            Assert.Equal(0, reassembler.PartialMessages, "the partial message is dropped");
+        }
+
+        [Test]
         public void PartialMessagesPerPeerAreCapped()
         {
             var reassembler = new Reassembler();
