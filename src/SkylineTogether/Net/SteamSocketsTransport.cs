@@ -145,6 +145,16 @@ namespace SkylineTogether.Net
         {
             if (_disposed) return;
             UpdateSendRates();
+            int delivered = 0;
+            // messages a previous poll took from Steam but did not deliver go before the status events: a peer's last
+            // messages (its load result, its "disconnecting") were lost when its close was handled first
+            while (!_disposed && _pendingNext < _pendingCount)
+            {
+                IntPtr leftover = _messages[_pendingNext];
+                _messages[_pendingNext++] = IntPtr.Zero;
+                delivered++;
+                Deliver(leftover, sink);
+            }
             while (_statusEvents.Count > 0 && !_disposed)
             {
                 try
@@ -156,7 +166,6 @@ namespace SkylineTogether.Net
                     _log.Error(LogCategory.Net, "connection event handler failed", ex);
                 }
             }
-            int delivered = 0;
             long pollStart = System.Diagnostics.Stopwatch.GetTimestamp();
             // the time budget is checked after every message (it used to be checked between batches of 256 only, so a
             // batch of expensive messages could stall one frame for far longer); messages already taken from Steam

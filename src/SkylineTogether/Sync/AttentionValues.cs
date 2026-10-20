@@ -197,7 +197,7 @@ namespace SkylineTogether.Sync
                 if (!Diagnostics.Features.SimValues.IsAvailable) return;
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
-                _inbox.Enqueue(copy);
+                _inbox.Enqueue(copy, Diagnostics.Perf.Now);
             };
         }
 
@@ -679,7 +679,7 @@ namespace SkylineTogether.Sync
                 // values sent after structure batches that are still queued (budgeted apply after
                 // go-live or a burst) were applied first: values of entities not spawned yet were dropped for good and
                 // an older Upsert applied afterwards overwrote newer values. They wait like the agent values do.
-                bool hold = structureBacklog > 0 && _inbox.Count < MaxHeldValueMessages;
+                bool hold = ValueHoldRule.Wait(structureBacklog, _inbox.Count, MaxHeldValueMessages, _inbox.OldestQueuedAt, Diagnostics.Perf.Now); // not without end
                 while (!hold && n++ < MaxInboxPerFrame && _inbox.TryDequeueHeld(out byte[] data, out long held))
                 {
                     try

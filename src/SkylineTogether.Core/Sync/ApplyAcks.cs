@@ -276,7 +276,7 @@ namespace SkylineTogether.Core.Sync
     /// </summary>
     public sealed class AckHeldQueue<T>
     {
-        private readonly Queue<(T Item, long Seq)> _queue = new Queue<(T, long)>();
+        private readonly Queue<(T Item, long Seq, double At)> _queue = new Queue<(T, long, double)>();
         private ApplyAckTracker _acks;
 
         public int Count => _queue.Count;
@@ -295,11 +295,17 @@ namespace SkylineTogether.Core.Sync
             _acks = acks;
         }
 
-        public void Enqueue(T item)
+        public void Enqueue(T item) => Enqueue(item, double.NaN);
+
+        /// <summary>Queues a message that arrived at <paramref name="now"/> (<see cref="OldestQueuedAt"/>).</summary>
+        public void Enqueue(T item, double now)
         {
             long seq = _acks != null ? _acks.HoldNext() : 0;
-            _queue.Enqueue((item, seq));
+            _queue.Enqueue((item, seq, now));
         }
+
+        /// <summary>When the oldest queued message arrived (NaN when the queue is empty or it was queued without a time).</summary>
+        public double OldestQueuedAt => _queue.Count > 0 ? _queue.Peek().At : double.NaN;
 
         /// <summary>
         /// Takes the oldest message and releases its hold: the caller applies it before anything else can acknowledge
@@ -312,7 +318,7 @@ namespace SkylineTogether.Core.Sync
                 item = default(T);
                 return false;
             }
-            (T value, long seq) = _queue.Dequeue();
+            (T value, long seq, double _) = _queue.Dequeue();
             if (seq != 0) _acks?.Release(seq);
             item = value;
             return true;
@@ -342,7 +348,7 @@ namespace SkylineTogether.Core.Sync
                 hold = 0;
                 return false;
             }
-            (item, hold) = _queue.Dequeue();
+            (item, hold, _) = _queue.Dequeue();
             return true;
         }
 
@@ -365,7 +371,7 @@ namespace SkylineTogether.Core.Sync
         {
             while (_queue.Count > 0)
             {
-                (T _, long seq) = _queue.Dequeue();
+                (T _, long seq, double _) = _queue.Dequeue();
                 if (seq != 0) _acks?.Release(seq);
                 Dropped++;
             }

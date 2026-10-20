@@ -321,7 +321,7 @@ namespace SkylineTogether.Sync
                 }
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
-                _inbox.Enqueue(copy);
+                _inbox.Enqueue(copy, Now);
                 Perf.Counters.AddBytes(Perf.ReceivedBytes, e.BodyCount, Perf.Now);
             };
             client.BecameLive += OnClientLive;
@@ -1194,7 +1194,8 @@ namespace SkylineTogether.Sync
                 if (_sessions.Client == null && _inbox.Count > 0) _inbox.Clear();
                 return;
             }
-            if (_inbox.Count == 0 || (structureBacklog > 0 && _inbox.Count < MaxHeldMessages)) return;
+            // values wait for the structure backlog, but not without end (ValueHoldRule)
+            if (_inbox.Count == 0 || ValueHoldRule.Wait(structureBacklog, _inbox.Count, MaxHeldMessages, _inbox.OldestQueuedAt, Now)) return;
             long start = Perf.Start();
             try
             {
