@@ -3,6 +3,8 @@
 Usage (repo root):  python tools/check_personal_data.py            (tracked files)
                     python tools/check_personal_data.py --commits  (commit messages, authors and committers
                                                                     reachable from HEAD, or from the given range)
+                    python tools/check_personal_data.py --commits <range> --messages-only
+                                                                   (the messages only: pull requests in CI)
 
 Checked in every file `git ls-files` lists (binary files are skipped):
   - absolute paths into a user's home folder (C:\\Users\\<name>, /c/Users/<name>, /home/<name>, /Users/<name>),
@@ -43,7 +45,7 @@ def scan_line(where, line, problems):
             problems.append(f'{where}: e-mail address {m.group(0)}')
 
 
-def scan_commits(rev_range, problems):
+def scan_commits(rev_range, problems, identities=True):
     # merges pulled from a local clone get "Merge branch 'x' of C:/Users/<name>/..." as their default message
     fmt = '%H%x1f%an <%ae>%x1f%cn <%ce>%x1f%B%x1e'
     out = subprocess.run(['git', 'log', '--format=' + fmt, rev_range], capture_output=True, check=True).stdout
@@ -53,8 +55,9 @@ def scan_commits(rev_range, problems):
             continue
         sha, author, committer, body = record.split('\x1f', 3)
         where = 'commit ' + sha[:10]
-        scan_line(where + ' author', author, problems)
-        scan_line(where + ' committer', committer, problems)
+        if identities:
+            scan_line(where + ' author', author, problems)
+            scan_line(where + ' committer', committer, problems)
         for line in body.splitlines():
             scan_line(where + ' message', line, problems)
 
@@ -62,7 +65,10 @@ def scan_commits(rev_range, problems):
 def main():
     problems = []
     if len(sys.argv) > 1 and sys.argv[1] == '--commits':
-        scan_commits(sys.argv[2] if len(sys.argv) > 2 else 'HEAD', problems)
+        # --messages-only: the commit messages, not the author and committer identities (CI uses it for pull requests:
+        # a contributor's own e-mail address is theirs to publish; this repository's own pushes check both)
+        args = [a for a in sys.argv[2:] if a != '--messages-only']
+        scan_commits(args[0] if args else 'HEAD', problems, identities='--messages-only' not in sys.argv[2:])
         return report(problems)
     for path in tracked_files():
         if path == 'tools/check_personal_data.py':

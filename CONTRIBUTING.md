@@ -64,7 +64,8 @@ Rules that keep the architecture intact:
 - **Feature code runs guarded** (`Guard`), so one failing part does not take the session down.
 - **Wire format.** A change of any envelope, message or sync batch layout increments `ProtocolVersion.Current` and
   the pinned value in `Protocol/LimitsAndTextTests.cs`, and updates the golden tests
-  (`tests/.../Protocol/*GoldenTests.cs`).
+  (`tests/.../Protocol/*GoldenTests.cs`) and the pinned corpus of `Protocol/WireCorpusTests.cs` (which fails for any
+  layout change and for a new message, control or record kind without a pinned layout).
 - **Never change `AssemblyVersion`** (1.0.0.0): the network id system is saved in cities by assembly-qualified name.
 
 ## Tests
@@ -72,6 +73,8 @@ Rules that keep the architecture intact:
 - New or changed Core behaviour needs unit tests in `tests/SkylineTogether.Core.Tests/<Area>/`. See
   [docs/dev/testing.md](docs/dev/testing.md) for the framework and filters.
 - Bug fixes come with a test that fails without the fix, where the bug is reachable from Core.
+- CI fails when fewer tests run than the minimum in `.github/workflows/ci.yml` (`--expect-at-least`); raise it when you
+  add tests. It also runs the suite under `tr-TR` and `de-DE` and checks that a failing test fails the run.
 - Game layer changes are tested in game: at least the solo test (record and replay), and a two-player session for
   anything that involves another player. Say in the pull request what you tested.
 
@@ -115,7 +118,10 @@ By submitting a pull request you confirm that you have the right to contribute t
 ## Personal data
 
 The repository is public. Do not commit logs, diagnostics files, recordings, saves, Steam IDs or local absolute paths
-(`C:\Users\<name>\...`). Use `%USERPROFILE%` or placeholders in documentation. CI runs `tools/check_personal_data.py`.
+(`C:\Users\<name>\...`). Use `%USERPROFILE%` or placeholders in documentation. CI runs `tools/check_personal_data.py`
+on the tracked files and on the commit messages of a pull request. Your git name and e-mail address are not checked
+in a pull request (they are yours to publish); a noreply address (`<id>+<name>@users.noreply.github.com`) keeps your
+e-mail private. Commits pushed to this repository itself must use one, and CI checks the whole history for it.
 
 ## Security
 

@@ -1,7 +1,10 @@
 # Continuous integration. The game layer (src/SkylineTogether) compiles against the game's own assemblies and cannot
 # be built here; SkylineTogether.Core falls back to the .NET SDK's netstandard2.1 reference assemblies when the game
 # is missing (see src/SkylineTogether.Core/SkylineTogether.Core.csproj and docs/dev/building.md), and the test
-# project compiles the Core sources for net8.0. No NuGet package is restored.
+# project compiles the Core sources for net8.0. No NuGet package is restored. tools/ApiCheck needs the game too, so
+# CI only runs its self-test; tools/build.sh runs the real check on a PC with the game.
+#
+# Actions are pinned by commit (the comment names the release); update them deliberately.
 name: CI
 
 on:
@@ -22,25 +25,51 @@ jobs:
   core:
     name: Core build and tests
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: 8.0.x
+          global-json-file: global.json
       - name: Build SkylineTogether.Core (without the game)
         run: dotnet build src/SkylineTogether.Core/SkylineTogether.Core.csproj -c Release
       - name: Build the tests
         run: dotnet build tests/SkylineTogether.Core.Tests/SkylineTogether.Core.Tests.csproj -c Release
       - name: Run the tests
-        # the exit code is the number of failed tests
-        run: dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll
+        # the exit code is the number of failed tests; fewer tests than this means some were lost (raise it as the
+        # suite grows; the no-game build runs 4 tests fewer than a build with the game)
+        run: dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll --expect-at-least 1300
+      - name: A failing test fails the run (canary)
+        shell: bash
+        run: |
+          set +e
+          dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll --canary
+          code=$?
+          if [ "$code" -ne 1 ]; then echo "the canary run exited with $code, expected 1"; exit 1; fi
+      - name: Tests under the Turkish and German cultures
+        # the game runs with the player's locale; the soak and seed sweeps are left out for time
+        shell: bash
+        run: |
+          for culture in tr-TR de-DE; do
+            dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll --culture "$culture" -Soak -SeedSweep || exit 1
+          done
+      - name: ApiCheck self-test
+        run: |
+          dotnet build tools/ApiCheck/ApiCheck.csproj -c Release
+          dotnet tools/ApiCheck/bin/Release/net8.0/ApiCheck.dll --self-test
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Installer smoke test (fake profile, the Core DLL as a stand-in mod)
+        run: python tools/installer/smoke_test.py src/SkylineTogether.Core/bin/Release/netstandard2.1/SkylineTogether.Core.dll
 
   ui:
     name: UI module checks
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
       - name: Syntax check
@@ -51,16 +80,27 @@ jobs:
   repo:
     name: Repository checks
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       - name: No personal data in tracked files
         run: python tools/check_personal_data.py
-      - name: No personal data in commit messages or identities
+      - name: No personal data in commit messages or identities (this repository's own pushes)
+        if: github.event_name != 'pull_request'
         run: python tools/check_personal_data.py --commits
+      - name: No personal data in the pull request's commit messages
+        # a contributor's git identity is theirs to publish (CONTRIBUTING.md); their messages are still checked
+        if: github.event_name == 'pull_request'
+        run: python tools/check_personal_data.py --commits "origin/${{ github.base_ref }}..HEAD" --messages-only
       - name: Relative links in Markdown files resolve
         run: python tools/check_links.py
+      - name: The tools compile and their self-tests pass
+        run: |
+          python -m py_compile $(git ls-files 'tools/*.py' 'tools/**/*.py')
+          python tools/test_release_tools.py
+          bash -n tools/build.sh
