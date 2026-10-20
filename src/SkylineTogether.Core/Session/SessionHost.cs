@@ -60,6 +60,19 @@ namespace SkylineTogether.Core.Session
         /// strangers cannot hold handshake slots open for the whole <see cref="HandshakeTimeoutSeconds"/>.
         /// </summary>
         public double HelloTimeoutSeconds = 10;
+
+        /// <summary>
+        /// A connection that was challenged for the password and does not answer within this long is dropped (a joiner's
+        /// game answers within a few seconds, its key derived in the background), so a stranger cannot hold a handshake
+        /// slot for the whole <see cref="HandshakeTimeoutSeconds"/> with a hello and silence.
+        /// </summary>
+        public double ChallengeAnswerTimeoutSeconds = 15;
+
+        /// <summary>
+        /// New connections one remote (Steam ID or address) may open per minute; more are closed at once, before their
+        /// hello (<see cref="ConnectionRateLimiter"/>). An automatic rejoin makes six attempts in about a minute and a half.
+        /// </summary>
+        public int MaxConnectionsPerRemotePerMinute = 20;
         /// <summary>
         /// An admitted joiner that sends nothing at all (not even ping replies) for this long is dropped, so a joiner whose
         /// game hung does not hold the host's simulation forever. Generous, because the joiner's main thread stalls
@@ -228,6 +241,8 @@ namespace SkylineTogether.Core.Session
             public HelloMessage Hello;
             public HandshakeManifest Manifest;
             public bool AwaitingPassword;
+            /// <summary>When the password challenge was sent (<see cref="HostOptions.ChallengeAnswerTimeoutSeconds"/>).</summary>
+            public double ChallengedAt;
             public byte[] HostNonce;
             /// <summary>The remote address (meaningful for direct connections only).</summary>
             public string Address;
@@ -335,12 +350,12 @@ namespace SkylineTogether.Core.Session
         private readonly Dictionary<string, SessionRole> _rememberedRoles = new Dictionary<string, SessionRole>(StringComparer.Ordinal);
         private readonly Queue<string> _rememberedOrder = new Queue<string>();
         // failed or abandoned joins by identity (IdentityKey): the cooldown before the next admission
+        private readonly ConnectionRateLimiter _connectionRate;
         private readonly Dictionary<string, JoinFailures> _joinFailures = new Dictionary<string, JoinFailures>(StringComparer.Ordinal);
         private readonly ByteWriter _body = new ByteWriter(4096);
         private readonly ByteWriter _broadcastEnvelope = new ByteWriter(4096); // a broadcast's shared envelope
         private readonly ByteWriter _payload = new ByteWriter(4096);
         private readonly ByteReader _reader = new ByteReader();
-        private readonly Random _random = new Random();
         private readonly uint _sessionId;
         private readonly byte[] _salt;
         private SnapshotReady _snapshot;
@@ -381,8 +396,11 @@ namespace SkylineTogether.Core.Session
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _clock = clock ?? throw new ArgumentNullException(nameof(clock));
             _log = log ?? throw new ArgumentNullException(nameof(log));
-            _sessionId = (uint)_random.Next(1, int.MaxValue);
+            // cryptographically random (SECURITY.md): the challenge binds the session id
+            byte[] id = SessionCrypto.RandomBytes(4);
+            _sessionId = Math.Max(1u, (uint)(id[0] | id[1] << 8 | id[2] << 16 | id[3] << 24));
             _salt = SessionCrypto.RandomBytes(16);
+            _connectionRate = new ConnectionRateLimiter(options.MaxConnectionsPerRemotePerMinute > 0 ? options.MaxConnectionsPerRemotePerMinute : int.MaxValue, 60);
             _keys = new PasswordKeyCache(_salt, options.DeriveKeysInBackground, options.KeyDerivationScheduler);
         }
 
@@ -526,6 +544,11 @@ namespace SkylineTogether.Core.Session
                 if (!p.Admitted && p.Hello == null && _options.HelloTimeoutSeconds > 0 && now - p.Since > _options.HelloTimeoutSeconds && !grace)
                 {
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "no hello"));
+                    continue;
+                }
+                if (!p.Admitted && p.AwaitingPassword && _options.ChallengeAnswerTimeoutSeconds > 0 && now - p.ChallengedAt > _options.ChallengeAnswerTimeoutSeconds && !grace)
+                {
+                    (drop ?? (drop = new List<(Peer, string)>())).Add((p, "no password answer"));
                     continue;
                 }
                 if (p.Admitted && p.State != PlayerState.Live && _options.MaxJoinSeconds > 0 && now - p.AdmittedAt > _options.MaxJoinSeconds && !grace)
@@ -1124,6 +1147,27 @@ namespace SkylineTogether.Core.Session
         void ITransportEventSink.OnConnected(IConnection connection)
         {
             if (_disposed) return;
+            string remote = connection.Peer.Local ? null
+                            : connection.Peer.SteamId != 0 ? "steam:" + connection.Peer.SteamId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                            : BanList.AddressKey(connection.Peer.Address);
+            if (!_connectionRate.Allow(remote, _clock.Seconds))
+            {
+                // a remote reconnecting in a loop (handshake slots held for others): closed before its hello, logged rarely
+                if (_connectionRate.Refused == 1 || _connectionRate.Refused % 100 == 0)
+                {
+                    _log.Warn(LogCategory.Session, "closed " + _connectionRate.Refused + " connection(s) of remotes that connect more than "
+                                                   + _options.MaxConnectionsPerRemotePerMinute + " times a minute");
+                }
+                try
+                {
+                    connection.Close(0, "too many connections", false);
+                }
+                catch (Exception)
+                {
+                    // already gone
+                }
+                return;
+            }
             var peer = new Peer
             {
                 Id = PeerId.Host,
@@ -1787,6 +1831,7 @@ namespace SkylineTogether.Core.Session
                 return;
             }
             p.AwaitingPassword = true;
+            p.ChallengedAt = now;
             p.HostNonce = SessionCrypto.RandomBytes(16);
             _payload.Reset();
             PasswordChallengeMessage.Write(_payload, new PasswordChallengeMessage { HostNonce = p.HostNonce, Salt = _salt, SessionId = _sessionId });
