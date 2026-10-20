@@ -110,6 +110,9 @@ namespace SkylineTogether.Core.Tests.Session
         public bool Defer;
         public bool IsLoading => PendingDone != null;
 
+        /// <summary>Loads begun.</summary>
+        public int Loads;
+
         public Stream OpenBlobTarget(SnapshotManifest manifest)
         {
             Target = new KeepOpenStream();
@@ -118,6 +121,7 @@ namespace SkylineTogether.Core.Tests.Session
 
         public void BeginLoad(SnapshotManifest manifest, IReadOnlyList<SettingEntry> pushedSettings, Action<LoadOutcome> onDone)
         {
+            Loads++;
             var outcome = new LoadOutcome { Success = !Fail, FailureDetail = Fail ? "missing asset pack" : null };
             if (Defer) PendingDone = onDone;
             else onDone(outcome);
