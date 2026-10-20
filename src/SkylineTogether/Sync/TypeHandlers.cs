@@ -92,11 +92,14 @@ namespace SkylineTogether.Sync
         {
             // deserialize over the current value: fields the save format does not carry keep their local value
             T value = em.GetComponentData<T>(e);
+            T old = value;
             value.Deserialize(r);
             Check(value);
             // a reference that did not resolve (unknown, destroyed or deleted here) would be written as a null
-            // over a valid local reference; an existing entity keeps its value until a record that resolves arrives
-            if (r.Unresolved && r.KeepOnUnresolved) return;
+            // over a valid local reference; an existing entity keeps its value until a record that resolves arrives,
+            // unless the value it would keep names something gone or despawned by this very batch (then the new value,
+            // with the unresolved references null, is the safe one)
+            if (r.Unresolved && r.KeepOnUnresolved && r.KeptValueIsLive(old)) return;
             em.SetComponentData(e, value);
         }
 

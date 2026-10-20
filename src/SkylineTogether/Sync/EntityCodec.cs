@@ -1613,8 +1613,28 @@ namespace SkylineTogether.Sync
                 Entity owner = em.GetComponentData<Game.Common.Owner>(e).m_Owner;
                 if (owner != Entity.Null && !em.Exists(owner)) return "its owner is missing here";
             }
+            // a line that kept its waypoint or segment list (a new list did not resolve here) while an element of the old
+            // one is gone or deleted: the route systems index the elements unchecked
+            if (em.HasBuffer<Game.Routes.RouteWaypoint>(e))
+            {
+                DynamicBuffer<Game.Routes.RouteWaypoint> waypoints = em.GetBuffer<Game.Routes.RouteWaypoint>(e, true);
+                for (int i = 0; i < waypoints.Length; i++)
+                {
+                    if (!IsLiveElement(em, waypoints[i].m_Waypoint)) return "a waypoint of its line is missing or deleted here";
+                }
+            }
+            if (em.HasBuffer<Game.Routes.RouteSegment>(e))
+            {
+                DynamicBuffer<Game.Routes.RouteSegment> segments = em.GetBuffer<Game.Routes.RouteSegment>(e, true);
+                for (int i = 0; i < segments.Length; i++)
+                {
+                    if (!IsLiveElement(em, segments[i].m_Segment)) return "a segment of its line is missing or deleted here";
+                }
+            }
             return null;
         }
+
+        private static bool IsLiveElement(EntityManager em, Entity e) => e == Entity.Null || (em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e));
 
         private static string NodeProblem(EntityManager em, Entity node)
         {

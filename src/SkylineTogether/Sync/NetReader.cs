@@ -120,6 +120,12 @@ namespace SkylineTogether.Sync
             if (Dying.Count > 0 && Dying.Contains(e)) return false;
             return EntityManager.Exists(e) && !EntityManager.HasComponent<Game.Common.Deleted>(e);
         }
+
+        /// <summary>Scratch of <see cref="NetReader.KeptValueIsLive{T}"/>.</summary>
+        internal readonly System.Collections.Generic.List<Entity> KeptRefs = new System.Collections.Generic.List<Entity>();
+
+        /// <summary>Kept values dropped because they named something gone or despawned in the same batch (diagnostics).</summary>
+        public long DeadKeptValues;
     }
 
     /// <summary>
@@ -156,6 +162,36 @@ namespace SkylineTogether.Sync
         }
 
         public bool End(ReaderBlock block) => _inner.End(block);
+
+        /// <summary>
+        /// Whether an existing value the applier is about to keep (its new value names something not here,
+        /// <see cref="KeepOnUnresolved"/>) only names entities that are live: an old reference to an entity that is
+        /// gone, deleted or despawned by the batch being applied would outlive it, and the game's reference systems
+        /// follow such references unchecked. The value's own <c>Serialize</c> names its references.
+        /// </summary>
+        public bool KeptValueIsLive<T>(T value) where T : ISerializable
+        {
+            if (_state == null || !_state.CheckLiveness) return true;
+            System.Collections.Generic.List<Entity> refs = _state.KeptRefs;
+            refs.Clear();
+            try
+            {
+                value.Serialize(new EntityRefCollector(refs, _inner.context));
+                foreach (Entity e in refs)
+                {
+                    if (!_state.IsLive(e))
+                    {
+                        _state.DeadKeptValues++;
+                        return false;
+                    }
+                }
+                return true;
+            }
+            finally
+            {
+                refs.Clear();
+            }
+        }
 
         /// <summary>The bounds check (see <see cref="NetReaderState.Position"/>); a no-op without state.</summary>
         private void Need(long bytes) => _state?.Need(bytes);
