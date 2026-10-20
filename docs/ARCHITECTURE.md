@@ -791,9 +791,12 @@ throws finishes it best effort and tags the entity anyway, and a batch that leav
 as a failed one). A batch that cannot be decoded, or whose despawns cannot be applied, is never acknowledged:
 replication is switched off, which ends the session with a rejoin offer. Mover batches follow the same rule, and their
 despawns are applied (and only then acknowledged) even while the movers feature is off, including batches that arrive
-after it switched off. Value messages wait for queued structure batches at most
-10 s ([`ValueHoldRule`](../src/SkylineTogether.Core/Sync/ValueHoldRule.cs)): their acknowledgement holds block every
-later acknowledgement.
+after it switched off. A value message (simulation or agent values) waits until every structure batch that arrived
+before it is applied, and never for batches that arrived after it
+([`ValueHoldRule`](../src/SkylineTogether.Core/Sync/ValueHoldRule.cs), by acknowledgement sequence number): the entities
+it names exist, no older upsert overwrites its values later, and its acknowledgement hold, which blocks every later
+acknowledgement, ends as the structure apply progresses even when the backlog never clears. Only a full queue (512
+messages) lets the oldest go early.
 On the host, a proposal that throws while being committed is rolled back on its client like a refused one
 (`RejectReason.HostError`).
 

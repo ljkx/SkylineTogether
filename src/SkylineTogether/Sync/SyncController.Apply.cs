@@ -172,7 +172,9 @@ namespace SkylineTogether.Sync
             joining?.ReportBacklog(_inbox.Count);
             RetryZones();
             // client: simulation values after the structure batches, so ids spawned this frame resolve
-            if (!IsHost) _simValues.ApplyIncoming(_inbox.Count);
+            // (each value message waits for the structure batches that arrived before it: the oldest one still queued)
+            long oldestStructure = !IsHost && _inbox.Count > 0 ? _inbox.Peek().Seq : 0;
+            if (!IsHost) _simValues.ApplyIncoming(oldestStructure);
             // client: flow status into the derived flow edges (after the structure apply, so new owners resolve)
             if (!IsHost && Features.FlowStatus.IsAvailable)
             {
@@ -186,7 +188,7 @@ namespace SkylineTogether.Sync
                 }
             }
             // client: agent values once the structure batches that spawn them are applied
-            if (!IsHost && Features.Agents.IsAvailable) _agents.ApplyIncoming(_inbox.Count);
+            if (!IsHost && Features.Agents.IsAvailable) _agents.ApplyIncoming(oldestStructure);
             else if (!IsHost) _agents.DropHeld(); // nothing applies them while off; their acknowledgement holds must not stay
             // client: per-player chirp likes, event target lists, weather phenomenon hotspot frames, tree growth
             if (!IsHost && Features.Events.IsAvailable)

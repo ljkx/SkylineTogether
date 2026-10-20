@@ -666,7 +666,7 @@ namespace SkylineTogether.Sync
         /// Client frame start, right after the structure apply (so ids spawned in the same frame resolve): attention
         /// values apply on arrival, inspection samples when the follower clock reaches their tick.
         /// </summary>
-        public void ApplyIncoming(int structureBacklog = 0)
+        public void ApplyIncoming(long oldestStructureSeq = 0)
         {
             if (_codec == null || !IsLiveClient)
             {
@@ -678,9 +678,10 @@ namespace SkylineTogether.Sync
                 int n = 0;
                 // values sent after structure batches that are still queued (budgeted apply after
                 // go-live or a burst) were applied first: values of entities not spawned yet were dropped for good and
-                // an older Upsert applied afterwards overwrote newer values. They wait like the agent values do.
-                bool hold = ValueHoldRule.Wait(structureBacklog, _inbox.Count, MaxHeldValueMessages, _inbox.OldestQueuedAt, Diagnostics.Perf.Now); // not without end
-                while (!hold && n++ < MaxInboxPerFrame && _inbox.TryDequeueHeld(out byte[] data, out long held))
+                // an older Upsert applied afterwards overwrote newer values. Each waits for the structure batches that
+                // arrived before it (ValueHoldRule), like the agent values do.
+                while (n++ < MaxInboxPerFrame && !ValueHoldRule.Wait(_inbox.OldestHold, oldestStructureSeq, _inbox.Count, MaxHeldValueMessages)
+                       && _inbox.TryDequeueHeld(out byte[] data, out long held))
                 {
                     try
                     {

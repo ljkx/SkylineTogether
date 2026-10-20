@@ -1184,10 +1184,11 @@ namespace SkylineTogether.Sync
         // ================================================================== client
 
         /// <summary>
-        /// Client frame start, after the structure batches (so agents spawned in the same frame resolve). Values wait while
-        /// structure batches are still queued, unless too many are held.
+        /// Client frame start, after the structure batches (so agents spawned in the same frame resolve). Each value message
+        /// waits until the structure batches that arrived before it are applied (<see cref="ValueHoldRule"/>;
+        /// <paramref name="oldestStructureSeq"/>: the oldest structure batch still queued, 0 when none).
         /// </summary>
-        public void ApplyIncoming(int structureBacklog)
+        public void ApplyIncoming(long oldestStructureSeq)
         {
             if (_codec == null || !IsLiveClient)
             {
@@ -1195,14 +1196,15 @@ namespace SkylineTogether.Sync
                 return;
             }
             // values wait for the structure backlog, but not without end (ValueHoldRule)
-            if (_inbox.Count == 0 || ValueHoldRule.Wait(structureBacklog, _inbox.Count, MaxHeldMessages, _inbox.OldestQueuedAt, Now)) return;
+            if (_inbox.Count == 0 || ValueHoldRule.Wait(_inbox.OldestHold, oldestStructureSeq, _inbox.Count, MaxHeldMessages)) return;
             long start = Perf.Start();
             try
             {
                 double now = Now;
                 int n = 0;
                 bool any = false;
-                while (n++ < MaxInboxPerFrame && _inbox.TryDequeue(out byte[] data))
+                // message by message: one that arrived after a structure batch still queued waits for it
+                while (n++ < MaxInboxPerFrame && !ValueHoldRule.Wait(_inbox.OldestHold, oldestStructureSeq, _inbox.Count, MaxHeldMessages) && _inbox.TryDequeue(out byte[] data))
                 {
                     try
                     {

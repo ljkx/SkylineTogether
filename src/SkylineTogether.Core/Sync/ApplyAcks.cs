@@ -308,6 +308,12 @@ namespace SkylineTogether.Core.Sync
         public double OldestQueuedAt => _queue.Count > 0 ? _queue.Peek().At : double.NaN;
 
         /// <summary>
+        /// The oldest queued message's hold (its acknowledgement sequence number: every <c>Epoch</c> numbered below it
+        /// arrived before it, <see cref="ValueHoldRule"/>); 0 when the queue is empty or nothing is held (no session).
+        /// </summary>
+        public long OldestHold => _queue.Count > 0 ? _queue.Peek().Seq : 0;
+
+        /// <summary>
         /// Takes the oldest message and releases its hold: the caller applies it before anything else can acknowledge
         /// (acknowledgements are sent at the end of the frame).
         /// </summary>

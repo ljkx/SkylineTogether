@@ -145,7 +145,7 @@ another object.
   the same player connected again no longer makes that player wait; a player who rejoins after a crash keeps their
   name instead of "Name (2)"; a player's last messages before leaving are no longer lost.
 - **Joined players are not dropped while catching up** on a slow PC: values waiting for the city's updates no longer
-  hold back the confirmations the host watches.
+  hold back the confirmations the host watches, and still never overtake the updates sent before them.
 - Smaller fixes: a player name with `{...}` in it shows as typed; reads from the graphics card that never finish now
   time out instead of waiting forever; electricity and water flow updates are ignored while that sync is off; a tool
   edit of an object the host changed in the same frame is sent; the warning-icon filter and the viewer restrictions
