@@ -37,7 +37,11 @@ namespace SkylineTogether.Sync
 
         private readonly SessionManager _sessions;
         private readonly ILog _log;
-        private readonly Dictionary<long, ulong> _sentHashes = new Dictionary<long, ulong>();
+        // host: what every peer's copy of each series ends at (appends continue it, StatisticsDelta)
+        private readonly Dictionary<long, StatisticSentState> _sentStates = new Dictionary<long, StatisticSentState>();
+        // client: the host buffer length each local series ends at
+        private readonly Dictionary<long, long> _copyTotals = new Dictionary<long, long>();
+        private long _appendGaps;
         private readonly Queue<byte[]> _inbox = new Queue<byte[]>();
         private readonly List<PeerId> _newPeers = new List<PeerId>();
         /// <summary>Per joining peer, the series' content hashes at its admission (what its snapshot holds).</summary>
@@ -91,21 +95,22 @@ namespace SkylineTogether.Sync
             get
             {
                 if (IsHost && _sent > 0) return "statistics: " + _sent + " updates sent";
-                if (IsLiveClient && _applied > 0) return "statistics: " + _applied + " updates applied";
+                if (IsLiveClient && _applied > 0) return "statistics: " + _applied + " updates applied" + (_appendGaps > 0 ? ", " + _appendGaps + " appends that did not continue the local copy" : "");
                 return "";
             }
         }
 
         private void Reset()
         {
-            _sentHashes.Clear();
+            _sentStates.Clear();
+            _copyTotals.Clear();
             _inbox.Clear();
             _newPeers.Clear();
             _joinBaselines.Clear();
             _lastCount = int.MinValue;
             _lastFrame = 0;
             _nextPoll = _nextFull = 0;
-            _sent = _applied = 0;
+            _sent = _applied = _appendGaps = 0;
         }
 
         private bool EnsureWorld()
@@ -177,10 +182,11 @@ namespace SkylineTogether.Sync
                 foreach (StatisticSeries s in series)
                 {
                     long key = Key(s.Type, s.Parameter);
-                    ulong hash = s.ContentHash();
-                    if (_sentHashes.TryGetValue(key, out ulong old) && old == hash) continue;
-                    _sentHashes[key] = hash;
-                    changed.Add(s);
+                    _sentStates.TryGetValue(key, out StatisticSentState sentState);
+                    // only the samples appended since the last message (the whole series when it does not continue)
+                    StatisticSeries plan = StatisticsDelta.Plan(sentState, s, out StatisticSentState next);
+                    _sentStates[key] = next;
+                    if (plan != null) changed.Add(plan);
                 }
                 bool first = _lastCount == int.MinValue;
                 _lastCount = count;
@@ -219,7 +225,7 @@ namespace SkylineTogether.Sync
             _out.Reset();
             uint frame = _lastSampleFrame != null ? (uint)_lastSampleFrame.GetValue(_stats) : 0;
             if (series.Count > StatisticsMessage.MaxSeries) series.RemoveRange(StatisticsMessage.MaxSeries, series.Count - StatisticsMessage.MaxSeries);
-            StatisticsMessage.Write(_out, _stats.sampleCount, frame, series);
+            StatisticsMessage.WriteMixed(_out, _stats.sampleCount, frame, series);
         }
 
         /// <summary>Every series of the host's lookup (writers completed first).</summary>
@@ -242,7 +248,7 @@ namespace SkylineTogether.Sync
                     // the newest samples (the buffers grow without end; the charts read from the end and pad
                     // the front when a buffer is shorter than the sample count, StatisticsUISystem.EnsureDataSize)
                     int start = buffer.Length - n;
-                    var s = new StatisticSeries { Type = (int)pairs.Keys[i].type, Parameter = pairs.Keys[i].parameter, Values = new double[n], Totals = new double[n] };
+                    var s = new StatisticSeries { Type = (int)pairs.Keys[i].type, Parameter = pairs.Keys[i].parameter, Values = new double[n], Totals = new double[n], TotalLength = buffer.Length };
                     for (int k = 0; k < n; k++)
                     {
                         s.Values[k] = buffer[start + k].m_Value;
@@ -310,9 +316,29 @@ namespace SkylineTogether.Sync
                     continue;
                 }
                 DynamicBuffer<CityStatistic> buffer = em.GetBuffer<CityStatistic>(e);
-                int n = Math.Min(s.Values.Length, s.Totals.Length);
+                long seriesKey = Key(s.Type, s.Parameter);
+                double[] values = s.Values, totals = s.Totals;
+                if (s.Append)
+                {
+                    // a copy not written by the host's messages yet is the snapshot's: the host's whole buffer then
+                    if (!_copyTotals.TryGetValue(seriesKey, out long copyTotal)) copyTotal = buffer.Length;
+                    var oldValues = new double[buffer.Length];
+                    var oldTotals = new double[buffer.Length];
+                    for (int k = 0; k < buffer.Length; k++)
+                    {
+                        oldValues[k] = buffer[k].m_Value;
+                        oldTotals[k] = buffer[k].m_TotalValue;
+                    }
+                    if (!StatisticsDelta.TryAppend(oldValues, oldTotals, copyTotal, s, out values, out totals))
+                    {
+                        _appendGaps++; // left as it is until the series is sent whole
+                        continue;
+                    }
+                }
+                int n = Math.Min(values.Length, totals.Length);
                 buffer.ResizeUninitialized(n);
-                for (int k = 0; k < n; k++) buffer[k] = new CityStatistic { m_Value = Finite(s.Values[k]), m_TotalValue = Finite(s.Totals[k]) };
+                for (int k = 0; k < n; k++) buffer[k] = new CityStatistic { m_Value = Finite(values[k]), m_TotalValue = Finite(totals[k]) };
+                _copyTotals[seriesKey] = s.TotalLength;
                 written++;
             }
             // the charts allocate this many samples (EnsureDataSize); a wild value is clamped
