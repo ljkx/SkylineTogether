@@ -157,7 +157,7 @@ namespace SkylineTogether.Core.Session
         /// A snapshot the save system has not delivered after this long is abandoned (the waiting joiners are
         /// told, the next join requests a new one); without it a lost callback blocked every later join.
         /// </summary>
-        public double SnapshotTimeoutSeconds = 360; // beyond the joiner's own 300 s wait (ClientOptions.SnapshotWaitTimeoutSeconds)
+        public double SnapshotTimeoutSeconds = 360; // before the joiner's own 420 s wait (ClientOptions.SnapshotWaitTimeoutSeconds) ends
 
         /// <summary>The largest message a connection may send before it is admitted (handshake messages only).</summary>
         public int UnadmittedMaxBodyBytes = 1024 * 1024;
@@ -598,6 +598,7 @@ namespace SkylineTogether.Core.Session
                     if (p.Sender.IsFailed)
                     {
                         _log.Warn(LogCategory.Join, p.Name + ": snapshot transfer failed: " + p.Sender.FailureReason);
+                        if (p.Sender.SourceFailed) p.NotJoinersFault = true; // the host could not read its own snapshot
                         (drop ?? (drop = new List<(Peer, string)>())).Add((p, "snapshot transfer failed"));
                         continue;
                     }
@@ -1083,13 +1084,19 @@ namespace SkylineTogether.Core.Session
 
         private bool IsBanned(Peer p) => _options.Bans != null && _options.Bans.IsBanned(p.SteamAuthenticated ? p.SteamId : 0, p.Direct || !p.SteamAuthenticated ? p.Address : null);
 
-        /// <summary>The names already taken in the session: the host's and every other connection's that sent a hello.</summary>
+        /// <summary>
+        /// The names already taken in the session: the host's and every other connection's that was admitted or proved the
+        /// password (a stranger's bare hello does not reserve a name). A stale connection of the same authenticated Steam
+        /// ID does not count: the newer one replaces it once admitted (a player rejoining after a crash kept "Name (2)").
+        /// </summary>
         private List<string> OtherNames(Peer self)
         {
             var names = new List<string> { _options.HostName ?? "" };
             foreach (Peer o in _peers.Values)
             {
-                if (o != self && (o.Admitted || o.Hello != null)) names.Add(o.Name);
+                if (o == self || !(o.Admitted || (o.Hello != null && o.Authenticated))) continue;
+                if (self.SteamAuthenticated && o.SteamAuthenticated && self.SteamId != 0 && o.SteamId == self.SteamId) continue;
+                names.Add(o.Name);
             }
             return names;
         }
@@ -1595,6 +1602,7 @@ namespace SkylineTogether.Core.Session
                 return false;
             }
             _log.Info(LogCategory.Session, p.Name + " connected again; dropping the old connection (" + old.State + ")");
+            old.NotJoinersFault = true; // replaced by the same player's newer connection: no failed join
             Remove(old, 0, "replaced by a new connection", true);
             return true;
         }
@@ -1922,6 +1930,9 @@ namespace SkylineTogether.Core.Session
         private void Authenticated(Peer p, byte[] hostProof)
         {
             p.Authenticated = true;
+            // the name it is known by from now on, unique among the admitted and authenticated players (its hello's name
+            // was made unique before anyone proved anything)
+            if (p.Hello != null) p.Name = PlayerNames.Unique(string.IsNullOrEmpty(p.Hello.DisplayName) ? p.Name : p.Hello.DisplayName, OtherNames(p));
             p.Channel.MaxBodyBytes = _options.UnadmittedMaxBodyBytes;
             _payload.Reset();
             _payload.WriteVarUInt32((uint)hostProof.Length);
@@ -2342,6 +2353,7 @@ namespace SkylineTogether.Core.Session
             catch (Exception ex)
             {
                 _log.Error(LogCategory.Join, p.Name + ": could not start the snapshot transfer", ex);
+                p.NotJoinersFault = true; // the host's own failure
                 Remove(p, 0, "snapshot transfer failed", true);
             }
         }

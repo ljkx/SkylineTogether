@@ -329,14 +329,15 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void AJoinerGivesUpWhenTheHostNeverSendsTheCity()
         {
-            var rig = new SessionRig();
+            // a host whose own snapshot watchdog never fires (it gives up first, at 360 s, otherwise: JoinFaultTests)
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty", SnapshotTimeoutSeconds = 0 });
             rig.Snapshots.Hold = true;
             var (client, _, _) = rig.AddClient("Anna");
             rig.Run(100);
             Assert.Equal(ClientState.WaitingForSnapshot, client.State, client.EndReason);
-            RunSeconds(rig, 200);
+            RunSeconds(rig, 400);
             Assert.Equal(ClientState.WaitingForSnapshot, client.State, "the host may take minutes to save a big city");
-            RunSeconds(rig, 110);
+            RunSeconds(rig, 30);
             Assert.Equal(ClientState.Ended, client.State);
             Assert.Contains("did not send the city", client.EndReason);
             rig.Run(5);

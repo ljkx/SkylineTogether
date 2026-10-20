@@ -328,6 +328,9 @@ namespace SkylineTogether.Core.Transport
         }
 
         /// <summary>Reading the source failed (or the outbox refused a chunk for good); see <see cref="FailureReason"/>.</summary>
+        /// <summary>The failure is the sender's own: its source (the host's snapshot file) could not be read.</summary>
+        public bool SourceFailed { get; private set; }
+
         public bool IsFailed
         {
             get { lock (_lock) return _failed; }
@@ -400,6 +403,7 @@ namespace SkylineTogether.Core.Transport
             }
             catch (Exception e) when (!(e is OutOfMemoryException))
             {
+                SourceFailed = true;
                 Fail("cannot read chunk " + index.ToString(CultureInfo.InvariantCulture) + " from the source", e);
                 return false;
             }

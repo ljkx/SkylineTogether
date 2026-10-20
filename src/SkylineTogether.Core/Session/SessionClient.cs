@@ -21,7 +21,7 @@ namespace SkylineTogether.Core.Session
         /// <summary>Longest time for connecting and the handshake together.</summary>
         public double ConnectTimeoutSeconds = 30;
         /// <summary>Longest wait for the host's snapshot after the welcome (the host saves the city first).</summary>
-        public double SnapshotWaitTimeoutSeconds = 300;
+        public double SnapshotWaitTimeoutSeconds = 420; // beyond the host's own 360 s (HostOptions.SnapshotTimeoutSeconds): the host gives up first and says so, which is not the joiner's failure
         /// <summary>The download is abandoned when no chunk arrived for this long.</summary>
         public double DownloadStallTimeoutSeconds = 120;
         /// <summary>Longest wait for the host's "live" after the city loaded.</summary>
