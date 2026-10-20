@@ -267,7 +267,8 @@ namespace SkylineTogether.Diagnostics
                 + ". Keep one copy: delete the Mods\\SkylineTogether folder or unsubscribe on Paradox Mods, then restart the game.");
             try
             {
-                string text = LocaleSource.Resolve("st.toast.installedTwice", "COPIES", string.Join("; ", lines));
+                // the copies' folders are in the user folder: written as %USERPROFILE% like every other notification
+                string text = Core.Diagnostics.PathRedactor.Redact(LocaleSource.Resolve("st.toast.installedTwice", "COPIES", string.Join("; ", lines)));
                 Game.PSI.NotificationSystem.Push(DuplicateNotificationId, title: Game.UI.Localization.LocalizedString.Value(LocaleSource.Resolve("st.toast.title")),
                     text: Game.UI.Localization.LocalizedString.Value(text), progressState: ProgressState.Warning,
                     onClicked: () => Game.PSI.NotificationSystem.Pop(DuplicateNotificationId));

@@ -124,6 +124,27 @@ namespace SkylineTogether.Core.Diagnostics
             return sb.ToString();
         }
 
+        /// <summary>
+        /// The 8.3 short form of <paramref name="profile"/> (<c>USERNA~1</c> for <c>username</c>) when <paramref name="tempPath"/> uses
+        /// it, else null. Windows can set TEMP to the short form of the profile, and a path built from it would carry
+        /// the user name past the long root.
+        /// </summary>
+        public static string ShortProfileFrom(string profile, string tempPath)
+        {
+            if (string.IsNullOrEmpty(profile) || string.IsNullOrEmpty(tempPath) || tempPath.IndexOf('~') < 0) return null;
+            char[] separators = { '\\', '/' };
+            string[] p = TrimSeparators(profile).Split(separators);
+            string[] t = tempPath.Split(separators);
+            if (p.Length < 2 || t.Length <= p.Length) return null;
+            for (int i = 0; i < p.Length - 1; i++)
+            {
+                if (!string.Equals(p[i], t[i], StringComparison.OrdinalIgnoreCase)) return null;
+            }
+            string last = t[p.Length - 1];
+            if (last.IndexOf('~') <= 0 || string.Equals(last, p[p.Length - 1], StringComparison.OrdinalIgnoreCase)) return null;
+            return string.Join(tempPath.IndexOf('\\') >= 0 ? "\\" : "/", t, 0, p.Length);
+        }
+
         private static PathRedactor FromEnvironment()
         {
             try
@@ -131,6 +152,18 @@ namespace SkylineTogether.Core.Diagnostics
                 string profile = Folder(Environment.SpecialFolder.UserProfile, "USERPROFILE");
                 var roots = new List<KeyValuePair<string, string>>();
                 if (!string.IsNullOrEmpty(profile)) roots.Add(new KeyValuePair<string, string>(profile, UserProfileToken));
+                // the temp folder can name the profile in its 8.3 short form (USERNA~1 for a profile folder "username")
+                string tempPath = null;
+                try
+                {
+                    tempPath = System.IO.Path.GetTempPath();
+                }
+                catch (Exception)
+                {
+                    // no temp folder
+                }
+                string shortProfile = ShortProfileFrom(profile, tempPath);
+                if (shortProfile != null) roots.Add(new KeyValuePair<string, string>(shortProfile, UserProfileToken));
                 // AppData can be redirected outside the profile (roaming profiles); inside it, the profile root covers it
                 AddOutside(roots, profile, Folder(Environment.SpecialFolder.LocalApplicationData, "LOCALAPPDATA"), "%LOCALAPPDATA%");
                 AddOutside(roots, profile, Folder(Environment.SpecialFolder.ApplicationData, "APPDATA"), "%APPDATA%");

@@ -105,6 +105,23 @@ namespace SkylineTogether.Core.Tests.Diagnostics
         }
 
         [Test]
+        public void TheShortFormOfTheProfileFromTheTempPathIsARootToo()
+        {
+            // a profile folder outside C:\Users keeps the example free of anything that looks like a real user folder
+            string shortProfile = PathRedactor.ShortProfileFrom(@"D:\Home\anna.smith", @"D:\Home\ANNASM~1\AppData\Local\Temp\");
+            Assert.Equal(@"D:\Home\ANNASM~1", shortProfile);
+            Assert.Equal(null, PathRedactor.ShortProfileFrom(@"D:\Home\anna.smith", @"D:\Home\anna.smith\AppData\Local\Temp\"), "the long form");
+            Assert.Equal(null, PathRedactor.ShortProfileFrom(@"D:\Home\anna.smith", @"E:\TEMP~1\"), "a temp folder elsewhere");
+            Assert.Equal(null, PathRedactor.ShortProfileFrom(@"D:\Home\anna.smith", null));
+            var r = new PathRedactor(new[]
+            {
+                new KeyValuePair<string, string>(@"D:\Home\anna.smith", PathRedactor.UserProfileToken),
+                new KeyValuePair<string, string>(shortProfile, PathRedactor.UserProfileToken),
+            }, "anna.smith");
+            Assert.Equal(@"snapshot in %USERPROFILE%\AppData\Local\Temp\st-123", r.Apply(@"snapshot in D:\Home\ANNASM~1\AppData\Local\Temp\st-123"));
+        }
+
+        [Test]
         public void AnIpv4AddressKeepsItsFirstThreeParts()
         {
             Assert.Equal("203.0.113.x", AddressMask.Host("203.0.113.7"));
