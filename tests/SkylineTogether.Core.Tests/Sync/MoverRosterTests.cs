@@ -195,5 +195,30 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.Equal(1L, audit.Requested);
             Assert.Equal(6L, audit.Rosters);
         }
+    
+        [Test]
+        public void AMoverThatNeverArrivesIsAskedForWithGrowingPauses()
+        {
+            var audit = new MoverRosterAudit();
+            var remove = new List<uint>();
+            var request = new List<uint>();
+            uint[] host = Runs(100, 101).ToArray();
+            var asked = new List<int>();
+            for (int roster = 1; roster <= 120; roster++)
+            {
+                request.Clear();
+                audit.OnRoster(100, 100, host, new uint[] { 100 }, remove, request); // 101 can never be created here
+                if (request.Count > 0) asked.Add(roster);
+            }
+            Assert.SequenceEqual(new[] { 2, 5, 10, 19, 36, 69 }, asked.ToArray(), "gaps of 3, 5, 9, 17, 33 rosters, then 66 (the cap)");
+            Assert.True(audit.BackedOff > 100);
+
+            // once it arrives it starts over
+            audit.OnRoster(100, 100, host, new uint[] { 100, 101 }, remove, request);
+            request.Clear();
+            audit.OnRoster(100, 100, host, new uint[] { 100 }, remove, request);
+            audit.OnRoster(100, 100, host, new uint[] { 100 }, remove, request);
+            Assert.SequenceEqual(new uint[] { 101 }, request, "missing twice again: asked at once");
+        }
     }
 }

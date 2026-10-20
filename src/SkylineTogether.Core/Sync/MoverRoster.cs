@@ -157,10 +157,23 @@ namespace SkylineTogether.Core.Sync
         /// <summary>Missing ids remembered at most (more are compared again next pass).</summary>
         public const int MaxTracked = 16384;
 
+        /// <summary>
+        /// The longest wait, in rosters of the id's window, between two requests of a mover that keeps not arriving (the
+        /// waits double from 1: a mover this client can never create, for a vehicle asset it lacks, was asked for and
+        /// rebuilt by the host about once a minute for the whole session).
+        /// </summary>
+        public const int MaxBackoffRosters = 64;
+
         private readonly HashSet<uint> _missingOnce = new HashSet<uint>();
         private readonly List<uint> _extra = new List<uint>();
         private readonly List<uint> _missing = new List<uint>();
         private readonly HashSet<uint> _previous = new HashSet<uint>();
+        private readonly HashSet<uint> _missingNow = new HashSet<uint>();
+        private readonly Dictionary<uint, (int Requests, int Wait)> _backoff = new Dictionary<uint, (int, int)>();
+        private readonly List<uint> _backoffScratch = new List<uint>();
+
+        /// <summary>Requests skipped because the mover was asked for before and still did not arrive.</summary>
+        public long BackedOff { get; private set; }
 
         /// <summary>Rosters compared.</summary>
         public long Rosters { get; private set; }
@@ -177,7 +190,8 @@ namespace SkylineTogether.Core.Sync
         public void Clear()
         {
             _missingOnce.Clear();
-            Rosters = Removed = Requested = 0;
+            _backoff.Clear();
+            Rosters = Removed = Requested = BackedOff = 0;
         }
 
         /// <summary>
@@ -202,18 +216,37 @@ namespace SkylineTogether.Core.Sync
                 if (id >= first && id < end) _previous.Add(id);
             }
             foreach (uint id in _previous) _missingOnce.Remove(id);
+            _missingNow.Clear();
             foreach (uint id in _missing)
             {
+                _missingNow.Add(id);
                 if (_previous.Contains(id))
                 {
+                    if (_backoff.TryGetValue(id, out (int Requests, int Wait) b) && b.Wait > 0)
+                    {
+                        // asked for before and still not here: wait (it stays tracked as missing)
+                        _backoff[id] = (b.Requests, b.Wait - 1);
+                        _missingOnce.Add(id);
+                        BackedOff++;
+                        continue;
+                    }
                     request.Add(id);
                     Requested++;
+                    int requests = b.Requests + 1;
+                    if (_backoff.Count < MaxTracked || _backoff.ContainsKey(id)) _backoff[id] = (requests, Math.Min(MaxBackoffRosters, (1 << Math.Min(requests, 7)) - 1));
                 }
                 else if (_missingOnce.Count < MaxTracked)
                 {
                     _missingOnce.Add(id);
                 }
             }
+            // a mover of this window that arrived (or that the host no longer has) starts over
+            _backoffScratch.Clear();
+            foreach (uint id in _backoff.Keys)
+            {
+                if (id >= first && id < end && !_missingNow.Contains(id)) _backoffScratch.Add(id);
+            }
+            foreach (uint id in _backoffScratch) _backoff.Remove(id);
         }
     }
 }

@@ -151,6 +151,7 @@ namespace SkylineTogether.Sync
             _active = false;
             _pendingLive = false;
             _pendingLinks.Clear();
+            _releasedVehicles.Clear();
             _linksApplied = 0;
             _batches.Clear();
             _motion.Clear();
@@ -302,6 +303,60 @@ namespace SkylineTogether.Sync
             }
             if (_pendingLinks.Count > 0) RetryLinks(em);
             if (_rosterRequests.Count > 0) SendRosterRequests();
+            if (_releasedVehicles.Count > 0) ReleaseStrayRiders(em);
+        }
+
+        /// <summary>Vehicles deleted here since the last stray-rider pass (<see cref="ReleaseStrayRiders"/>).</summary>
+        private readonly HashSet<Entity> _releasedVehicles = new HashSet<Entity>();
+        private readonly List<(Entity Rider, Entity Vehicle)> _strayRiders = new List<(Entity, Entity)>();
+        private EntityQuery _ridingQuery;
+        private World _ridingWorld;
+
+        /// <summary>
+        /// Riders attached to a vehicle deleted here (<see cref="Relative"/> plus <see cref="CurrentVehicle"/>) that its
+        /// passenger list did not name (the list was overwritten by host values that dropped an unresolved element): they
+        /// leave it like the listed ones. RelativeObjectSystem indexes the parent's bone history unchecked, a native crash
+        /// for a rider near the camera once the vehicle is destroyed. Only bone-attached riders are scanned (few).
+        /// </summary>
+        private void ReleaseStrayRiders(EntityManager em)
+        {
+            try
+            {
+                if (_ridingWorld != _world)
+                {
+                    _ridingWorld = _world;
+                    _ridingQuery = em.CreateEntityQuery(new EntityQueryDesc
+                    {
+                        All = new[] { ComponentType.ReadOnly<CurrentVehicle>(), ComponentType.ReadOnly<Relative>() },
+                        None = new[] { ComponentType.ReadOnly<Deleted>(), ComponentType.ReadOnly<Game.Tools.Temp>() },
+                    });
+                }
+                if (_ridingQuery.IsEmptyIgnoreFilter) return;
+                _strayRiders.Clear();
+                NativeArray<Entity> riders = _ridingQuery.ToEntityArray(Allocator.Temp);
+                try
+                {
+                    foreach (Entity rider in riders)
+                    {
+                        Entity vehicle = em.GetComponentData<CurrentVehicle>(rider).m_Vehicle;
+                        if (_releasedVehicles.Contains(vehicle)) _strayRiders.Add((rider, vehicle));
+                    }
+                }
+                finally
+                {
+                    riders.Dispose();
+                }
+                foreach ((Entity rider, Entity vehicle) in _strayRiders) ReleaseRider(em, rider, vehicle);
+                _strayRiders.Clear();
+            }
+            catch (Exception ex)
+            {
+                NoteFailure("releasing riders of deleted vehicles failed: " + ex.Message);
+            }
+            finally
+            {
+                _releasedVehicles.Clear();
+            }
         }
 
         private void GoLive(EntityManager em)
@@ -716,6 +771,13 @@ namespace SkylineTogether.Sync
             if (!_ids.MayBind(netId)) return Entity.Null; // beyond the host's announced id range
             Entity prefab = _ids.GetEntity(rec.PrefabNetId);
             if (prefab == Entity.Null || !em.Exists(prefab)) return Entity.Null;
+            // only a vehicle or creature prefab makes a mover (with prefab ids out of step, the fallback archetype of a
+            // building prefab created a building bound as a mover)
+            if (!em.HasComponent<MovingObjectData>(prefab) && !em.HasComponent<VehicleData>(prefab) && !em.HasComponent<CreatureData>(prefab))
+            {
+                NoteFailure("mover #" + netId + " names a prefab that is no vehicle or creature here; not created");
+                return Entity.Null;
+            }
             Archetypes types = TypesOf(em, prefab, rec.TrainController);
             EntityArchetype archetype = ArchetypeOf(em, prefab, rec.TrainController, rec.Kind == MoverKind.Stopped);
             if (!archetype.Valid || types == null) return Entity.Null;
@@ -798,6 +860,7 @@ namespace SkylineTogether.Sync
         /// </summary>
         private void ReleaseRiders(EntityManager em, Entity vehicle)
         {
+            _releasedVehicles.Add(vehicle); // riders its list does not name are released at the end of the apply
             ReleasePassengers(em, vehicle);
             if (!em.HasBuffer<LayoutElement>(vehicle)) return;
             DynamicBuffer<LayoutElement> layout = em.GetBuffer<LayoutElement>(vehicle, true);
@@ -815,22 +878,25 @@ namespace SkylineTogether.Sync
             DynamicBuffer<Passenger> list = em.GetBuffer<Passenger>(vehicle, true);
             var riders = new Entity[list.Length];
             for (int i = 0; i < list.Length; i++) riders[i] = list[i].m_Passenger;
-            foreach (Entity rider in riders)
+            _releasedVehicles.Add(vehicle);
+            foreach (Entity rider in riders) ReleaseRider(em, rider, vehicle);
+        }
+
+        private void ReleaseRider(EntityManager em, Entity rider, Entity vehicle)
+        {
+            if (rider == Entity.Null || !em.Exists(rider) || em.HasComponent<Deleted>(rider)) return;
+            if (em.HasComponent<CurrentVehicle>(rider) && em.GetComponentData<CurrentVehicle>(rider).m_Vehicle != vehicle) return;
+            Transform at = em.Exists(vehicle) && em.HasComponent<Transform>(vehicle) ? em.GetComponentData<Transform>(vehicle)
+                           : em.HasComponent<Transform>(rider) ? em.GetComponentData<Transform>(rider) : default;
+            if (em.HasComponent<Relative>(rider)) em.RemoveComponent<Relative>(rider);
+            if (em.HasComponent<CurrentVehicle>(rider)) em.RemoveComponent<CurrentVehicle>(rider);
+            ExitVehicle(em, rider, at);
+            if (!em.HasComponent<Unspawned>(rider))
             {
-                if (rider == Entity.Null || !em.Exists(rider) || em.HasComponent<Deleted>(rider)) continue;
-                if (em.HasComponent<CurrentVehicle>(rider) && em.GetComponentData<CurrentVehicle>(rider).m_Vehicle != vehicle) continue;
-                Transform at = em.HasComponent<Transform>(vehicle) ? em.GetComponentData<Transform>(vehicle)
-                               : em.HasComponent<Transform>(rider) ? em.GetComponentData<Transform>(rider) : default;
-                if (em.HasComponent<Relative>(rider)) em.RemoveComponent<Relative>(rider);
-                if (em.HasComponent<CurrentVehicle>(rider)) em.RemoveComponent<CurrentVehicle>(rider);
-                ExitVehicle(em, rider, at);
-                if (!em.HasComponent<Unspawned>(rider))
-                {
-                    em.AddComponent<Unspawned>(rider);
-                    if (!em.HasComponent<BatchesUpdated>(rider)) em.AddComponent<BatchesUpdated>(rider);
-                }
-                _ridersReleased++;
+                em.AddComponent<Unspawned>(rider);
+                if (!em.HasComponent<BatchesUpdated>(rider)) em.AddComponent<BatchesUpdated>(rider);
             }
+            _ridersReleased++;
         }
 
         /// <summary>
