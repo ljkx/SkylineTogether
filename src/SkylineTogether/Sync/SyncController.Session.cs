@@ -369,6 +369,9 @@ namespace SkylineTogether.Sync
             {
                 foreach (uint id in _scratchIds)
                 {
+                    // a grant the peer used and that waits for its despawn (pending or staged in an unsent batch) is
+                    // released by that despawn, never here (its quarantine would start before every peer saw it)
+                    if (_staged.Contains(id) || _ids.IsDespawnPending(id)) continue;
                     if (_ids.GetEntity(id) == Entity.Null && _ids.Ids.IsAllocated(id) && _ids.Ids.Release(id)) returned++;
                 }
             }

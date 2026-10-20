@@ -261,6 +261,9 @@ namespace SkylineTogether.Sync
         /// <summary>Host: the batch carrying the staged despawns was handed to the peers; their ids enter the quarantine.</summary>
         public int ReleaseStaged(StagedReleases staged) => staged == null || staged.Count == 0 ? 0 : staged.Commit(Ids);
 
+        /// <summary>Host: whether <paramref name="netId"/> was unbound and waits for its despawn (<see cref="TakePendingDespawns"/>).</summary>
+        public bool IsDespawnPending(uint netId) => _pendingDespawnSet.Contains(netId);
+
         /// <summary>Host: ids unbound without a despawn on the wire; the caller writes despawns and releases them.</summary>
         public bool TakePendingDespawns(List<uint> output)
         {

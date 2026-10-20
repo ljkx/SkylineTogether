@@ -1123,6 +1123,47 @@ namespace SkylineTogether.Sync
             }
             if (_rollBackScratch.Count > 0) result.Problems.Add(_rollBackScratch.Count + " new entities rolled back after the apply failed");
             _rollBackScratch.Clear();
+            // a complete new entity of this apply can still dangle: an edge whose node's spawn was dropped earlier in the
+            // same apply (the dangling pass at the end of the apply did not run). Those go too, repeatedly (a dropped node
+            // takes its edges with it)
+            for (int round = 0; round < 8; round++)
+            {
+                foreach (Entity e in _spawned)
+                {
+                    try
+                    {
+                        if (em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e) && DanglingReason(em, e) != null) _rollBackScratch.Add(e);
+                    }
+                    catch (Exception)
+                    {
+                        _rollBackScratch.Add(e);
+                    }
+                }
+                if (_rollBackScratch.Count == 0) break;
+                foreach (Entity e in _rollBackScratch)
+                {
+                    try
+                    {
+                        _spawned.Remove(e);
+                        result.SpawnedEntities.Remove(e);
+                        uint id = _ids.GetNetId(e);
+                        if (id != 0)
+                        {
+                            _ids.Unbind(id);
+                            _rs.MissingIds?.Add(id);
+                            result.DanglingIds.Add(id);
+                        }
+                        if (em.Exists(e)) em.DestroyEntity(e); // created by this apply
+                        _rolledBackSpawnsTotal++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warn(LogCategory.Replication, "rolling back a dangling new entity of a failed apply failed", ex);
+                    }
+                }
+                result.Problems.Add(_rollBackScratch.Count + " new entities that would dangle rolled back after the apply failed");
+                _rollBackScratch.Clear();
+            }
         }
 
         /// <summary>
