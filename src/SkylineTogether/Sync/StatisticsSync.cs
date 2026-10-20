@@ -120,15 +120,13 @@ namespace SkylineTogether.Sync
             if (_world == world) return _stats != null;
             _world = world;
             _stats = world.GetOrCreateSystemManaged<CityStatisticsSystem>();
-            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
-            _sampleCount = typeof(CityStatisticsSystem).GetField("m_SampleCount", flags);
-            _lastSampleFrame = typeof(CityStatisticsSystem).GetField("m_LastSampleFrameIndex", flags);
-            if ((_sampleCount == null || _sampleCount.FieldType != typeof(int) || _lastSampleFrame == null || _lastSampleFrame.FieldType != typeof(uint)) && !_warnedFields)
+            // P-STATS: each field only with the type read and written below (int, uint)
+            _sampleCount = Diagnostics.Probes.StatsSampleCount;
+            _lastSampleFrame = Diagnostics.Probes.StatsLastSampleFrame;
+            if ((_sampleCount == null || _lastSampleFrame == null) && !_warnedFields)
             {
                 _warnedFields = true;
                 _log.Warn(LogCategory.Replication, "CityStatisticsSystem sample counter fields not found; client charts get the host's values but may be dated by their own counter");
-                if (_sampleCount != null && _sampleCount.FieldType != typeof(int)) _sampleCount = null;
-                if (_lastSampleFrame != null && _lastSampleFrame.FieldType != typeof(uint)) _lastSampleFrame = null;
             }
             return _stats != null;
         }

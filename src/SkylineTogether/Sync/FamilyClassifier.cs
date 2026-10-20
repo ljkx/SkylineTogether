@@ -93,10 +93,37 @@ namespace SkylineTogether.Sync
             _prefabRef = ComponentType.ReadOnly<Game.Prefabs.PrefabRef>();
         }
 
+        private static readonly HashSet<string> Missing = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// A game type by its full name, or null. Every name the mod looks up goes through here (or through a list that
+        /// <see cref="Diagnostics.Probes"/> checks): a missing one is logged once and listed in the probe report
+        /// (<see cref="MissingTypeNames"/>), so a type renamed by a game update never disappears silently.
+        /// </summary>
         public static Type FindType(string fullName)
         {
-            Type t = typeof(Game.Common.Owner).Assembly.GetType(fullName, false);
+            Type t;
+            try
+            {
+                t = typeof(Game.Common.Owner).Assembly.GetType(fullName, false);
+            }
+            catch (Exception)
+            {
+                t = null;
+            }
+            if (t == null && fullName != null)
+            {
+                bool first;
+                lock (Missing) first = Missing.Add(fullName);
+                if (first) Mod.Log?.Warn(LogCategory.Probe, "game type not found by name: " + fullName + " (renamed by a game update?); the feature that uses it runs without it");
+            }
             return t;
+        }
+
+        /// <summary>The names <see cref="FindType"/> did not find so far.</summary>
+        public static List<string> MissingTypeNames()
+        {
+            lock (Missing) return new List<string>(Missing);
         }
 
         /// <summary>Classifies an existing entity.</summary>

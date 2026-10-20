@@ -27,7 +27,7 @@ namespace SkylineTogether.Sync
         {
             base.OnCreate();
             _tools = World.GetOrCreateSystemManaged<ToolSystem>();
-            _setApplyMode = typeof(ToolBaseSystem).GetProperty("applyMode", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetSetMethod(true);
+            _setApplyMode = Diagnostics.Probes.ApplyModeSetter; // P-APPLYMODE
             if (_setApplyMode == null) Mod.Log?.Warn(LogCategory.Gate, "ToolBaseSystem.applyMode setter not found: viewers' tool applies are refused by the host instead");
         }
 

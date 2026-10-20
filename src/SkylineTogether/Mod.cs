@@ -94,6 +94,9 @@ namespace SkylineTogether
             });
             // the self-test (ARCHITECTURE.md#feature-health-and-guards): types, private members, Steam; features whose probe fails stay off
             Step(log, "self-test", () => Probes.RunStartup(log));
+            // P-JIT: every method of the mod compiled once on a background thread, so a game update that removed a member the
+            // mod calls switches that feature off now instead of throwing mid-session (reported through Probes.Tick)
+            Step(log, "compilation self-test", () => JitProbe.Start(log));
 
             bool core = Step(log, "session and replication", () =>
             {
@@ -193,6 +196,7 @@ namespace SkylineTogether
         public void OnDispose()
         {
             Log?.Info(LogCategory.Session, "disposing");
+            JitProbe.Stop();
             Replay?.Shutdown(); // solo testing: keep the recording, write the verdict
             try
             {

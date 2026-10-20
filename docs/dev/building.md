@@ -37,6 +37,27 @@ What it does, in order (any failure stops it before anything is deployed or pack
    has uncommitted changes (the release tools refuse such a package). The version comes from `<Version>` in
    `Directory.Build.props`. With Python the zip is reproducible ([Reproducible builds](#reproducible-builds)).
 
+## API check
+
+`tools/ApiCheck` (a net8.0 console without packages; `System.Reflection.Metadata` ships with .NET) reads the built
+`SkylineTogether.dll` and `SkylineTogether.Core.dll` and checks, against the game's `Cities2_Data\Managed` folder:
+
+- every type reference resolves (type forwarders followed) and every member reference (method, constructor, field,
+  property accessor) exists with the same name, static-ness, generic arity and signature;
+- every string literal of the form `Game.Namespace.Type` (the type names the game layer looks up at run time) names a
+  type or namespace of the game. A missing one is listed with where a type of that name lives now.
+
+`tools/build.sh` runs it after the build (`--skip-api-check` leaves it out). After a game update, check the released
+DLLs the players have, without building:
+
+```sh
+dotnet run -c Release --project tools/ApiCheck -- --dll "<Mods>/SkylineTogether/SkylineTogether.dll" --dll "<Mods>/SkylineTogether/SkylineTogether.Core.dll"
+```
+
+Exit code 1 lists every `MISSING` reference: the mod would fail where it uses it. CI has no game; it runs
+`ApiCheck --self-test`, which checks the tool against the .NET runtime. In the game, `P-JIT` finds the same breakage at
+startup and switches the affected feature off ([ARCHITECTURE.md](../ARCHITECTURE.md#probes-and-self-test)).
+
 ## Game path and Directory.Build.props
 
 `Directory.Build.props` defines four paths for every project. Each can be overridden by an MSBuild property

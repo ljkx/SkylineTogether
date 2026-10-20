@@ -54,9 +54,13 @@ Rules that keep the architecture intact:
   checks this (both compile against netstandard2.1 or newer), so reviewers check it by hand.
 - **Untrusted input.** Everything decoded from the network goes through the limits in `Protocol/Limits.cs`, and decoders
   throw only `DecodeException` on bad input. See [SECURITY.md](SECURITY.md).
-- **Game internals.** Every game type or member you use must exist in the game version you build against. Non-public
-  members and types found by name are resolved only in `Diagnostics/Probes.cs`, with a fallback and a log line, so a
-  game update switches a feature off instead of crashing.
+- **Game internals.** Every game type or member you use must exist in the game version you build against
+  (`tools/build.sh` runs `tools/ApiCheck`). Non-public members are resolved only in `Diagnostics/Probes.cs` and read by
+  the features as `Probes.X` (null: missing, the feature degrades); game types found by name come from a list that
+  `Probes` checks (`ProbeTypeNames`) or go through `FamilyClassifier.FindType`, which reports a missing name. Only
+  `Compat/` (other mods' assemblies), `Net/SteamLanes.cs` and `Session/JoinAssetTransfer.cs` reflect elsewhere;
+  `GameLayerReflectionRuleTests` fails for any other `GetField`/`GetProperty`/`GetMethod`/`GetType` by name. So a game
+  update switches a feature off instead of crashing.
 - **Feature code runs guarded** (`Guard`), so one failing part does not take the session down.
 - **Wire format.** A change of any envelope, message or sync batch layout increments `ProtocolVersion.Current` and
   the pinned value in `Protocol/LimitsAndTextTests.cs`, and updates the golden tests

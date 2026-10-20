@@ -443,7 +443,7 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    Type type = typeof(Owner).Assembly.GetType(name, false);
+                    Type type = FamilyClassifier.FindType(name);
                     ComponentSystemBase system = type != null ? _world.GetExistingSystemManaged(type) : null;
                     if (system == null)
                     {

@@ -1461,7 +1461,18 @@ joiner's "connecting to" line, host-name lookups and Steam's connection descript
 mod relies on (for example `P-CTX` serialization context tags, `P-CLOCK` frame setter, `P-SYSTEMS` update system
 layout, `P-ICONQUEUES`, `P-STATS`, `P-JOINASSETS`, `P-STEAM`, `P-STEAMSOCKETS`, `P-STEAMLANES`, `P-RELAY`), and again with the world
 once a city is loaded (gated systems present, readable queues). A failed probe turns off the feature it belongs to, or
-only warns; the summary is in the log, the panel and the dump.
+only warns; the summary is in the log, the panel and the dump. Features read the members their probes resolved
+(`Probes.X`); type names go through probed lists or `FamilyClassifier.FindType`, which reports a missing name
+(`P-FINDTYPE`); `GameLayerReflectionRuleTests` keeps lookups by name out of the rest of the game layer.
+
+`P-JIT` ([`JitProbe`](../src/SkylineTogether/Diagnostics/JitProbe.cs) with Core's
+[`JitSelfTest`](../src/SkylineTogether.Core/Diagnostics/JitSelfTest.cs)) covers the public game API the mod is compiled
+against: after `OnLoad`, a background thread below normal priority compiles every method of the game layer once
+(`RuntimeHelpers.PrepareMethod`; nothing runs), bounded to 60 s. A method that uses a member a game update removed or
+changed fails to compile (`MissingMethodException`, `TypeLoadException`, ...); its feature is switched off, or, for a
+critical feature, hosting and joining are blocked with the reason, instead of the exception surfacing mid-session.
+Other compiler complaints are warnings. Offline, [`tools/ApiCheck`](../tools/ApiCheck/Program.cs) checks the same
+references against the game's assemblies before a release ([building.md](dev/building.md#api-check)).
 
 ### Feature health and guards
 

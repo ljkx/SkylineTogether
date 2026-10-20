@@ -30,9 +30,9 @@ namespace SkylineTogether.Systems
             base.OnCreate();
             _simulation = World.GetOrCreateSystemManaged<SimulationSystem>();
             _timeUi = World.GetExistingSystemManaged<Game.UI.InGame.TimeUISystem>();
-            const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-            _forcedPause = typeof(Game.UI.InGame.TimeUISystem).GetField("m_UnpausedBeforeForcedPause", Private);
-            _speedBeforePause = typeof(Game.UI.InGame.TimeUISystem).GetField("m_SpeedBeforePause", Private);
+            // P-PAUSEMENU: both fields, of the types read below (bool, float), or neither
+            _forcedPause = SkylineTogether.Diagnostics.Probes.TimeUiForcedPause;
+            _speedBeforePause = SkylineTogether.Diagnostics.Probes.TimeUiSpeedBeforePause;
             if (_forcedPause == null || _speedBeforePause == null) Mod.Log?.Warn(SkylineTogether.Core.LogCategory.Session, "TimeUISystem fields not found: the host's pause menu pauses the session");
         }
 

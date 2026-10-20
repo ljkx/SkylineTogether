@@ -2226,14 +2226,20 @@ namespace SkylineTogether.Sync
         {
             if (_handlersResolved) return;
             _handlersResolved = true;
-            _pathElement = HandlerByName("Game.Pathfind.PathElement");
-            _pathInformation = HandlerByName("Game.Pathfind.PathInformation");
+            _pathElement = HandlerByName(HandlerTypeNames[0]);
+            _pathInformation = HandlerByName(HandlerTypeNames[1]);
             _connected = TypeHandlers.Get<Game.Routes.Connected>();
             _prefabRef = TypeHandlers.Get<PrefabRef>();
-            _journalEntry = HandlerByName("Game.Events.EventJournalEntry");
-            _lifePathEvent = HandlerByName("Game.Triggers.LifePathEvent");
-            _chirp = HandlerByName("Game.Triggers.Chirp");
+            _journalEntry = HandlerByName(HandlerTypeNames[2]);
+            _lifePathEvent = HandlerByName(HandlerTypeNames[3]);
+            _chirp = HandlerByName(HandlerTypeNames[4]);
         }
+
+        /// <summary>Types the codec finds by name (P-CODEC): path element and information, journal entries, life path events, chirps.</summary>
+        internal static readonly string[] HandlerTypeNames =
+        {
+            "Game.Pathfind.PathElement", "Game.Pathfind.PathInformation", "Game.Events.EventJournalEntry", "Game.Triggers.LifePathEvent", "Game.Triggers.Chirp",
+        };
 
         private static TypeHandler HandlerByName(string name)
         {

@@ -149,7 +149,7 @@ namespace SkylineTogether.Sync
                     Type t = FamilyClassifier.FindType(name);
                     if (t == null)
                     {
-                        _log.Debug(LogCategory.Replication, "presence watch: type not found: " + name);
+                        _log.Debug(LogCategory.Replication, "presence watch: type not found: " + name); // reported by FindType and P-EVENTS
                         continue;
                     }
                     (slowNames.Contains(name) ? slow : watched).Add(ComponentType.ReadOnly(t));

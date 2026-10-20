@@ -317,8 +317,8 @@ namespace SkylineTogether.Sync
             {
                 TimeUISystem time = world.GetExistingSystemManaged<TimeUISystem>();
                 object binding = time != null ? Diagnostics.Probes.PausedBarrierBinding?.GetValue(time) : null;
-                PropertyInfo observers = binding?.GetType().GetProperty("observerCount", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (observers != null && observers.PropertyType == typeof(int))
+                PropertyInfo observers = binding != null ? Diagnostics.Probes.PausedBarrierObservers : null; // P-BARRIER
+                if (observers != null)
                 {
                     _barrierBinding = binding;
                     _barrierObservers = observers;

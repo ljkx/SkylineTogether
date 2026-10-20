@@ -22,7 +22,6 @@ namespace SkylineTogether.Compat
     /// </summary>
     public static class AssetSources
     {
-        private static readonly PropertyInfo PrefabList = typeof(PrefabSystem).GetProperty("prefabs", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         private static readonly Dictionary<string, List<PrefabBase>> ByName = new Dictionary<string, List<PrefabBase>>(StringComparer.Ordinal);
         private static int _indexedCount = -1;
 
@@ -260,7 +259,7 @@ namespace SkylineTogether.Compat
         {
             try
             {
-                return prefabs != null && PrefabList?.GetValue(prefabs) is ICollection all ? all.Count : -1;
+                return prefabs != null && Diagnostics.Probes.PrefabList?.GetValue(prefabs) is ICollection all ? all.Count : -1;
             }
             catch (Exception)
             {
@@ -273,7 +272,7 @@ namespace SkylineTogether.Compat
             var list = new List<PrefabBase>();
             try
             {
-                if (prefabs != null && PrefabList?.GetValue(prefabs) is IEnumerable all)
+                if (prefabs != null && Diagnostics.Probes.PrefabList?.GetValue(prefabs) is IEnumerable all)
                 {
                     foreach (object o in all)
                     {

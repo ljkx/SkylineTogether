@@ -85,6 +85,138 @@ namespace SkylineTogether.Diagnostics
         /// <summary>P-JOINASSETS: <c>PrefabID.m_Hash</c>, for the render prefab ids the joiner checks; optional.</summary>
         public static FieldInfo PrefabIdHash { get; private set; }
 
+        /// <summary>P-BARRIER: <c>observerCount</c> of the pause barrier binding's type; optional.</summary>
+        public static PropertyInfo PausedBarrierObservers { get; private set; }
+
+        // ---------------------------------------------------------------- members the features look up by name
+        // Resolved on first use (a system's OnCreate may run before the startup probes) and reported by every probe run,
+        // so a feature reads exactly the member its probe verified: null means missing or of another type, and the
+        // feature degrades the way its probe line says.
+
+        private static bool _lookupsResolved;
+        private static PropertyInfo _prefabList;
+        private static PropertyInfo _systemDependency;
+        private static MethodInfo _applyModeSetter;
+        private static FieldInfo _forcedPause;
+        private static FieldInfo _speedBeforePause;
+        private static FieldInfo _statsSampleCount;
+        private static FieldInfo _statsLastSampleFrame;
+
+        /// <summary>P-PREFABLIST: the non-public <c>PrefabSystem.prefabs</c> (every prefab), for the name fallback of prefab binding; optional.</summary>
+        public static PropertyInfo PrefabList
+        {
+            get
+            {
+                ResolveLookups();
+                return _prefabList;
+            }
+        }
+
+        /// <summary>P-DEPENDENCY: the protected <c>SystemBase.Dependency</c> (a system's outstanding jobs); optional.</summary>
+        public static PropertyInfo SystemDependency
+        {
+            get
+            {
+                ResolveLookups();
+                return _systemDependency;
+            }
+        }
+
+        /// <summary>P-APPLYMODE: the protected setter of <c>ToolBaseSystem.applyMode</c>; optional.</summary>
+        public static MethodInfo ApplyModeSetter
+        {
+            get
+            {
+                ResolveLookups();
+                return _applyModeSetter;
+            }
+        }
+
+        /// <summary>P-PAUSEMENU: <c>TimeUISystem.m_UnpausedBeforeForcedPause</c> (bool); optional.</summary>
+        public static FieldInfo TimeUiForcedPause
+        {
+            get
+            {
+                ResolveLookups();
+                return _forcedPause;
+            }
+        }
+
+        /// <summary>P-PAUSEMENU: <c>TimeUISystem.m_SpeedBeforePause</c> (float); optional.</summary>
+        public static FieldInfo TimeUiSpeedBeforePause
+        {
+            get
+            {
+                ResolveLookups();
+                return _speedBeforePause;
+            }
+        }
+
+        /// <summary>P-STATS: <c>CityStatisticsSystem.m_SampleCount</c> (int); optional.</summary>
+        public static FieldInfo StatsSampleCount
+        {
+            get
+            {
+                ResolveLookups();
+                return _statsSampleCount;
+            }
+        }
+
+        /// <summary>P-STATS: <c>CityStatisticsSystem.m_LastSampleFrameIndex</c> (uint); optional.</summary>
+        public static FieldInfo StatsLastSampleFrame
+        {
+            get
+            {
+                ResolveLookups();
+                return _statsLastSampleFrame;
+            }
+        }
+
+        private static void ResolveLookups()
+        {
+            if (_lookupsResolved) return;
+            _lookupsResolved = true;
+            _prefabList = Lookup(() =>
+            {
+                PropertyInfo p = typeof(Game.Prefabs.PrefabSystem).GetProperty("prefabs", AnyInstance);
+                return p != null && p.GetIndexParameters().Length == 0 && typeof(IEnumerable).IsAssignableFrom(p.PropertyType) && p.GetGetMethod(true) != null ? p : null;
+            });
+            _systemDependency = Lookup(() =>
+            {
+                PropertyInfo p = typeof(SystemBase).GetProperty("Dependency", AnyInstance);
+                return p != null && p.PropertyType == typeof(JobHandle) && p.GetGetMethod(true) != null ? p : null;
+            });
+            _applyModeSetter = Lookup(() =>
+            {
+                MethodInfo setter = typeof(Game.Tools.ToolBaseSystem).GetProperty("applyMode", AnyInstance)?.GetSetMethod(true);
+                ParameterInfo[] parameters = setter?.GetParameters();
+                return parameters != null && parameters.Length == 1 && parameters[0].ParameterType == typeof(Game.Tools.ApplyMode) ? setter : null;
+            });
+            _forcedPause = Lookup(() => TypedField(typeof(TimeUISystem), "m_UnpausedBeforeForcedPause", typeof(bool)));
+            _speedBeforePause = Lookup(() => TypedField(typeof(TimeUISystem), "m_SpeedBeforePause", typeof(float)));
+            _statsSampleCount = Lookup(() => TypedField(typeof(CityStatisticsSystem), "m_SampleCount", typeof(int)));
+            _statsLastSampleFrame = Lookup(() => TypedField(typeof(CityStatisticsSystem), "m_LastSampleFrameIndex", typeof(uint)));
+        }
+
+        private static T Lookup<T>(Func<T> resolve) where T : class
+        {
+            try
+            {
+                return resolve();
+            }
+            catch (Exception)
+            {
+                return null; // a type that fails to load counts as missing; the probe line reports it
+            }
+        }
+
+        /// <summary>An instance field of exactly <paramref name="fieldType"/>, or null.</summary>
+        private static FieldInfo TypedField(Type type, string name, Type fieldType)
+        {
+            FieldInfo f = type.GetField(name, AnyInstance);
+            return f != null && f.FieldType == fieldType ? f : null;
+        }
+
         /// <summary>The signature of <c>PrefabSystem.SavePrefabAssets</c> (<c>PrefabSystem.cs:378</c>).</summary>
         public delegate Colossal.IO.AssetDatabase.PrefabAsset[] SavePrefabAssetsFn(Game.Prefabs.PrefabSystem system, Colossal.IO.AssetDatabase.ILocalAssetDatabase database, Colossal.IO.AssetDatabase.PrefabAsset[] inputPrefabs, ref Context context);
 
@@ -116,6 +248,8 @@ namespace SkylineTogether.Diagnostics
         /// </summary>
         public static void Tick(ILog log, double now)
         {
+            // P-JIT finished on its background thread: report it (features of methods that do not compile switch off)
+            if (JitProbe.TakeCompletion()) Run(_cityProbed ? "city loaded, compilation checked" : "startup, compilation checked", log, world: _cityProbed);
             if (_uiResult != null) return;
             GameManager game = GameManager.instance;
             if (game == null || game.isGameLoading || (game.gameMode != GameMode.MainMenu && game.gameMode != GameMode.Game))
@@ -148,17 +282,20 @@ namespace SkylineTogether.Diagnostics
             Safe("P-ICONQUEUES", Features.Icons, "IconCommandSystem.m_Queues/m_Dependencies", ProbeIconQueues);
             Safe("P-NAMES", Features.GlobalState, "NameSystem.m_Names", ProbeNameTable, warningOnly: true);
             // ViewerGateSystem clears a viewer's tool apply through this protected setter
-            Safe("P-APPLYMODE", Features.Gate, "ToolBaseSystem.applyMode setter", () => typeof(Game.Tools.ToolBaseSystem).GetProperty("applyMode", AnyInstance)?.GetSetMethod(true) != null
+            Safe("P-APPLYMODE", Features.Gate, "ToolBaseSystem.applyMode setter", () => ApplyModeSetter != null
                 ? null : "not found: viewers' tool applies are refused by the host instead", warningOnly: true);
             // the chart sample counter is written on clients (StatisticsSync)
             Safe("P-STATS", Features.SimValues, "CityStatisticsSystem.m_SampleCount/m_LastSampleFrameIndex", () =>
-                typeof(Game.Simulation.CityStatisticsSystem).GetField("m_SampleCount", AnyInstance)?.FieldType == typeof(int)
-                && typeof(Game.Simulation.CityStatisticsSystem).GetField("m_LastSampleFrameIndex", AnyInstance)?.FieldType == typeof(uint)
-                    ? null : "not found: client charts may be dated by their own counter", warningOnly: true);
+                StatsSampleCount != null && StatsLastSampleFrame != null ? null : "not found: client charts may be dated by their own counter", warningOnly: true);
             // the host's pause menu is told apart from a session pause (SpeedAuthoritySystem)
             Safe("P-PAUSEMENU", Features.Speed, "TimeUISystem.m_UnpausedBeforeForcedPause/m_SpeedBeforePause", () =>
-                typeof(TimeUISystem).GetField("m_UnpausedBeforeForcedPause", Private) != null && typeof(TimeUISystem).GetField("m_SpeedBeforePause", Private) != null
-                    ? null : "not found: the host's pause menu pauses the session", warningOnly: true);
+                TimeUiForcedPause != null && TimeUiSpeedBeforePause != null ? null : "not found: the host's pause menu pauses the session", warningOnly: true);
+            // the name fallback of prefab binding reads every prefab (AssetSources.FindByName)
+            Safe("P-PREFABLIST", Features.Replication, "PrefabSystem.prefabs", () => PrefabList != null
+                ? null : "not found: runtime prefabs whose PrefabID differs between players do not bind by name", warningOnly: true);
+            // panel values are read after the writers' jobs completed (GlobalStateSync.Panels)
+            Safe("P-DEPENDENCY", Features.GlobalState, "SystemBase.Dependency", () => SystemDependency != null
+                ? null : "not found: panel values are read without completing their writers' jobs", warningOnly: true);
             // runtime panel values and chirp names written on clients (GlobalStateSync.Panels)
             Safe("P-MAIL", Features.GlobalState, "MailAccumulationSystem.m_LastAccumulatedMail/m_LastProcessedMail", ProbeMail, warningOnly: true);
             Safe("P-CHIRPLINKS", Features.Events, "ChirpLinkSystem.m_CachedChirpData", ProbeChirpLinks, warningOnly: true);
@@ -170,6 +307,10 @@ namespace SkylineTogether.Diagnostics
             ProbeTypeNames("P-MOVERGATE", Features.Movers, MoverClient.GatedSystemNames, systems: true);
             ProbeTypeNames("P-COSMETIC", Features.Clock, FollowerClock.CosmeticSystemNames, systems: true);
             ProbeTypeNames("P-FAMILY", Features.Replication, FamilyClassifier.MarkerTypeNames, systems: false);
+            ProbeTypeNames("P-EVENTS", Features.Events, EventSync.WatchedTypeNames, systems: false);
+            ProbeTypeNames("P-CODEC", Features.Replication, EntityCodec.HandlerTypeNames, systems: false);
+            ProbeTypeNames("P-SIMVALUES", Features.SimValues, EntityCodec.SimValueTypeNames, systems: false);
+            ProbeTypeNames("P-AGENTS", Features.Agents, AgentSync.OwnerBufferNames, systems: false);
             ProbeTypeNames("P-TYPES", Features.Replication, TypeHandlers.ExcludedTypeNames, systems: false);
             ProbeTypeNames("P-HASH", Features.Integrity, IntegrityHasher.StructuralTypeNames, systems: false);
             ProbeTypeNames("P-HASH", Features.Integrity, IntegrityHasher.AgentTypeNames, systems: false);
@@ -191,6 +332,12 @@ namespace SkylineTogether.Diagnostics
             Safe("P-PREVIEW-CODEC", Features.Previews, "tool preview encode/decode round trip", ProbePreviewCodec);
             ProbeSteam();
             if (world) ProbeWorld();
+            // types looked up by name elsewhere (FamilyClassifier.FindType) that were missing when used
+            foreach (string name in FamilyClassifier.MissingTypeNames())
+            {
+                Results.Add(new ProbeResult { Id = "P-FINDTYPE", Feature = Features.Replication.Id, Target = name, Ok = false, WarningOnly = true, Detail = "type not found (renamed by a game update?)" });
+            }
+            Results.AddRange(JitProbe.Results());
             if (_uiResult != null)
             {
                 Results.Add(new ProbeResult { Id = "P-UI", Feature = Features.Ui.Id, Target = "UI module observes the panel", Ok = _uiResult.Length == 0, Detail = _uiResult.Length == 0 ? null : _uiResult });
@@ -267,8 +414,12 @@ namespace SkylineTogether.Diagnostics
         {
             FieldInfo f = typeof(TimeUISystem).GetField("m_SimulationPausedBarrierBinding", Private);
             PausedBarrierBinding = f;
+            PausedBarrierObservers = null;
             if (f == null) return "not found: a local pause is not forwarded to the host (speed changes are)";
-            return f.FieldType.GetProperty("observerCount", AnyInstance)?.PropertyType == typeof(int) ? null : "observerCount missing";
+            PropertyInfo observers = f.FieldType.GetProperty("observerCount", AnyInstance);
+            if (observers == null || observers.PropertyType != typeof(int)) return "observerCount missing";
+            PausedBarrierObservers = observers;
+            return null;
         }
 
         private static string ProbeIconQueues()

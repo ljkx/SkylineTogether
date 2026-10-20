@@ -139,15 +139,13 @@ namespace SkylineTogether.Sync
             return n;
         }
 
-        private static System.Reflection.PropertyInfo _dependency;
-
         /// <summary>The outstanding jobs of a system (its protected <c>Dependency</c>), or none when not readable.</summary>
         private static JobHandle SystemJobs(SystemBase system)
         {
             try
             {
-                if (_dependency == null) _dependency = typeof(SystemBase).GetProperty("Dependency", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
-                return _dependency != null ? (JobHandle)_dependency.GetValue(system) : default;
+                System.Reflection.PropertyInfo dependency = Diagnostics.Probes.SystemDependency; // P-DEPENDENCY
+                return dependency != null ? (JobHandle)dependency.GetValue(system) : default;
             }
             catch (Exception)
             {

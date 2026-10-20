@@ -115,7 +115,7 @@ namespace SkylineTogether.Sync
         public const string CitizenRerollSystemName = "Game.Serialization.CitizenSystem";
 
         /// <summary>Reverse buffers of owners written by the co-capture (ARCHITECTURE.md#agents).</summary>
-        private static readonly string[] OwnerBufferNames =
+        internal static readonly string[] OwnerBufferNames =
         {
             "Game.Buildings.Renter", "Game.Buildings.Student", "Game.Companies.Employee", "Game.Buildings.Occupant",
             "Game.Buildings.Patient", "Game.Citizens.HouseholdCitizen", "Game.Citizens.HouseholdAnimal",
@@ -371,7 +371,7 @@ namespace SkylineTogether.Sync
                 {
                     if (_rerollGated) return;
                     World world = World.DefaultGameObjectInjectionWorld;
-                    Type type = typeof(Game.Common.Owner).Assembly.GetType(CitizenRerollSystemName, false);
+                    Type type = FamilyClassifier.FindType(CitizenRerollSystemName);
                     _reroll = type != null && world != null ? world.GetExistingSystemManaged(type) : null;
                     if (_reroll == null)
                     {

@@ -209,7 +209,7 @@ namespace SkylineTogether.Sync
             {
                 try
                 {
-                    Type type = typeof(Game.Common.Owner).Assembly.GetType(name, false);
+                    Type type = FamilyClassifier.FindType(name);
                     ComponentSystemBase system = type == null ? null : world.GetExistingSystemManaged(type);
                     if (system == null || system.Enabled) continue;
                     system.Enabled = true;
@@ -241,7 +241,7 @@ namespace SkylineTogether.Sync
 
         private bool Disable(World world, string name, bool route)
         {
-            Type type = typeof(Game.Common.Owner).Assembly.GetType(name, false);
+            Type type = FamilyClassifier.FindType(name);
             if (type == null)
             {
                 _log.Warn(LogCategory.Gate, "gated system not found: " + name);
