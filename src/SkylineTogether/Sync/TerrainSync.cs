@@ -511,8 +511,8 @@ namespace SkylineTogether.Sync
                     continue;
                 }
                 budget.Count++;
-                Bounds2 area;
-                bool height;
+                Bounds2 area = default(Bounds2);
+                bool height = false;
                 try
                 {
                     if (!Replay(s, out area, out height)) continue;
@@ -520,7 +520,9 @@ namespace SkylineTogether.Sync
                 catch (Exception ex)
                 {
                     // one bad stamp neither aborts the others (already replayed ones are still forwarded) nor counts
-                    // against the feature for everyone
+                    // against the feature for everyone; a height brush that threw half-way may have changed its area
+                    // already, which the tile audit then sends
+                    if (!area.Equals(default(Bounds2))) MarkDirty(area, now);
                     _stampsRefused++;
                     PeerFault(peer, "replaying a terrain stamp", ex, now);
                     if (_peerFaults.IsMuted(peer.Value)) break;
@@ -544,7 +546,18 @@ namespace SkylineTogether.Sync
             _remoteStampAt = Now;
             foreach (TerrainStamp s in _stampScratch)
             {
-                if (s.IsPlausible(MaxStampSize, TerrainStamp.MaxCoordinate, TerrainStamp.MaxStrength)) Replay(s, out _, out _); // the same checks as the host
+                if (!s.IsPlausible(MaxStampSize, TerrainStamp.MaxCoordinate, TerrainStamp.MaxStrength)) continue; // the same checks as the host
+                try
+                {
+                    Replay(s, out _, out _);
+                }
+                catch (Exception ex)
+                {
+                    // one bad forwarded stamp neither aborts the others nor counts against this client's terrain
+                    // feature (the host's tiles bring the area in line)
+                    _stampsRefused++;
+                    WarnOnce("replay", "replaying a forwarded terrain stamp failed (" + ex.GetType().Name + ": " + ex.Message + "); the host's tiles correct the area");
+                }
             }
         }
 

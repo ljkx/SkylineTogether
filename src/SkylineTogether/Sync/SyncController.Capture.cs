@@ -292,14 +292,26 @@ namespace SkylineTogether.Sync
             _scratchIds.Clear();
             if (_ids.TakePendingDespawns(_scratchIds))
             {
+                // every despawn is written and staged first: a throw in the bookkeeping after it must not leave the rest
+                // allocated and never despawned (the clients would keep stale bindings)
                 foreach (uint id in _scratchIds)
                 {
                     _batch.Despawn(id);
                     _staged.Stage(id); // released once this batch is out
-                    _shadow.Remove(id);
-                    _events.Forget(id);
-                    _ledger.Forget(id);
-                    DropDeferred(id, DeferredClass.Upsert);
+                }
+                foreach (uint id in _scratchIds)
+                {
+                    try
+                    {
+                        _shadow.Remove(id);
+                        _events.Forget(id);
+                        _ledger.Forget(id);
+                        DropDeferred(id, DeferredClass.Upsert);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warn(LogCategory.Replication, "forgetting #" + id + " after its despawn failed", ex);
+                    }
                 }
             }
             if (!_changed.IsEmptyIgnoreFilter)
