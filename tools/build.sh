@@ -56,13 +56,10 @@ copy_mod_files() {
 }
 
 # ---------- tools ----------
-# the first dotnet host that has an SDK 8 or newer (a dotnet on the PATH may have runtimes only)
-has_sdk8() {
-  local major
-  for major in $("$1" --list-sdks 2>/dev/null | sed -n 's/^\([0-9][0-9]*\)\..*/\1/p'); do
-    if [ "$major" -ge 8 ]; then return 0; fi
-  done
-  return 1
+# the first dotnet host that has an SDK global.json accepts (8.0.x; a dotnet on the PATH may have runtimes only, or
+# only a newer SDK): `dotnet --version` run in the repository resolves global.json and fails without a matching SDK
+has_matching_sdk() {
+  (cd "$ROOT" && "$1" --version >/dev/null 2>&1)
 }
 DOTNET_CANDIDATES=()
 if [ -n "${DOTNET:-}" ]; then DOTNET_CANDIDATES+=("$DOTNET"); fi
@@ -72,9 +69,9 @@ if [ -n "${LOCALAPPDATA:-}" ]; then DOTNET_CANDIDATES+=("$(to_unix "$LOCALAPPDAT
 DOTNET_CANDIDATES+=("$HOME/.dotnet/dotnet" "/c/Program Files/dotnet/dotnet.exe")
 DOTNET=""
 for candidate in "${DOTNET_CANDIDATES[@]}"; do
-  if [ -x "$candidate" ] && has_sdk8 "$candidate"; then DOTNET="$candidate"; break; fi
+  if [ -x "$candidate" ] && has_matching_sdk "$candidate"; then DOTNET="$candidate"; break; fi
 done
-[ -n "$DOTNET" ] || fail "no .NET SDK 8 or newer found; install it, or set DOTNET to a dotnet executable that has one"
+[ -n "$DOTNET" ] || fail "no .NET SDK matching global.json (8.0.x) found; install it, or set DOTNET to a dotnet executable that has one"
 # a private (per-user) install needs DOTNET_ROOT so built apphosts (tools run with dotnet run) find their runtime
 export DOTNET_ROOT="$(to_native "$(dirname "$DOTNET")")"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
@@ -89,6 +86,8 @@ OUT="src/SkylineTogether/bin/Release/net472"
 
 # ---------- build ----------
 step "Release build (SkylineTogether $VERSION)"
+# the SDK (and so the compiler) is part of what determines the build id (docs/dev/building.md#reproducible-builds)
+echo ".NET SDK $(cd "$ROOT" && "$DOTNET" --version)"
 "$DOTNET" build SkylineTogether.sln "${PROPS[@]}" || fail "dotnet build"
 for f in SkylineTogether.dll SkylineTogether.Core.dll; do
   [ -f "$OUT/$f" ] || fail "missing build output $OUT/$f"

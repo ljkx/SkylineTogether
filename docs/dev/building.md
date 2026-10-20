@@ -5,7 +5,8 @@
 - **Windows with Cities: Skylines II installed** for the full build. The game layer compiles against the assemblies in
   the game's `Cities2_Data\Managed` folder; nothing from the game is copied into the repository or the build output.
   Without the game you can still build and test Core (see [Without the game](#without-the-game)).
-- **.NET SDK 8 or newer.** No NuGet package is referenced or downloaded
+- **.NET SDK 8.0** (8.0.425 or a later 8.0 SDK; `global.json` pins it, see
+  [Reproducible builds](#reproducible-builds)). No NuGet package is referenced or downloaded
   ([decision 0001](../decisions/0001-build-without-nuget.md)).
 - **Git Bash** (or another bash) for `tools/build.sh`.
 - Optional: **Node.js** for the UI checks, **Python 3** for the installer and the repository checks.
@@ -23,8 +24,8 @@ tools/build.sh --skip-ui-checks
 
 What it does, in order (any failure stops it before anything is deployed or packaged):
 
-1. Finds a `dotnet` that has an SDK 8 or newer: `$DOTNET`, the `dotnet` on the PATH, `$DOTNET_ROOT`,
-   `%LOCALAPPDATA%\Microsoft\dotnet`, `~/.dotnet`, `C:\Program Files\dotnet`.
+1. Finds a `dotnet` that has an SDK `global.json` accepts: `$DOTNET`, the `dotnet` on the PATH, `$DOTNET_ROOT`,
+   `%LOCALAPPDATA%\Microsoft\dotnet`, `~/.dotnet`, `C:\Program Files\dotnet`, and prints the SDK version.
 2. `dotnet build SkylineTogether.sln -c Release -p:DeployMod=false`, then checks that `SkylineTogether.dll` and
    `SkylineTogether.Core.dll` exist in `src/SkylineTogether/bin/Release/net472`.
 3. With Node on the PATH: `node --check ui/SkylineTogether.mjs` and `node tools/ui_smoke.mjs`.
@@ -112,13 +113,31 @@ The installer also takes `-Uninstall` (with `-RemoveSettings`) and, with `-Colle
 are left out by default).
 
 The **build id** printed by the installer and written into `TWO-PLAYER-CHECKLIST.txt` is the first 12 hex digits of the
-SHA-256 of `SkylineTogether.dll`. The game computes the same value from the DLL it loaded and compares it when a player joins;
-it changes with every compile. See [releasing.md](releasing.md).
+SHA-256 of `SkylineTogether.dll`. The game computes the same value from the DLL it loaded and compares it when a player
+joins. It changes whenever the DLL's bytes change; see [Reproducible builds](#reproducible-builds) and
+[releasing.md](releasing.md).
 
 For Paradox Mods, `python tools/paradox/publish_paradox.py` uploads the files of the same release zip with the game's
 ModPublisher; see [publishing-paradox-mods.md](publishing-paradox-mods.md). The default build does not change for it.
 
-## Line endings and editor settings
+## Reproducible builds
 
-The repository stores text files with LF; checkouts use the platform's line endings (`.gitattributes`). Shell scripts
-are always LF, `.ps1`/`.cmd` files always CRLF. `.editorconfig` has the indentation and C# style settings.
+The build is deterministic: building the same commit again gives a byte-identical `SkylineTogether.dll`, so the same
+build id, on any machine and in any checkout folder, as long as these inputs are the same:
+
+- **the source files, including their line endings.** The deterministic PDB records a checksum of every source file
+  and embedded resource, and the DLL embeds the PDB's id. `.gitattributes` therefore checks every text file out with
+  LF on every platform, whatever `core.autocrlf` says (only `.ps1`, `.cmd`, `.bat` and `.sln` files are CRLF, and
+  none of them is compiled). Before this rule, a CRLF and an LF checkout of the same commit gave different build ids.
+  If an old clone still has CRLF files, refresh it once: `git rm -r --cached -q . && git reset --hard`.
+- **the .NET SDK, which brings the compiler.** `global.json` pins SDK 8.0.425 and allows later 8.0 feature bands and
+  patches (`rollForward: latestFeature`). A different SDK can emit different IL, so a release states the SDK version
+  `tools/build.sh` printed.
+- **the game assemblies** in `GameManagedPath` that the projects compile against (a game update can change them).
+- **the commit itself**: the DLL's informational version carries the commit hash (Source Link).
+
+The checkout path does not matter (`DeterministicSourcePaths` maps it to `/_/`).
+
+## Editor settings
+
+`.editorconfig` has the indentation and C# style settings; its line endings match `.gitattributes`.

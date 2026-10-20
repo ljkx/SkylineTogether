@@ -1,9 +1,10 @@
-# Editor settings matching the existing code. Line endings are not set here except where .gitattributes forces
-# them: the repository stores LF and checkouts use the platform's line endings (see .gitattributes).
+# Editor settings matching the existing code. Line endings follow .gitattributes: LF everywhere (the build id depends
+# on them), except the Windows scripts and the solution file (CRLF).
 root = true
 
 [*]
 charset = utf-8
+end_of_line = lf
 indent_style = space
 indent_size = 4
 insert_final_newline = true

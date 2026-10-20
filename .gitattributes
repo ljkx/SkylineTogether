@@ -1,8 +1,9 @@
 # Line endings
-# The repository stores every text file with LF. On checkout, text files follow the platform (core.autocrlf /
-# core.eol: CRLF on Windows, LF elsewhere), so editors and the build see native line endings and no file shows up
-# as changed only because of its line endings.
-* text=auto
+# The repository stores every text file with LF, and every checkout gets LF too, whatever core.autocrlf or core.eol
+# say. The build must not depend on the checkout: the deterministic PDB checksums each source file and embedded
+# resource, and the DLL embeds the PDB's id, so a CRLF checkout of the same commit produced a different
+# SkylineTogether.dll and build id than an LF one (docs/dev/building.md#reproducible-builds).
+* text=auto eol=lf
 
 # Shell scripts must keep LF on every platform, or bash fails on the carriage returns.
 *.sh text eol=lf

@@ -14,7 +14,10 @@ their download.
 | Build id | First 12 hex digits of the SHA-256 of `SkylineTogether.dll` | Printed by the installer and by `publish_paradox.py`, shown in the panel footer and compared by the host on join (the game hashes the DLL file its mod manager loaded, in the local Mods folder or a Paradox Mods subscription; only if the file cannot be read does it fall back to the assembly's MVID, shown as "(mvid)"). |
 | Paradox Mods id and version | `ModId` and `ModVersion` in `src/SkylineTogether/Properties/PublishConfiguration.xml` | `ModId` is 163578 ([the mod's page](https://mods.paradoxplaza.com/mods/163578/Windows)); `ModVersion` must equal `<Version>`. See [publishing-paradox-mods.md](publishing-paradox-mods.md). |
 
-Every compile produces a different build that refuses to play with any other build, even at the same version number.
+Any change of the DLL's bytes is a different build that refuses to play with any other build, even at the same version
+number. Rebuilding the same commit with the same SDK and game version gives the same bytes
+([Reproducible builds](building.md#reproducible-builds)), but a release is still built once and every route ships those
+same files.
 Players must therefore all install the same release: the same Paradox Mods version or the same setup zip (both carry
 the same build id).
 
