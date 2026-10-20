@@ -55,8 +55,9 @@ dotnet run -c Release --project tools/ApiCheck -- --dll "<Mods>/SkylineTogether/
 ```
 
 Exit code 1 lists every `MISSING` reference: the mod would fail where it uses it. CI has no game; it runs
-`ApiCheck --self-test`, which checks the tool against the .NET runtime. In the game, `P-JIT` finds the same breakage at
-startup and switches the affected feature off ([ARCHITECTURE.md](../ARCHITECTURE.md#probes-and-self-test)).
+`ApiCheck --self-test`, which checks the tool against the .NET runtime. In the game, `P-REFS` resolves the same type
+and member references at startup and switches the feature whose code uses a missing one off
+([ARCHITECTURE.md](../ARCHITECTURE.md#probes-and-self-test)).
 
 ## Game path and Directory.Build.props
 

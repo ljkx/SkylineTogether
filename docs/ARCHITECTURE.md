@@ -1518,14 +1518,22 @@ only warns; the summary is in the log, the panel and the dump. Features read the
 (`Probes.X`); type names go through probed lists or `FamilyClassifier.FindType`, which reports a missing name
 (`P-FINDTYPE`); `GameLayerReflectionRuleTests` keeps lookups by name out of the rest of the game layer.
 
-`P-JIT` ([`JitProbe`](../src/SkylineTogether/Diagnostics/JitProbe.cs) with Core's
-[`JitSelfTest`](../src/SkylineTogether.Core/Diagnostics/JitSelfTest.cs)) covers the public game API the mod is compiled
-against: after `OnLoad`, a background thread below normal priority compiles every method of the game layer once
-(`RuntimeHelpers.PrepareMethod`; nothing runs), bounded to 60 s. A method that uses a member a game update removed or
-changed fails to compile (`MissingMethodException`, `TypeLoadException`, ...); its feature is switched off, or, for a
-critical feature, hosting and joining are blocked with the reason, instead of the exception surfacing mid-session.
-Other compiler complaints are warnings. Offline, [`tools/ApiCheck`](../tools/ApiCheck/Program.cs) checks the same
-references against the game's assemblies before a release ([building.md](dev/building.md#api-check)).
+`P-REFS` ([`ReferenceProbe`](../src/SkylineTogether/Diagnostics/ReferenceProbe.cs) with Core's
+[`ReferenceCheck`](../src/SkylineTogether.Core/Diagnostics/ReferenceCheck.cs)) covers the public game API the mod is
+compiled against, the run-time form of [`tools/ApiCheck`](../tools/ApiCheck/Program.cs). After `OnLoad`, a background
+thread below normal priority resolves every row of the TypeRef table (`Module.ResolveType`) and of the MemberRef table
+(`Module.ResolveMember`) of the game layer and of Core against the assemblies the game loaded, bounded to 30 s (a few
+milliseconds in practice). Only when a reference fails are the method bodies' IL tokens read, to find which methods use
+it; each use is resolved again in the method's generic context, and field, parameter, return and local types are read.
+A reference that still fails with `MissingMethodException`, `MissingFieldException`, `TypeLoadException` (or a missing
+assembly) switches off the feature of the type that uses it (a namespace table), or, for a critical feature, blocks
+hosting and joining with the reason, instead of Mono throwing when it first compiles that method mid-session. Types
+whose base type or interface is gone are found by loading every type. Other failures, and references no method body,
+field or signature uses (custom attributes), are warnings. Resolving runs no code of the mod and no static constructor.
+It does not cover private members or names looked up at run time (the other probes do), nor a member whose signature
+changed in a way that still binds. `RuntimeHelpers.PrepareMethod`, which an earlier version used, compiles nothing on
+the game's Mono. Offline, `tools/ApiCheck` checks the same references against the game's assemblies before a release
+([building.md](dev/building.md#api-check)).
 
 ### Feature health and guards
 

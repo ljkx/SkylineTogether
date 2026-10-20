@@ -63,6 +63,16 @@ values) and about 20 seconds after the menu or a city appears (the UI module obs
 when its loopback self-test fails, connections run without Steam lanes (every message on lane 0) and the log line
 "connected: … , 3 lanes" is missing.
 
+`P-REFS` (`Diagnostics/ReferenceProbe.cs`, Core `Diagnostics/ReferenceCheck.cs`) is the in-game form of
+`tools/ApiCheck`: right after load, a background thread resolves every row of the TypeRef and MemberRef tables of
+`SkylineTogether.dll` and `SkylineTogether.Core.dll` against the assemblies the game loaded. The log has one line per DLL,
+for example `P-REFS SkylineTogether: 1206 type and 5560 member references resolved in 0.05 s, 0 missing, 0 other
+failure(s)`. When something does not resolve, the method bodies are read to find which types use it, and the log has a
+`P-REFS: MemberRef 0x0A000123 used by SkylineTogether.Sync.MoverClient.Apply(): MissingMethodException: ...` line per
+use. The feature of that type (namespace table in `ReferenceProbe`) is switched off. A reference that no method body,
+field or signature uses (a custom attribute) is only reported. It checks what the mod was compiled against
+(public game API); private members and names looked up at run time are the other probes' job.
+
 Results go to the log ("self-test: X/Y checks passed"), the diagnostics dump and the one-line summary in the player's
 language ("Self-test: X of Y checks passed", with "Switched off: …" naming the features that are off) in the panel and
 on the title screen. A failed probe switches its feature off (`Diagnostics/Features.cs`), so the feature never touches a

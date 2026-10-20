@@ -21,6 +21,9 @@ From this release on, regular releases have no pre-release suffix.
   password, ban list) after a confirmation or with `-RemoveSettings`.
 - **Checksums**: the release notes list the SHA-256 checksums of both zips, with a `Get-FileHash` line to check a
   download.
+- **Startup check against game updates**: when the game starts, every game type and member Skyline Together uses is
+  looked up. If a game update removed one, only the part of Skyline Together that uses it is switched off (hosting and
+  joining are blocked if that part is essential, with the reason), instead of an error in the middle of a session.
 - **Third-party notices** (`THIRD-PARTY-NOTICES.txt`, also in the release zip) credit the LZ4 block format and the
   xxHash specification that Core's own implementations follow, and the game components Skyline Together uses.
 

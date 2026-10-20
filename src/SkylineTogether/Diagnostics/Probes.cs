@@ -276,8 +276,8 @@ namespace SkylineTogether.Diagnostics
         /// </summary>
         public static void Tick(ILog log, double now)
         {
-            // P-JIT finished on its background thread: report it (features of methods that do not compile switch off)
-            if (JitProbe.TakeCompletion()) Run(_cityProbed ? "city loaded, compilation checked" : "startup, compilation checked", log, world: _cityProbed);
+            // P-REFS finished on its background thread: report it (features whose code uses a missing member switch off)
+            if (ReferenceProbe.TakeCompletion()) Run(_cityProbed ? "city loaded, references checked" : "startup, references checked", log, world: _cityProbed);
             if (_uiResult != null) return;
             GameManager game = GameManager.instance;
             if (game == null || game.isGameLoading || (game.gameMode != GameMode.MainMenu && game.gameMode != GameMode.Game))
@@ -365,7 +365,7 @@ namespace SkylineTogether.Diagnostics
             {
                 Results.Add(new ProbeResult { Id = "P-FINDTYPE", Feature = Features.Replication.Id, Target = name, Ok = false, WarningOnly = true, Detail = "type not found (renamed by a game update?)" });
             }
-            Results.AddRange(JitProbe.Results());
+            Results.AddRange(ReferenceProbe.Results());
             if (_uiResult != null)
             {
                 Results.Add(new ProbeResult { Id = "P-UI", Feature = Features.Ui.Id, Target = "UI module observes the panel", Ok = _uiResult.Length == 0, Detail = _uiResult.Length == 0 ? null : _uiResult });
