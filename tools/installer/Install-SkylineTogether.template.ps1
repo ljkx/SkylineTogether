@@ -58,7 +58,8 @@ function Hide-UserFolder([string]$file) {
         $paths = @($profileDir)
         # the 8.3 short form of the user folder names the user too
         try { $paths += (New-Object -ComObject Scripting.FileSystemObject).GetFolder($profileDir).ShortPath } catch { }
-        $forms = @($paths | ForEach-Object { $_; $_.Replace('\', '/'); $_.Replace('\', '\\') }) | Where-Object { $_ } | Select-Object -Unique
+        # each with backslashes, forward slashes, doubled backslashes (JSON) and as in a file:/// URL (a space as %20)
+        $forms = @($paths | ForEach-Object { $_; $_.Replace('\', '/'); $_.Replace('\', '\\'); try { ([Uri]$_).AbsoluteUri.Substring(8) } catch { } }) | Where-Object { $_ } | Select-Object -Unique
         foreach ($form in $forms) {
             $text = [Text.RegularExpressions.Regex]::Replace($text, [Text.RegularExpressions.Regex]::Escape($form), '%USERPROFILE%', 'IgnoreCase')
         }
@@ -90,12 +91,24 @@ if ($CollectLogs) {
     )
     $count = 0
     $dumps = 0
+    # diagnostics files of versions before 0.2.0 contain full IP addresses and the user name: only those written since
+    # the installed copy was built are collected (its DLL keeps the release's time)
+    $installedDll = Join-Path $ModDir 'SkylineTogether.dll'
+    $since = if (Test-Path -LiteralPath $installedDll) { (Get-Item -LiteralPath $installedDll).LastWriteTimeUtc } else { $null }
+    $oldDiagnostics = 0
     foreach ($p in $patterns) {
         if (-not (Test-Path -LiteralPath $p.Dir)) { continue }
         Get-ChildItem -LiteralPath $p.Dir -Filter $p.Filter -File -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.Name -like 'SkylineTogether-diagnostics-*' -and (-not $since -or $_.LastWriteTimeUtc -lt $since)) {
+                if ($since) { $oldDiagnostics++; return }
+                Write-Warn2 "Collected $($_.Name), but no installed copy tells its age: files of versions before 0.2.0 contain full IP addresses. Delete old ones in the Logs folder first."
+            }
             Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $stage $_.Name) -Force
             $count++
         }
+    }
+    if ($oldDiagnostics -gt 0) {
+        Write-Ok "Left out $oldDiagnostics diagnostics file(s) written before this version was installed (older versions wrote full IP addresses)"
     }
     $recordings = Join-Path $UserData 'ModsData\SkylineTogether\Recordings'
     if (Test-Path -LiteralPath $recordings) {
@@ -150,7 +163,8 @@ if ($CollectLogs) {
             Write-Bad 'Found no folder to save the logs in (no Desktop, user folder or TEMP). Run again with -OutDir <folder>.'
             Finish 1
         }
-        Write-Warn2 "Your Desktop folder could not be found; the zip is saved in $fallback instead."
+        $why = if ($OutDir) { "$OutDir could not be used" } else { 'Your Desktop folder could not be found' }
+        Write-Warn2 "$why; the zip is saved in $fallback instead."
         $desktop = $fallback
     }
     $zip = Join-Path $desktop "SkylineTogether-logs-$stamp.zip"
@@ -164,12 +178,12 @@ if ($CollectLogs) {
         Write-Warn2 ('The zip is {0:N0} MB; GitHub accepts at most 25 MB per file. Attach the files from the zip separately.' -f ($size / 1MB))
     }
     if ($dumps -gt 0) {
-        Write-Host '   It contains player names, Steam IDs, the session name and IP addresses only shortened; paths to your user folder were replaced by %USERPROFILE%.'
+        Write-Host '   It contains player names, Steam IDs, the session name and IP addresses, but only in shortened form; paths to your user folder were replaced by %USERPROFILE%.'
         Write-Warn2 "It also contains $dumps crash dump(s): snapshots of the game's memory, which can include passwords and chat."
         Write-Host  '        Send this zip privately to the person who asked for it, not as an attachment to a public bug report.'
     } else {
         Write-Host '   Attach this zip to your bug report on GitHub: https://github.com/ljkx/SkylineTogether/issues'
-        Write-Host '   It contains player names, Steam IDs, the session name and IP addresses only shortened (no passwords, no chat); paths to your user folder were replaced by %USERPROFILE%.'
+        Write-Host '   It contains player names, Steam IDs, the session name and IP addresses, but only in shortened form (no passwords, no chat); paths to your user folder were replaced by %USERPROFILE%.'
         Write-Host '   Crash dumps are not included. Add -IncludeDumps only when asked, and send dumps privately.'
     }
     Finish 0
@@ -294,7 +308,7 @@ finally {
 $dll = Join-Path $ModDir 'SkylineTogether.dll'
 $installedBuild = (Get-Sha256 $dll).Substring(0, 12)
 Write-Ok "Installed to $ModDir"
-Write-Ok "Build ID: $installedBuild  (every player must show the same build ID)"
+Write-Ok "Build ID: $installedBuild  (every player must have the same build ID)"
 
 # ------------------------------------------------------------------------------------------- other mods
 Write-Step 'Checking your other mods'

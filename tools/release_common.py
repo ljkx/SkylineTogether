@@ -134,11 +134,12 @@ def head_is_pushed(root=None, branch=RELEASE_BRANCH):
     return False, 'cannot compare HEAD with %s: %s' % (branch, err)
 
 
-def verify_built_from_clean_head(dll_bytes, version, allow_dirty=False, require_pushed=True, root=None):
+def verify_built_from_clean_head(dll_bytes, version, allow_dirty=False, require_pushed=True, root=None, unpushed_override=None):
     """
     Fails unless the DLL was built from this repository's HEAD, nothing tracked is modified and no untracked file lies
     among the build inputs (dirty_files; allow_dirty: a local test), and HEAD is pushed (head_is_pushed;
-    require_pushed=False for a check before the push); returns the sha.
+    require_pushed=False for a check before the push); returns the sha. unpushed_override names the caller's option
+    that accepts an unpushed HEAD (for the message).
     """
     commit = dll_commit(dll_bytes, version)
     head = git('rev-parse', 'HEAD', root=root)
@@ -156,7 +157,8 @@ def verify_built_from_clean_head(dll_bytes, version, allow_dirty=False, require_
     if require_pushed:
         pushed, why = head_is_pushed(root=root)
         if not pushed:
-            problems.append(why + ' (Source Link and the release tag name this commit on GitHub)')
+            problems.append(why + ' (Source Link and the release tag name this commit on GitHub'
+                            + ('; %s for a local test' % unpushed_override if unpushed_override else '') + ')')
     if problems:
         raise ReleaseError('\n  - ' + '\n  - '.join(problems))
     return commit

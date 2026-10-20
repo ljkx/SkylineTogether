@@ -35,9 +35,10 @@ with zipfile.ZipFile(io.BytesIO(payload)) as z:
     # installed file, so all three print the same id.
     build = hashlib.sha256(dll).hexdigest()[:12]
 try:
-    commit = release_common.verify_built_from_clean_head(dll, version, args.allow_dirty, require_pushed=not args.allow_unpushed)
+    commit = release_common.verify_built_from_clean_head(dll, version, args.allow_dirty, require_pushed=not args.allow_unpushed,
+                                                         unpushed_override='--allow-unpushed')
 except release_common.ReleaseError as e:
-    sys.exit('the release zip is not a build of the clean HEAD:' + str(e))
+    sys.exit('the release zip cannot be released (not a build of a clean, pushed HEAD):' + str(e))
 
 # nothing the builder's machine knows may ship: scan every packaged file (as bytes decoded as 8-bit text and as UTF-16
 # at both byte alignments, since .NET metadata strings are UTF-16) with the repository's personal-data patterns

@@ -7,8 +7,9 @@ the game layer; any DLL built from HEAD carries the commit the release tools che
 runs the generated installer with -NoPause -SkipGameCheck against a fake user profile (its TEMP and LOCALAPPDATA too)
 and checks the installed files and the build id it prints, installs again over that copy (the upgrade: the old copy is
 replaced and nothing is left beside it), collects logs with -CollectLogs (-OutDir, and the fallback when the Desktop
-does not resolve) and checks that the bundle names the user folder only as %USERPROFILE%, and finally runs it with
--Uninstall. Refuses to overwrite an existing release zip.
+does not resolve) and checks that the bundle names the user folder only as %USERPROFILE% (also in a file:/// URL)
+and leaves out diagnostics files older than the installed copy, and finally runs it with -Uninstall. The fake profile's
+path has a space in it. Refuses to overwrite an existing release zip.
 """
 import glob
 import hashlib
@@ -56,7 +57,8 @@ def main(argv):
         ('SkylineTogether/THIRD-PARTY-NOTICES.txt', text('THIRD-PARTY-NOTICES.txt')),
         ('SkylineTogether/README.txt', b'stand-in release for the installer smoke test\n'),
     ])
-    profile = tempfile.mkdtemp(prefix='st-installer-smoke-')
+    # a space in the path, like a user folder named "First Last" (a file:/// URL writes it as %20)
+    profile = tempfile.mkdtemp(prefix='st-installer smoke-')
     try:
         build = hashlib.sha256(dll).hexdigest()[:12]
         # the stand-in zip is never released: an unpushed HEAD (a pull request's merge commit) is fine here
@@ -113,9 +115,18 @@ def main(argv):
         # collecting logs: the bundle names the user folder only as %USERPROFILE% (also its forward-slash form)
         logs = os.path.join(user_data, 'Logs')
         os.makedirs(logs)
+        url = 'file:///' + profile.replace(os.sep, '/').replace(' ', '%20')
         with open(os.path.join(logs, 'SkylineTogether.log'), 'w', encoding='utf-8') as f:
             f.write('Info [session] snapshot in %s\n' % os.path.join(profile, 'AppData', 'Local', 'Temp', 'SkylineTogether'))
             f.write('Info [ui] loaded %s/AppData/LocalLow/x\n' % profile.replace(os.sep, '/'))
+            f.write('Info [ui] opened %s/AppData/LocalLow/y.html\n' % url)
+        # a diagnostics file of an older version (full IP addresses) is left out; one written since the install is kept
+        old_diag = os.path.join(logs, 'SkylineTogether-diagnostics-20240101-120000.txt')
+        with open(old_diag, 'w', encoding='utf-8') as f:
+            f.write('peer 203.0.113.7:27015\n')
+        os.utime(old_diag, (1577836800, 1577836800))  # 2020-01-01, before any release commit
+        with open(os.path.join(logs, 'SkylineTogether-diagnostics-29990101-120000.txt'), 'w', encoding='utf-8') as f:
+            f.write('peer 203.0.113.x\n')
         out = os.path.join(profile, 'bundle out')
         proc = installer('-CollectLogs', '-OutDir', out)
         bundles = glob.glob(os.path.join(out, 'SkylineTogether-logs-*.zip'))
@@ -123,8 +134,13 @@ def main(argv):
             fail('-CollectLogs -OutDir did not write one bundle (exit %d)' % proc.returncode)
         with zipfile.ZipFile(bundles[0]) as z:
             text = z.read('SkylineTogether.log').decode('utf-8', errors='replace')
-        if '%USERPROFILE%' not in text or profile.lower() in text.lower() or profile.replace(os.sep, '/').lower() in text.lower():
+            names = z.namelist()
+        if '%USERPROFILE%' not in text or profile.lower() in text.lower() or profile.replace(os.sep, '/').lower() in text.lower() \
+                or url[8:].lower() in text.lower():
             fail('the log bundle still names the user folder:\n' + text)
+        if 'SkylineTogether-diagnostics-20240101-120000.txt' in names or 'SkylineTogether-diagnostics-29990101-120000.txt' not in names \
+                or 'Left out 1 diagnostics file(s)' not in proc.stdout:
+            fail('the log bundle did not leave out exactly the old diagnostics file: ' + ', '.join(names))
         # a Desktop that does not resolve (redirected, offline): the zip goes to the user folder, with a message
         proc = installer('-CollectLogs', '-TestNoDesktop')
         fallback = glob.glob(os.path.join(profile, 'SkylineTogether-logs-*.zip'))
