@@ -26,6 +26,40 @@ STEAM_ID = re.compile(r'(?<!\d)7656119\d{10}(?!\d)')
 EMAIL = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 OK_EMAIL = re.compile(r'(noreply|no-reply)[^@]*@|@users\.noreply\.github\.com$|@anthropic\.com$|@example\.(com|org|net)$', re.I)
 
+def _personal_terms():
+    """Names that must never appear in the repository: the Windows/Unix user name of the PC the check runs on (and its
+    8.3 short-name stem), plus terms listed one per line in the file named by SKYLINE_PERSONAL_TERMS_FILE or in
+    ~/.skyline-together-personal-terms (a private list kept outside the repository). Placeholder names are ignored."""
+    import getpass
+    import os
+    terms = set()
+    try:
+        terms.add(getpass.getuser())
+    except Exception:
+        pass
+    for var in ('USERNAME', 'USER'):
+        if os.environ.get(var):
+            terms.add(os.environ[var])
+    for path in (os.environ.get('SKYLINE_PERSONAL_TERMS_FILE'), os.path.join(os.path.expanduser('~'), '.skyline-together-personal-terms')):
+        if path and os.path.isfile(path):
+            with open(path, encoding='utf-8') as f:
+                terms.update(t.strip() for t in f if t.strip() and not t.startswith('#'))
+    result = set()
+    for t in terms:
+        t = t.strip()
+        if len(t) < 3 or t.lower() in PLACEHOLDER_USERS:
+            continue
+        result.add(t)
+        stem = ''.join(c for c in t if c.isalnum())[:6]
+        if len(stem) >= 3 and stem.lower() != t.lower():
+            result.add(stem + '~')
+    return sorted(result, key=len, reverse=True)
+
+
+PERSONAL_TERMS = _personal_terms()
+PERSONAL = re.compile('|'.join(r'(?<![A-Za-z0-9])' + re.escape(t) + (r'(?![A-Za-z])' if not t.endswith('~') else '')
+                               for t in PERSONAL_TERMS), re.I) if PERSONAL_TERMS else None
+
 
 def tracked_files():
     out = subprocess.run(['git', 'ls-files', '-z'], capture_output=True, check=True).stdout
@@ -43,6 +77,9 @@ def scan_line(where, line, problems):
     for m in EMAIL.finditer(line):
         if not OK_EMAIL.search(m.group(0)):
             problems.append(f'{where}: e-mail address {m.group(0)}')
+    if PERSONAL is not None:
+        for m in PERSONAL.finditer(line):
+            problems.append(f'{where}: personal name "{m.group(0)}" (user name of this PC or a listed private term)')
 
 
 def scan_commits(rev_range, problems, identities=True):

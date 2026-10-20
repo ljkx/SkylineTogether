@@ -6,7 +6,7 @@ namespace SkylineTogether.Core.Tests.Diagnostics
 {
     /// <summary>
     /// The other spellings of the profile folder that reach logs (<see cref="PathRedactor"/>): its 8.3 short form
-    /// (<c>D:\Profiles\LEONAR~1</c>, common in TEMP and so in the snapshot folders' IO exceptions) and a <c>file://</c> URL
+    /// (<c>D:\Profiles\ALEXAN~1</c>, common in TEMP and so in the snapshot folders' IO exceptions) and a <c>file://</c> URL
     /// with percent-encoded characters; and what must stay unchanged.
     /// </summary>
     public sealed class PathRedactorFormsTests
@@ -19,22 +19,22 @@ namespace SkylineTogether.Core.Tests.Diagnostics
         [Test]
         public void TheShortFormOfTheProfileFolderIsRedacted()
         {
-            PathRedactor r = Profile(@"D:\Profiles\Leonardo Smith", "Leonardo Smith");
+            PathRedactor r = Profile(@"D:\Profiles\Alexandra Smith", "Alexandra Smith");
             Assert.Equal(@"Could not find file '%USERPROFILE%\AppData\Local\Temp\SkylineTogether\join\city.cok'",
-                         r.Apply(@"Could not find file 'D:\Profiles\LEONAR~1\AppData\Local\Temp\SkylineTogether\join\city.cok'"));
-            Assert.Equal("%USERPROFILE%/AppData", r.Apply("d:/profiles/leonar~2/AppData"), "any number, any case, either separator");
-            Assert.Equal(@"%USERPROFILE%", r.Apply(@"D:\Profiles\LEONAR~12"));
-            Assert.Equal(@"D:\Profiles\LEONAR~1x\AppData", r.Apply(@"D:\Profiles\LEONAR~1x\AppData"), "a longer name is another folder");
-            Assert.Equal(@"D:\Profiles\LEONAR~0\AppData", r.Apply(@"D:\Profiles\LEONAR~0\AppData"), "Windows numbers from 1");
-            Assert.Equal(@"E:\Profiles\LEONAR~1\AppData", r.Apply(@"E:\Profiles\LEONAR~1\AppData"), "another parent folder");
+                         r.Apply(@"Could not find file 'D:\Profiles\ALEXAN~1\AppData\Local\Temp\SkylineTogether\join\city.cok'"));
+            Assert.Equal("%USERPROFILE%/AppData", r.Apply("d:/profiles/alexan~2/AppData"), "any number, any case, either separator");
+            Assert.Equal(@"%USERPROFILE%", r.Apply(@"D:\Profiles\ALEXAN~12"));
+            Assert.Equal(@"D:\Profiles\ALEXAN~1x\AppData", r.Apply(@"D:\Profiles\ALEXAN~1x\AppData"), "a longer name is another folder");
+            Assert.Equal(@"D:\Profiles\ALEXAN~0\AppData", r.Apply(@"D:\Profiles\ALEXAN~0\AppData"), "Windows numbers from 1");
+            Assert.Equal(@"E:\Profiles\ALEXAN~1\AppData", r.Apply(@"E:\Profiles\ALEXAN~1\AppData"), "another parent folder");
             Assert.Equal(@"D:\Profiles\OTHERS~1\AppData", r.Apply(@"D:\Profiles\OTHERS~1\AppData"), "another user's folder");
         }
 
         [Test]
         public void TheShortNamePatternFollowsWindows()
         {
-            Assert.True(PathRedactor.ShortNameOf("Leonardo Smith", out string b, out string e));
-            Assert.Equal("LEONAR", b);
+            Assert.True(PathRedactor.ShortNameOf("Alexandra Smith", out string b, out string e));
+            Assert.Equal("ALEXAN", b);
             Assert.Equal("", e);
             Assert.True(PathRedactor.ShortNameOf("anna.smith", out b, out e), "an extension longer than three letters");
             Assert.Equal("ANNA", b);
@@ -43,8 +43,8 @@ namespace SkylineTogether.Core.Tests.Diagnostics
             Assert.Equal("MAXMUS", b, "spaces are left out");
             Assert.True(PathRedactor.ShortNameOf("a+b,c;d=e[f]g", out b, out _));
             Assert.Equal("A_B_C_", b);
-            Assert.False(PathRedactor.ShortNameOf("leon", out _, out _), "a valid 8.3 name has no short form");
-            Assert.False(PathRedactor.ShortNameOf("LEONSM~1", out _, out _));
+            Assert.False(PathRedactor.ShortNameOf("alex", out _, out _), "a valid 8.3 name has no short form");
+            Assert.False(PathRedactor.ShortNameOf("ALEXSM~1", out _, out _));
             Assert.False(PathRedactor.ShortNameOf("abc.def", out _, out _));
             Assert.False(PathRedactor.ShortNameOf("J\u00f6rg M\u00fcller", out _, out _), "not predictable outside ASCII (the resolved form covers it)");
 
@@ -59,23 +59,23 @@ namespace SkylineTogether.Core.Tests.Diagnostics
             // a hashed short name (after four folders with the same first letters) is only known by asking Windows
             var r = new PathRedactor(new[]
             {
-                new KeyValuePair<string, string>(@"D:\Profiles\Leonardo Smith", PathRedactor.UserProfileToken),
+                new KeyValuePair<string, string>(@"D:\Profiles\Alexandra Smith", PathRedactor.UserProfileToken),
                 new KeyValuePair<string, string>(@"D:\Profiles\LE1A2B~1", PathRedactor.UserProfileToken),
-            }, "Leonardo Smith");
+            }, "Alexandra Smith");
             Assert.Equal(@"%USERPROFILE%\AppData\Local\Temp\st", r.Apply(@"D:\Profiles\LE1A2B~1\AppData\Local\Temp\st"));
-            Assert.Equal(@"%USERPROFILE%\AppData", r.Apply(@"D:\Profiles\Leonardo Smith\AppData"));
+            Assert.Equal(@"%USERPROFILE%\AppData", r.Apply(@"D:\Profiles\Alexandra Smith\AppData"));
         }
 
         [Test]
         public void AFileUrlWithPercentEncodedCharactersIsRedacted()
         {
-            PathRedactor r = Profile(@"D:\Profiles\Leonardo Smith", "Leonardo Smith");
-            Assert.Equal("file:///%USERPROFILE%/AppData/LocalLow/x.png", r.Apply("file:///D:/Profiles/Leonardo%20Smith/AppData/LocalLow/x.png"));
-            Assert.Equal("file:///%USERPROFILE%/AppData", r.Apply("file:///d:/profiles/leonardo%20smith/AppData"), "lower-case hex and letters");
-            Assert.Equal("see /srv/%USERNAME%/x", r.Apply("see /srv/Leonardo%20Smith/x"), "the user name as a segment");
+            PathRedactor r = Profile(@"D:\Profiles\Alexandra Smith", "Alexandra Smith");
+            Assert.Equal("file:///%USERPROFILE%/AppData/LocalLow/x.png", r.Apply("file:///D:/Profiles/Alexandra%20Smith/AppData/LocalLow/x.png"));
+            Assert.Equal("file:///%USERPROFILE%/AppData", r.Apply("file:///d:/profiles/alexando%20smith/AppData"), "lower-case hex and letters");
+            Assert.Equal("see /srv/%USERNAME%/x", r.Apply("see /srv/Alexandra%20Smith/x"), "the user name as a segment");
             PathRedactor j = Profile("D:\\Profiles\\J\u00f6rg M\u00fcller", "J\u00f6rg M\u00fcller");
             Assert.Equal("file:///%USERPROFILE%/AppData", j.Apply("file:///D:/Profiles/J%C3%B6rg%20M%C3%BCller/AppData"), "UTF-8 bytes, percent-encoded");
-            Assert.Equal("file:///D:/Profiles/Leonardo%2Smith/x", r.Apply("file:///D:/Profiles/Leonardo%2Smith/x"), "a broken escape is no match");
+            Assert.Equal("file:///D:/Profiles/Alexandra%2Smith/x", r.Apply("file:///D:/Profiles/Alexandra%2Smith/x"), "a broken escape is no match");
         }
 
         [Test]

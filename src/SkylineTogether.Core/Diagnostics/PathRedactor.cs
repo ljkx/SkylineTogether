@@ -10,9 +10,9 @@ namespace SkylineTogether.Core.Diagnostics
     /// (<c>C:\Users\you\AppData\LocalLow\…</c> becomes <c>%USERPROFILE%\AppData\LocalLow\…</c>, which Explorer's address
     /// bar still opens), and any other path segment that equals the user name becomes <c>%USERNAME%</c>. Both separators
     /// count (Unity writes <c>/</c>), letters are compared case-insensitively, and a path in a <c>file://</c> URL counts
-    /// with its characters percent-encoded (<c>Leonardo%20Smith</c>). A root whose last folder has an 8.3 short name
-    /// (<c>LEONAR~1</c> for "Leonardo Smith", which Windows puts into TEMP and into exception messages) is matched in that form
-    /// too: by the pattern Windows derives the short name with (<c>LEONAR~&lt;n&gt;</c>), and exactly once the game layer
+    /// with its characters percent-encoded (<c>Alexandra%20Smith</c>). A root whose last folder has an 8.3 short name
+    /// (<c>ALEXAN~1</c> for "Alexandra Smith", which Windows puts into TEMP and into exception messages) is matched in that form
+    /// too: by the pattern Windows derives the short name with (<c>ALEXAN~&lt;n&gt;</c>), and exactly once the game layer
     /// resolved it (<see cref="AddShortForms"/>). Text without the user name is returned unchanged (the same instance),
     /// so the check is cheap for ordinary log lines. Immutable; thread-safe.
     /// </summary>
@@ -31,7 +31,7 @@ namespace SkylineTogether.Core.Diagnostics
         private readonly string[] _names;
         // the quick check: a text that contains none of these (the names, every root's last folder) has nothing to replace
         private readonly string[] _probes;
-        // the 8.3 short names Windows derives from the roots' last folders (LEONAR~1 for "Leonardo Smith")
+        // the 8.3 short names Windows derives from the roots' last folders (ALEXAN~1 for "Alexandra Smith")
         private readonly ShortForm[] _shortForms;
         // what the redactor was made of (AddShortForms adds roots to it)
         private readonly List<KeyValuePair<string, string>> _given = new List<KeyValuePair<string, string>>();
@@ -40,7 +40,7 @@ namespace SkylineTogether.Core.Diagnostics
         private sealed class ShortForm
         {
             public string Parent;    // the root without its last folder (C:\Users)
-            public string Base;      // the short name before "~" (LEONAR)
+            public string Base;      // the short name before "~" (ALEXAN)
             public string Extension; // the short extension ("", or SMI for "anna.smith")
             public string Token;
         }
@@ -385,7 +385,7 @@ namespace SkylineTogether.Core.Diagnostics
 
         /// <summary>
         /// The 8.3 short name Windows generates first for a folder named <paramref name="name"/>, as <c>BASE~n.EXT</c>
-        /// ("Leonardo Smith": LEONAR~n; "anna.smith": ANNA~n.SMI); false when the name needs none (it is a valid 8.3 name
+        /// ("Alexandra Smith": ALEXAN~n; "anna.smith": ANNA~n.SMI); false when the name needs none (it is a valid 8.3 name
         /// already) or its short name cannot be predicted (characters outside printable ASCII).
         /// </summary>
         internal static bool ShortNameOf(string name, out string shortBase, out string shortExtension)

@@ -5,7 +5,7 @@ using System.Text;
 namespace SkylineTogether.Diagnostics
 {
     /// <summary>
-    /// The 8.3 short form of a folder (<c>LEONAR~1</c> for "Leonardo Smith") through Windows' <c>GetShortPathNameW</c>, for the path
+    /// The 8.3 short form of a folder (<c>ALEXAN~1</c> for "Alexandra Smith") through Windows' <c>GetShortPathNameW</c>, for the path
     /// redactor (<see cref="Core.Diagnostics.PathRedactor.AddShortForms"/>): TEMP and the paths in exception messages can
     /// name the profile folder that way, also as a hashed short name that no pattern predicts.
     /// </summary>
