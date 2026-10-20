@@ -17,8 +17,11 @@ namespace SkylineTogether.Core.Diagnostics
     [ThreadAffinity(ThreadKind.Any)]
     public static class AddressMask
     {
-        private static readonly Regex Ipv4 = new Regex(@"(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\w.])", RegexOptions.CultureInvariant);
+        // four parts, not part of a longer dotted number (a version), but possibly at the end of a sentence ("... 203.0.113.7.")
+        private static readonly Regex Ipv4 = new Regex(@"(?<![\w.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?!\w|\.\d)", RegexOptions.CultureInvariant);
         private static readonly Regex BracketedIpv6 = new Regex(@"\[([0-9A-Fa-f:.%\w]+)\]", RegexOptions.CultureInvariant);
+        // an unbracketed IPv6 address (with an optional zone, fe80::1%3); checked by IPAddress.TryParse before it is masked
+        private static readonly Regex BareIpv6 = new Regex(@"(?<![\w:.%\[])([0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?:%\w+)?)(?![\w:%\]]|\.\d)", RegexOptions.CultureInvariant);
 
         /// <summary>An IP address or host name, masked (see the class summary); "" for null or empty.</summary>
         public static string Host(string host)
@@ -78,8 +81,9 @@ namespace SkylineTogether.Core.Diagnostics
         }
 
         /// <summary>
-        /// Every IPv4 address and bracketed IPv6 address in a free text (for example Steam's connection description,
-        /// "#123 UDP 203.0.113.7:27015") masked. Numbers with more or fewer than four parts (versions) are left alone.
+        /// Every IPv4 address and IPv6 address (bracketed or not) in a free text (for example Steam's connection
+        /// description, "#123 UDP 203.0.113.7:27015") masked, also at the end of a sentence. Numbers with more or fewer
+        /// than four parts (versions) and times (12:30:45) are left alone.
         /// </summary>
         public static string InText(string text)
         {
@@ -92,13 +96,31 @@ namespace SkylineTogether.Core.Diagnostics
                 }
                 return m.Groups[1].Value + "." + m.Groups[2].Value + "." + m.Groups[3].Value + ".x";
             });
-            return BracketedIpv6.Replace(result, m =>
+            result = BracketedIpv6.Replace(result, m =>
             {
                 string inner = m.Groups[1].Value;
                 return inner.IndexOf(':') >= 0 && IPAddress.TryParse(inner, out IPAddress ip) && ip.AddressFamily == AddressFamily.InterNetworkV6
                     ? "[" + Ip(ip) + "]"
                     : m.Value;
             });
+            return BareIpv6.Replace(result, m => IsBareIpv6(m.Groups[1].Value, out IPAddress ip) ? Ip(ip) : m.Value);
+        }
+
+        // eight groups, or fewer with "::", and at least one digit: not a time (12:30:45) or a lone "::"
+        private static bool IsBareIpv6(string token, out IPAddress ip)
+        {
+            ip = null;
+            int percent = token.IndexOf('%');
+            string address = percent >= 0 ? token.Substring(0, percent) : token;
+            int colons = 0;
+            bool digit = false;
+            foreach (char c in address)
+            {
+                if (c == ':') colons++;
+                else digit = true;
+            }
+            if (!digit || (colons != 7 && address.IndexOf("::", StringComparison.Ordinal) < 0)) return false;
+            return IPAddress.TryParse(token, out ip) && ip.AddressFamily == AddressFamily.InterNetworkV6;
         }
 
         private static string Ip(IPAddress ip)
