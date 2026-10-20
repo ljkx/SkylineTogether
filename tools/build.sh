@@ -9,7 +9,8 @@
 #   --deploy        copy the mod into the local Mods folder (default:
 #                   %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether)
 #   --package       write dist/SkylineTogether-<version>.zip (a SkylineTogether folder with the DLLs, PDBs,
-#                   the UI module, LICENSE, THIRD-PARTY-NOTICES.txt and README.txt; extract it into the Mods folder)
+#                   the UI module, LICENSE, THIRD-PARTY-NOTICES.txt and README.txt; extract it into the Mods folder);
+#                   with Python the zip is reproducible (tools/release_common.py)
 #   --game-dir      the game's install folder (default: the Steam path of Directory.Build.props; env GameDir)
 #   --deploy-dir    deploy target (env ModDeployDir)
 #
@@ -138,7 +139,7 @@ if [ "$PACKAGE" = 1 ]; then
   rm -rf "$STAGE_ROOT" "$ZIP"
   mkdir -p "$STAGE"
   copy_mod_files "$STAGE"
-  for f in LICENSE LICENSE.txt THIRD-PARTY-NOTICES.txt; do
+  for f in LICENSE THIRD-PARTY-NOTICES.txt; do
     if [ -f "$f" ]; then cp -f "$f" "$STAGE/"; fi
   done
   cat > "$STAGE/README.txt" <<EOF
@@ -173,8 +174,24 @@ They contain player names, Steam IDs and the session name, but no passwords or c
 as %USERPROFILE%. Never attach crash dumps (.dmp): they can contain passwords. Details:
 https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug
 EOF
-  # zip, else the bsdtar that ships with Windows 10+, else PowerShell (which writes backslashes into entry names)
-  if command -v zip >/dev/null 2>&1; then
+  # every file a player needs, or no package (copy_mod_files skips missing files silently)
+  for f in SkylineTogether.dll SkylineTogether.pdb SkylineTogether.Core.dll SkylineTogether.Core.pdb SkylineTogether.mjs            LICENSE THIRD-PARTY-NOTICES.txt README.txt; do
+    [ -f "$STAGE/$f" ] || fail "the package would lack $f"
+  done
+  if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "WARNING: uncommitted changes; make_installer.py and publish_paradox.py refuse this package (a release is built from a clean commit)"
+  fi
+  # Python's zipfile through tools/release_common.py (reproducible: sorted entries, the commit time as every timestamp),
+  # else zip, else the bsdtar that ships with Windows 10+, else PowerShell (which writes backslashes into entry names)
+  PY=""
+  for candidate in python3 python py; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import zipfile" >/dev/null 2>&1; then PY="$candidate"; break; fi
+  done
+  if [ -n "$PY" ]; then
+    "$PY" tools/release_common.py zip "$STAGE" "$ZIP" || fail "zip (tools/release_common.py)"
+    "$PY" tools/release_common.py check-zip "$ZIP" || fail "the package is incomplete"
+  elif command -v zip >/dev/null 2>&1; then
+    echo "WARNING: no Python; the zip is not reproducible (it records the current time)"
     (cd "$STAGE_ROOT" && zip -qr "../$NAME.zip" SkylineTogether) || fail "zip"
   elif [ -x /c/Windows/System32/tar.exe ]; then
     (cd "$STAGE_ROOT" && /c/Windows/System32/tar.exe -a -c -f "../$NAME.zip" SkylineTogether) || fail "tar -a"
@@ -184,7 +201,7 @@ EOF
       "Compress-Archive -Path '$(to_native "$ROOT/$STAGE")' -DestinationPath '$(to_native "$ROOT/$ZIP")' -Force" \
       || fail "Compress-Archive"
   else
-    fail "no zip tool found (zip, PowerShell or Windows tar)"
+    fail "no zip tool found (Python, zip, Windows tar or PowerShell)"
   fi
   [ -f "$ZIP" ] || fail "the archive was not created"
   rm -rf "$STAGE_ROOT"

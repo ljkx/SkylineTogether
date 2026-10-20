@@ -43,7 +43,8 @@ Back up your saves before you host or join.
 ## Build id
 
 `<build id>`: shown at the bottom of the Skyline Together panel. The Paradox Mods version and this setup have the
-same build id, so players of both routes can play together. Built and tested with game version `<game version>`.
+same build id, so players of both routes can play together. Built and tested with game version `<game version>`,
+built from commit `<commit>` with .NET SDK `<sdk version>`.
 
 ## Checksums (SHA-256)
 

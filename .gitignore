@@ -8,3 +8,6 @@ dist/
 .idea/
 *.user
 *.suo
+
+# Python bytecode (the release tools import tools/release_common.py)
+__pycache__/

@@ -2,7 +2,9 @@
 
 Usage (repo root, after tools/build.sh --package):
 
-  python tools/paradox/publish_paradox.py check        validate everything and print the ModPublisher command (default)
+  python tools/paradox/publish_paradox.py check        validate everything and print the ModPublisher command (default);
+                                                       the rules are those of the command --for names (default: Publish
+                                                       while ModId is empty, else Release)
   python tools/paradox/publish_paradox.py Publish      first upload of a new mod (ModId must be empty)
   python tools/paradox/publish_paradox.py Release      a new release: NewVersion, then Update (the usual command)
   python tools/paradox/publish_paradox.py NewVersion   upload a new version (ModId set, new ModVersion and ChangeLog)
@@ -17,6 +19,8 @@ Usage (repo root, after tools/build.sh --package):
             --game-dir <p>   the game's install folder (default: env GameDir, else the Steam path of Directory.Build.props)
             --publisher <p>  ModPublisher.exe (default: env CSII_MODPUBLISHERPATH, else the one inside the game folder)
             --zip <p>        the release zip to upload (default: dist/SkylineTogether-<Version>.zip)
+            --for <command>  check only: the command whose rules apply (Release, Publish, NewVersion, Update)
+            --allow-dirty    accept uncommitted changes (check and --dry-run only)
 
 What it does (docs/dev/publishing-paradox-mods.md):
   1. reads <Version> from Directory.Build.props and src/SkylineTogether/Properties/PublishConfiguration.xml and checks
@@ -24,7 +28,8 @@ What it does (docs/dev/publishing-paradox-mods.md):
      section for the version, and that the thumbnail and screenshots exist;
   2. extracts the content folder dist/paradox/SkylineTogether from the release zip (the exact files that were tested and
      that the GitHub setup installs, without the zip's README.txt), so a Paradox Mods player and a GitHub player have the
-     same build id; prints that build id;
+     same build id; prints that build id; refuses a zip whose SkylineTogether.dll was not built from the current HEAD,
+     or a working tree with uncommitted changes;
   3. scans the content folder and the configuration for personal data (tools/check_personal_data.py patterns);
   4. writes dist/paradox/PublishConfiguration.xml: the configuration with absolute image paths and without the
      indentation of multi-line texts;
@@ -36,7 +41,6 @@ What it does (docs/dev/publishing-paradox-mods.md):
 """
 import argparse
 import hashlib
-import importlib.util
 import os
 import re
 import shutil
@@ -46,6 +50,9 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
+import release_common  # noqa: E402
+
 PROJECT = os.path.join(ROOT, 'src', 'SkylineTogether')
 CONFIG = os.path.join(PROJECT, 'Properties', 'PublishConfiguration.xml')
 DIST = os.path.join(ROOT, 'dist', 'paradox')
@@ -67,10 +74,13 @@ def fail(msg):
     sys.exit('PUBLISH CHECK FAILED: ' + msg)
 
 
-def props_value(name):
-    text = open(os.path.join(ROOT, 'Directory.Build.props'), encoding='utf-8').read()
-    m = re.search(r'<%s(?:\s[^>]*)?>([^<]+)</%s>' % (name, name), text)
-    return m.group(1).strip() if m else None
+props_value = release_common.props_value
+
+
+def implied_command():
+    """The command a check validates by default: Publish while ModId is empty, else Release (NewVersion, then Update)."""
+    _, value = read_config()
+    return 'Publish' if value('ModId') in ('', '0') else 'Release'
 
 
 def read_config():
@@ -125,9 +135,20 @@ def check_config(command, version):
     return images
 
 
-def stage_content(zip_path):
-    if not os.path.isfile(zip_path):
-        fail('no %s; run tools/build.sh --package first (and test exactly that build)' % os.path.relpath(zip_path, ROOT))
+def stage_content(zip_path, version, allow_dirty):
+    try:
+        zip_path = release_common.release_zip(version, zip_path)
+    except release_common.ReleaseError as e:
+        fail(str(e) + ' (and test exactly that build)')
+    with zipfile.ZipFile(zip_path) as z:
+        missing = release_common.missing_release_files(z.namelist())
+        if missing:
+            fail('the release zip lacks ' + ', '.join(missing))
+        try:
+            commit = release_common.verify_built_from_clean_head(z.read('SkylineTogether/SkylineTogether.dll'), version, allow_dirty)
+        except release_common.ReleaseError as e:
+            fail('the release zip is not a build of the clean HEAD:' + str(e))
+    print('release zip: %s, built from commit %s' % (os.path.relpath(zip_path, ROOT), commit[:12]))
     if os.path.isdir(CONTENT):
         shutil.rmtree(CONTENT)
     os.makedirs(CONTENT)
@@ -153,17 +174,12 @@ def stage_content(zip_path):
 
 
 def scan_personal_data():
-    spec = importlib.util.spec_from_file_location('check_personal_data', os.path.join(ROOT, 'tools', 'check_personal_data.py'))
-    checks = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(checks)
+    checks = release_common.load_personal_data_checks()
     found = []
     files = [os.path.join(dp, f) for dp, _, fs in os.walk(CONTENT) for f in fs] + [CONFIG]
     for path in files:
         data = open(path, 'rb').read()
-        name = os.path.relpath(path, ROOT)
-        for text in (data.decode('latin-1'), data[len(data) % 2:].decode('utf-16-le', errors='ignore')):
-            for line in text.splitlines():
-                checks.scan_line(name, line, found)
+        release_common.scan_bytes(os.path.relpath(path, ROOT), data, checks, found)
     if found:
         for f in sorted(set(found)):
             print(f)
@@ -228,26 +244,37 @@ def main():
     ap.add_argument('--game-dir')
     ap.add_argument('--publisher')
     ap.add_argument('--zip')
+    ap.add_argument('--for', dest='for_command')
+    ap.add_argument('--allow-dirty', action='store_true')
     args = ap.parse_args()
     command = COMMANDS.get(args.command.lower())
     if not command:
         fail('unknown command "%s" (check, Release, Publish, NewVersion, Update)' % args.command)
+    if args.for_command and command != 'check':
+        fail('--for applies to check only')
+    if args.allow_dirty and command != 'check' and not args.dry_run:
+        fail('--allow-dirty applies to check and --dry-run only: an upload is built from a clean commit')
+    rules = command
+    if command == 'check':
+        rules = COMMANDS.get((args.for_command or implied_command()).lower())
+        if rules not in ('Release', 'Publish', 'NewVersion', 'Update'):
+            fail('--for takes Release, Publish, NewVersion or Update')
 
     version = props_value('Version')
     if not version:
         fail('no <Version> in Directory.Build.props')
-    print('Skyline Together %s -> Paradox Mods (%s)' % (version, command))
-    check_config(command if command != 'check' else 'NewVersion-or-Publish', version)
-    stage_content(args.zip or os.path.join(ROOT, 'dist', 'SkylineTogether-%s.zip' % version))
+    print('Skyline Together %s -> Paradox Mods (%s)' % (version, command if command != 'check' else 'check for ' + rules))
+    check_config(rules, version)
+    stage_content(args.zip, version, args.allow_dirty)
     scan_personal_data()
     write_effective_config()
     publisher = find_publisher(args.publisher, args.game_dir)
     env = dotnet_env()
-    steps = STEPS.get(command, ['<Publish|NewVersion|Update>'])
+    steps = STEPS[rules]
     for step in steps:
         cmd = [publisher, step, EFFECTIVE, '-c', CONTENT, '-v']
         print('ModPublisher command:\n  ' + ' '.join('"%s"' % c if ' ' in c else c for c in cmd))
-    if command == 'check':
+    if command == 'check' and rules == 'Release':
         print('a release runs NewVersion, then Update: python tools/paradox/publish_paradox.py Release')
     if command == 'check' or args.dry_run:
         print('not uploading (%s)' % ('check' if command == 'check' else '--dry-run'))
@@ -258,19 +285,29 @@ def main():
         if answer.strip().lower() != 'yes':
             print('cancelled')
             return
-    proc = None
+    output = []
     for step in steps:
         print('\n== ModPublisher ' + step)
-        proc = subprocess.run([publisher, step, EFFECTIVE, '-c', CONTENT, '-v'], env=env, capture_output=True, text=True, check=False)
-        sys.stdout.write(proc.stdout)
-        sys.stderr.write(proc.stderr)
-        if proc.returncode != 0:
+        # stream ModPublisher's output as it comes (progress, a login prompt) and keep it for the mod id
+        output = []
+        proc = subprocess.Popen([publisher, step, EFFECTIVE, '-c', CONTENT, '-v'], env=env, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, errors='replace', bufsize=1)
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            output.append(line)
+        returncode = proc.wait()
+        if returncode != 0:
             later = '; the new version is up: run Update to refresh the page' if command == 'Release' and step == 'Update' else ''
-            fail('ModPublisher %s exited with %d%s' % (step, proc.returncode, later))
-    m = re.search(r'Mod published with Id=\s*(\d+)', proc.stdout)
+            fail('ModPublisher %s exited with %d%s' % (step, returncode, later))
+    m = re.search(r'Mod published with Id=\s*(\d+)', ''.join(output))
+    if command == 'Publish' and not m:
+        fail('ModPublisher reported no "Mod published with Id=": write the new mod id into ModId of %s by hand' % os.path.relpath(CONFIG, ROOT))
     if command == 'Publish' and m:
         text = open(CONFIG, encoding='utf-8').read()
-        text = re.sub(r'<ModId Value="[^"]*"', '<ModId Value="%s"' % m.group(1), text, count=1)
+        text, replaced = re.subn(r'<ModId Value="[^"]*"', '<ModId Value="%s"' % m.group(1), text, count=1)
+        if replaced != 1:
+            fail('published as mod %s, but %s has no <ModId Value="..."> to write it into: add it by hand' % (m.group(1), os.path.relpath(CONFIG, ROOT)))
         with open(CONFIG, 'w', encoding='utf-8', newline='\n') as f:
             f.write(text)
         print('\nPublished as mod %s; written into ModId of %s. Commit that change.' % (m.group(1), os.path.relpath(CONFIG, ROOT)))

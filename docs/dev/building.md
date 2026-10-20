@@ -33,7 +33,9 @@ What it does, in order (any failure stops it before anything is deployed or pack
 5. `--deploy`: copies `SkylineTogether.dll`, `SkylineTogether.Core.dll`, their `.pdb` files and
    `ui/SkylineTogether.mjs` into the Mods folder.
 6. `--package`: writes `dist/SkylineTogether-<version>.zip` with a `SkylineTogether` folder (the files above, `LICENSE`,
-   `THIRD-PARTY-NOTICES.txt` and a `README.txt`). The version comes from `<Version>` in `Directory.Build.props`.
+   `THIRD-PARTY-NOTICES.txt` and a `README.txt`); it fails when any of these files is missing, and warns when the tree
+   has uncommitted changes (the release tools refuse such a package). The version comes from `<Version>` in
+   `Directory.Build.props`. With Python the zip is reproducible ([Reproducible builds](#reproducible-builds)).
 
 ## Game path and Directory.Build.props
 
@@ -99,7 +101,9 @@ tools/build.sh --package               # dist/SkylineTogether-<version>.zip
 python tools/installer/make_installer.py
 ```
 
-`make_installer.py` takes the newest `dist/SkylineTogether-<version>.zip` and writes `dist/SkylineTogether-Setup.zip`
+`make_installer.py` takes `dist/SkylineTogether-<version>.zip` of the `<Version>` in `Directory.Build.props` (or
+`--zip <path>`), checks that its DLL was built from the clean `HEAD` (`--allow-dirty` for a local test) and writes
+`dist/SkylineTogether-Setup.zip`
 (and the same files loose in `dist/SkylineTogether-Setup/`):
 
 - `Install-SkylineTogether.ps1`: the installer, built from `tools/installer/Install-SkylineTogether.template.ps1` with
@@ -137,6 +141,12 @@ build id, on any machine and in any checkout folder, as long as these inputs are
 - **the commit itself**: the DLL's informational version carries the commit hash (Source Link).
 
 The checkout path does not matter (`DeterministicSourcePaths` maps it to `/_/`).
+
+The release zip (`tools/build.sh --package`) and the setup zip (`make_installer.py`) are written by
+`tools/release_common.py`: entries in sorted order, every timestamp set to the commit time, fixed attributes. Packaging
+the same build twice gives byte-identical zips (with the same Python, whose zlib compresses), so the published SHA-256
+values can be re-derived from the source. Without Python, `build.sh` falls back to `zip`, Windows `tar` or PowerShell
+and warns that the zip is not reproducible.
 
 ## Editor settings
 

@@ -1,36 +1,49 @@
 """Builds dist/SkylineTogether-Setup.zip: a self-contained installer for players (the release zip embedded as base64).
 
-Usage (repo root):  python tools/installer/make_installer.py
-Run after tools/build.sh --package.
+Usage (repo root):  python tools/installer/make_installer.py [--zip <release zip>] [--allow-dirty]
+Run after tools/build.sh --package. It takes the release zip of the <Version> in Directory.Build.props (never
+another version's zip that is still in dist/), and refuses a zip whose SkylineTogether.dll was not built from the
+current HEAD, or a working tree with uncommitted changes (--allow-dirty: for a local test only). The setup zip is
+reproducible: the same release zip and commit give the same bytes.
 """
-import base64, hashlib, importlib.util, io, os, re, sys, zipfile
+import argparse, base64, hashlib, io, os, sys, zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-dist = os.path.join(ROOT, 'dist')
-zips = sorted(f for f in os.listdir(dist) if re.match(r'SkylineTogether-\d.*\.zip$', f))
-if not zips:
-    sys.exit('no dist/SkylineTogether-<version>.zip; run tools/build.sh --package first')
-release = os.path.join(dist, zips[-1])
-version = re.match(r'SkylineTogether-(.*)\.zip$', zips[-1]).group(1)
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
+import release_common  # noqa: E402
+
+ap = argparse.ArgumentParser(description='Build the player installer from the release zip.')
+ap.add_argument('--zip', help='the release zip (default: dist/SkylineTogether-<Version>.zip)')
+ap.add_argument('--allow-dirty', action='store_true', help='accept uncommitted changes (local tests only)')
+args = ap.parse_args()
+dist = release_common.DIST
+try:
+    version = release_common.release_version()
+    release = release_common.release_zip(version, args.zip)
+except release_common.ReleaseError as e:
+    sys.exit(str(e))
 payload = open(release, 'rb').read()
 with zipfile.ZipFile(io.BytesIO(payload)) as z:
+    missing = release_common.missing_release_files(z.namelist())
+    if missing:
+        sys.exit('the release zip lacks ' + ', '.join(missing) + '; build it again with tools/build.sh --package')
+    dll = z.read('SkylineTogether/SkylineTogether.dll')
     # the build id: the first 12 hex digits of the SHA-256 of the shipped SkylineTogether.dll. The game computes the same
     # value from the loaded DLL (Core Session/BuildId.cs, GameInfoProvider.Build) and the installer script from the
     # installed file, so all three print the same id.
-    build = hashlib.sha256(z.read('SkylineTogether/SkylineTogether.dll')).hexdigest()[:12]
+    build = hashlib.sha256(dll).hexdigest()[:12]
+try:
+    commit = release_common.verify_built_from_clean_head(dll, version, args.allow_dirty)
+except release_common.ReleaseError as e:
+    sys.exit('the release zip is not a build of the clean HEAD:' + str(e))
 
-# nothing the builder's machine knows may ship: scan every packaged file (as bytes decoded both as 8-bit text and as
-# UTF-16, since .NET metadata strings are UTF-16) with the repository's personal-data patterns
-spec = importlib.util.spec_from_file_location('check_personal_data', os.path.join(ROOT, 'tools', 'check_personal_data.py'))
-checks = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(checks)
+# nothing the builder's machine knows may ship: scan every packaged file (as bytes decoded as 8-bit text and as UTF-16
+# at both byte alignments, since .NET metadata strings are UTF-16) with the repository's personal-data patterns
+checks = release_common.load_personal_data_checks()
 found = []
 with zipfile.ZipFile(io.BytesIO(payload)) as z:
     for name in z.namelist():
-        data = z.read(name)
-        for text in (data.decode('latin-1'), data[len(data) % 2:].decode('utf-16-le', errors='ignore')):
-            for line in text.splitlines():
-                checks.scan_line(name, line, found)
+        release_common.scan_bytes(name, z.read(name), checks, found)
 if found:
     for f in sorted(set(found)):
         print(f)
@@ -49,11 +62,12 @@ logs_cmd = ('@echo off\r\n'
             'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-SkylineTogether.ps1" -CollectLogs %*\r\n')
 checklist = open(os.path.join(here, 'TWO-PLAYER-CHECKLIST.txt'), encoding='utf-8').read().replace('__BUILDID__', build).replace('\n', '\r\n')
 out = os.path.join(dist, 'SkylineTogether-Setup.zip')
-with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
-    z.writestr('SkylineTogether-Setup/Install-SkylineTogether.ps1', script)
-    z.writestr('SkylineTogether-Setup/Install.cmd', install_cmd)
-    z.writestr('SkylineTogether-Setup/Collect-Logs.cmd', logs_cmd)
-    z.writestr('SkylineTogether-Setup/TWO-PLAYER-CHECKLIST.txt', checklist)
+release_common.write_zip(out, [
+    ('SkylineTogether-Setup/Install-SkylineTogether.ps1', script.encode('ascii')),
+    ('SkylineTogether-Setup/Install.cmd', install_cmd.encode('ascii')),
+    ('SkylineTogether-Setup/Collect-Logs.cmd', logs_cmd.encode('ascii')),
+    ('SkylineTogether-Setup/TWO-PLAYER-CHECKLIST.txt', checklist.encode('ascii')),
+])
 # a loose copy for the host's own use
 loose = os.path.join(dist, 'SkylineTogether-Setup')
 os.makedirs(loose, exist_ok=True)
@@ -63,7 +77,7 @@ if os.path.isfile(stale):
 for name, data in (('Install-SkylineTogether.ps1', script), ('Install.cmd', install_cmd), ('Collect-Logs.cmd', logs_cmd), ('TWO-PLAYER-CHECKLIST.txt', checklist)):
     with open(os.path.join(loose, name), 'w', encoding='ascii', newline='') as f:
         f.write(data)
-print('built', out, 'version', version, 'build', build, 'size', os.path.getsize(out))
+print('built', out, 'version', version, 'build', build, 'commit', commit[:12], 'size', os.path.getsize(out))
 
 
 def sha256_of(path):

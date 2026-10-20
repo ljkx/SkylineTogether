@@ -77,7 +77,9 @@ platform accepts patterns such as `1.6.*` and `1.6.2*`).
    `tools/build.sh --package` and `python tools/installer/make_installer.py`. The script uploads the files of
    `dist/SkylineTogether-<version>.zip`, the same files the GitHub setup installs. A Paradox Mods player and a
    GitHub player then have the same **build id** and can play together. Do not rebuild after testing.
-3. **Check.** `python tools/paradox/publish_paradox.py check`. It validates the config and the images, extracts the
+3. **Check.** `python tools/paradox/publish_paradox.py check`. It validates the config and the images with the rules
+   of the upload command (`Release` while `ModId` is set, `Publish` while it is empty; `--for <command>` to check
+   another), checks that the zip of `<Version>` was built from the clean `HEAD`, extracts the
    content folder `dist/paradox/SkylineTogether` from the zip, prints the **build id** (it must equal the one
    `make_installer.py` printed and the one in the GitHub release notes), scans the content and the config for
    personal data, writes `dist/paradox/PublishConfiguration.xml` (absolute image paths, multi-line texts without
