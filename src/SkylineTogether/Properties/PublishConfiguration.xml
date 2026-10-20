@@ -75,6 +75,7 @@ Open source under the MIT licence. Not affiliated with or endorsed by Paradox In
 	<Screenshot Value="Properties/Screenshots/01-hosting.png" />
 	<Screenshot Value="Properties/Screenshots/02-join-from-title-screen.png" />
 	<Screenshot Value="Properties/Screenshots/03-joining.png" />
+	<Screenshot Value="Properties/Screenshots/04-mods.png" />
 	<!--"Code Mod" is the tag every code mod on Paradox Mods carries; the platform has no multiplayer tag-->
 	<Tag Value="Code Mod" />
 	<!--The release version: <Version> of Directory.Build.props (tools/paradox/publish_paradox.py checks that they match)-->

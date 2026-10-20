@@ -378,9 +378,14 @@ const cases = {
     friends: [{ id: "76561190000000001", name: "Jonas", state: "ingame", inSession: true }, { id: "76561190000000002", name: "Priya", state: "ingame", inSession: true },
       { id: "76561190000000003", name: "Lena", state: "online", inSession: false }, { id: "76561190000000004", name: "Sam", state: "away", inSession: false },
       { id: "76561190000000005", name: "Alex", state: "offline", inSession: false }], overlayAvailable: true },
-  showcaseLobby: { state: { ...base, mode: "None", build: "", inGame: false, canHost: false, playerName: "Priya", hasPassword: true, allowDirect: true } },
+  showcaseLobby: { state: { ...base, mode: "None", build: "", inGame: false, canHost: false, playerName: "Priya", hasPassword: true, allowDirect: true, joinTarget: "76561190000000000" } },
+  // snapshotStore: the UI store of the HTML snapshot (the panel closed, so only the overlay shows)
   showcaseJoining: { state: { ...base, mode: "Joining", build: "", stage: "downloading", progress: 0.55 },
-    join: join("downloading", { session: "Riverside", target: "", done: 115343360, total: 209715200, bps: 6291456, eta: 15, progress: 0.55 }) },
+    join: join("downloading", { session: "Riverside", target: "", done: 115343360, total: 209715200, bps: 6291456, eta: 15, progress: 0.55 }), snapshotStore: { open: false } },
+  // the mods screen: the host lets players join with different mods; the player sees what to change and "Join anyway"
+  showcaseMods: { state: { ...base, mode: "None", build: "", end: end("refused", "Mismatch", { seq: 9, text: "", target: "", reportKind: "mods", overridable: true,
+    missing: [{ name: "Move It", version: "2.4", id: "" }, { name: "Find It", version: "1.1", id: "" }], extra: [{ name: "Anarchy", version: "1.7", id: "" }],
+    versions: [{ name: "Traffic", host: "0.6", you: "0.5" }] }) }, snapshotStore: { open: false } },
 };
 // texts an English render of a state must show (has) or must not show (lacks)
 const JOIN_ANYWAY = "Join anyway";
@@ -412,6 +417,7 @@ const EXPECT = {
   hostingConflictMod: { has: ["The \"CS2 Multiplayer Mod\" (CS2MultiplayerMod 1.0.0.0) is enabled, and two multiplayer mods can't run at the same time. Disable it and restart the game. While it is enabled, nobody can join you and you can't join others."] },
   hosting: { lacks: ["Two multiplayer mods at once"] },
   // a host that could not prove the password: its own screen with the password field, not the bug-report one
+  showcaseMods: { has: [JOIN_ANYWAY, WARNING, "Move It", "Find It", "Anarchy", "Traffic"] },
   endHostProof: { has: ["Couldn't confirm the host", "The host couldn't prove that it knows the session password, so this may not be the host you meant. Check the Steam ID or address and the password with the host, then try again.",
     "Join with this password"], lacks: ["Joining failed", "bug report", JOIN_ANYWAY] },
 };
@@ -554,7 +560,7 @@ function writeSnapshots(dir) {
     const st = typeof c.state === "object" ? c.state : {};
     const lobby = (st.mode || "None") === "None" && !st.end;
     for (const tab of lobby ? ["host", "join", "solo"] : ["host"]) {
-      Object.assign(smoke.store, { open: true, menuOpen: false, tab, gameTab: tab, dismissedEnd: -1, typing: 0, invitesOpen: true, chatOpen: true, chatSeen: -1, sent: {} });
+      Object.assign(smoke.store, { open: true, menuOpen: false, tab, gameTab: tab, dismissedEnd: -1, typing: 0, invitesOpen: true, chatOpen: true, chatSeen: -1, sent: {} }, c.snapshotStore || {});
       write(name + ".game" + (lobby ? "-" + tab : "") + ".html", name + " (in game" + (lobby ? ", " + tab : "") + ")", toHtml({ type: appended["Game"], props: {}, children: [] }) + '<div style="position:absolute;left:10rem;top:10rem">' + toHtml({ type: appended["GameTopLeft"], props: {}, children: [] }) + "</div>");
       Object.assign(smoke.store, { open: false, menuOpen: true });
       write(name + ".menu-" + tab + ".html", name + " (main menu, " + tab + ")", toHtml({ type: appended["Menu"], props: {}, children: [] }));

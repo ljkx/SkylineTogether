@@ -28,8 +28,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backdrop  # noqa: E402  (tools/paradox/backdrop.py)
 PROPS = os.path.join(ROOT, 'src', 'SkylineTogether', 'Properties')
 
-# (ui_smoke state file, output name, zoom): the host panel with the invite list, the title screen's join page and a join
-# in progress. A zoom above 1 lays the page out in a smaller viewport (1920 / zoom wide) and enlarges it to 1920 x 1080,
+# (ui_smoke state file, output name, zoom): the host panel with the invite list, the title screen's join page, a join
+# in progress and the screen for different mods with "Join anyway". A zoom above 1 lays the page out in a smaller viewport (1920 / zoom wide) and enlarges it to 1920 x 1080,
 # so the panels stay readable in the Paradox Mods gallery.
 # The name tag of the showcase's building player is anchored at (x, y) = (0.599, 0.458) of the frame (ui_smoke.mjs);
 # the backdrop draws that player's road preview up to it.
@@ -37,6 +37,7 @@ SCREENSHOTS = [
     ('showcaseHosting.game.html', '01-hosting.png', 1.38),
     ('showcaseLobby.menu-join.html', '02-join-from-title-screen.png', 1.0),
     ('showcaseJoining.game.html', '03-joining.png', 1.0),
+    ('showcaseMods.game.html', '04-mods.png', 1.0),
 ]
 PREVIEW = (round(0.599 * 1920), round(0.458 * 1080), '#3fb6e8')
 
