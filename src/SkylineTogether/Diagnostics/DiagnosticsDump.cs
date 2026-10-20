@@ -14,11 +14,15 @@ namespace SkylineTogether.Diagnostics
     /// <summary>
     /// "Write diagnostics" (ARCHITECTURE.md#diagnostics-dump, plain-text subset): session state, players, link numbers, replication counters,
     /// versions, the mod list and the recent log lines, written as a text file next to the mod's log. Passwords and
-    /// chat messages are never included. Main thread only.
+    /// chat messages are never included; paths in the user's folder are written as %USERPROFILE%
+    /// (<see cref="Core.Diagnostics.PathRedactor"/>). Main thread only.
     /// </summary>
     public static class DiagnosticsDump
     {
-        /// <summary>Writes the dump and returns its path; null (and a logged error) when writing failed.</summary>
+        /// <summary>
+        /// Writes the dump and returns its path for showing (the user's folder as %USERPROFILE%, which Explorer's address
+        /// bar opens); null (and a logged error) when writing failed.
+        /// </summary>
         public static string Write()
         {
             string text;
@@ -30,14 +34,16 @@ namespace SkylineTogether.Diagnostics
             {
                 text = "building the diagnostics failed: " + ex + Environment.NewLine;
             }
+            text = Core.Diagnostics.PathRedactor.Redact(text);
             try
             {
                 string folder = Folder();
                 Directory.CreateDirectory(folder);
                 string path = Path.Combine(folder, "SkylineTogether-diagnostics-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".txt");
                 File.WriteAllText(path, text, new UTF8Encoding(false));
-                Mod.Log?.Info(LogCategory.Diagnostics, "diagnostics written to " + path);
-                return path;
+                string shown = Core.Diagnostics.PathRedactor.Redact(path);
+                Mod.Log?.Info(LogCategory.Diagnostics, "diagnostics written to " + shown);
+                return shown;
             }
             catch (Exception ex)
             {

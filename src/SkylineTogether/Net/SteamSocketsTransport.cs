@@ -354,7 +354,7 @@ namespace SkylineTogether.Net
                     _connections.Remove(key);
                     bool wasClosed = connection.Closed;
                     connection.Closed = true;
-                    _log.Info(LogCategory.Net, "connection to " + connection.Peer + " ended (" + reason + ": " + text + ")");
+                    _log.Info(LogCategory.Net, "connection to " + connection.Peer + " ended (" + reason + ": " + Core.Diagnostics.AddressMask.InText(text) + ")");
                     if (!wasClosed) sink.OnDisconnected(connection, reason, string.IsNullOrEmpty(text) ? Describe(reason) : text);
                     return;
                 }
@@ -368,7 +368,7 @@ namespace SkylineTogether.Net
             connection.Peer = IdentityOf(info, connection.Peer.Direct || IsDirect(info));
             connection.Reported = true;
             ConfigureLanes(connection);
-            _log.Info(LogCategory.Net, "connected: " + connection.Peer + " (" + info.m_szConnectionDescription + ")" + (connection.Lanes ? ", " + LanePlan.Count + " lanes" : ""));
+            _log.Info(LogCategory.Net, "connected: " + connection.Peer + " (" + Core.Diagnostics.AddressMask.InText(info.m_szConnectionDescription) + ")" + (connection.Lanes ? ", " + LanePlan.Count + " lanes" : ""));
             sink.OnConnected(connection);
         }
 

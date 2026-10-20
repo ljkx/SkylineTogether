@@ -597,8 +597,10 @@ namespace SkylineTogether.Session
                 _lookup = new HostLookup(endpoint.Host);
                 _lookupPort = endpoint.Port;
                 _lookupPassword = _settings.JoinPassword ?? "";
-                _log.Info(LogCategory.Session, "resolving the host name " + endpoint.Host);
-                Notify(LocaleSource.Resolve("st.toast.join.resolving", "HOST", endpoint.Host), null, "SkylineTogether.resolving", 10f);
+                // the log gets the name masked (AddressMask); the player's own toast shows it as typed
+                _log.Info(LogCategory.Session, "resolving the host name " + AddressMask.Host(endpoint.Host));
+                Notify(LocaleSource.Resolve("st.toast.join.resolving", "HOST", endpoint.Host), null, "SkylineTogether.resolving", 10f,
+                    LocaleSource.Resolve("st.toast.join.resolving", "HOST", AddressMask.Host(endpoint.Host)));
                 return;
             }
             _rejoin.Reset();
@@ -615,12 +617,13 @@ namespace SkylineTogether.Session
             string address = lookup.Result(out string error);
             if (address == null)
             {
-                _log.Warn(LogCategory.Session, "joining failed: " + error);
-                Notify(LocaleSource.Resolve("st.toast.joinFailed", "ERROR", error), ProgressState.Failed);
+                string logged = error.Replace(lookup.Host, AddressMask.Host(lookup.Host));
+                _log.Warn(LogCategory.Session, "joining failed: " + logged);
+                Notify(LocaleSource.Resolve("st.toast.joinFailed", "ERROR", error), ProgressState.Failed, logText: LocaleSource.Resolve("st.toast.joinFailed", "ERROR", logged));
                 return;
             }
             if (InSession) return; // the player started something else meanwhile
-            _log.Info(LogCategory.Session, lookup.Host + " is " + address);
+            _log.Info(LogCategory.Session, AddressMask.Host(lookup.Host) + " is " + AddressMask.Host(address));
             _rejoin.Reset();
             BeginJoin(new Endpoint { Host = address, Port = _lookupPort }, _lookupPassword, rejoin: false);
         }
@@ -1385,8 +1388,14 @@ namespace SkylineTogether.Session
         /// <paramref name="id"/> the text is the identity: the same message again (a repeated click on Copy, a flapping
         /// state) replaces the shown toast and restarts its timeout instead of stacking a copy.
         /// </summary>
-        public static void Notify(string text, ProgressState? state = null, string id = null, float seconds = 7f)
+        /// <summary>
+        /// Shows a toast and logs it. Paths in the user's folder are shown and logged as %USERPROFILE%
+        /// (<see cref="PathRedactor"/>); <paramref name="logText"/> replaces the logged text when the toast shows
+        /// something the log should not keep (a host name the player typed).
+        /// </summary>
+        public static void Notify(string text, ProgressState? state = null, string id = null, float seconds = 7f, string logText = null)
         {
+            text = PathRedactor.Redact(text);
             try
             {
                 string identifier = id ?? "SkylineTogether.text." + StableHash(text ?? "").ToString("x8", CultureInfo.InvariantCulture);
@@ -1397,7 +1406,7 @@ namespace SkylineTogether.Session
             {
                 // the notification UI may not exist yet (very early in boot)
             }
-            Mod.Log?.Info(LogCategory.Ui, "notification: " + text);
+            Mod.Log?.Info(LogCategory.Ui, "notification: " + (logText ?? text));
         }
 
         /// <summary>FNV-1a of a text: the same value in every run (string.GetHashCode is not guaranteed to be).</summary>

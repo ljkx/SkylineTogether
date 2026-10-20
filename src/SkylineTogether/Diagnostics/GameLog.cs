@@ -9,7 +9,9 @@ namespace SkylineTogether.Diagnostics
 {
     /// <summary>
     /// Core's logging seam written to the game's log folder (<c>Logs/SkylineTogether.log</c>). Keeps the most recent
-    /// lines in memory for the diagnostics dump (ARCHITECTURE.md#logs).
+    /// lines in memory for the diagnostics dump (ARCHITECTURE.md#logs). Every line, and the text of an exception, goes
+    /// through <see cref="Core.Diagnostics.PathRedactor"/>: paths in the user's folder are written as %USERPROFILE%, so
+    /// the file does not contain the Windows user name.
     /// </summary>
     public sealed class GameLog : Core.ILog
     {
@@ -56,28 +58,26 @@ namespace SkylineTogether.Diagnostics
         public void Write(CoreLevel level, string category, string message, Exception exception = null)
         {
             if (level < Minimum) return;
-            string text = "[" + category + "] " + message;
+            string text = Core.Diagnostics.PathRedactor.Redact("[" + category + "] " + message);
             Remember(level, text, exception);
-            if (!_flood.Allow(level, text.Length + (exception != null ? 512 : 0), Clock.Elapsed.TotalSeconds, out string notice)) return;
+            // the exception is written as redacted text (an IOException's message names the file it failed on)
+            if (exception != null) text += Environment.NewLine + Core.Diagnostics.PathRedactor.Redact(exception.ToString());
+            if (!_flood.Allow(level, text.Length, Clock.Elapsed.TotalSeconds, out string notice)) return;
             if (notice != null) _log.Warn("[" + LogCategory.Session + "] " + notice);
             switch (level)
             {
                 case CoreLevel.Trace:
                 case CoreLevel.Debug:
-                    if (exception != null) _log.Debug(exception, text);
-                    else _log.Debug(text);
+                    _log.Debug(text);
                     break;
                 case CoreLevel.Info:
-                    if (exception != null) _log.Info(exception, text);
-                    else _log.Info(text);
+                    _log.Info(text);
                     break;
                 case CoreLevel.Warn:
-                    if (exception != null) _log.Warn(exception, text);
-                    else _log.Warn(text);
+                    _log.Warn(text);
                     break;
                 default:
-                    if (exception != null) _log.Error(exception, text);
-                    else _log.Error(text);
+                    _log.Error(text);
                     break;
             }
         }
@@ -85,7 +85,7 @@ namespace SkylineTogether.Diagnostics
         private void Remember(CoreLevel level, string text, Exception exception)
         {
             string line = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture) + " " + level.ToString().ToUpperInvariant() + " " + text
-                          + (exception != null ? " | " + exception.GetType().Name + ": " + exception.Message : "");
+                          + (exception != null ? " | " + exception.GetType().Name + ": " + Core.Diagnostics.PathRedactor.Redact(exception.Message) : "");
             lock (_recentLock)
             {
                 if (_recent.Count >= RecentCapacity) _recent.Dequeue();

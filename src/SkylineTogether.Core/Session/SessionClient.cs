@@ -342,11 +342,12 @@ namespace SkylineTogether.Core.Session
             Timeline.Mark(JoinStage.Start, _clock.Seconds);
             // the password proof is bound to the host's Steam ID as dialled (0 for a direct connection)
             _boundHost = endpoint != null ? endpoint.SteamId : 0;
-            _log.Info(LogCategory.Session, "connecting to " + endpoint);
+            // a direct address is masked: the joining player's log does not need the host's full address (AddressMask)
+            _log.Info(LogCategory.Session, "connecting to " + Diagnostics.AddressMask.EndpointText(endpoint));
             _connection = _transport.Connect(endpoint);
             if (_connection == null)
             {
-                End("Could not start the connection to " + endpoint + ".", ClientEndKind.Unreachable);
+                End("Could not start the connection to " + Diagnostics.AddressMask.EndpointText(endpoint) + ".", ClientEndKind.Unreachable);
             }
         }
 
