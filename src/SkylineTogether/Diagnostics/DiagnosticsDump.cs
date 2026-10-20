@@ -92,8 +92,8 @@ namespace SkylineTogether.Diagnostics
             Safe(sb, () =>
             {
                 foreach (string l in Probes.ReportLines()) Line(sb, l);
-                string blocked = SessionManager.BlockingReason();
-                Line(sb, "hosting/joining blocked: " + (blocked ?? "no"));
+                Core.Diagnostics.FeatureHealth blocked = SessionManager.BlockingFeature();
+                Line(sb, "hosting/joining blocked: " + (blocked != null ? blocked.Id + " (" + blocked.UnavailableReason + ")" : "no"));
                 Line(sb, "vanilla systems held off by the mod: " + Sync.SystemSwitch.HeldCount);
             });
 

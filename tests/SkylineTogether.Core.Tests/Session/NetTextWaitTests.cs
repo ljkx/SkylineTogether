@@ -90,11 +90,11 @@ namespace SkylineTogether.Core.Tests.Session
             var (cy, _, _) = rig.AddClient("Cy");
             rig.Run(400);
             rig.Host.Kick(ben.LocalPeer, (string)null);
-            rig.Host.Kick(cy.LocalPeer, "Too many invalid changes were sent to the host.");
+            rig.Host.Kick(cy.LocalPeer, NetText.Of(NetText.KickInvalidChanges));
             rig.Run(30);
             Assert.Equal(ClientState.Ended, ben.State);
             Assert.Equal("You were removed by the host.", ben.EndReason);
-            Assert.Equal("You were removed from the session: Too many invalid changes were sent to the host.", cy.EndReason, "a reason of its own follows a colon");
+            Assert.Equal("You were removed from the session: Your game sent too many changes the host couldn't accept.", cy.EndReason, "a reason of its own follows a colon");
         }
     }
 }

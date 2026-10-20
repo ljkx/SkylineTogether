@@ -33,7 +33,7 @@ namespace SkylineTogether.Core.Tests.Session
                 Assert.Equal(ClientState.WaitingForSnapshot, client.State, client.EndReason);
                 RunSeconds(rig, 370);
                 Assert.Equal(ClientState.Ended, client.State, "attempt " + attempt);
-                Assert.Contains("could not save the city", client.EndReason, "the host said why (it gave up first)");
+                Assert.Contains("couldn't save the city", client.EndReason, "the host said why (it gave up first)");
             }
             // three failed saves in a row: no cooldown for the joiner
             rig.Snapshots.Hold = false;

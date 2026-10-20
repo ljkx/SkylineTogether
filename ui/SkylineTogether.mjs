@@ -163,7 +163,7 @@ const EN = {
   "st.ui.close": "Close",
   "st.ui.back": "Back",
   "st.ui.loading": "Loading…",
-  "st.ui.steam.missing.title": "Steam is not available",
+  "st.ui.steam.missing.title": "Steam isn't available",
   "st.ui.steam.missing.text": "Skyline Together needs the Steam version of the game, with Steam running and logged in.",
   "st.ui.steam.ok": "Steam connected",
   "st.ui.tab.host": "Host",
@@ -201,7 +201,7 @@ const EN = {
   "st.ui.host.friendsOnlyHint": "Only your Steam friends and players you invite from this panel can join through Steam. Direct IP joiners still need the password.",
   "st.ui.host.newPlayersViewer": "New players join as viewers",
   "st.ui.host.newPlayersViewerHint": "Players joining for the first time in this session can watch but not build until you make them builders in the player list. Players who were here before keep their role when they rejoin (after a direct IP join without Steam, only the viewer role is kept).",
-  "st.ui.host.allowDirectNeedsPassword": "Set a password first: Steam does not check direct connections, so the password is what keeps strangers out.",
+  "st.ui.host.allowDirectNeedsPassword": "Set a password first: Steam doesn't check direct connections, so the password is what keeps strangers out.",
   "st.ui.host.bans": "Banned players",
   "st.ui.host.bansHint": "Banned players can't join your sessions until you unban them.",
   "st.ui.host.unban": "Unban",
@@ -272,8 +272,8 @@ const EN = {
   "st.ui.end.details": "Details",
   "st.ui.end.title.badPassword": "Wrong password",
   "st.ui.end.text.badPassword": "The host didn't accept the password. Check it with the host and try again. After several wrong tries the host's game blocks new attempts for a while.",
-  "st.ui.end.title.lockout": "Too many wrong passwords",
-  "st.ui.end.text.lockout": "The host's game blocks new attempts from your connection for a while after several wrong passwords. Wait until the time below has passed, check the password with the host, then try again.",
+  "st.ui.end.title.lockout": "Too many attempts",
+  "st.ui.end.text.lockout": "The host's game is blocking new join attempts from your connection for a while, usually after several wrong passwords. Wait until the time below has passed, check the password with the host, then try again.",
   "st.ui.end.title.hostProof": "Couldn't confirm the host",
   "st.ui.end.text.hostProof": "The host couldn't prove that it knows the session password, so this may not be the host you meant. Check the Steam ID or address and the password with the host, then try again.",
   "st.ui.end.title.passwordRequired": "This session needs a password",
@@ -287,11 +287,11 @@ const EN = {
   "st.ui.end.mods.versionLine": "host {HOST} · you {YOU}",
   "st.ui.end.title.game": "Game versions differ",
   "st.ui.end.text.game": "You both need the same game version. Update the game on the PC with the older version (restarting Steam usually does it), then join again.",
-  "st.ui.end.versions": "Host: {HOST} · You: {YOU}",
+  "st.ui.end.versions": "Game version: host {HOST} · you {YOU}",
   "st.ui.end.protocols": "Network protocol: host {HOST} · you {YOU}",
   "st.ui.end.title.build": "Skyline Together versions differ",
   "st.ui.end.text.build": "You and the host need exactly the same Skyline Together build. Install the same release on both PCs (the build ID is at the bottom of the panel), then join again.",
-  "st.ui.end.builds": "Host build {HOST} · Your build {YOU}",
+  "st.ui.end.builds": "Build: host {HOST} · you {YOU}",
   "st.ui.end.title.content": "You're missing DLC or content packs the host has",
   "st.ui.end.text.content": "The host owns these DLC or content packs, and their city can contain objects from them that your game can't load. Get them (Steam or the Paradox launcher), restart the game and join again.",
   "st.ui.end.content.missing": "Get these",
@@ -316,7 +316,9 @@ const EN = {
   "st.ui.end.title.full": "The session is full",
   "st.ui.end.text.full": "Ask the host to raise the player limit, or try again when someone leaves.",
   "st.ui.end.title.notAllowed": "You can't join this session",
-  "st.ui.end.text.notAllowed": "This session is open to the host's Steam friends and invited players only. Ask the host to send you a Steam invite. If you joined by IP address, the host must set a session password first.",
+  "st.ui.end.text.notAllowed": "This session is open to the host's Steam friends and invited players only. Ask the host to send you a Steam invite.",
+  "st.ui.end.title.directPassword": "Direct connections need a password",
+  "st.ui.end.text.directPassword": "This host accepts direct IP connections only while a session password is set. Join through Steam with the host's Steam ID instead, or ask the host to set a session password.",
   "st.ui.end.title.notReady": "The host isn't ready yet",
   "st.ui.end.text.notReady": "The host's session is still starting, or an earlier join attempt is still running. Try again in a moment.",
   "st.ui.end.title.cooldown": "Please wait before joining again",
@@ -328,13 +330,13 @@ const EN = {
   "st.ui.end.title.lost": "Connection lost",
   "st.ui.end.text.lost": "The connection to the host was interrupted. Try again; if it keeps happening, check your internet connection.",
   "st.ui.end.title.dropped": "The host stopped your join",
-  "st.ui.end.text.dropped": "The reason is shown below. Try joining again.",
+  "st.ui.end.text.dropped": "The host ended your join for the reason shown below.",
   "st.ui.end.title.kicked": "You were removed from the session",
   "st.ui.end.text.kicked": "You can join again if the host lets you.",
   "st.ui.end.title.banned": "You are banned from this session",
   "st.ui.end.text.banned": "The host banned you. Only the host can lift the ban.",
   "st.ui.end.title.ended": "The session has ended",
-  "st.ui.end.text.ended": "The host ended the session.",
+  "st.ui.end.text.ended": "You can join again once the host hosts again.",
   "st.ui.end.title.failed": "Joining failed",
   "st.ui.end.text.failed": "Something went wrong while joining. Try again. If it keeps happening, use \"Copy details\" and attach the details and the diagnostics file (Options → Skyline Together → Write diagnostics) to a bug report on GitHub (github.com/ljkx/SkylineTogether/issues).",
   "st.ui.end.title.loadFailed": "Your game couldn't load the host's city",
@@ -374,7 +376,7 @@ const EN = {
   "st.ui.friends.overlay": "Open the Steam overlay",
   "st.ui.friends.refresh": "Refresh",
   "st.ui.friends.overlayOnly": "Invite friends through Steam's invite dialog, or share your Steam ID.",
-  "st.ui.friends.noOverlay": "The Steam overlay is not available. Share your Steam ID with your friends: they paste it on the Join page.",
+  "st.ui.friends.noOverlay": "The Steam overlay isn't available. Share your Steam ID with your friends: they paste it on the Join page.",
   "st.ui.players.title": "Players",
   "st.ui.players.count": "{N} / {MAX}",
   "st.ui.players.unnamed": "Player {N}",
@@ -421,7 +423,7 @@ const EN = {
   "st.ui.perf.show": "Show performance",
   "st.ui.perf.hide": "Hide performance",
   "st.ui.perf.title": "Performance",
-  "st.ui.perf.frame": "Frame budget {MS} of {BUDGET} ms · {OVER} frames over",
+  "st.ui.perf.frame": "Frame budget {MS} of {BUDGET} ms · frames over: {OVER}",
   "st.ui.perf.feature": "{AVG} / {P95} of {CAP} ms",
   "st.ui.perf.queue": "Changes waiting: {N}",
   "st.ui.perf.peers": "Players",
@@ -433,7 +435,7 @@ const EN = {
   "st.ui.leave.confirm": "Click again to confirm",
   // recovery after an unexpected disconnect, self-test line
   "st.ui.recovery.lost.title": "Connection lost",
-  "st.ui.recovery.lost.text": "Reconnecting in {S} s (attempt {N} of {MAX}). The city is paused until then; changes you make now are not kept.",
+  "st.ui.recovery.lost.text": "Reconnecting in {S} s (attempt {N} of {MAX}). The city is paused until then; changes you make now aren't kept.",
   "st.ui.recovery.attempt.title": "Reconnecting (attempt {N} of {MAX})",
   "st.ui.recovery.ended.title": "The session has ended",
   "st.ui.recovery.ended.text": "You can return to the main menu, or keep playing an offline copy of the host's city.",
@@ -753,7 +755,7 @@ function withTooltip(node, tooltip, direction) {
 
 // Shared by separately appended components (main menu entry, top-left button, roots).
 const store = {
-  open: false, menuOpen: false, tab: null, gameTab: null, typing: 0, topLeftMounted: false, menuEntryMounted: false, dismissedEnd: -1,
+  open: false, menuOpen: false, tab: null, gameTab: null, typing: 0, topLeftMounted: false, menuEntryMounted: false, dismissedEnd: -1, cooldownOver: -1,
   // chat dock: expanded, last chat line seen while expanded, focus request; invite popover; invites sent (by Steam ID)
   chatOpen: true, chatSeen: -1, chatFocus: false, invitesOpen: false, sent: {},
   listeners: new Set(),
@@ -2818,7 +2820,8 @@ function endCopy(e) {
     if (r === "ProtocolVersion") return "build";
     if (r === "Full") return "full";
     if (r === "Banned") return "banned";
-    if (r === "NotInvited") return "notAllowed";
+    // a host that takes direct IP connections only with a session password (not a friends-only session)
+    if (r === "NotInvited") return e.textKey === "st.net.refuse.directNeedsPassword" ? "directPassword" : "notAllowed";
     // a join cooldown (the host says when to try again) is not a host that is still starting
     if (r === "HostPreparing") return Number(e.retryAfter) > 0 ? "cooldown" : "notReady";
     if (r === "HostShuttingDown") return "closing";
@@ -2837,10 +2840,10 @@ function endCopy(e) {
 }
 
 // the ends a new attempt cannot fix: the player has to change something first (or cannot join at all)
-const NO_RETRY = { kicked: 1, banned: 1, notAllowed: 1, ended: 1, mods: 1, modsRequired: 1, conflictYou: 1, conflictHost: 1, game: 1, build: 1, content: 1, assets: 1 };
+const NO_RETRY = { kicked: 1, banned: 1, notAllowed: 1, directPassword: 1, ended: 1, mods: 1, modsRequired: 1, conflictYou: 1, conflictHost: 1, game: 1, build: 1, content: 1, assets: 1 };
 
 // the ends whose main text already says everything the details would (the details stay in "Copy details")
-const NO_DETAILS = { cooldown: 1, hostProof: 1, passwordRequired: 1 };
+const NO_DETAILS = { cooldown: 1, hostProof: 1, passwordRequired: 1, conflictYou: 1, conflictHost: 1, full: 1, banned: 1, directPassword: 1 };
 
 // the list titles of the screens with lists: code mods, DLC and content packs, asset packs
 const END_LISTS = {
@@ -2944,7 +2947,19 @@ function EndOverlay(p) {
   const copy = str(e.kind) ? endCopy(e) : null;
   const shown = !!copy && st.dismissedEnd !== e.seq;
   const needsPassword = copy === "badPassword" || copy === "passwordRequired" || copy === "lockout" || copy === "hostProof";
-  const canRetry = !!copy && !NO_RETRY[copy];
+  // a join cooldown: "Try again" only once the host's wait has passed (an earlier attempt is refused again)
+  const coolingDown = copy === "cooldown" && Number(e.retryAfter) > 0 && st.cooldownOver !== e.seq;
+  React.useEffect(function () {
+    if (!coolingDown) return undefined;
+    const seq = e.seq;
+    const timer = setTimeout(function () {
+      setStore({ cooldownOver: seq });
+    }, Math.min(Number(e.retryAfter), 86400) * 1000 + 500);
+    return function () {
+      clearTimeout(timer);
+    };
+  }, [e.seq, coolingDown]);
+  const canRetry = !!copy && !NO_RETRY[copy] && !coolingDown;
   // the host refused different mods or asset packs but lets players join anyway (the lists stay; the choice is the player's)
   const canJoinAnyway = (copy === "mods" || copy === "assets") && e.overridable === true && objs(e.required).length === 0;
   const dismiss = function () {
@@ -2965,6 +2980,8 @@ function EndOverlay(p) {
   useWindowKeys({ Escape: dismiss, Enter: canRetry && !needsPassword ? retry : undefined }, shown, true);
   if (!shown) return null;
   const title = t("st.ui.end.title." + (copy === "conflictYou" || copy === "conflictHost" ? "conflict" : copy));
+  // the game and build screens show both versions in a line of their own: the details would only repeat them
+  const versionLine = (copy === "game" && !!str(e.hostGame)) || (copy === "build" && (!!str(e.hostBuild) || !!str(e.hostProto)));
   const text = canJoinAnyway ? t(copy === "assets" ? "st.ui.end.text.assetsOverridable" : "st.ui.end.text.modsOverridable")
     : copy === "modsRequired" && e.restOverridable === true ? t("st.ui.end.text.modsRequiredRest")
     : copy === "cooldown" ? t("st.ui.end.text.cooldown", { WAIT: waitText(e.retryAfter) })
@@ -3011,7 +3028,7 @@ function EndOverlay(p) {
           h("div", { style: { flex: 1, minWidth: 0, fontSize: "14rem", color: OV.text, lineHeight: 1.4, overflowWrap: "break-word", wordBreak: "break-word" } }, t("st.ui.end.joinAnywayWarning"))
         )
       : null,
-    str(e.text) && !isMods && !NO_DETAILS[copy]
+    str(e.text) && !isMods && !NO_DETAILS[copy] && !versionLine
       ? h(
           "div",
           { style: { marginTop: "4rem", padding: "10rem 12rem", borderRadius: "4rem", backgroundColor: OV.well } },

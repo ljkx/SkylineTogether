@@ -44,6 +44,35 @@ namespace SkylineTogether.Core.Session
         /// not overridable; the host logs that the request was ignored).
         /// </summary>
         public bool JoinAnywayIgnored;
+
+        /// <summary>
+        /// The refusal's text for the joiner: the locale key of a short sentence by report kind (<see cref="RefusalKey"/>,
+        /// shown in the joiner's language next to the report's lists), with <see cref="RefusalDetail"/> as the English text
+        /// for the logs and for a receiver without the key. Null without a refusal.
+        /// </summary>
+        public LocalText RefusalText()
+        {
+            if (Refusal == null) return null;
+            return new LocalText { Key = RefusalKey(Refusal), Text = RefusalDetail ?? "" };
+        }
+
+        /// <summary>The <see cref="NetText"/> key of a refusal's short sentence: by report kind, and whether it can list what differs.</summary>
+        public static string RefusalKey(MismatchReport r)
+        {
+            if (r == null) return null;
+            switch (r.Kind)
+            {
+                case "conflict":
+                    return r.ClientConflict != null ? NetText.RefuseConflictYou : NetText.RefuseConflictHost;
+                case "content":
+                    return NetText.RefuseContent;
+                case "assets":
+                    return r.AssetsMissing.Count + r.AssetsExtra.Count + r.AssetVersions.Count == 0 ? NetText.RefuseAssetsUnlisted : NetText.RefuseAssets;
+                default:
+                    if (r.CityData.Count > 0) return NetText.RefuseCityData;
+                    return r.Missing.Count + r.Extra.Count + r.Versions.Count == 0 ? NetText.RefuseModsUnlisted : NetText.RefuseMods;
+            }
+        }
     }
 
     /// <summary>

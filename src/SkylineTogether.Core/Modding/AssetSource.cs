@@ -175,29 +175,81 @@ namespace SkylineTogether.Core.Modding
             return what + " from " + source.Describe() + ": " + source.Advice();
         }
 
+        // the toast's texts (locale keys of the game layer's tables; English as the fallback)
+        public const string ToastKey = "st.toast.missingAssets";
+        public const string PackageKey = "st.toast.missingAssets.package";
+        public const string PackageNoIdKey = "st.toast.missingAssets.packageNoId";
+        public const string LocalKey = "st.toast.missingAssets.local";
+        public const string ModKey = "st.toast.missingAssets.mod";
+        public const string MoreKey = "st.toast.missingAssets.more";
+        public const string UnknownKey = "st.toast.missingAssets.unknown";
+
+        /// <summary>The English text of every key of the toast (the locale tables translate them).</summary>
+        public static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ToastKey] = "Objects that use assets you don't have are left out of the host's city in your game: {LIST}. The diagnostics file lists them all.",
+            [PackageKey] = "{NAME} (Paradox Mods {ID}): subscribe to it, restart the game and join again",
+            [PackageNoIdKey] = "{NAME}: subscribe to it, restart the game and join again",
+            [LocalKey] = "{NAME}, a local asset of the host: the host must publish it or stop using it",
+            [ModKey] = "objects created by the mod {NAME}: enable it in the host's version with the same settings",
+            [MoreKey] = "and {N} more",
+            [UnknownKey] = "Some objects of the host's city use assets or mods you don't have and are left out. The diagnostics file lists them.",
+        };
+
         /// <summary>
-        /// The toast after a join (or the first missing record): the first sources by number of missing prefabs, each
-        /// with its advice, and how many objects are left out.
+        /// The toast after a join (or the first missing record): the first named sources by number of missing prefabs, each
+        /// with what to do, and how many more there are. <paramref name="lookup"/> returns the template of a key in the
+        /// player's language (null: English). Null when nothing is missing. The log and the diagnostics keep the English
+        /// details (<see cref="AssetSource.Describe"/>, <see cref="AssetSource.Advice"/>).
         /// </summary>
-        public static string Summary(IReadOnlyList<KeyValuePair<AssetSource, int>> missingBySource, int maxSources = 3)
+        public static string Summary(IReadOnlyList<KeyValuePair<AssetSource, int>> missingBySource, Func<string, string> lookup = null, int maxSources = 3)
         {
             if (missingBySource == null || missingBySource.Count == 0) return null;
             var sorted = new List<KeyValuePair<AssetSource, int>>(missingBySource);
             sorted.Sort((a, b) => b.Value != a.Value ? b.Value.CompareTo(a.Value) : string.CompareOrdinal(a.Key?.Describe(), b.Key?.Describe()));
-            var sb = new StringBuilder("The host's city uses assets you do not have; objects using them are left out. ");
-            int shown = 0;
+            var items = new List<string>();
+            int unlisted = 0;
             foreach (KeyValuePair<AssetSource, int> pair in sorted)
             {
-                if (shown == maxSources) break;
-                AssetSource s = pair.Key ?? new AssetSource();
-                sb.Append(Capitalize(s.Describe())).Append(" (").Append(pair.Value.ToString(CultureInfo.InvariantCulture)).Append(pair.Value == 1 ? " prefab" : " prefabs")
-                  .Append("): ").Append(s.Advice()).Append(". ");
-                shown++;
+                string item = items.Count < maxSources ? Item(pair.Key, lookup) : null;
+                if (item != null) items.Add(item);
+                else unlisted++;
             }
-            if (sorted.Count > shown) sb.Append("And ").Append((sorted.Count - shown).ToString(CultureInfo.InvariantCulture)).Append(" more (see the diagnostics).");
-            return sb.ToString().Trim();
+            if (items.Count == 0) return Text(lookup, UnknownKey);
+            if (unlisted > 0) items.Add(Text(lookup, MoreKey, "N", unlisted.ToString(CultureInfo.InvariantCulture)));
+            return Text(lookup, ToastKey, "LIST", string.Join("; ", items));
         }
 
-        private static string Capitalize(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
+        // one source with what to do; null for a source without a name (counted under "and N more")
+        private static string Item(AssetSource s, Func<string, string> lookup)
+        {
+            if (s == null || string.IsNullOrEmpty(s.Name)) return null;
+            switch (s.Kind)
+            {
+                case AssetSourceKind.Package:
+                    return string.IsNullOrEmpty(s.PlatformId) ? Text(lookup, PackageNoIdKey, "NAME", s.Name) : Text(lookup, PackageKey, "NAME", s.Name, "ID", s.PlatformId);
+                case AssetSourceKind.LocalAsset:
+                    return Text(lookup, LocalKey, "NAME", s.Name);
+                case AssetSourceKind.RuntimePrefab:
+                    return Text(lookup, ModKey, "NAME", s.Name);
+                default:
+                    return null;
+            }
+        }
+
+        private static string Text(Func<string, string> lookup, string key, params string[] args)
+        {
+            string template = null;
+            try
+            {
+                template = lookup?.Invoke(key);
+            }
+            catch (Exception)
+            {
+                template = null;
+            }
+            if (string.IsNullOrEmpty(template)) English.TryGetValue(key, out template);
+            return Session.NetText.Format(template ?? key, args);
+        }
     }
 }

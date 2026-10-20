@@ -212,7 +212,7 @@ namespace SkylineTogether.Session
                 {
                     _log.Warn(LogCategory.Join, "the host's city uses " + m.Value + " prefab(s) from " + m.Key.Describe() + ", which this game lacks: " + m.Key.Advice());
                 }
-                SessionManager.Notify(Core.Modding.MissingAssets.Summary(missing), seconds: 20f);
+                SessionManager.Notify(Core.Modding.MissingAssets.Summary(missing, Settings.LocaleSource.Lookup), seconds: 20f);
             }
             catch (Exception ex)
             {

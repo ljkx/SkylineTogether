@@ -479,8 +479,8 @@ namespace SkylineTogether.Sync
             if (!_missingNotified && _codec.MissingAssets.Count > 0)
             {
                 _missingNotified = true;
-                // name the packages and mods (and what to do) instead of only pointing at the diagnostics
-                SessionManager.Notify(Core.Modding.MissingAssets.Summary(_codec.MissingBySource()) ?? "Some objects of the host's city use assets or mods you do not have; they are left out. See the diagnostics for the list.", seconds: 15f);
+                // name the packages and mods (and what to do) in the player's language instead of only pointing at the diagnostics
+                SessionManager.Notify(Core.Modding.MissingAssets.Summary(_codec.MissingBySource(), Settings.LocaleSource.Lookup), seconds: 15f);
             }
             foreach (Entity e in r.Touched) _appliedThisFrame.Add(e);
             foreach ((uint start, uint count) in r.IdRanges) _pool.Add(start, count);

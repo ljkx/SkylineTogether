@@ -81,7 +81,7 @@ namespace SkylineTogether.Core.Tests.Session
             var (rig, client, _) = Loading(new HostOptions { HostName = "Hosty", MaxLoadSeconds = 0, MaxJoinSeconds = 0 });
             Load(rig, client, 1210, 0f);
             Assert.Equal(ClientState.Ended, client.State);
-            Assert.Contains("did not finish in 20 minutes", client.EndReason);
+            Assert.Contains("didn't finish in 20 minutes", client.EndReason);
             Assert.Equal(ClientEndKind.LoadFailed, client.EndKind);
         }
 

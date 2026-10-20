@@ -147,10 +147,10 @@ namespace SkylineTogether.Session
         public event Action<ClientEndKind, string> ReplayEnded;
 
         /// <summary>A solo test host can start: in a city, nothing else running (Steam is not needed).</summary>
-        public bool CanHostSolo => !InSession && BlockingReason() == null && GameManager.instance != null && GameManager.instance.gameMode == GameMode.Game && !GameManager.instance.isGameLoading;
+        public bool CanHostSolo => !InSession && BlockingFeature() == null && GameManager.instance != null && GameManager.instance.gameMode == GameMode.Game && !GameManager.instance.isGameLoading;
 
         /// <summary>A replay can start: no session, no load in progress (from the main menu or a city).</summary>
-        public bool CanReplay => !InSession && BlockingReason() == null && (GameManager.instance == null || !GameManager.instance.isGameLoading) && !_loader.IsLoading;
+        public bool CanReplay => !InSession && BlockingFeature() == null && (GameManager.instance == null || !GameManager.instance.isGameLoading) && !_loader.IsLoading;
 
         public ILog Log => _log;
 
@@ -183,9 +183,9 @@ namespace SkylineTogether.Session
         /// <summary>The players of the session that ended (shown while recovering).</summary>
         public IReadOnlyList<PlayerInfo> LastPlayers => _lastPlayers;
 
-        public bool CanHost => !InSession && SteamAvailable && BlockingReason() == null && GameManager.instance != null && GameManager.instance.gameMode == GameMode.Game && !GameManager.instance.isGameLoading;
+        public bool CanHost => !InSession && SteamAvailable && BlockingFeature() == null && GameManager.instance != null && GameManager.instance.gameMode == GameMode.Game && !GameManager.instance.isGameLoading;
 
-        public bool CanJoin => !InSession && SteamAvailable && BlockingReason() == null && !string.IsNullOrWhiteSpace(_settings.JoinTarget) && (GameManager.instance == null || !GameManager.instance.isGameLoading)
+        public bool CanJoin => !InSession && SteamAvailable && BlockingFeature() == null && !string.IsNullOrWhiteSpace(_settings.JoinTarget) && (GameManager.instance == null || !GameManager.instance.isGameLoading)
                                && !_loader.IsLoading // an earlier join's import or load still runs
                                && _lookup == null; // a typed host name is still being resolved
 
@@ -274,15 +274,27 @@ namespace SkylineTogether.Session
         /// <summary>
         /// The first critical feature (other than Steam, which <see cref="SteamAvailable"/> covers) whose self-test failed
         /// or that turned itself off: hosting and joining are refused with this reason (ARCHITECTURE.md#feature-health-and-guards "critical probes refuse
-        /// hosting and joining"). Null when everything needed is available.
+        /// hosting and joining"), in the player's language. Null when everything needed is available.
         /// </summary>
         public static string BlockingReason()
+        {
+            FeatureHealth f = BlockingFeature();
+            if (f == null) return null;
+            // a probe's id ("P-CTX") stays as it is; its English details are in the log and the diagnostics
+            string reason = f.ProbeReason ?? "";
+            if (!reason.StartsWith("P-", StringComparison.Ordinal)) return LocaleSource.Resolve("st.ui.blocked.notStarted", "FEATURE", Features.LocalTitle(f));
+            int space = reason.IndexOf(' ');
+            return LocaleSource.Resolve("st.ui.blocked.probe", "FEATURE", Features.LocalTitle(f), "PROBE", space > 0 ? reason.Substring(0, space) : reason);
+        }
+
+        /// <summary>The feature behind <see cref="BlockingReason"/>, or null.</summary>
+        public static FeatureHealth BlockingFeature()
         {
             IReadOnlyList<FeatureHealth> features = Features.Registry.Features; // indexed: no enumerator allocation per frame
             for (int i = 0; i < features.Count; i++)
             {
                 FeatureHealth f = features[i];
-                if (f.Critical && f != Features.Steam && f.ProbeFailed) return Features.LocalTitle(f) + ": " + f.UnavailableReason;
+                if (f.Critical && f != Features.Steam && f.ProbeFailed) return f;
             }
             return null;
         }
@@ -707,7 +719,7 @@ namespace SkylineTogether.Session
                 }
                 transport?.Dispose(); // the client could not be created
                 // an attempt that could not even start counts as unreachable (the next one follows the backoff)
-                if (rejoin) OnRecoveryEnded(ClientEndKind.Unreachable, "Could not start the connection: " + ex.Message, false);
+                if (rejoin) OnRecoveryEnded(ClientEndKind.Unreachable, LocaleSource.Localize(NetText.Of(NetText.ClientConnectFailed, "DETAIL", ex.Message)), false);
             }
         }
 

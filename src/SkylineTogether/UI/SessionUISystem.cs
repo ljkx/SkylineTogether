@@ -263,11 +263,12 @@ namespace SkylineTogether.UI
             string text;
             {
                 SessionNetStats n = s.Host != null ? s.Host.GetNetStats() : s.Client.GetNetStats();
-                // in the player's language, like the Options page that switches the line on
-                text = (n.PingMs >= 0 ? LocaleSource.Resolve("st.ui.net.ping", "PING", n.PingMs.ToString(CultureInfo.InvariantCulture)) + " · " : "")
-                       + LocaleSource.Resolve("st.ui.net.rates", "IN", (n.InBytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture),
-                           "OUT", (n.OutBytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture))
-                       + (n.QueuedBytes > 64 * 1024 ? " · " + LocaleSource.Resolve("st.ui.net.queued", "N", (n.QueuedBytes / 1024).ToString(CultureInfo.InvariantCulture)) : "");
+                // in the player's language and number format ("1,2" in German), like the Options page that switches the line on
+                CultureInfo numbers = LocaleSource.NumberCulture();
+                text = (n.PingMs >= 0 ? LocaleSource.Resolve("st.ui.net.ping", "PING", n.PingMs.ToString(numbers)) + " · " : "")
+                       + LocaleSource.Resolve("st.ui.net.rates", "IN", (n.InBytesPerSecond / 1024f).ToString("0.0", numbers),
+                           "OUT", (n.OutBytesPerSecond / 1024f).ToString("0.0", numbers))
+                       + (n.QueuedBytes > 64 * 1024 ? " · " + LocaleSource.Resolve("st.ui.net.queued", "N", (n.QueuedBytes / 1024).ToString("#,0", numbers)) : "");
             }
             var sb = new StringBuilder(128);
             sb.Append('{');
@@ -538,7 +539,7 @@ namespace SkylineTogether.UI
             sb.Append('{');
             Prop(sb, "mode", s.Mode.ToString()).Append(',');
             Prop(sb, "canHost", s.CanHost).Append(',');
-            Prop(sb, "canJoin", s.CanJoin || (!s.InSession && steam && SessionManager.BlockingReason() == null)).Append(',');
+            Prop(sb, "canJoin", s.CanJoin || (!s.InSession && steam && SessionManager.BlockingFeature() == null)).Append(',');
             Prop(sb, "steam", steam).Append(',');
             Prop(sb, "steamId", s.LocalSteamId.ToString(CultureInfo.InvariantCulture)).Append(',');
             Prop(sb, "directPort", s.DirectPort).Append(',');
@@ -582,7 +583,7 @@ namespace SkylineTogether.UI
             // the self-test (ARCHITECTURE.md#probes-and-self-test) in one line, and what blocks hosting/joining if anything
             Prop(sb, "probes", Probes.LocalSummary(out bool probesOff) ?? "").Append(',');
             Prop(sb, "probesOff", probesOff).Append(',');
-            Prop(sb, "blocked", SessionManager.BlockingReason() ?? "").Append(',');
+            Prop(sb, "blocked", SessionManager.BlockingFeature() != null ? SessionManager.BlockingReason() : "").Append(',');
             // the old multiplayer mod is loaded here: nobody can join this game and it cannot join others (panel warning)
             Prop(sb, "conflictMod", GameInfoProvider.ConflictingMod() ?? "").Append(',');
 
@@ -602,8 +603,10 @@ namespace SkylineTogether.UI
                     {
                         if (p.State == PlayerState.Live) continue;
                         string phase = p.State == PlayerState.Downloading ? "st.toast.playerDownloading" : p.State == PlayerState.Loading ? "st.toast.playerLoading" : "st.toast.playerJoining";
-                        status += " " + LocaleSource.Resolve(phase, "NAME", p.Name ?? "") + (p.State == PlayerState.Downloading || p.State == PlayerState.Loading
-                            ? " (" + ((int)(p.Progress * 100)).ToString(CultureInfo.InvariantCulture) + " %)" : "") + ".";
+                        // "Alice is joining…" ends with its ellipsis; the other phases get a full stop
+                        string line = LocaleSource.Resolve(phase, "NAME", p.Name ?? "") + (p.State == PlayerState.Downloading || p.State == PlayerState.Loading
+                            ? " (" + ((int)(p.Progress * 100)).ToString(CultureInfo.InvariantCulture) + " %)" : "");
+                        status += " " + (line.EndsWith("…", StringComparison.Ordinal) ? line : line + ".");
                     }
                 }
             }
@@ -703,7 +706,7 @@ namespace SkylineTogether.UI
         }
 
         /// <summary>
-        /// The error screen's model: <c>{seq, kind, refuse, text, target, reportKind, overridable, restOverridable,
+        /// The error screen's model: <c>{seq, kind, refuse, text, target, reportKind, textKey, overridable, restOverridable,
         /// conflictHost, conflictYou, required, missing, extra, versions, hostGame, yourGame, hostProto, yourProto, hostBuild,
         /// yourBuild}</c>, or null. <c>overridable</c>: a refusal for code mods or asset packs the player may pass with "Join
         /// anyway" (the host lets players join with different mods). <c>required</c>: mods that store data in the host's city
@@ -732,6 +735,8 @@ namespace SkylineTogether.UI
             Prop(sb, "lockout", end.Refuse == Core.Protocol.RefuseReason.BadPassword && r != null && r.RetryAfterSeconds > 0).Append(',');
             Prop(sb, "retryAfter", r != null ? r.RetryAfterSeconds : 0).Append(',');
             Prop(sb, "reportKind", r?.Kind ?? "").Append(',');
+            // the refusal's text key picks a screen where one refuse reason has several causes (direct IP without a password)
+            Prop(sb, "textKey", r?.TextKey ?? "").Append(',');
             Prop(sb, "overridable", end.Kind == ClientEndKind.Refused && end.Refuse == Core.Protocol.RefuseReason.Mismatch && r != null && r.Overridable
                                     && (r.Kind == "mods" || r.Kind == "assets") && r.CityData.Count == 0).Append(',');
             Prop(sb, "restOverridable", r != null && r.RestOverridable && r.CityData.Count > 0).Append(',');

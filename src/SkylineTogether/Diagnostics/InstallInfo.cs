@@ -66,6 +66,26 @@ namespace SkylineTogether.Diagnostics
                 }
                 return where + ", build " + (Build.HasValue ? Core.Session.BuildId.Format(Build.Value) : "unknown") + (Loaded ? ", loaded" : "");
             }
+
+            /// <summary><see cref="Describe"/> in the player's language, for the notification (the log keeps the English one).</summary>
+            public string DescribeLocal()
+            {
+                string where;
+                switch (Source)
+                {
+                    case "paradox":
+                        where = string.IsNullOrEmpty(PlatformVersion) ? "Paradox Mods" : LocaleSource.Resolve("st.toast.installedTwice.paradox", "VERSION", PlatformVersion);
+                        break;
+                    case "local":
+                        where = LocaleSource.Resolve("st.toast.installedTwice.local");
+                        break;
+                    default:
+                        where = LocaleSource.Resolve("st.toast.installedTwice.other");
+                        break;
+                }
+                if (Build.HasValue) where += ", " + LocaleSource.Resolve("st.toast.installedTwice.build", "BUILD", Core.Session.BuildId.Format(Build.Value));
+                return Loaded ? where + ", " + LocaleSource.Resolve("st.toast.installedTwice.loaded") : where;
+            }
         }
 
         /// <summary>
@@ -261,14 +281,19 @@ namespace SkylineTogether.Diagnostics
             if (copies.Count <= 1 && ui <= 1) return;
 
             var lines = new List<string>();
-            foreach (InstalledCopy c in copies) lines.Add(c.Describe());
+            var shown = new List<string>();
+            foreach (InstalledCopy c in copies)
+            {
+                lines.Add(c.Describe());
+                shown.Add(c.DescribeLocal());
+            }
             log.Warn(LogCategory.Session, "Skyline Together is installed more than once (" + copies.Count.ToString(CultureInfo.InvariantCulture) + " DLLs, "
                 + ui.ToString(CultureInfo.InvariantCulture) + " UI modules): " + string.Join("; ", lines)
                 + ". Keep one copy: delete the Mods\\SkylineTogether folder or unsubscribe on Paradox Mods, then restart the game.");
             try
             {
                 // the copies' folders are in the user folder: written as %USERPROFILE% like every other notification
-                string text = Core.Diagnostics.PathRedactor.Redact(LocaleSource.Resolve("st.toast.installedTwice", "COPIES", string.Join("; ", lines)));
+                string text = Core.Diagnostics.PathRedactor.Redact(LocaleSource.Resolve("st.toast.installedTwice", "COPIES", string.Join("; ", shown)));
                 Game.PSI.NotificationSystem.Push(DuplicateNotificationId, title: Game.UI.Localization.LocalizedString.Value(LocaleSource.Resolve("st.toast.title")),
                     text: Game.UI.Localization.LocalizedString.Value(text), progressState: ProgressState.Warning,
                     onClicked: () => Game.PSI.NotificationSystem.Pop(DuplicateNotificationId));

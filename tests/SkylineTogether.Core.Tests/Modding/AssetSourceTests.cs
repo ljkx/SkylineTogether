@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using SkylineTogether.Core.Buffers;
+using SkylineTogether.Core.Json;
 using SkylineTogether.Core.Modding;
 using SkylineTogether.Core.Protocol;
 using SkylineTogether.Core.Sync;
@@ -106,13 +109,59 @@ namespace SkylineTogether.Core.Tests.Modding
                 new KeyValuePair<AssetSource, int>(Pack("Trees", "1"), 2),
                 new KeyValuePair<AssetSource, int>(null, 1),
             };
-            string text = MissingAssets.Summary(missing, 2);
+            string text = MissingAssets.Summary(missing, null, 2);
             Assert.True(text.IndexOf("China Pack", StringComparison.Ordinal) < text.IndexOf("Trees", StringComparison.Ordinal));
-            Assert.Contains("(9 prefabs): subscribe to Paradox Mods 100454", text);
+            Assert.Contains("China Pack (Paradox Mods 100454): subscribe to it, restart the game and join again", text);
             Assert.DoesNotContain("Find It", text);
-            Assert.Contains("And 2 more", text);
+            Assert.Contains("; and 2 more. The diagnostics file lists them all.", text);
+            Assert.DoesNotContain("prefab", text, "no jargon for players");
             Assert.Null(MissingAssets.Summary(new List<KeyValuePair<AssetSource, int>>()));
             Assert.Null(MissingAssets.Summary(null));
+        }
+
+        [Test]
+        public void TheSummaryIsInThePlayersLanguage()
+        {
+            var missing = new List<KeyValuePair<AssetSource, int>>
+            {
+                new KeyValuePair<AssetSource, int>(new AssetSource { Kind = AssetSourceKind.RuntimePrefab, Name = "Find It" }, 3),
+                new KeyValuePair<AssetSource, int>(new AssetSource { Kind = AssetSourceKind.LocalAsset, Name = "My House" }, 2),
+                new KeyValuePair<AssetSource, int>(new AssetSource { Kind = AssetSourceKind.Package, Name = "Trees" }, 1),
+            };
+            var german = new Dictionary<string, string>
+            {
+                [MissingAssets.ToastKey] = "Weggelassen: {LIST}.",
+                [MissingAssets.ModKey] = "Mod {NAME}",
+                [MissingAssets.LocalKey] = "lokal {NAME}",
+            };
+            string text = MissingAssets.Summary(missing, k => german.TryGetValue(k, out string v) ? v : null);
+            Assert.Equal("Weggelassen: Mod Find It; lokal My House; Trees: subscribe to it, restart the game and join again.", text, "a key the table lacks falls back to English");
+            // sources without a name are not listed; with none listable the toast says so without a list
+            var unnamed = new List<KeyValuePair<AssetSource, int>> { new KeyValuePair<AssetSource, int>(new AssetSource(), 4) };
+            Assert.Equal(MissingAssets.English[MissingAssets.UnknownKey], MissingAssets.Summary(unnamed));
+            Assert.Equal("Weggelassen: Mod Find It; and 1 more.", MissingAssets.Summary(new List<KeyValuePair<AssetSource, int>>
+            {
+                new KeyValuePair<AssetSource, int>(new AssetSource { Kind = AssetSourceKind.RuntimePrefab, Name = "Find It" }, 3),
+                new KeyValuePair<AssetSource, int>(null, 1),
+            }, k => german.TryGetValue(k, out string v) ? v : null));
+        }
+
+        [Test]
+        public void TheLocaleTablesTranslateTheSummary()
+        {
+            if (!TestPaths.TryGetRepoFile("src/SkylineTogether/Data/locale.en-US.json", out string en) || !TestPaths.TryGetRepoFile("src/SkylineTogether/Data/locale.de-DE.json", out string de))
+            {
+                Assert.Skip("the repository's data files are not reachable");
+                return;
+            }
+            JsonValue english = MiniJson.Parse(File.ReadAllText(en, Encoding.UTF8), "en");
+            JsonValue german = MiniJson.Parse(File.ReadAllText(de, Encoding.UTF8), "de");
+            foreach (KeyValuePair<string, string> e in MissingAssets.English)
+            {
+                Assert.True(new List<string>(english.Keys).Contains(e.Key), "en lacks " + e.Key);
+                Assert.True(new List<string>(german.Keys).Contains(e.Key), "de lacks " + e.Key);
+                Assert.Equal(e.Value, english[e.Key].AsString(), "the English table matches the fallback: " + e.Key);
+            }
         }
 
         [Test]

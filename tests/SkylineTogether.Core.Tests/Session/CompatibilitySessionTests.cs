@@ -25,6 +25,32 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Equal("content", client.EndReport.Kind);
             Assert.Equal("San Francisco Set", client.EndReport.ContentMissing[0].Name);
             Assert.Contains("San Francisco Set", client.EndReason);
+            // the screen and the toast show a short sentence in the joiner's language; the English detail is for the logs
+            Assert.Equal(NetText.RefuseContent, client.EndText.Key);
+            Assert.Contains("San Francisco Set", client.EndText.Text);
+        }
+
+        [Test]
+        public void EachRefusalKindHasItsOwnText()
+        {
+            var mods = new MismatchReport { Kind = "mods" };
+            Assert.Equal(NetText.RefuseModsUnlisted, CompatibilityResult.RefusalKey(mods), "a list too long to send names nothing");
+            mods.Extra.Add(new ModEntry { Name = "Extra" });
+            Assert.Equal(NetText.RefuseMods, CompatibilityResult.RefusalKey(mods));
+            mods.CityData.Add(new ModEntry { Name = "Zoning" });
+            Assert.Equal(NetText.RefuseCityData, CompatibilityResult.RefusalKey(mods));
+            var assets = new MismatchReport { Kind = "assets", AssetsUnknown = true };
+            Assert.Equal(NetText.RefuseAssetsUnlisted, CompatibilityResult.RefusalKey(assets));
+            assets.AssetsMissing.Add(new ModEntry { Name = "Fences" });
+            Assert.Equal(NetText.RefuseAssets, CompatibilityResult.RefusalKey(assets));
+            Assert.Equal(NetText.RefuseContent, CompatibilityResult.RefusalKey(new MismatchReport { Kind = "content" }));
+            Assert.Equal(NetText.RefuseConflictHost, CompatibilityResult.RefusalKey(new MismatchReport { Kind = "conflict", HostConflict = new ModEntry { Name = "x" } }));
+            Assert.Equal(NetText.RefuseConflictYou, CompatibilityResult.RefusalKey(new MismatchReport { Kind = "conflict", HostConflict = new ModEntry { Name = "x" }, ClientConflict = new ModEntry { Name = "x" } }));
+            Assert.Null(new CompatibilityResult().RefusalText());
+            foreach (string key in new[] { NetText.RefuseMods, NetText.RefuseModsUnlisted, NetText.RefuseAssets, NetText.RefuseAssetsUnlisted, NetText.RefuseContent, NetText.RefuseCityData, NetText.RefuseConflictYou, NetText.RefuseConflictHost })
+            {
+                Assert.True(NetText.English.ContainsKey(key), key);
+            }
         }
 
         [Test]

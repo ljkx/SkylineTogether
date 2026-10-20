@@ -2036,8 +2036,9 @@ namespace SkylineTogether.Core.Session
                 {
                     _log.Info(LogCategory.Join, p.Name + " asked to join anyway with different mods, but this host does not let players join with different mods");
                 }
-                // the detail text is cut at 1024 characters; the report carries the complete lists for the UI
-                Refuse(p, RefuseReason.Mismatch, LocalText.Plain(compat.RefusalDetail), compat.Refusal);
+                // the joiner shows a short sentence by report kind in its own language next to the report's complete lists;
+                // the English detail (cut at 1024 characters) is for the logs
+                Refuse(p, RefuseReason.Mismatch, compat.RefusalText(), compat.Refusal);
                 if (compat.Refusal.CityData.Count > 0 || compat.Refusal.Kind == "conflict")
                 {
                     if (joinAnyway) _log.Info(LogCategory.Join, p.Name + " asked to join anyway, but no option lets a player join without mods that store data in this city or with the old multiplayer mod");

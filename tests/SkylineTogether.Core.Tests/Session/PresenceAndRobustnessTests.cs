@@ -339,7 +339,7 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Equal(ClientState.WaitingForSnapshot, client.State, "the host may take minutes to save a big city");
             RunSeconds(rig, 30);
             Assert.Equal(ClientState.Ended, client.State);
-            Assert.Contains("did not send the city", client.EndReason);
+            Assert.Contains("didn't send the city", client.EndReason);
             rig.Run(5);
             Assert.Equal(1, rig.Host.GetPlayers().Count, "the host forgot the joiner");
         }
@@ -371,7 +371,7 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.Equal(ClientState.Loading, client.State);
             rig.RunClientOnly(client, 30);
             Assert.Equal(ClientState.Ended, client.State);
-            Assert.Contains("did not confirm", client.EndReason);
+            Assert.Contains("didn't confirm", client.EndReason);
         }
 
         // ================================================================== duplicate connections

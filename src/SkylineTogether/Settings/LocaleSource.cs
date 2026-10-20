@@ -90,6 +90,39 @@ namespace SkylineTogether.Settings
             return _english?.Entries != null && _english.Entries.TryGetValue(key, out text) ? text : null;
         }
 
+        private static string _numberLocale;
+        private static System.Globalization.CultureInfo _numberCulture = System.Globalization.CultureInfo.InvariantCulture;
+
+        /// <summary>
+        /// The number format of the game's language ("1,2" in German), for numbers shown to the player; the invariant
+        /// format when the game's locale id is not a culture this runtime knows. Never for logs or data files.
+        /// </summary>
+        public static System.Globalization.CultureInfo NumberCulture()
+        {
+            string id;
+            try
+            {
+                id = GameManager.instance?.localizationManager?.activeLocaleId ?? "";
+            }
+            catch (Exception)
+            {
+                id = "";
+            }
+            if (string.Equals(id, _numberLocale, StringComparison.Ordinal)) return _numberCulture;
+            System.Globalization.CultureInfo culture = System.Globalization.CultureInfo.InvariantCulture;
+            try
+            {
+                if (id.Length > 0) culture = System.Globalization.CultureInfo.GetCultureInfo(id);
+            }
+            catch (Exception)
+            {
+                culture = System.Globalization.CultureInfo.InvariantCulture;
+            }
+            _numberCulture = culture;
+            _numberLocale = id;
+            return culture;
+        }
+
         /// <summary>A text the host sent (<see cref="Core.Session.LocalText"/>) in this player's language, else its English text.</summary>
         public static string Localize(Core.Session.LocalText text) => text == null ? "" : text.Render(Lookup);
 

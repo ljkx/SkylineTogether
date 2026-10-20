@@ -251,7 +251,7 @@ namespace SkylineTogether.Sync
             if (!ViolationTracker.IsViolation(reason) || !_violations.Record(peer.Value, _sessions.Clock.Seconds)) return;
             _log.Warn(LogCategory.Replication, peer + ": too many invalid or flooding proposals; kicking");
             _violations.Forget(peer.Value);
-            _sessions.Host?.Kick(peer, "Too many invalid changes were sent to the host.");
+            _sessions.Host?.Kick(peer, Core.Session.NetText.Of(Core.Session.NetText.KickInvalidChanges));
         }
 
         private void SendRollback(PeerId peer, uint seq, RejectReason reason, IReadOnlyList<uint> ids, List<ZoneBlockKey> zones)
