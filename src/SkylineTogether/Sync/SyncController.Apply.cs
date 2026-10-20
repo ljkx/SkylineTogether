@@ -341,6 +341,7 @@ namespace SkylineTogether.Sync
 
         private long _failedBatches;
         private readonly List<uint> _recoveryIds = new List<uint>();
+        private readonly HashSet<Entity> _salvageTouched = new HashSet<Entity>();
 
         /// <summary>
         /// Client: a host batch threw while being applied. Acknowledging it tells the host it may reuse the ids the batch
@@ -363,13 +364,29 @@ namespace SkylineTogether.Sync
             _recoveryIds.Clear();
             FailedBatchRecovery.DespawnsToApply(records, _recoveryIds);
             int despawns = _recoveryIds.Count, stillBound;
+            _salvageTouched.Clear();
             try
             {
-                stillBound = _codec.SalvageDespawns(_recoveryIds);
+                stillBound = _codec.SalvageDespawns(_recoveryIds, _salvageTouched);
             }
             catch (Exception)
             {
                 stillBound = Math.Max(1, despawns);
+            }
+            // what the salvage tagged is the applier's write like any apply's: not captured back, and its agent links
+            // checked by the reference audit
+            if (_salvageTouched.Count > 0)
+            {
+                foreach (Entity e in _salvageTouched) _appliedThisFrame.Add(e);
+                try
+                {
+                    _audit.AfterApply(_salvageTouched, Perf.Now);
+                }
+                catch (Exception audit)
+                {
+                    Guard.Report(Features.Integrity, "reference audit after a failed batch", audit);
+                }
+                _salvageTouched.Clear();
             }
             _recoveryIds.Clear();
             FailedBatchRecovery.IdsToRequest(records, _recoveryIds);
@@ -392,6 +409,8 @@ namespace SkylineTogether.Sync
             _recoveryIds.Clear();
             if (!FailedBatchRecovery.MayAcknowledge(true, stillBound))
             {
+                // an id still bound, or an entity left without its deletion tag: the host would reuse the id while this
+                // client keeps the old entity
                 Guard.Disable(Features.Replication, stillBound + " deletion(s) of a batch that failed to apply could not be applied");
                 return false;
             }
@@ -477,6 +496,9 @@ namespace SkylineTogether.Sync
                     Guard.Report(Features.Integrity, "integrity (host batch)", ex);
                 }
             }
+            // a despawn whose entity survived (its deletion threw): the batch is handled like a failed one, so it is
+            // acknowledged only once the salvage deleted that entity (RecoverFailedBatch)
+            if (r.DespawnsNotApplied > 0) throw new InvalidOperationException(r.DespawnsNotApplied + " deletion(s) of the batch left their entity");
         }
 
         private readonly List<StructureChange> _batchChanges = new List<StructureChange>();

@@ -108,10 +108,28 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
-        /// Whether the failed batch may be acknowledged: only when it was decoded and every id it despawns is unbound
-        /// here afterwards.
+        /// Whether the failed batch may be acknowledged: only when it was decoded and every despawn it carries is applied
+        /// here afterwards (<see cref="CountNotApplied"/>).
         /// </summary>
-        public static bool MayAcknowledge(bool decoded, int despawnsStillBound) => decoded && despawnsStillBound == 0;
+        public static bool MayAcknowledge(bool decoded, int despawnsNotApplied) => decoded && despawnsNotApplied == 0;
+
+        /// <summary>
+        /// The despawns of <paramref name="ids"/> that are not applied: the id is still bound here, or the entity it was
+        /// bound to survived (it exists without the deletion tag; a despawn that threw half-way unbinds the id but leaves
+        /// the entity, which no id reaches any more while the host reuses the id).
+        /// </summary>
+        public static int CountNotApplied(IReadOnlyList<uint> ids, Func<uint, bool> stillBound, Func<uint, bool> entitySurvived)
+        {
+            if (ids == null) throw new ArgumentNullException(nameof(ids));
+            if (stillBound == null) throw new ArgumentNullException(nameof(stillBound));
+            if (entitySurvived == null) throw new ArgumentNullException(nameof(entitySurvived));
+            int n = 0;
+            foreach (uint id in ids)
+            {
+                if (stillBound(id) || entitySurvived(id)) n++;
+            }
+            return n;
+        }
 
         private static bool IsEntityRecord(SyncRecordKind kind) => kind == SyncRecordKind.Spawn || kind == SyncRecordKind.Upsert || kind == SyncRecordKind.Values;
     }

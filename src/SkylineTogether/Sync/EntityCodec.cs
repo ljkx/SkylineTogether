@@ -49,11 +49,16 @@ namespace SkylineTogether.Sync
         public readonly List<string> Problems = new List<string>();
         /// <summary>Net ids of the entities deleted because they would dangle (a client asks the host for them again).</summary>
         public readonly List<uint> DanglingIds = new List<uint>();
+        /// <summary>
+        /// Client: despawns whose entity survived (the deletion threw and the entity could not even be tagged): the batch
+        /// must not be acknowledged (<see cref="EntityCodec.SalvageDespawns"/>).
+        /// </summary>
+        public int DespawnsNotApplied;
 
         /// <summary>Clears the result for the next apply (the codec reuses one instance).</summary>
         public void Reset()
         {
-            Spawned = Upserted = Values = Despawned = Skipped = ZoneBlocks = StaleReplaced = 0;
+            Spawned = Upserted = Values = Despawned = Skipped = ZoneBlocks = StaleReplaced = DespawnsNotApplied = 0;
             UnresolvedSpawns = UnresolvedComponents = UnsafeSkipped = DanglingDeleted = Cascaded = 0;
             Cost = 0;
             HasCost = false;
@@ -1121,30 +1126,35 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
-        /// Client: the apply of a host batch threw. The batch's despawns are what the host may reuse ids after (once this
-        /// client acknowledges it), so each of <paramref name="ids"/> (<see cref="FailedBatchRecovery.DespawnsToApply"/>) is
-        /// applied now: the id is unbound and its entity deleted cleanly, exactly as step 5 would have. Returns the
-        /// number of those ids still bound afterwards (the batch must then never be acknowledged).
+        /// Client: the apply of a host batch threw (or one of its despawns left its entity, <see cref="ApplyResult.DespawnsNotApplied"/>).
+        /// The batch's despawns are what the host may reuse ids after (once this client acknowledges it), so each of
+        /// <paramref name="ids"/> (<see cref="FailedBatchRecovery.DespawnsToApply"/>) is applied now: the id is unbound and
+        /// its entity deleted, exactly as step 5 would have. Returns the number of those despawns not applied afterwards
+        /// (<see cref="FailedBatchRecovery.CountNotApplied"/>: the id still bound, or its entity still there without the
+        /// deletion tag); the batch must then never be acknowledged. <paramref name="touched"/> receives what was tagged.
         /// </summary>
-        public int SalvageDespawns(List<uint> ids)
+        public int SalvageDespawns(List<uint> ids, HashSet<Entity> touched = null)
         {
             ApplyResult result = _result;
             EntityManager em = EntityManager;
-            int stillBound = 0;
             _touch.Clear();
+            _salvaged.Clear();
             try
             {
                 foreach (uint id in ids)
                 {
+                    // the entity of the despawn: still bound, or kept from an earlier despawn of it that threw
+                    Entity e = _ids.GetEntity(id);
+                    if (e == Entity.Null) _despawnSurvivors.TryGetValue(id, out e);
+                    _salvaged[id] = e;
                     try
                     {
-                        Despawn(id, false, result);
+                        Despawn(id, e, false, result);
                     }
                     catch (Exception)
                     {
-                        // checked below
+                        // counted below
                     }
-                    if (_ids.GetEntity(id) != Entity.Null) stillBound++;
                 }
                 DeleteDangling(false, result);
                 foreach (Entity e in _touch)
@@ -1157,18 +1167,36 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 _log.Warn(LogCategory.Replication, "applying the despawns of a failed batch failed", ex);
-                stillBound = 0;
-                foreach (uint id in ids)
-                {
-                    if (_ids.GetEntity(id) != Entity.Null) stillBound++;
-                }
             }
             finally
             {
                 _touch.Clear();
             }
-            return stillBound;
+            if (touched != null)
+            {
+                foreach (Entity e in result.Touched)
+                {
+                    if (em.Exists(e)) touched.Add(e);
+                }
+            }
+            int notApplied = FailedBatchRecovery.CountNotApplied(ids, id => _ids.GetEntity(id) != Entity.Null, id => Survives(em, _salvaged.TryGetValue(id, out Entity e) ? e : Entity.Null));
+            foreach (uint id in ids)
+            {
+                if (_salvaged.TryGetValue(id, out Entity e) && !Survives(em, e)) _despawnSurvivors.Remove(id);
+            }
+            _salvaged.Clear();
+            return notApplied;
         }
+
+        private static bool Survives(EntityManager em, Entity e) => e != Entity.Null && em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e);
+
+        private readonly Dictionary<uint, Entity> _salvaged = new Dictionary<uint, Entity>();
+
+        /// <summary>
+        /// Client: entities whose despawn threw and that could not be tagged, by the id they had (it is unbound already);
+        /// the salvage of the batch tries them again, and the batch is not acknowledged while one survives.
+        /// </summary>
+        private readonly Dictionary<uint, Entity> _despawnSurvivors = new Dictionary<uint, Entity>();
 
         /// <summary>Ids despawned by the batch being applied, with the index of their first despawn record.</summary>
         private readonly Dictionary<uint, int> _despawnAt = new Dictionary<uint, int>();
@@ -1414,9 +1442,15 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>Applies one despawn record (step 5, or before the entity steps when the batch reuses the id).</summary>
-        private void Despawn(SyncRecord r, bool proposal, ApplyResult result) => Despawn(r.NetId, proposal, result);
+        private void Despawn(SyncRecord r, bool proposal, ApplyResult result) => Despawn(r.NetId, _ids.GetEntity(r.NetId), proposal, result);
 
-        private void Despawn(uint netId, bool proposal, ApplyResult result)
+        /// <summary>
+        /// Despawns <paramref name="e"/>, the entity of <paramref name="netId"/> (bound, or one whose earlier despawn threw).
+        /// A client's despawn always ends with the entity tagged <c>Deleted</c>: when its clean-up throws half-way, the rest is
+        /// done best effort and the tag added anyway (an untagged entity whose id is unbound stayed for the session, out of
+        /// every id-based check); one that cannot even be tagged counts in <see cref="ApplyResult.DespawnsNotApplied"/>.
+        /// </summary>
+        private void Despawn(uint netId, Entity e, bool proposal, ApplyResult result)
         {
             EntityManager em = EntityManager;
             // mod compatibility: a client may delete vehicles, citizens and animals with a mod tool (Better Bulldozer)
@@ -1425,12 +1459,28 @@ namespace SkylineTogether.Sync
                 result.Problems.Add("refused to delete #" + netId + " (" + _ids.GetFamily(netId) + ")");
                 return;
             }
-            Entity e = _ids.GetEntity(netId);
             // the host keeps the binding of a proposed deletion; its capture sees the Deleted tag, broadcasts
             // the despawn to every peer and only then releases the id (unbinding here hid the despawn from the
             // other clients)
-            if (!proposal) _ids.Unbind(netId);
-            if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return;
+            if (!proposal && _ids.GetEntity(netId) == e) _ids.Unbind(netId);
+            if (e == Entity.Null || !em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e))
+            {
+                _despawnSurvivors.Remove(netId);
+                return;
+            }
+            if (!proposal && MoverCleanup != null && IsMover(em, e))
+            {
+                // a vehicle or creature (a stale mover binding replaced by another record, a lost mover despawn): its
+                // riders and passengers are released the way the movers' own despawn does it
+                try
+                {
+                    MoverCleanup(e, result.Touched);
+                }
+                catch (Exception ex)
+                {
+                    result.Problems.Add("mover clean-up of #" + netId + ": " + ex.Message);
+                }
+            }
             try
             {
                 Family family = _families.Classify(em, e);
@@ -1458,17 +1508,69 @@ namespace SkylineTogether.Sync
                 _touch.Remove(e);
                 result.Touched.Add(e);
                 result.Despawned++;
+                _despawnSurvivors.Remove(netId);
                 for (int i = 0; i < _leftAtNode.Count; i++) DeleteDangling(_leftAtNode[i], proposal, result, "it ends at node #" + netId + ", which was deleted");
             }
             catch (Exception ex)
             {
                 result.Problems.Add("despawn of #" + netId + ": " + ex.Message);
+                if (!proposal) FinishFailedDespawn(netId, e, result);
             }
             finally
             {
                 _leftAtNode.Clear();
             }
         }
+
+        private static bool IsMover(EntityManager em, Entity e) => em.HasComponent<Game.Vehicles.Vehicle>(e) || em.HasComponent<Game.Creatures.Creature>(e);
+
+        /// <summary>
+        /// Client: a despawn threw before its entity was tagged. Its id is unbound already, so an entity left untagged would
+        /// stay for the session out of every id-based check while the host reuses the id: the references the game follows
+        /// unchecked are made safe and the removal clean-up runs (each best effort), then the entity is tagged. One that
+        /// cannot be tagged is kept for the salvage (<see cref="SalvageDespawns"/>) and keeps the batch unacknowledged.
+        /// </summary>
+        private void FinishFailedDespawn(uint netId, Entity e, ApplyResult result)
+        {
+            EntityManager em = EntityManager;
+            try
+            {
+                SanitizeForDelete(em, e);
+            }
+            catch (Exception)
+            {
+                // best effort: the tag matters more
+            }
+            try
+            {
+                result.Cascaded += DeletionCascade.Apply(em, e, result.Touched);
+            }
+            catch (Exception)
+            {
+                // best effort
+            }
+            try
+            {
+                if (em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e)) em.AddComponent<Game.Common.Deleted>(e);
+                _touch.Remove(e);
+                result.Touched.Add(e);
+                result.Despawned++;
+                _despawnSurvivors.Remove(netId);
+                return;
+            }
+            catch (Exception ex)
+            {
+                result.Problems.Add("tagging #" + netId + " deleted after a failed despawn: " + ex.Message);
+            }
+            _despawnSurvivors[netId] = e;
+            result.DespawnsNotApplied++;
+        }
+
+        /// <summary>
+        /// Client: releases the riders and passengers of a vehicle or creature the codec deletes (a stale mover binding
+        /// replaced by a record of another family); set by the mover sync (the rider pass of its own despawn).
+        /// </summary>
+        public Action<Entity, HashSet<Entity>> MoverCleanup;
 
         private long _staleBindingsTotal;
         private double _lastStaleLog = double.NegativeInfinity;
@@ -1525,8 +1627,10 @@ namespace SkylineTogether.Sync
             string what = Describe(old);
             _staleBindingsTotal++;
             result.StaleReplaced++;
-            Despawn(r.NetId, false, result);
-            if (_ids.GetEntity(r.NetId) == old) _ids.Unbind(r.NetId); // a refused or failed despawn still frees the id for the new entity
+            Despawn(r.NetId, old, false, result);
+            // a refused despawn still frees the id for the new entity; an old entity that survived its despawn keeps the
+            // batch unacknowledged (ApplyResult.DespawnsNotApplied)
+            if (_ids.GetEntity(r.NetId) == old) _ids.Unbind(r.NetId);
             double now = Diagnostics.Perf.Now;
             if (now - _lastStaleLog < 10.0)
             {
