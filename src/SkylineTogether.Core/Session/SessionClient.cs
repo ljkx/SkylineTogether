@@ -54,6 +54,13 @@ namespace SkylineTogether.Core.Session
         /// it is wrong. Off only for replaying a recording (whose host answered someone else's nonce).
         /// </summary>
         public bool VerifyHostProof = true;
+
+        /// <summary>
+        /// The session is known to have a password (its Steam lobby says so): the host must challenge this game and prove
+        /// that it knows the password, as on every direct (IP) connection, where the host always challenges
+        /// (<see cref="SessionClient.HostProofRequired"/>).
+        /// </summary>
+        public bool ExpectPassword;
     }
 
     /// <summary>Stages of a client session, in order; Ended is final (why: <see cref="ClientEndKind"/>).</summary>
@@ -175,6 +182,9 @@ namespace SkylineTogether.Core.Session
         // key is derived (maybe in the background) for the host's challenge, and the host's proof checked with it
         private HandshakeManifest _manifestToSend;
         private bool _manifestSent;
+        // the host authenticated this game (and proved the password where that is required): only then is anything but
+        // the handshake read
+        private bool _authenticated;
         private PasswordChallengeMessage _challenge;
         private PasswordKeyCache _keyCache;
         private byte[] _answerKey;
@@ -617,7 +627,17 @@ namespace SkylineTogether.Core.Session
                 throw new DecodeException("Authenticated: " + ex.Message);
             }
             // a replayed recording's host answered the recorder's nonce, not this one: nothing to verify there
-            if (_challenge != null && _options.VerifyHostProof && _transport.Kind != TransportKind.Playback)
+            bool verify = _options.VerifyHostProof && _transport.Kind != TransportKind.Playback;
+            if (_challenge == null && verify && HostProofRequired)
+            {
+                // a host that knows the password always challenges here: one that skips the challenge may be anybody
+                // (a spoofed address or name) and learns nothing (no manifest), nor is its city loaded
+                _log.Warn(LogCategory.Session, "the host did not ask for the session password although it must; not joining");
+                EndText = NetText.Of(NetText.ClientHostNotProven); // it proved nothing: the same screen as a wrong proof
+                End(EndText.Text, ClientEndKind.HostNotProven);
+                return;
+            }
+            if (_challenge != null && verify)
             {
                 byte[] expected = _answerKey != null
                     ? SessionCrypto.HostProof(_answerKey, _challenge.SessionId, _challenge.HostNonce, _clientNonce, _challenge.Salt, _boundHost)
@@ -630,8 +650,17 @@ namespace SkylineTogether.Core.Session
                     return;
                 }
             }
+            _authenticated = true;
             SendManifest();
         }
+
+        /// <summary>
+        /// The host must challenge this game and prove that it knows the password: on a direct (IP) connection, whose host
+        /// always needs a password (it refuses direct joiners without one), and when the session is known to have one
+        /// (<see cref="ClientOptions.ExpectPassword"/>). Over Steam P2P the host is the Steam account that was dialled
+        /// (Steam authenticates it), and a password kept in the join settings must not stop joins of a session without one.
+        /// </summary>
+        public bool HostProofRequired => _transport.Kind == TransportKind.SteamIp || _options.ExpectPassword;
 
         void ITransportEventSink.OnDisconnected(IConnection connection, int reason, string text)
         {
@@ -667,6 +696,9 @@ namespace SkylineTogether.Core.Session
 
         private void Handle(Envelope e)
         {
+            // before the host authenticated this game only the handshake is read: a refusal, pings and the password
+            // controls (HandleControl); a host that skipped the challenge never gets this game to its welcome or city
+            if (!_authenticated && e.Kind != MessageKind.Refuse && e.Kind != MessageKind.Ping && e.Kind != MessageKind.Control) return;
             switch (e.Kind)
             {
                 case MessageKind.Refuse:
@@ -680,6 +712,7 @@ namespace SkylineTogether.Core.Session
                 }
                 case MessageKind.Welcome:
                 {
+                    if (State != ClientState.Handshaking) return; // one welcome, at the end of the handshake
                     WelcomeMessage w = WelcomeMessage.Decode(e.Body, e.BodyOffset, e.BodyCount);
                     LocalPeer = w.AssignedPeer;
                     LocalRole = w.Role;
@@ -770,6 +803,7 @@ namespace SkylineTogether.Core.Session
         {
             byte[] payload = c.Payload ?? Array.Empty<byte>();
             _reader.Reset(payload, 0, payload.Length);
+            if (!_authenticated && c.Kind != ControlKind.PasswordChallenge && c.Kind != ControlKind.Authenticated) return;
             switch (c.Kind)
             {
                 case ControlKind.PasswordChallenge:
