@@ -1068,7 +1068,7 @@ namespace SkylineTogether.Core.Session
             if (p.SteamAuthenticated && p.Direct && BanList.AddressKey(p.Address) != null) added |= _options.Bans.Add(0, p.Address, p.Name, bannedAt);
             SendNotice(p, ControlKind.Ban, reason != null ? LocalText.Plain(reason) : NetText.Of(NetText.BanByHost));
             _log.Info(LogCategory.Session, p.Name + " was banned (" + (p.SteamAuthenticated ? "Steam ID " + p.SteamId : "") + (p.SteamAuthenticated && p.Direct ? " and " : "")
-                                           + (!p.SteamAuthenticated || p.Direct ? "address " + BanList.AddressKey(p.Address) : "") + ")" + (added ? "" : "; already on the list"));
+                                           + (!p.SteamAuthenticated || p.Direct ? "address " + Diagnostics.AddressMask.Address(BanList.AddressKey(p.Address)) : "") + ")" + (added ? "" : "; already on the list"));
             p.LeaveKey = NetText.ChatBanned;
             Remove(p, 0, "banned", true);
             if (added) BansChanged?.Invoke();
@@ -1080,7 +1080,7 @@ namespace SkylineTogether.Core.Session
         public bool Unban(string key)
         {
             if (!_options.Bans.Remove(key)) return false;
-            _log.Info(LogCategory.Session, "ban lifted: " + key);
+            _log.Info(LogCategory.Session, "ban lifted: " + Diagnostics.AddressMask.Key(key));
             BansChanged?.Invoke();
             return true;
         }
@@ -1935,7 +1935,7 @@ namespace SkylineTogether.Core.Session
             if (!right)
             {
                 double lockout = PasswordAttempts.OnFailure(p.AuthKeys, now);
-                _log.Warn(LogCategory.Session, p.Name + ": wrong password (" + string.Join(", ", p.AuthKeys ?? new string[0]) + ")" + (lockout > 0 ? "; locked out for " + (int)Math.Ceiling(lockout) + " s" : ""));
+                _log.Warn(LogCategory.Session, p.Name + ": wrong password (" + string.Join(", ", Array.ConvertAll(p.AuthKeys ?? new string[0], Diagnostics.AddressMask.Key)) + ")" + (lockout > 0 ? "; locked out for " + (int)Math.Ceiling(lockout) + " s" : ""));
                 if (lockout > 0) Refuse(p, RefuseReason.BadPassword, Lockout(NetText.RefuseWrongPasswordLocked, lockout), RetryReport(lockout));
                 else Refuse(p, RefuseReason.BadPassword, NetText.Of(NetText.RefuseWrongPassword));
                 return;

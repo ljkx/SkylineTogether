@@ -43,10 +43,14 @@ namespace SkylineTogether.Core
 
         public override int GetHashCode() => SteamId.GetHashCode() ^ (Address == null ? 0 : StringComparer.Ordinal.GetHashCode(Address));
 
+        /// <summary>
+        /// For logs and diagnostics: the name, the Steam ID and the address masked (<see cref="Diagnostics.AddressMask.Address"/>),
+        /// so no log line built from an identity carries a player's full network address.
+        /// </summary>
         public override string ToString()
         {
             return (DisplayName ?? "?") + " (" + SteamId.ToString(CultureInfo.InvariantCulture)
-                   + (string.IsNullOrEmpty(Address) ? string.Empty : ", " + Address) + ")";
+                   + (string.IsNullOrEmpty(Address) ? string.Empty : ", " + Diagnostics.AddressMask.Address(Address)) + ")";
         }
 
         public static bool operator ==(PeerIdentity a, PeerIdentity b) => a.Equals(b);

@@ -36,6 +36,37 @@ namespace SkylineTogether.Core.Diagnostics
         }
 
         /// <summary>
+        /// A transport address as a connection reports it, masked with its port kept: <c>203.0.113.7:27015</c> →
+        /// <c>203.0.113.x:27015</c>, <c>[2001:db8::1]:27015</c> → <c>[2001:db8:x:x:x:x:x:x]:27015</c>, an IPv6 /64 key
+        /// (<c>2001:db8:1:2::/64</c>) → <c>2001:db8:x:x:x:x:x:x/64</c>, a name → <see cref="Host"/>. "" for null or empty.
+        /// </summary>
+        public static string Address(string address)
+        {
+            string a = (address ?? "").Trim();
+            if (a.Length == 0) return "";
+            if (a.EndsWith("/64", StringComparison.Ordinal)) return Host(a.Substring(0, a.Length - 3)) + "/64";
+            if (a.StartsWith("[", StringComparison.Ordinal))
+            {
+                int close = a.IndexOf(']');
+                if (close > 0) return Host(a.Substring(0, close + 1)) + a.Substring(close + 1);
+                return Host(a);
+            }
+            int colon = a.IndexOf(':');
+            if (colon > 0 && colon == a.LastIndexOf(':')) return Host(a.Substring(0, colon)) + a.Substring(colon); // IPv4 or a name with a port
+            return Host(a);
+        }
+
+        /// <summary>
+        /// A key a remote is counted or banned under (<c>steam:…</c>, <c>ip:…</c>), for the log: the address of an
+        /// <c>ip:</c> key masked (<see cref="Address"/>), anything else unchanged.
+        /// </summary>
+        public static string Key(string key)
+        {
+            if (key == null) return "";
+            return key.StartsWith("ip:", StringComparison.Ordinal) ? "ip:" + Address(key.Substring(3)) : key;
+        }
+
+        /// <summary>
         /// Where a client connects to, for the log: a direct address masked with its port, a Steam endpoint unchanged
         /// (Steam IDs are in the logs anyway).
         /// </summary>
