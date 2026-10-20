@@ -928,10 +928,27 @@ namespace SkylineTogether.Core.Session
             return address != null ? "ip:" + address : null;
         }
 
+        /// <summary>
+        /// Whether a role may be remembered under an identity key: under an authenticated Steam ID any role; under an
+        /// address ("ip:", a direct or unauthenticated connection) only the viewer role. An address is shared behind one
+        /// router, carrier NAT, VPN exit or IPv6 /64, so a co-host or builder role remembered for it would go to anyone else
+        /// with the password who joins from there; a demotion is what must survive a rejoin.
+        /// </summary>
+        public static bool MayRememberRole(string identityKey, SessionRole role)
+        {
+            if (identityKey == null) return false;
+            return identityKey.StartsWith("steam:", StringComparison.Ordinal) || role == SessionRole.Viewer;
+        }
+
         private void RememberRole(Peer p, SessionRole role)
         {
             string key = IdentityKey(p);
             if (key == null) return;
+            if (!MayRememberRole(key, role))
+            {
+                _rememberedRoles.Remove(key); // a promotion only forgets an address's demotion
+                return;
+            }
             if (!_rememberedRoles.ContainsKey(key))
             {
                 if (_rememberedRoles.Count >= MaxRememberedRoles && _rememberedOrder.Count > 0)
@@ -951,7 +968,7 @@ namespace SkylineTogether.Core.Session
         private SessionRole InitialRole(Peer p)
         {
             string key = IdentityKey(p);
-            if (key != null && _rememberedRoles.TryGetValue(key, out SessionRole role)) return role;
+            if (key != null && _rememberedRoles.TryGetValue(key, out SessionRole role) && MayRememberRole(key, role)) return role;
             return _options.NewPlayersJoinAsViewer && !p.Local ? SessionRole.Viewer : SessionRole.Builder;
         }
 
