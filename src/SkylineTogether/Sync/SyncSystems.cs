@@ -186,6 +186,9 @@ namespace SkylineTogether.Sync
                         DeletionCascade.LocalDeletions++;
                     }
                 }
+                // riders of the vehicles deleted above that their passenger lists did not name, this frame (before the
+                // Cleanup phase destroys the vehicles)
+                movers?.FlushStrayRiders(em);
             }
             catch (Exception ex)
             {

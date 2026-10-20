@@ -346,6 +346,23 @@ namespace SkylineTogether.Sync
             if (_releasedVehicles.Count > 0) ReleaseStrayRiders(em);
         }
 
+        /// <summary>
+        /// Releases, now, the stray riders of vehicles deleted here this frame (<see cref="OnDeletedLocally"/>): called by the
+        /// removal clean-up at the end of the Modification phases, before the Cleanup phase destroys the vehicles (the next
+        /// frame's apply was one frame late: RelativeObjectSystem had already read the destroyed parent). Runs whether or
+        /// not the movers feature is on.
+        /// </summary>
+        public void FlushStrayRiders(EntityManager em)
+        {
+            if (_releasedVehicles.Count == 0) return;
+            if (_world == null || !_world.IsCreated)
+            {
+                _releasedVehicles.Clear();
+                return;
+            }
+            ReleaseStrayRiders(em);
+        }
+
         /// <summary>Movers created by this frame's batches (several per frame while catching up).</summary>
         private readonly HashSet<Entity> _createdThisFrame = new HashSet<Entity>();
 
