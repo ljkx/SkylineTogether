@@ -168,6 +168,7 @@ namespace SkylineTogether.Core.Session
         // what a joiner says about the host (game layer)
         public const string ClientKicked = "st.net.client.kicked";
         public const string ClientBanned = "st.net.client.banned";
+        public const string ClientHostNotProven = "st.net.client.hostProof";
 
         /// <summary>The English text of every key (the fallback sent along, and the reference for the locale tables).</summary>
         public static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -204,8 +205,8 @@ namespace SkylineTogether.Core.Session
             [DropLoadTooLong] = "Loading the city took more than {MINUTES} minutes. Try joining again.",
             [DropResends] = "The city download kept failing. Try joining again.",
             [DropSnapshotFailed] = "The host could not save the city ({DETAIL}). Try joining again.",
-            [DropApplyFailed] = "The host could not apply your changes. Join again to get a fresh copy of the city.",
-            [DropNotApplying] = "Your game stopped applying the host's updates. Join again to get a fresh copy of the city.",
+            [DropApplyFailed] = "The host could not process your changes. Join again to get a fresh copy of the city.",
+            [DropNotApplying] = "Your game stopped processing the host's updates. Join again to get a fresh copy of the city.",
             [DropTooFast] = "Your game sent changes faster than the host could apply them. Join again to continue.",
             [RefuseShuttingDown] = "The host is ending the session.",
             [RefuseProtocol] = "Skyline Together versions differ. Update both games to the same mod version.",
@@ -215,7 +216,7 @@ namespace SkylineTogether.Core.Session
             [RefuseDirectNeedsPassword] = "This host accepts direct connections only with a session password. Join through Steam instead.",
             [RefuseLockout] = "Too many wrong passwords. Try again in {SECONDS} s.",
             [RefuseWrongPassword] = "Wrong password.",
-            [RefuseWrongPasswordLocked] = "Wrong password. Too many wrong passwords. Try again in {SECONDS} s.",
+            [RefuseWrongPasswordLocked] = "Wrong password. That was too many wrong tries; try again in {SECONDS} s.",
             [RefuseTooManyAttempts] = "Too many join attempts at once. Try again in a few seconds.",
             [RefuseBuild] = "Skyline Together builds differ (host build {HOST}, yours {YOU}). Both players need exactly the same mod version.",
             [RefuseGame] = "Game versions differ (host {HOST}, you {YOU}). Update both games.",
@@ -224,6 +225,7 @@ namespace SkylineTogether.Core.Session
             [RefuseCooldown] = "Your last attempts to join this session did not finish. You can join again in {SECONDS} s.",
             [ClientKicked] = "The host removed you from the session: {REASON}",
             [ClientBanned] = "The host removed you from the session and banned you: {REASON}",
+            [ClientHostNotProven] = "The host couldn't prove that it knows the session password.",
         };
 
         /// <summary>A text for <paramref name="key"/> with its English fallback filled in.</summary>

@@ -92,7 +92,11 @@ namespace SkylineTogether.Core.Tests.Session
                 client.Tick();
             }
             Assert.Equal(ClientState.Ended, client.State);
-            Assert.Contains("could not prove that it knows the session password", client.EndReason);
+            Assert.Contains("couldn't prove that it knows the session password", client.EndReason);
+            // its own screen in the player's language (check the host and the password), not "joining failed, file a bug"
+            Assert.Equal(ClientEndKind.HostNotProven, client.EndKind);
+            Assert.Equal(NetText.ClientHostNotProven, client.EndText.Key);
+            Assert.False(SessionClient.IsRetryable(client.EndKind), "joining again the same way cannot help");
             Assert.False(sink.GotManifest, "the client's mod list never reached the impostor");
         }
 

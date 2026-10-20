@@ -817,6 +817,7 @@ namespace SkylineTogether.UI
                 case ClientEndKind.ConnectionLost: return "connectionLost";
                 case ClientEndKind.Dropped: return "connectionLost"; // a technical removal: joining again is offered
                 case ClientEndKind.Failed: return "failed";
+                case ClientEndKind.HostNotProven: return "hostProof"; // its own screen: check the host and the password
                 // the finer kinds map onto the error screen's categories
                 case ClientEndKind.Unreachable: return "timeout"; // never connected ("check the Steam ID or address")
                 case ClientEndKind.RefusedTemporarily: return "refused";

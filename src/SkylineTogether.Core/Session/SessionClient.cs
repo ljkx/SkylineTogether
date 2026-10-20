@@ -113,7 +113,13 @@ namespace SkylineTogether.Core.Session
         /// The host disconnected this game for a technical reason (it stopped responding, could not keep up, its join
         /// stopped making progress, its messages kept failing): not a kick, so joining again is offered. Retryable.
         /// </summary>
-        Dropped
+        Dropped,
+
+        /// <summary>
+        /// The host could not prove that it knows the session password (a wrong password here, or not the host the
+        /// player meant): the player checks the Steam ID or address and the password. Not retryable as it is.
+        /// </summary>
+        HostNotProven
     }
 
     /// <summary>
@@ -608,7 +614,8 @@ namespace SkylineTogether.Core.Session
                 if (expected == null || !SessionCrypto.FixedTimeEquals(expected, proof))
                 {
                     _log.Warn(LogCategory.Session, "the host could not prove that it knows the session password; not joining");
-                    End("The host could not prove that it knows the session password, so this may not be the host you meant. Check the Steam ID or address and the password.", ClientEndKind.Failed);
+                    EndText = NetText.Of(NetText.ClientHostNotProven);
+                    End(EndText.Text, ClientEndKind.HostNotProven);
                     return;
                 }
             }
@@ -760,7 +767,7 @@ namespace SkylineTogether.Core.Session
                     if (_challenge != null) return; // one challenge per connection
                     if (string.IsNullOrEmpty(_options.Password))
                     {
-                        End("This session needs a password. Enter it in the Join settings and try again.", ClientEndKind.PasswordRequired);
+                        End("This session needs a password. Enter it below and try again.", ClientEndKind.PasswordRequired);
                         return;
                     }
                     _challenge = ch;

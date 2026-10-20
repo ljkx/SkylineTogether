@@ -196,7 +196,7 @@ namespace SkylineTogether.Core.Tests.Session
             var fourth = Handshake(rig, new RawPeer(rig, "Guesser", 7501));
             fourth.AnswerChallenge("wrong3");
             Pump(rig, new[] { fourth });
-            Assert.Contains("Too many wrong passwords", fourth.Refusal().Detail, "the fourth failure locks out");
+            Assert.Contains("too many wrong tries", fourth.Refusal().Detail, "the fourth failure locks out");
 
             var locked = Handshake(rig, new RawPeer(rig, "Guesser", 7501));
             Assert.Null(locked.Challenge(), "while locked out no challenge is issued");
@@ -213,7 +213,7 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.NotNull(again.Challenge(), "the lockout ended");
             again.AnswerChallenge("wrong4");
             Pump(rig, new[] { again });
-            Assert.Contains("Try again in 10 s", again.Refusal().Detail);
+            Assert.Contains("try again in 10 s", again.Refusal().Detail);
 
             // the right password clears the record
             rig.Clock.Advance(11);

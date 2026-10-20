@@ -1335,6 +1335,7 @@ namespace SkylineTogether.Session
             {
                 case ClientEndKind.Kicked: return LocaleSource.Resolve(NetText.ClientKicked, "REASON", text);
                 case ClientEndKind.Banned: return LocaleSource.Resolve(NetText.ClientBanned, "REASON", text);
+                case ClientEndKind.HostNotProven: return text;
                 case ClientEndKind.Refused:
                 case ClientEndKind.RefusedTemporarily:
                 case ClientEndKind.SessionEnded:

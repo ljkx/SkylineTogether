@@ -159,7 +159,7 @@ const EN = {
   "st.ui.title": "Skyline Together",
   "st.ui.menu.multiplayer": "Multiplayer",
   "st.ui.button.tooltip": "Play this city together with friends: host it, join a friend's city, chat.",
-  "st.ui.button.players": "{N} players in the session",
+  "st.ui.button.players": "Players in the session: {N}",
   "st.ui.close": "Close",
   "st.ui.back": "Back",
   "st.ui.loading": "Loading…",
@@ -193,9 +193,9 @@ const EN = {
   "st.ui.host.requireAssets": "Require the same asset packs",
   "st.ui.host.requireAssetsHint": "Refuse players whose asset packs differ from yours. When off, they join, are told which packs differ, and objects from packs they don't have are left out in their game.",
   "st.ui.host.allowModOverride": "Let players join with different mods",
-  "st.ui.host.allowModOverrideHint": "When a player's mods or asset packs don't match what you require, they see what differs and can still choose \"Join anyway\". Their game may then behave differently; your city stays authoritative. DLC, version and password checks always apply.",
+  "st.ui.host.allowModOverrideHint": "When a player's mods or asset packs don't match what you require, they see what differs and can still choose \"Join anyway\". Their game may then behave differently; your city always takes priority. DLC, version and password checks always apply.",
   "st.ui.host.allowDirect": "Allow direct IP connections",
-  "st.ui.host.allowDirectHint": "Also accept connections on a UDP port (needs port forwarding and a host password). Steam connections always work.",
+  "st.ui.host.allowDirectHint": "Also accept connections on a UDP port (needs port forwarding and a session password). Steam connections always work.",
   "st.ui.host.allowDirectNextTime": "Applies the next time you host.",
   "st.ui.host.friendsOnly": "Friends and invited only",
   "st.ui.host.friendsOnlyHint": "Only your Steam friends and players you invite from this panel can join through Steam. Direct IP joiners still need the password.",
@@ -236,7 +236,7 @@ const EN = {
   "st.ui.join.start": "Join",
   "st.ui.join.unavailable": "Joining isn't possible right now. Wait until the game has finished loading, and leave any running session first.",
   "st.ui.join.steamHint": "Got a Steam invite? Accept it in Steam and the game joins by itself.",
-  "st.ui.join.info": "The host's game saves the city and sends it to you; your game then loads it. Large cities take a minute. After that everything you and your friends build is shared live.",
+  "st.ui.join.info": "The host's game saves the city and sends it to you; your game then loads it. Large cities can take a few minutes. After that everything you and your friends build is shared live.",
   "st.ui.join.findId": "The host finds their Steam ID at the top of their Skyline Together panel and can copy it with one click.",
   "st.ui.join.replaceWarning": "Joining replaces the city you are playing with the host's city. Save first.",
   "st.ui.join.overlayTitle": "Joining {SESSION}",
@@ -263,7 +263,7 @@ const EN = {
   "st.ui.end.retry": "Try again",
   "st.ui.end.retryPassword": "Join with this password",
   "st.ui.end.joinAnyway": "Join anyway",
-  "st.ui.end.joinAnywayWarning": "Different mods can make your cities drift apart or behave differently. The host's city is authoritative; differences are repaired where possible.",
+  "st.ui.end.joinAnywayWarning": "Different mods can make your cities drift apart or behave differently. The host's city always takes priority; differences are fixed where possible.",
   "st.ui.end.back": "Back",
   "st.ui.end.copy": "Copy details",
   "st.ui.end.copied": "Copied",
@@ -272,6 +272,8 @@ const EN = {
   "st.ui.end.text.badPassword": "The host didn't accept the password. Check it with the host and try again. After several wrong tries the host's game blocks new attempts for a while.",
   "st.ui.end.title.lockout": "Too many wrong passwords",
   "st.ui.end.text.lockout": "The host's game blocks new attempts from your connection for a while after several wrong passwords. Wait until the time below has passed, check the password with the host, then try again.",
+  "st.ui.end.title.hostProof": "Couldn't confirm the host",
+  "st.ui.end.text.hostProof": "The host couldn't prove that it knows the session password, so this may not be the host you meant. Check the Steam ID or address and the password with the host, then try again.",
   "st.ui.end.title.passwordRequired": "This session needs a password",
   "st.ui.end.text.passwordRequired": "Ask the host for the password and enter it below.",
   "st.ui.end.title.mods": "Your mods don't match the host's",
@@ -299,15 +301,15 @@ const EN = {
   "st.ui.end.assets.versions": "Update to the host's version",
   "st.ui.end.paradoxId": "Paradox Mods {ID}",
   "st.ui.end.title.modsRequired": "Mods required for this city",
-  "st.ui.end.text.modsRequired": "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again.",
-  "st.ui.end.text.modsRequiredRest": "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again. The host lets you join anyway with the other differences once these are enabled.",
+  "st.ui.end.text.modsRequired": "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with \"Join anyway\". Enable or subscribe to them, restart the game and join again.",
+  "st.ui.end.text.modsRequiredRest": "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with \"Join anyway\". Enable or subscribe to them, restart the game and join again. The host lets you join anyway with the other differences once these are enabled.",
   "st.ui.end.mods.required": "Enable these mods to join",
   "st.ui.end.mods.requiredInCity": "This city contains its data – loading it without the mod would crash the game.",
   "st.ui.end.mods.requiredMaybe": "It can store data in a city – loading the city without the mod can crash the game.",
   "st.ui.end.mods.others": "Other differences",
   "st.ui.end.title.conflict": "Two multiplayer mods at once",
-  "st.ui.end.text.conflictYou": "The 'CS2 Multiplayer Mod' is enabled – two multiplayer mods at once conflict. Disable it in your playset or unsubscribe from it, restart the game and join again.",
-  "st.ui.end.text.conflictHost": "The host has the 'CS2 Multiplayer Mod' enabled – two multiplayer mods at once conflict. Ask the host to disable it and restart the game, then join again.",
+  "st.ui.end.text.conflictYou": "The \"CS2 Multiplayer Mod\" is enabled, and two multiplayer mods can't run at the same time. Disable it in your playset or unsubscribe from it, restart the game and join again.",
+  "st.ui.end.text.conflictHost": "The host has the \"CS2 Multiplayer Mod\" enabled, and two multiplayer mods can't run at the same time. Ask the host to disable it and restart the game, then join again.",
   "st.ui.end.title.full": "The session is full",
   "st.ui.end.text.full": "Ask the host to raise the player limit, or try again when someone leaves.",
   "st.ui.end.title.notAllowed": "You can't join this session",
@@ -327,9 +329,9 @@ const EN = {
   "st.ui.end.title.ended": "The session has ended",
   "st.ui.end.text.ended": "The host ended the session.",
   "st.ui.end.title.failed": "Joining failed",
-  "st.ui.end.text.failed": "Something went wrong while joining. Try again. If it keeps happening, use Copy details and attach them and the diagnostics file (Options → Skyline Together → Write diagnostics) to a bug report on GitHub (github.com/ljkx/SkylineTogether/issues).",
+  "st.ui.end.text.failed": "Something went wrong while joining. Try again. If it keeps happening, use \"Copy details\" and attach the details and the diagnostics file (Options → Skyline Together → Write diagnostics) to a bug report on GitHub (github.com/ljkx/SkylineTogether/issues).",
   "st.ui.end.title.loadFailed": "Your game couldn't load the host's city",
-  "st.ui.end.text.loadFailed": "The city arrived, but loading it failed. Try again. If it keeps failing, make sure you have the host's map and assets. If it still fails, use Copy details and attach them to a bug report on GitHub (github.com/ljkx/SkylineTogether/issues).",
+  "st.ui.end.text.loadFailed": "The city arrived, but loading it failed. Try again. If it keeps failing, make sure you have the host's map and assets. If it still fails, use \"Copy details\" and attach the details to a bug report on GitHub (github.com/ljkx/SkylineTogether/issues).",
   "st.ui.session.host": "Host",
   "st.ui.session.player": "Player",
   "st.ui.session.you": "you",
@@ -414,8 +416,8 @@ const EN = {
   "st.ui.perf.title": "Performance",
   "st.ui.perf.frame": "Frame budget {MS} of {BUDGET} ms · {OVER} frames over",
   "st.ui.perf.feature": "{AVG} / {P95} of {CAP} ms",
-  "st.ui.perf.queue": "Apply queue: {N}",
-  "st.ui.perf.peers": "Peers",
+  "st.ui.perf.queue": "Changes waiting: {N}",
+  "st.ui.perf.peers": "Players",
   "st.ui.perf.peer": "in {IN} · out {OUT} KB/s · {PING} ms",
   "st.ui.perf.deferred": "{N} waiting",
   "st.ui.diag.title": "Network & diagnostics",
@@ -469,7 +471,7 @@ const EN = {
   "st.ui.test.copyPath": "Copy path",
   "st.ui.test.folder": "Recordings folder: {FOLDER}",
   "st.ui.blocked": "Hosting and joining are unavailable: {REASON}",
-  "st.ui.conflictMod": "The 'CS2 Multiplayer Mod' ({MOD}) is enabled. Disable it and restart the game – two multiplayer mods at once conflict. While it is enabled, nobody can join you and you can't join others.",
+  "st.ui.conflictMod": "The \"CS2 Multiplayer Mod\" ({MOD}) is enabled, and two multiplayer mods can't run at the same time. Disable it and restart the game. While it is enabled, nobody can join you and you can't join others.",
   "st.ui.footer.build": "Build {BUILD}",
 };
 
@@ -2781,6 +2783,8 @@ function endCopy(e) {
   const r = e.kind === "refused" ? e.refuse : e.kind;
   if (e.kind === "left") return null;
   if (e.kind === "passwordRequired") return "passwordRequired";
+  // the host could not prove that it knows the password: maybe not the host the player meant (not a bug)
+  if (e.kind === "hostProof") return "hostProof";
   if (e.kind === "refused") {
     // a lockout (the host says when to try again) is not a wrong password: waiting is what helps
     if (r === "BadPassword") return e.lockout === true ? "lockout" : "badPassword";
@@ -2917,7 +2921,7 @@ function EndOverlay(p) {
   const e = obj(s.end);
   const copy = str(e.kind) ? endCopy(e) : null;
   const shown = !!copy && st.dismissedEnd !== e.seq;
-  const needsPassword = copy === "badPassword" || copy === "passwordRequired" || copy === "lockout";
+  const needsPassword = copy === "badPassword" || copy === "passwordRequired" || copy === "lockout" || copy === "hostProof";
   const canRetry = !!copy && !NO_RETRY[copy];
   // the host refused different mods or asset packs but lets players join anyway (the lists stay; the choice is the player's)
   const canJoinAnyway = (copy === "mods" || copy === "assets") && e.overridable === true && objs(e.required).length === 0;

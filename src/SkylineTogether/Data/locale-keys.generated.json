@@ -80,6 +80,8 @@
     "st.ui.end.text.badPassword",
     "st.ui.end.title.lockout",
     "st.ui.end.text.lockout",
+    "st.ui.end.title.hostProof",
+    "st.ui.end.text.hostProof",
     "st.ui.chat.hostBadge",
     "st.ui.end.title.passwordRequired",
     "st.ui.end.text.passwordRequired",
@@ -203,6 +205,12 @@
     "st.options.RequireSameAssets.desc",
     "st.options.AllowJoinWithDifferentMods.label",
     "st.options.AllowJoinWithDifferentMods.desc",
+    "st.options.FriendsOnly.label",
+    "st.options.FriendsOnly.desc",
+    "st.options.NewPlayersJoinAsViewer.label",
+    "st.options.NewPlayersJoinAsViewer.desc",
+    "st.options.EnforcePlacementChecks.label",
+    "st.options.EnforcePlacementChecks.desc",
     "st.options.AllowDirectConnections.label",
     "st.options.AllowDirectConnections.desc",
     "st.options.DirectPort.label",
@@ -446,6 +454,7 @@
     "st.net.refuse.stillJoining",
     "st.net.refuse.cooldown",
     "st.net.client.kicked",
-    "st.net.client.banned"
+    "st.net.client.banned",
+    "st.net.client.hostProof"
   ]
 }

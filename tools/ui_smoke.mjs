@@ -305,6 +305,7 @@ const cases = {
   recoveryBanned: { state: { ...base, mode: "Recovering", recovery: { phase: "NeedsChoice", attempt: 0, max: 6, seconds: 0, reason: "The host removed you from the session and banned you: Banned by the host", canReconnect: false, hostEnded: true, kicked: false, banned: true, attemptStage: "" } } },
   endEnded: { state: { ...base, mode: "None", end: end("sessionEnded") } },
   endFailed: { state: { ...base, mode: "None", end: end("failed") } },
+  endHostProof: { state: { ...base, mode: "None", end: end("hostProof", "", { text: "The host couldn't prove that it knows the session password." }) } },
   // recovery after an unexpected disconnect, self-test line, blocked hosting
   recoveryWaiting: { state: { ...base, mode: "Recovering", probes: "Self-test: 30/31 checks passed, 1 warnings", recovery: { phase: "Waiting", attempt: 2, max: 6, seconds: 4, reason: "Lost the connection to the host (timed out).", canReconnect: true, hostEnded: false, attemptStage: "downloading" }, players: [{ id: 0, name: "Host", host: true, you: false, state: "Offline", ping: 0, progress: 1, color: "#fff", role: "host" }] } },
   recoveryAttempt: { state: { ...base, mode: "Recovering", progress: 0.3, recovery: { phase: "Attempting", attempt: 2, max: 6, seconds: 4, reason: "Lost the connection to the host (timed out).", canReconnect: true, hostEnded: false, attemptStage: "downloading" } } },
@@ -383,7 +384,7 @@ const cases = {
 };
 // texts an English render of a state must show (has) or must not show (lacks)
 const JOIN_ANYWAY = "Join anyway";
-const WARNING = "Different mods can make your cities drift apart or behave differently. The host's city is authoritative; differences are repaired where possible.";
+const WARNING = "Different mods can make your cities drift apart or behave differently. The host's city always takes priority; differences are fixed where possible.";
 const EXPECT = {
   endMods: { has: ["The host requires the same code mods. Change these, restart the game and join again.", "Anarchy"], lacks: [JOIN_ANYWAY, WARNING] },
   endModsRequired: { has: ["The host requires the same code mods. Change these, restart the game and join again."], lacks: [JOIN_ANYWAY, WARNING] },
@@ -399,17 +400,20 @@ const EXPECT = {
   lobbyNoOverride: { has: ["Let players join with different mods"] },
   endModsCityData: { has: ["Mods required for this city", "Enable these mods to join (2)", "ZoningToolkit", "AreaBucket",
     "This city contains its data – loading it without the mod would crash the game.", "It can store data in a city – loading the city without the mod can crash the game.",
-    "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again."],
+    "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with \"Join anyway\". Enable or subscribe to them, restart the game and join again."],
     lacks: [JOIN_ANYWAY, WARNING, "Other differences", "Try again"] },
   endModsCityDataRest: { has: ["Enable these mods to join (1)", "Other differences", "Anarchy", "Traffic", "Move It",
-    "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with Join anyway. Enable or subscribe to them, restart the game and join again. The host lets you join anyway with the other differences once these are enabled."],
+    "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with \"Join anyway\". Enable or subscribe to them, restart the game and join again. The host lets you join anyway with the other differences once these are enabled."],
     lacks: [JOIN_ANYWAY, WARNING] },
   endModsCityDataHostile: { lacks: [JOIN_ANYWAY] },
-  endConflictYou: { has: ["Two multiplayer mods at once", "The 'CS2 Multiplayer Mod' is enabled – two multiplayer mods at once conflict. Disable it in your playset or unsubscribe from it, restart the game and join again."], lacks: [JOIN_ANYWAY, "Try again"] },
-  endConflictHost: { has: ["The host has the 'CS2 Multiplayer Mod' enabled – two multiplayer mods at once conflict. Ask the host to disable it and restart the game, then join again."], lacks: [JOIN_ANYWAY] },
-  lobbyConflictMod: { has: ["The 'CS2 Multiplayer Mod' (CS2MultiplayerMod 1.0.0.0) is enabled. Disable it and restart the game – two multiplayer mods at once conflict. While it is enabled, nobody can join you and you can't join others."] },
-  hostingConflictMod: { has: ["The 'CS2 Multiplayer Mod' (CS2MultiplayerMod 1.0.0.0) is enabled. Disable it and restart the game – two multiplayer mods at once conflict. While it is enabled, nobody can join you and you can't join others."] },
+  endConflictYou: { has: ["Two multiplayer mods at once", "The \"CS2 Multiplayer Mod\" is enabled, and two multiplayer mods can't run at the same time. Disable it in your playset or unsubscribe from it, restart the game and join again."], lacks: [JOIN_ANYWAY, "Try again"] },
+  endConflictHost: { has: ["The host has the \"CS2 Multiplayer Mod\" enabled, and two multiplayer mods can't run at the same time. Ask the host to disable it and restart the game, then join again."], lacks: [JOIN_ANYWAY] },
+  lobbyConflictMod: { has: ["The \"CS2 Multiplayer Mod\" (CS2MultiplayerMod 1.0.0.0) is enabled, and two multiplayer mods can't run at the same time. Disable it and restart the game. While it is enabled, nobody can join you and you can't join others."] },
+  hostingConflictMod: { has: ["The \"CS2 Multiplayer Mod\" (CS2MultiplayerMod 1.0.0.0) is enabled, and two multiplayer mods can't run at the same time. Disable it and restart the game. While it is enabled, nobody can join you and you can't join others."] },
   hosting: { lacks: ["Two multiplayer mods at once"] },
+  // a host that could not prove the password: its own screen with the password field, not the bug-report one
+  endHostProof: { has: ["Couldn't confirm the host", "The host couldn't prove that it knows the session password, so this may not be the host you meant. Check the Steam ID or address and the password with the host, then try again.",
+    "Join with this password"], lacks: ["Joining failed", "bug report", JOIN_ANYWAY] },
 };
 for (const name of Object.keys(EXPECT)) if (!cases[name]) fail("EXPECT names an unknown state " + name);
 const passes = [
