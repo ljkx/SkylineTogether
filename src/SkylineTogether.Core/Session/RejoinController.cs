@@ -23,6 +23,15 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>Automatic attempts before the player is asked.</summary>
         public int MaxAttempts = 6;
+
+        /// <summary>
+        /// Refusals "join again in N seconds" (<see cref="ClientEndKind.RefusedTemporarily"/>) whose wait an automatic
+        /// rejoin honours without spending an attempt (the next attempt starts after the host's wait, not before).
+        /// </summary>
+        public int MaxRefusedWaits = 6;
+
+        /// <summary>A host's wait longer than this is not waited out automatically: the player is asked.</summary>
+        public double MaxAutomaticWaitSeconds = 1800;
     }
 
     /// <summary>
@@ -75,9 +84,18 @@ namespace SkylineTogether.Core.Session
         /// local world is the host's). A first join that fails before that is no recovery case: the player is still
         /// where they were. Returns true when recovery is (still) active.
         /// </summary>
-        public bool OnClientEnded(ClientEndKind kind, string reason, bool enteredCity, double now)
+        public bool OnClientEnded(ClientEndKind kind, string reason, bool enteredCity, double now) => OnClientEnded(kind, reason, enteredCity, now, 0);
+
+        /// <summary>
+        /// <see cref="OnClientEnded(ClientEndKind, string, bool, double)"/> with the host's "join again in" seconds of a
+        /// temporary refusal (<see cref="MismatchReport.RetryAfterSeconds"/>, 0 without one): the next attempt waits for it
+        /// and the refusal does not spend an attempt.
+        /// </summary>
+        public bool OnClientEnded(ClientEndKind kind, string reason, bool enteredCity, double now, double retryAfterSeconds)
         {
             bool retryable = SessionClient.IsRetryable(kind);
+            double hostWait = kind == ClientEndKind.RefusedTemporarily ? Math.Max(0, retryAfterSeconds) : 0;
+            if (hostWait > _options.MaxAutomaticWaitSeconds) retryable = false; // asked instead of hours of a held city
             if (Phase == RejoinPhase.Idle || Phase == RejoinPhase.NeedsChoice)
             {
                 if (Phase == RejoinPhase.Idle && !enteredCity) return false; // a first join that failed early
@@ -99,11 +117,11 @@ namespace SkylineTogether.Core.Session
                 else if (retryable)
                 {
                     CanReconnect = true;
-                    Schedule(now);
+                    Schedule(now, hostWait);
                 }
                 else
                 {
-                    CanReconnect = kind == ClientEndKind.ProtocolError || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault || kind == ClientEndKind.Failed;
+                    CanReconnect = kind == ClientEndKind.RefusedTemporarily || kind == ClientEndKind.ProtocolError || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault || kind == ClientEndKind.Failed;
                     Phase = RejoinPhase.NeedsChoice;
                 }
                 return true;
@@ -123,12 +141,20 @@ namespace SkylineTogether.Core.Session
                 Phase = RejoinPhase.NeedsChoice;
                 return true;
             }
-            if (retryable && Attempt < _options.MaxAttempts)
+            if (retryable && hostWait > 0 && _refusedWaits < _options.MaxRefusedWaits)
             {
-                Schedule(now);
+                // the host said when: that attempt was not a real one (no download, no load)
+                _refusedWaits++;
+                if (Attempt > 0) Attempt--;
+                Schedule(now, hostWait);
                 return true;
             }
-            CanReconnect = retryable || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault || kind == ClientEndKind.Failed;
+            if (retryable && Attempt < _options.MaxAttempts)
+            {
+                Schedule(now, hostWait);
+                return true;
+            }
+            CanReconnect = retryable || kind == ClientEndKind.RefusedTemporarily || kind == ClientEndKind.LoadFailed || kind == ClientEndKind.LocalFault || kind == ClientEndKind.Failed;
             Phase = RejoinPhase.NeedsChoice;
             return true;
         }
@@ -161,7 +187,11 @@ namespace SkylineTogether.Core.Session
         public void ReconnectNow(double now)
         {
             if (Phase == RejoinPhase.Attempting) return;
-            if (Phase == RejoinPhase.NeedsChoice || Phase == RejoinPhase.Idle) Attempt = 0;
+            if (Phase == RejoinPhase.NeedsChoice || Phase == RejoinPhase.Idle)
+            {
+                Attempt = 0;
+                _refusedWaits = 0;
+            }
             CanReconnect = true;
             Phase = RejoinPhase.Waiting;
             NextAttemptAt = now;
@@ -180,6 +210,7 @@ namespace SkylineTogether.Core.Session
         {
             Phase = RejoinPhase.Idle;
             Attempt = 0;
+            _refusedWaits = 0;
             NextAttemptAt = 0;
             CanReconnect = false;
             StartKind = ClientEndKind.None;
@@ -188,11 +219,13 @@ namespace SkylineTogether.Core.Session
         /// <summary>Seconds until the next attempt (0 when due or not waiting).</summary>
         public double SecondsUntilAttempt(double now) => Phase == RejoinPhase.Waiting ? Math.Max(0, NextAttemptAt - now) : 0;
 
-        private void Schedule(double now)
+        private int _refusedWaits;
+
+        private void Schedule(double now, double hostWait)
         {
             double[] b = _options.BackoffSeconds;
             int index = Math.Min(Attempt, b.Length - 1);
-            NextAttemptAt = now + Math.Max(0, b[index]);
+            NextAttemptAt = now + Math.Max(Math.Max(0, b[index]), hostWait);
             Phase = RejoinPhase.Waiting;
         }
     }

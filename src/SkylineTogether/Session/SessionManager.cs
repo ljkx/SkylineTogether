@@ -1072,14 +1072,14 @@ namespace SkylineTogether.Session
                 }
                 return;
             }
-            OnRecoveryEnded(kind, reason, entered);
+            OnRecoveryEnded(kind, reason, entered, client.EndReport != null ? client.EndReport.RetryAfterSeconds : 0);
         }
 
         /// <summary>A client session ended: decides between recovery (hold, retry, ask) and a normal end.</summary>
-        private void OnRecoveryEnded(ClientEndKind kind, string reason, bool entered)
+        private void OnRecoveryEnded(ClientEndKind kind, string reason, bool entered, double retryAfterSeconds = 0)
         {
             bool wasRecovering = _rejoin.Recovering;
-            bool recovering = _rejoin.OnClientEnded(kind, reason, entered, _clock.Seconds);
+            bool recovering = _rejoin.OnClientEnded(kind, reason, entered, _clock.Seconds, retryAfterSeconds);
             _recoveryVersion++;
             if (!recovering)
             {

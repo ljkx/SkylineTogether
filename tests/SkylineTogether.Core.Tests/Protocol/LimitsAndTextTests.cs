@@ -26,7 +26,7 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void PlanConstantsArePinned()
         {
-            Assert.Equal(7, ProtocolVersion.Current); // 7: the id generation in entity records (ProtocolVersion history)
+            Assert.Equal(8, ProtocolVersion.Current); // 8: the load heartbeat and what followed it (ProtocolVersion history)
             Assert.Equal(512 * 1024, Limits.MaxMessageBytes);
             Assert.Equal(480 * 1024, Limits.FragmentThreshold);
             Assert.Equal(8 * 1024 * 1024, Limits.MaxUncompressedBytes);

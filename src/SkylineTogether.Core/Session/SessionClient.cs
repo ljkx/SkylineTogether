@@ -167,6 +167,8 @@ namespace SkylineTogether.Core.Session
         private double _lastProgressSent;
         private double _lastHaveSent;
         private float _loadProgress;
+        // the load heartbeat: frames this game ran while loading the host's city (LoadProgress)
+        private uint _loadFrames;
         private double _lastChunkAt;
         private double _loadedAt = -1;
         // the handshake: the manifest goes out once the host said the password is right (or not needed); the password
@@ -392,7 +394,8 @@ namespace SkylineTogether.Core.Session
             }
             if (State == ClientState.Loading && _loadedAt < 0 && _options.LoadTimeoutSeconds > 0 && now - _stateSince > _options.LoadTimeoutSeconds)
             {
-                End("Loading the host's city did not finish in " + (int)(_options.LoadTimeoutSeconds / 60) + " minutes. Try joining again.", ClientEndKind.Timeout);
+                // not retried automatically: the next attempt would load just as long (and hold the host's game again)
+                End("Loading the host's city did not finish in " + (int)(_options.LoadTimeoutSeconds / 60) + " minutes. Try joining again.", ClientEndKind.LoadFailed);
                 return;
             }
             if (State == ClientState.Live && _options.LiveSilenceTimeoutSeconds > 0 && now - _lastHeard > _options.LiveSilenceTimeoutSeconds)
@@ -412,12 +415,16 @@ namespace SkylineTogether.Core.Session
             {
                 SendHave();
             }
+            // every tick is one frame of this game: while it loads, the frame count is the heartbeat that tells the host's
+            // load watchdog the load still runs (the game's own progress value stands still through a saved game's
+            // deserialization)
+            if (State == ClientState.Loading && _loadedAt < 0 && _loadFrames < uint.MaxValue) _loadFrames++;
             if ((State == ClientState.Downloading || State == ClientState.Loading) && now - _lastProgressSent > 0.5)
             {
                 _lastProgressSent = now;
                 _payload.Reset();
                 if (State == ClientState.Downloading) SessionPayloads.WriteLoadProgress(_payload, JoinPhase.Downloading, _receiver != null ? _receiver.Fraction : 0f);
-                else SessionPayloads.WriteLoadProgress(_payload, JoinPhase.Loading, _loadProgress);
+                else SessionPayloads.WriteLoadProgress(_payload, JoinPhase.Loading, _loadProgress, _loadFrames);
                 SendControl(ControlKind.LoadProgress, _payload);
             }
             _channel?.Pump();
@@ -828,9 +835,10 @@ namespace SkylineTogether.Core.Session
                     End(EndText.Text, ClientEndKind.SessionEnded);
                     return;
                 case ControlKind.Dropped:
-                    // a technical removal, not a kick: joining again is offered
+                    // a technical removal, not a kick: joining again is offered (automatically, except after a join that
+                    // ran out of time: the next attempt would take as long and hold the host's game again)
                     EndText = LocalText.Read(_reader);
-                    End(EndText.Text, ClientEndKind.Dropped);
+                    End(EndText.Text, EndText.Key == NetText.DropLoadTooLong || EndText.Key == NetText.DropTookTooLong ? ClientEndKind.LoadFailed : ClientEndKind.Dropped);
                     return;
                 default:
                     return;
@@ -906,6 +914,7 @@ namespace SkylineTogether.Core.Session
             // the last moment before the game's loader reads the city: it crashes on saved types of a mod it lacks
             if (StopForCityData("before the load")) return;
             EnteredCity = true;
+            _loadFrames = 0;
             SetState(ClientState.Loading);
             double rate = Timeline.TransferBytesPerSecond;
             _log.Info(LogCategory.Join, "download complete (" + _manifest.Size + " bytes in "

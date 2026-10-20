@@ -191,20 +191,24 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void AJoinerWhoseLoadNeverProgressesNoLongerHoldsTheSimulationForHalfAnHour()
         {
+            // a joiner that keeps answering but reports neither progress nor a growing load heartbeat (an honest game's
+            // heartbeat grows every frame: LoadWatchdogTests)
             var rig = new SessionRig();
-            var (client, loader, _) = rig.AddClient("Griefer", tweakLoader: l => l.Defer = true);
-            rig.Run(300);
-            Assert.Equal(ClientState.Loading, client.State, client.EndReason);
+            var raw = Handshake(rig, new RawPeer(rig, "Griefer", 7401));
+            Assert.True(raw.Got(MessageKind.Welcome));
             Assert.True(rig.Host.HoldSimulation);
-            // the joiner keeps answering and reporting the same load progress
+            var progress = new ByteWriter();
+            SessionPayloads.WriteLoadProgress(progress, JoinPhase.Loading, 0.1f, 42);
+            double start = rig.Clock.Seconds;
             for (int i = 0; i < 2 * 400 && rig.Host.HoldSimulation; i++)
             {
+                if (i % 2 == 0) raw.Control(ControlKind.LoadProgress, progress.ToArray());
                 rig.Clock.Advance(0.5);
                 rig.Host.Tick();
-                client.Tick();
+                raw.Poll();
             }
             Assert.False(rig.Host.HoldSimulation, "released by the load watchdog");
-            Assert.True(rig.Clock.Seconds - 100 < 420, "after about five minutes without progress, not thirty minutes");
+            Assert.True(rig.Clock.Seconds - start < 320, "after about five minutes without progress, not thirty minutes");
             Assert.Contains("Loading the city made no progress", string.Join("\n", rig.Log.Lines));
         }
 

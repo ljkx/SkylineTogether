@@ -32,7 +32,7 @@ namespace SkylineTogether.Core.Tests.Protocol
     public sealed class WireCorpusTests
     {
         /// <summary>The protocol version the tables below describe.</summary>
-        private const int PinnedProtocolVersion = 7;
+        private const int PinnedProtocolVersion = 8;
 
         private const string Reserved = "reserved";
         private const string Corpus = "corpus:";
@@ -152,7 +152,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             { "session: players", 0xE54859814E720CF6UL },
             { "session: info", 0x56C746BD7436676DUL },
             { "session: speed", 0x483B889B4D44261AUL },
-            { "session: load progress", 0xD0848BB75BB96F90UL },
+            { "session: load progress", 0x04A111D47CCF5A1BUL },
             { "session: load done", 0xDE20B55C67B51612UL },
             { "session: player action", 0x743E13EE0C4EE5A5UL },
             { "session: text", 0x66C7997DB762F8B6UL },
@@ -190,7 +190,7 @@ namespace SkylineTogether.Core.Tests.Protocol
         [Test]
         public void KindNumbersArePinned()
         {
-            Assert.Equal(PinnedProtocolVersion, ProtocolVersion.Current, "the tables of this class describe protocol version 7");
+            Assert.Equal(PinnedProtocolVersion, ProtocolVersion.Current, "the tables of this class describe protocol version " + PinnedProtocolVersion);
             CheckNumbers<MessageKind>(Names(MessageKinds));
             CheckNumbers<ControlKind>(Names(ControlKinds));
             CheckNumbers<SyncRecordKind>(SyncRecordKinds);

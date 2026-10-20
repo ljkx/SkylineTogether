@@ -132,19 +132,30 @@ namespace SkylineTogether.Core.Session
             };
         }
 
-        /// <summary><see cref="ControlKind.LoadProgress"/>: f32 fraction of the current phase (0..1) | u8 <see cref="JoinPhase"/>.</summary>
-        public static void WriteLoadProgress(ByteWriter w, JoinPhase phase, float fraction)
+        /// <summary>
+        /// <see cref="ControlKind.LoadProgress"/>: f32 fraction of the current phase (0..1) | u8 <see cref="JoinPhase"/> |
+        /// u32 load heartbeat (the frames the joiner's game ran since its load started; it only grows while the game works
+        /// on the load, also while the game's own progress value stands still, which it does through a saved game's whole
+        /// deserialization).
+        /// </summary>
+        public static void WriteLoadProgress(ByteWriter w, JoinPhase phase, float fraction, uint heartbeat = 0)
         {
             w.WriteSingle(float.IsNaN(fraction) ? 0f : Math.Max(0f, Math.Min(1f, fraction)));
             w.WriteByte((byte)phase);
+            w.WriteUInt32(heartbeat);
         }
 
         /// <summary>Reads <see cref="WriteLoadProgress"/>; the fraction is clamped to 0..1 and unknown phases read as loading.</summary>
-        public static JoinPhase ReadLoadProgress(ByteReader r, out float fraction)
+        public static JoinPhase ReadLoadProgress(ByteReader r, out float fraction) => ReadLoadProgress(r, out fraction, out _);
+
+        /// <summary>Reads <see cref="WriteLoadProgress"/> with the load heartbeat.</summary>
+        public static JoinPhase ReadLoadProgress(ByteReader r, out float fraction, out uint heartbeat)
         {
             float value = r.ReadSingle();
             fraction = float.IsNaN(value) ? 0f : Math.Max(0f, Math.Min(1f, value));
-            return r.ReadByte() == (byte)JoinPhase.Downloading ? JoinPhase.Downloading : JoinPhase.Loading;
+            JoinPhase phase = r.ReadByte() == (byte)JoinPhase.Downloading ? JoinPhase.Downloading : JoinPhase.Loading;
+            heartbeat = r.ReadUInt32();
+            return phase;
         }
 
         /// <summary><see cref="ControlKind.PlayerAction"/>: u8 action | u8 target peer | u8 role (ignored for a kick).</summary>

@@ -100,7 +100,12 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         public double DownloadStallSeconds = 180;
 
-        /// <summary>A joiner whose reported load progress does not grow for this long is dropped.</summary>
+        /// <summary>
+        /// A joiner whose load shows no sign of work for this long is dropped: neither its reported progress nor its load
+        /// heartbeat (the frames its game ran while loading, <see cref="SessionPayloads.WriteLoadProgress"/>) grew. The
+        /// game's own progress value stands still through a saved game's whole deserialization, so an honest slow load is
+        /// judged by its heartbeat and ends only at <see cref="MaxLoadSeconds"/>.
+        /// </summary>
         public double LoadStallSeconds = 300;
 
         /// <summary>The longest the joiner's load of the city may take (its own game gives up after the same time).</summary>
@@ -120,8 +125,20 @@ namespace SkylineTogether.Core.Session
         /// </summary>
         public double[] JoinCooldownSeconds = { 0, 30, 120, 600, 1800 };
 
-        /// <summary>A player's failed joins are forgotten after this long without another one.</summary>
+        /// <summary>A player's failed joins are forgotten after this long without another one (counted from the end of its wait).</summary>
         public double JoinFailureForgetSeconds = 3600;
+
+        /// <summary>
+        /// Joins hold everyone's simulation. Failed joins of one player (in a row, see <see cref="JoinCooldownSeconds"/>) may
+        /// hold it this long in total; beyond it the player waits at least as long as its failed joins held the game beyond
+        /// this allowance (at most <see cref="MaxJoinCooldownSeconds"/>), so a joiner that keeps loading without end and
+        /// cancels (or is dropped) holds the others' game less and less often. An honest player's one or two broken joins
+        /// stay within it.
+        /// </summary>
+        public double FailedJoinHoldAllowanceSeconds = 1800;
+
+        /// <summary>The longest wait a player's failed joins can earn (<see cref="FailedJoinHoldAllowanceSeconds"/>).</summary>
+        public double MaxJoinCooldownSeconds = 4 * 3600;
 
         /// <summary>
         /// A snapshot the save system has not delivered after this long is abandoned (the waiting joiners are
@@ -280,10 +297,14 @@ namespace SkylineTogether.Core.Session
             /// <summary>Join watchdog: the most snapshot bytes seen leaving the host, the best load progress, and when either grew.</summary>
             public long DeliveredBytes;
             public float BestLoadProgress = -1f;
+            /// <summary>The highest load heartbeat reported (frames the joiner's game ran while loading).</summary>
+            public uint BestLoadHeartbeat;
             public double ProgressAt;
             public double LoadingSince = double.NaN;
             /// <summary>The join ended through no fault of the joiner (the host's snapshot failed, or a newer connection of the same player replaced it).</summary>
             public bool NotJoinersFault;
+            /// <summary>A join watchdog or deadline dropped the joiner (its failure is never free, <see cref="RecordJoinFailure"/>).</summary>
+            public bool DroppedByWatchdog;
         }
 
         private sealed class JoinFailures
@@ -291,6 +312,8 @@ namespace SkylineTogether.Core.Session
             public int Count;
             public double Last;
             public double Until;
+            /// <summary>Seconds these failed joins held the simulation (from admission to their end).</summary>
+            public double Held;
         }
 
         /// <summary>Completed joins kept for the diagnostics and the UI.</summary>
@@ -511,6 +534,7 @@ namespace SkylineTogether.Core.Session
                     _log.Warn(LogCategory.Join, p.Name + ": still joining after " + (int)(now - p.AdmittedAt) + " s (" + p.State + "); dropping it");
                     SystemLine(NetText.ChatTookTooLong, "NAME", p.Name);
                     SendNotice(p, ControlKind.Dropped, NetText.Of(NetText.DropTookTooLong, "MINUTES", Num((int)(_options.MaxJoinSeconds / 60))));
+                    p.DroppedByWatchdog = true;
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "join took too long"));
                     continue;
                 }
@@ -521,6 +545,7 @@ namespace SkylineTogether.Core.Session
                     _log.Warn(LogCategory.Join, p.Name + ": " + stalled.Text + " (" + p.State + "); dropping it");
                     SystemLine(NetText.ChatJoinStalled, "NAME", p.Name);
                     SendNotice(p, ControlKind.Dropped, stalled);
+                    p.DroppedByWatchdog = true;
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "join made no progress"));
                     continue;
                 }
@@ -539,6 +564,7 @@ namespace SkylineTogether.Core.Session
                     // a hung joiner would otherwise hold the host's simulation forever
                     _log.Warn(LogCategory.Join, p.Name + ": nothing received for " + (int)(now - p.LastHeard) + " s while joining (" + p.State + "); dropping it");
                     SystemLine(NetText.ChatNotRespondingJoining, "NAME", p.Name);
+                    p.DroppedByWatchdog = true;
                     (drop ?? (drop = new List<(Peer, string)>())).Add((p, "stopped responding while joining"));
                     continue;
                 }
@@ -1210,8 +1236,8 @@ namespace SkylineTogether.Core.Session
         /// <summary>
         /// The join watchdog: why a joiner's join no longer makes progress, or null. Downloading: the host sees no snapshot
         /// bytes leave (the sender only hands over more as the transport delivers; a joiner that stops reading stalls it)
-        /// and the joiner did not move on to loading. Loading: the reported progress does not grow, or the load takes
-        /// longer than the joiner's own game would wait.
+        /// and the joiner did not move on to loading. Loading: neither the reported progress nor the load heartbeat grows,
+        /// or the load takes longer than the joiner's own game would wait.
         /// </summary>
         private LocalText JoinStalled(Peer p, double now)
         {
@@ -1247,12 +1273,17 @@ namespace SkylineTogether.Core.Session
             }
         }
 
-        /// <summary>Counts a join that ended before the player was live (the next admission of the same identity may wait).</summary>
+        /// <summary>
+        /// Counts a join that ended before the player was live (the next admission of the same identity may wait): by the
+        /// number of failures in a row (<see cref="HostOptions.JoinCooldownSeconds"/>; a watchdog's drop is never the free
+        /// first one), and at least by how long the failed joins held the simulation beyond
+        /// <see cref="HostOptions.FailedJoinHoldAllowanceSeconds"/>.
+        /// </summary>
         private void RecordJoinFailure(Peer p, double now)
         {
             string key = IdentityKey(p);
             if (key == null || _options.JoinCooldownSeconds == null || _options.JoinCooldownSeconds.Length == 0) return;
-            if (!_joinFailures.TryGetValue(key, out JoinFailures f) || now - f.Last > _options.JoinFailureForgetSeconds)
+            if (!_joinFailures.TryGetValue(key, out JoinFailures f) || now - Math.Max(f.Last, f.Until) > _options.JoinFailureForgetSeconds)
             {
                 if (f == null && _joinFailures.Count >= MaxRememberedRoles) PruneJoinFailures(now);
                 f = new JoinFailures();
@@ -1260,10 +1291,19 @@ namespace SkylineTogether.Core.Session
             }
             f.Count++;
             f.Last = now;
+            f.Held += Math.Max(0, now - p.AdmittedAt);
             double[] steps = _options.JoinCooldownSeconds;
-            double wait = steps[Math.Min(f.Count, steps.Length) - 1];
-            f.Until = now + Math.Max(0, wait);
-            if (wait > 0) _log.Info(LogCategory.Join, p.Name + ": " + f.Count + " joins in a row did not finish; the next is admitted in " + (int)wait + " s at the earliest");
+            int step = Math.Min(f.Count, steps.Length) - 1;
+            if (p.DroppedByWatchdog && step == 0 && steps.Length > 1) step = 1;
+            double wait = Math.Max(0, steps[step]);
+            double excess = f.Held - _options.FailedJoinHoldAllowanceSeconds;
+            if (excess > wait) wait = _options.MaxJoinCooldownSeconds > 0 ? Math.Min(excess, _options.MaxJoinCooldownSeconds) : excess;
+            f.Until = now + wait;
+            if (wait > 0)
+            {
+                _log.Info(LogCategory.Join, p.Name + ": " + f.Count + " joins in a row did not finish (holding the game " + (int)f.Held
+                                            + " s); the next is admitted in " + (int)wait + " s at the earliest");
+            }
         }
 
         private void PruneJoinFailures(double now)
@@ -1271,7 +1311,15 @@ namespace SkylineTogether.Core.Session
             var stale = new List<string>();
             foreach (KeyValuePair<string, JoinFailures> e in _joinFailures)
             {
-                if (now - e.Value.Last > _options.JoinFailureForgetSeconds || e.Value.Until <= now) stale.Add(e.Key);
+                if (now - Math.Max(e.Value.Last, e.Value.Until) > _options.JoinFailureForgetSeconds) stale.Add(e.Key);
+            }
+            if (stale.Count == 0)
+            {
+                // still full: forget those that need not wait now
+                foreach (KeyValuePair<string, JoinFailures> e in _joinFailures)
+                {
+                    if (e.Value.Until <= now) stale.Add(e.Key);
+                }
             }
             foreach (string k in stale) _joinFailures.Remove(k);
         }
@@ -1575,7 +1623,7 @@ namespace SkylineTogether.Core.Session
                     // (before, any report switched the player to "loading" at once)
                     if (p.State != PlayerState.Downloading && p.State != PlayerState.Loading) return;
                     _reader.Reset(payload, 0, payload.Length);
-                    JoinPhase phase = SessionPayloads.ReadLoadProgress(_reader, out float fraction);
+                    JoinPhase phase = SessionPayloads.ReadLoadProgress(_reader, out float fraction, out uint heartbeat);
                     if (phase == JoinPhase.Downloading)
                     {
                         if (p.State == PlayerState.Downloading) p.DownloadProgress = fraction;
@@ -1588,11 +1636,20 @@ namespace SkylineTogether.Core.Session
                         {
                             p.LoadingSince = at;
                             p.ProgressAt = at;
+                            p.BestLoadHeartbeat = heartbeat;
                         }
-                        // the load watchdog counts growth only (a joiner repeating one value is stalled)
+                        // the load watchdog counts growth only (a joiner repeating one value is stalled): of the progress,
+                        // or of the heartbeat (the game's progress stands still while it deserializes a saved game; the
+                        // heartbeat counts the frames its game ran meanwhile). Whatever is reported, the load ends at
+                        // MaxLoadSeconds.
                         if (fraction > p.BestLoadProgress + 0.0005f)
                         {
                             p.BestLoadProgress = fraction;
+                            p.ProgressAt = at;
+                        }
+                        if (heartbeat > p.BestLoadHeartbeat)
+                        {
+                            p.BestLoadHeartbeat = heartbeat;
                             p.ProgressAt = at;
                         }
                         if (p.State != PlayerState.Loading) _log.Info(LogCategory.Join, p.Name + " downloaded the city and is loading it");
