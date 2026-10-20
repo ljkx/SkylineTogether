@@ -1597,7 +1597,8 @@ namespace SkylineTogether.Sync
         /// <summary>
         /// Why an entity that stays would dangle once this batch is applied, or null: an edge whose start or end node does
         /// not exist here, is no node, or is being deleted (it is destroyed at the end of the frame); an entity whose owner
-        /// no longer exists.
+        /// no longer exists or is being deleted. (A null owner is no reason: the game has objects without one; an update
+        /// that does not resolve never writes a null owner, <see cref="UnresolvedValueRule"/>.)
         /// </summary>
         internal static string DanglingReason(EntityManager em, Entity e)
         {
@@ -1612,6 +1613,9 @@ namespace SkylineTogether.Sync
             {
                 Entity owner = em.GetComponentData<Game.Common.Owner>(e).m_Owner;
                 if (owner != Entity.Null && !em.Exists(owner)) return "its owner is missing here";
+                // an owner deleted here (despawned by this batch, or by the local game) is destroyed at the end of the
+                // frame; a kept owner reference of an update that did not resolve must not outlive it (UnresolvedValueRule)
+                if (owner != Entity.Null && em.HasComponent<Game.Common.Deleted>(owner)) return "its owner is being deleted";
             }
             // a line that kept its waypoint or segment list (a new list did not resolve here) while an element of the old
             // one is gone or deleted: the route systems index the elements unchecked

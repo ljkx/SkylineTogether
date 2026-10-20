@@ -78,10 +78,19 @@ namespace SkylineTogether.Sync
 
         public override bool ChecksFloats => Floats != null;
 
+        // an owner or an edge's nodes: never written as null over the entity's value (UnresolvedValueRule)
+        private static readonly bool RequiredLink = UnresolvedValueRule.IsRequiredLink(typeof(T).FullName);
+
         private void Check(in T value)
         {
             if (Floats != null && !Floats.IsSane(value)) throw new DecodeException(Name + ": NaN, infinite or out-of-range value refused");
         }
+
+        private static bool KeepOld(NetReader r, T old)
+        {
+            return UnresolvedValueRule.Decide(true, r.KeepOnUnresolved, RequiredLink, () => r.KeptValueIsLive(old)) == UnresolvedValueAction.Keep;
+        }
+
         public override void Write(EntityManager em, Entity e, NetWriter w)
         {
             T value = em.GetComponentData<T>(e);
@@ -98,8 +107,10 @@ namespace SkylineTogether.Sync
             // a reference that did not resolve (unknown, destroyed or deleted here) would be written as a null
             // over a valid local reference; an existing entity keeps its value until a record that resolves arrives,
             // unless the value it would keep names something gone or despawned by this very batch (then the new value,
-            // with the unresolved references null, is the safe one)
-            if (r.Unresolved && r.KeepOnUnresolved && r.KeptValueIsLive(old)) return;
+            // with the unresolved references null, is the safe one). An owner or an edge's nodes are never written as
+            // null: the old value stays, and when it names something gone the dangling pass deletes the entity and the
+            // integrity check asks the host for it (UnresolvedValueRule)
+            if (r.Unresolved && KeepOld(r, old)) return;
             em.SetComponentData(e, value);
         }
 
