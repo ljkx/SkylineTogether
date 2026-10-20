@@ -22,8 +22,15 @@ From this release on, regular releases have no pre-release suffix.
 - **Checksums**: the release notes list the SHA-256 checksums of both zips, with a `Get-FileHash` line to check a
   download.
 - **Startup check against game updates**: when the game starts, every game type and member Skyline Together uses is
-  looked up. If a game update removed one, only the part of Skyline Together that uses it is switched off (hosting and
-  joining are blocked if that part is essential, with the reason), instead of an error in the middle of a session.
+  looked up. If a game update broke something, only the part of Skyline Together that
+  uses it is switched off, instead of an error in the middle of a session:
+  - Hosting and joining are blocked only if that part is essential, with the reason.
+  - Optional parts are switched off on their own: city statistics, traffic lights, difference repairs, terrain and
+    water.
+  - Diagnostics and solo testing only log a warning.
+  - Developer detail: every type of the game layer is mapped to its feature, and a test fails for a type without a
+    mapping (`src/SkylineTogether/Data/mod-types.generated.txt`, rewritten by `tools/build.sh`). See
+    [ARCHITECTURE.md](docs/ARCHITECTURE.md#probes-and-self-test) for exactly what is checked.
 - **Third-party notices** (`THIRD-PARTY-NOTICES.txt`, also in the release zip) credit the LZ4 block format and the
   xxHash specification that Core's own implementations follow, and the game components Skyline Together uses.
 

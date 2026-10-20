@@ -27,7 +27,8 @@ What it does, in order (any failure stops it before anything is deployed or pack
 1. Finds a `dotnet` that has an SDK `global.json` accepts: `$DOTNET`, the `dotnet` on the PATH, `$DOTNET_ROOT`,
    `%LOCALAPPDATA%\Microsoft\dotnet`, `~/.dotnet`, `C:\Program Files\dotnet`, and prints the SDK version.
 2. `dotnet build SkylineTogether.sln -c Release -p:DeployMod=false`, then checks that `SkylineTogether.dll` and
-   `SkylineTogether.Core.dll` exist in `src/SkylineTogether/bin/Release/net472`.
+   `SkylineTogether.Core.dll` exist in `src/SkylineTogether/bin/Release/net472`, then rewrites the
+   [type list](#type-list) and runs the [API check](#api-check) when the game is installed.
 3. With Node on the PATH: `node --check ui/SkylineTogether.mjs` and `node tools/ui_smoke.mjs`.
 4. Runs the Core tests (`dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll`).
 5. `--deploy`: copies `SkylineTogether.dll`, `SkylineTogether.Core.dll`, their `.pdb` files and
@@ -58,6 +59,17 @@ Exit code 1 lists every `MISSING` reference: the mod would fail where it uses it
 `ApiCheck --self-test`, which checks the tool against the .NET runtime. In the game, `P-REFS` resolves the same type
 and member references at startup and switches the feature whose code uses a missing one off
 ([ARCHITECTURE.md](../ARCHITECTURE.md#probes-and-self-test)).
+
+## Type list
+
+`src/SkylineTogether/Data/mod-types.generated.txt` lists the types of the built `SkylineTogether.dll`, one full name
+per line. Compiler-generated nested types are left out because they belong to their outer type. After every build,
+`tools/build.sh` rewrites it with `ApiCheck --list-types` and says when it changed. Commit it with the code that adds,
+renames or removes a type.
+
+`ModFeatureMapTests` checks that every listed type maps to a feature of `P-REFS` (or deliberately to none). CI has no
+game and so no game layer, so the test reads the committed list. A new type without an entry in
+`src/SkylineTogether.Core/Diagnostics/ModFeatureMap.cs` fails the tests.
 
 ## Game path and Directory.Build.props
 

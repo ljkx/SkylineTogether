@@ -31,19 +31,14 @@ namespace SkylineTogether.Core.Tests.Diagnostics
     /// <summary>
     /// <see cref="ReferenceCheck"/>: an assembly built against members its reference no longer has (emitted here with
     /// System.Reflection.Metadata, the "stub" being this test assembly's <see cref="ReferenceCheckFixtureTarget"/>, which
-    /// lacks them) has every missing reference found, attributed to the type whose method uses it and mapped to that
-    /// type's feature; present references pass without running any static constructor; the whole Core assembly resolves
-    /// completely, every row of its reference tables visited; the time budget and cancellation hold.
+    /// lacks them) has every missing reference found and attributed to the type whose method uses it; present references
+    /// pass without running any static constructor; the whole Core assembly resolves completely, every row
+    /// of its reference tables visited; the time budget and cancellation hold. Types whose base type or interface is
+    /// missing are reported by their own name, also when the loader exception names only the missing type (Mono), with
+    /// the TypeDef table read from the file (<see cref="TypeDefTable"/>, checked against System.Reflection.Metadata).
     /// </summary>
     public sealed class ReferenceCheckTests
     {
-        private static readonly PrefixMap<string> FeatureOf = new PrefixMap<string>(new[]
-        {
-            ("Fixture.Movers.", "movers"),
-            ("Fixture.Terrain.", "terrain"),
-            ("Fixture.Water.", "water"),
-        }, "replication");
-
         [Test]
         public void AMissingReferenceIsFoundAndAttributedToTheFeatureThatUsesIt()
         {
@@ -64,18 +59,15 @@ namespace SkylineTogether.Core.Tests.Diagnostics
                 Assert.Contains("MissingMethodException", drive.Error);
                 Assert.Contains("Missing", drive.Error);
                 Assert.True(drive.Binding);
-                Assert.Equal("movers", FeatureOf.Of(drive.User));
 
                 ReferenceCheck.Failure brush = r.Failures.Find(f => f.User == "Fixture.Terrain.Brush");
                 Assert.NotNull(brush, all);
                 Assert.Contains("TypeLoadException", brush.Error);
                 Assert.True(brush.Binding);
-                Assert.Equal("terrain", FeatureOf.Of(brush.User));
 
                 ReferenceCheck.Failure reader = r.Failures.Find(f => f.User == "Fixture.Water.Reader");
                 Assert.NotNull(reader, all);
                 Assert.Contains("MissingFieldException", reader.Error);
-                Assert.Equal("water", FeatureOf.Of(reader.User));
 
                 Assert.Null(r.Failures.Find(f => f.User == "Fixture.Plain.Fine"), "a method that only uses present members is fine: " + all);
                 // the nested type no code uses: reported, attributed to nothing
@@ -83,7 +75,7 @@ namespace SkylineTogether.Core.Tests.Diagnostics
                 Assert.NotNull(unused, all);
                 Assert.Contains("TypeRef", unused.Reference);
                 Assert.Equal(4, r.Failures.Count, all);
-                Assert.Equal("replication", FeatureOf.Of(unused.User), "no user: the fallback");
+                Assert.Null(ModFeatureMap.Of(unused.User), "no user: no feature (a warning)");
 
                 Assert.False(ReferenceCheckFixtureFlags.TargetInitialised, "resolving its members ran the target's static constructor");
                 Assert.Contains("missing", ReferenceCheck.Summary(r));
@@ -146,13 +138,140 @@ namespace SkylineTogether.Core.Tests.Diagnostics
         }
 
         [Test]
-        public void ThePrefixMapTakesTheFirstMatch()
+        public void TheTypeDefTableMatchesSystemReflectionMetadata()
         {
-            var map = new PrefixMap<int>(new[] { ("A.B.Special", 1), ("A.B.", 2) }, 0);
-            Assert.Equal(1, map.Of("A.B.SpecialThing+<>c"));
-            Assert.Equal(2, map.Of("A.B.Other"));
-            Assert.Equal(0, map.Of("C.D"));
-            Assert.Equal(0, map.Of(null));
+            // this test assembly: generics, nested and compiler-generated types, interfaces of every kind
+            foreach (string file in new[] { typeof(ReferenceCheckTests).Assembly.Location, typeof(object).Assembly.Location })
+            {
+                byte[] bytes = File.ReadAllBytes(file);
+                TypeDefTable table = TypeDefTable.Read(bytes);
+                using var pe = new PEReader(new MemoryStream(bytes));
+                MetadataReader md = pe.GetMetadataReader();
+                Assert.Equal(md.TypeDefinitions.Count, table.Types.Count, file);
+                int i = 0, withBase = 0, withInterfaces = 0, nested = 0;
+                foreach (TypeDefinitionHandle h in md.TypeDefinitions)
+                {
+                    TypeDefinition t = md.GetTypeDefinition(h);
+                    TypeDefTable.Row row = table.Types[i++];
+                    Assert.Equal(MetadataTokens.GetToken(h), row.Token);
+                    Assert.Equal(DefName(md, h), row.FullName);
+                    Assert.Equal(TypeName(md, t.BaseType), row.BaseName, row.FullName);
+                    var interfaces = new List<string>();
+                    foreach (InterfaceImplementationHandle ih in t.GetInterfaceImplementations())
+                    {
+                        string name = TypeName(md, md.GetInterfaceImplementation(ih).Interface);
+                        if (name != null) interfaces.Add(name);
+                    }
+                    Assert.SequenceEqual(interfaces, row.InterfaceNames, row.FullName);
+                    Assert.Equal(t.GetDeclaringType().IsNil ? null : DefName(md, t.GetDeclaringType()), row.Enclosing?.FullName);
+                    if (row.BaseName != null) withBase++;
+                    if (row.InterfaceNames.Count > 0) withInterfaces++;
+                    if (row.Enclosing != null) nested++;
+                }
+                Assert.True(withBase > 100 && withInterfaces > 10 && nested > 10, file + ": " + withBase + " " + withInterfaces + " " + nested);
+            }
+            Assert.Throws<BadImageFormatException>(() => TypeDefTable.Read(new byte[200]));
+        }
+
+        [Test]
+        public void ATypeThatDoesNotLoadIsReportedByItsOwnName()
+        {
+            byte[] image = BuildBrokenTypesFixture();
+            var alc = new AssemblyLoadContext("reference-check-broken-types", isCollectible: true);
+            try
+            {
+                Assembly fixture = alc.LoadFromStream(new MemoryStream(image));
+                var failures = new List<ReferenceCheck.Failure>();
+                List<Type> types = ReferenceCheck.TypesOf(fixture, failures, () => image);
+                string all = string.Join("\n", failures.ConvertAll(f => f.ToString()));
+                Assert.Contains("Fixture.Plain.Fine", string.Join(",", types.ConvertAll(t => t.FullName)));
+                Assert.Equal(2, failures.Count, all);
+                ReferenceCheck.Failure derived = failures.Find(f => f.User == "Fixture.Movers.Derived");
+                Assert.NotNull(derived, "the type whose base type is missing, its nested type covered by it: " + all);
+                Assert.True(derived.Binding);
+                Assert.Contains("TypeLoadException", derived.Error);
+                ReferenceCheck.Failure impl = failures.Find(f => f.User == "Fixture.Water.Impl");
+                Assert.NotNull(impl, "the type whose interface is missing: " + all);
+                Assert.True(impl.Binding);
+
+                // Mono: the loader exception names the missing game type, not the mod's (simulated): still the mod's type,
+                // and the missing type named as the cause
+                var mono = new List<ReferenceCheck.Failure>();
+                Exception[] loaders = { new TypeLoadException("Could not load type of field"), new TypeLoadException("Could not load interface") };
+                string ns = typeof(ReferenceCheckFixtureTarget).Namespace;
+                Assert.True(ReferenceCheck.AddUnloaded(fixture, types.ToArray(), loaders, () => image, mono,
+                    e => e == loaders[0] ? ns + ".NoSuchBase" : ns + ".INoSuch"));
+                Assert.SequenceEqual(new[] { "Fixture.Movers.Derived", "Fixture.Water.Impl" }, mono.ConvertAll(f => f.User));
+                Assert.Contains(ns + ".NoSuchBase", mono[0].Reference);
+                Assert.Contains("Could not load type of field", mono[0].Error);
+                Assert.Contains(ns + ".INoSuch", mono[1].Reference);
+                Assert.Contains("Could not load interface", mono[1].Error);
+
+                // no readable image: the loader exceptions as they are (a game type's name maps to no feature: a warning)
+                var plain = new List<ReferenceCheck.Failure>();
+                ReferenceCheck.TypesOf(fixture, plain, () => null);
+                Assert.Equal(2, plain.Count);
+            }
+            finally
+            {
+                alc.Unload();
+            }
+        }
+
+        private static string DefName(MetadataReader md, TypeDefinitionHandle h)
+        {
+            TypeDefinition t = md.GetTypeDefinition(h);
+            string name = md.GetString(t.Name);
+            if (!t.GetDeclaringType().IsNil) return DefName(md, t.GetDeclaringType()) + "+" + name;
+            string ns = md.GetString(t.Namespace);
+            return ns.Length > 0 ? ns + "." + name : name;
+        }
+
+        private static string TypeName(MetadataReader md, EntityHandle h)
+        {
+            if (h.IsNil) return null;
+            if (h.Kind == HandleKind.TypeDefinition) return DefName(md, (TypeDefinitionHandle)h);
+            if (h.Kind != HandleKind.TypeReference) return null;
+            TypeReference r = md.GetTypeReference((TypeReferenceHandle)h);
+            string name = md.GetString(r.Name);
+            if (r.ResolutionScope.Kind == HandleKind.TypeReference) return TypeName(md, (TypeReferenceHandle)r.ResolutionScope) + "+" + name;
+            string ns = md.GetString(r.Namespace);
+            return ns.Length > 0 ? ns + "." + name : name;
+        }
+
+        /// <summary>
+        /// An assembly "compiled against" a version of the test assembly that had <c>NoSuchBase</c> and <c>INoSuch</c>:
+        /// <c>Fixture.Movers.Derived</c> derives from the missing class (with a nested type <c>Inner</c>),
+        /// <c>Fixture.Water.Impl</c> implements the missing interface, <c>Fixture.Plain.Fine</c> is a plain class.
+        /// </summary>
+        private static byte[] BuildBrokenTypesFixture()
+        {
+            var md = new MetadataBuilder();
+            md.AddModule(0, md.GetOrAddString("BrokenTypes.dll"), md.GetOrAddGuid(Guid.NewGuid()), default, default);
+            md.AddAssembly(md.GetOrAddString("BrokenTypes"), new Version(1, 0, 0, 0), default, default, 0, AssemblyHashAlgorithm.None);
+            AssemblyName corlibName = typeof(object).Assembly.GetName();
+            AssemblyReferenceHandle corlib = md.AddAssemblyReference(md.GetOrAddString(corlibName.Name), corlibName.Version, default,
+                md.GetOrAddBlob(corlibName.GetPublicKeyToken() ?? Array.Empty<byte>()), default, default);
+            AssemblyName testsName = typeof(ReferenceCheckFixtureTarget).Assembly.GetName();
+            AssemblyReferenceHandle tests = md.AddAssemblyReference(md.GetOrAddString(testsName.Name), testsName.Version, default, default, default, default);
+            StringHandle ns = md.GetOrAddString(typeof(ReferenceCheckFixtureTarget).Namespace);
+            TypeReferenceHandle obj = md.AddTypeReference(corlib, md.GetOrAddString("System"), md.GetOrAddString("Object"));
+            TypeReferenceHandle noSuchBase = md.AddTypeReference(tests, ns, md.GetOrAddString("NoSuchBase"));
+            TypeReferenceHandle noSuchInterface = md.AddTypeReference(tests, ns, md.GetOrAddString("INoSuch"));
+            FieldDefinitionHandle fields = MetadataTokens.FieldDefinitionHandle(1);
+            MethodDefinitionHandle methods = MetadataTokens.MethodDefinitionHandle(1);
+            md.AddTypeDefinition(default, default, md.GetOrAddString("<Module>"), default, fields, methods);
+            const TypeAttributes cls = TypeAttributes.Public | TypeAttributes.Class;
+            TypeDefinitionHandle derived = md.AddTypeDefinition(cls, md.GetOrAddString("Fixture.Movers"), md.GetOrAddString("Derived"), noSuchBase, fields, methods);
+            TypeDefinitionHandle inner = md.AddTypeDefinition(TypeAttributes.NestedPublic | TypeAttributes.Class, default, md.GetOrAddString("Inner"), obj, fields, methods);
+            TypeDefinitionHandle impl = md.AddTypeDefinition(cls, md.GetOrAddString("Fixture.Water"), md.GetOrAddString("Impl"), obj, fields, methods);
+            md.AddTypeDefinition(cls, md.GetOrAddString("Fixture.Plain"), md.GetOrAddString("Fine"), obj, fields, methods);
+            md.AddNestedType(inner, derived);
+            md.AddInterfaceImplementation(impl, noSuchInterface);
+            var pe = new ManagedPEBuilder(new PEHeaderBuilder(imageCharacteristics: Characteristics.Dll), new MetadataRootBuilder(md), new BlobBuilder());
+            var blob = new BlobBuilder();
+            pe.Serialize(blob);
+            return blob.ToArray();
         }
 
         // ------------------------------------------------------------------------------------------------- fixture

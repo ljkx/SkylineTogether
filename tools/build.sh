@@ -3,9 +3,9 @@
 #
 #   tools/build.sh [--deploy] [--package] [--game-dir <path>] [--deploy-dir <path>] [--skip-ui-checks] [--skip-api-check]
 #
-# Order: Release build -> API check (tools/ApiCheck: every referenced game type and member exists) -> UI checks (when
-# node is installed) -> Core tests -> deploy (--deploy) -> package (--package). Any failure stops the script before
-# anything is deployed or packaged.
+# Order: Release build -> type list (src/SkylineTogether/Data/mod-types.generated.txt) -> API check (tools/ApiCheck:
+# every referenced game type and member exists) -> UI checks (when node is installed) -> Core tests -> deploy
+# (--deploy) -> package (--package). Any failure stops the script before anything is deployed or packaged.
 #
 #   --deploy        copy the mod into the local Mods folder (default:
 #                   %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether)
@@ -98,6 +98,17 @@ for f in SkylineTogether.dll SkylineTogether.Core.dll; do
   [ -f "$OUT/$f" ] || fail "missing build output $OUT/$f"
 done
 
+# ---------- type list (docs/dev/building.md#type-list) ----------
+# the types of the game layer, for the Core test that checks each maps to a feature (P-REFS attribution); CI has no
+# game and so no game layer, and tests the committed list
+TYPE_LIST="src/SkylineTogether/Data/mod-types.generated.txt"
+step "Type list of SkylineTogether.dll"
+"$DOTNET" build tools/ApiCheck/ApiCheck.csproj -c Release -nologo -v q || fail "dotnet build tools/ApiCheck"
+"$DOTNET" tools/ApiCheck/bin/Release/net8.0/ApiCheck.dll --list-types "$OUT/SkylineTogether.dll" --out "$TYPE_LIST" || fail "ApiCheck --list-types"
+if ! git -C "$ROOT" diff --quiet -- "$TYPE_LIST" 2>/dev/null; then
+  echo "NOTE: $TYPE_LIST changed (types were added, renamed or removed): commit it with the code"
+fi
+
 # ---------- API check (docs/dev/building.md#api-check) ----------
 # every type and member the DLLs reference, and every "Game.*" type name the game layer looks up, must exist in the
 # game's assemblies; a game update that breaks one is found here instead of mid-session
@@ -109,7 +120,6 @@ if [ "$API_CHECK" = 1 ]; then
   fi
   if [ -f "$MANAGED/Game.dll" ]; then
     step "API check against the game's assemblies"
-    "$DOTNET" build tools/ApiCheck/ApiCheck.csproj -c Release -nologo -v q || fail "dotnet build tools/ApiCheck"
     "$DOTNET" tools/ApiCheck/bin/Release/net8.0/ApiCheck.dll --managed "$(to_native "$MANAGED")"       --dll "$OUT/SkylineTogether.dll" --dll "$OUT/SkylineTogether.Core.dll" || fail "API check (see MISSING above)"
   else
     step "API check skipped: no Game.dll in $MANAGED"

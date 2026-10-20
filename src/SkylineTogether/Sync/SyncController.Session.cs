@@ -62,7 +62,8 @@ namespace SkylineTogether.Sync
             });
             _global.Attach(world, _codec, _ids);
             _events.Attach(world, _codec, _ids);
-            _signals.Attach(world);
+            // contained: traffic lights are part of the attention values (P-REFS switches simvals off when this code cannot run)
+            Guard.RunAlways(Features.SimValues, "traffic lights", () => _signals.Attach(world));
             _actions.Attach(world, _codec, _ids);
             _generateEdges = world.GetOrCreateSystemManaged<Game.Tools.GenerateEdgesSystem>();
             return true;

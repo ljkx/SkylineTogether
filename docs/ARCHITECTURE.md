@@ -1538,18 +1538,49 @@ only warns; the summary is in the log, the panel and the dump. Features read the
 `P-REFS` ([`ReferenceProbe`](../src/SkylineTogether/Diagnostics/ReferenceProbe.cs) with Core's
 [`ReferenceCheck`](../src/SkylineTogether.Core/Diagnostics/ReferenceCheck.cs)) covers the public game API the mod is
 compiled against, the run-time form of [`tools/ApiCheck`](../tools/ApiCheck/Program.cs). After `OnLoad`, a background
-thread below normal priority resolves every row of the TypeRef table (`Module.ResolveType`) and of the MemberRef table
-(`Module.ResolveMember`) of the game layer and of Core against the assemblies the game loaded, bounded to 30 s (a few
-milliseconds in practice). Only when a reference fails are the method bodies' IL tokens read, to find which methods use
-it; each use is resolved again in the method's generic context, and field, parameter, return and local types are read.
-A reference that still fails with `MissingMethodException`, `MissingFieldException`, `TypeLoadException` (or a missing
-assembly) switches off the feature of the type that uses it (a namespace table), or, for a critical feature, blocks
-hosting and joining with the reason, instead of Mono throwing when it first compiles that method mid-session. Types
-whose base type or interface is gone are found by loading every type. Other failures, and references no method body,
-field or signature uses (custom attributes), are warnings. Resolving runs no code of the mod and no static constructor.
-It does not cover private members or names looked up at run time (the other probes do), nor a member whose signature
-changed in a way that still binds. `RuntimeHelpers.PrepareMethod`, which an earlier version used, compiles nothing on
-the game's Mono. Offline, `tools/ApiCheck` checks the same references against the game's assemblies before a release
+thread below normal priority checks the game layer and Core against the assemblies the game loaded, bounded to 30 s
+(well under a second in practice). It checks exactly this, per DLL:
+
+1. **Types load.** `Assembly.GetTypes()`. A type whose game base class or interface is gone does not load. Mono's
+   loader exception then names the missing game type, not the mod's, so the DLL's own TypeDef table is read from its
+   file ([`TypeDefTable`](../src/SkylineTogether.Core/Diagnostics/TypeDefTable.cs), no loading): every type that is
+   not among the loaded ones is reported by its own name, with the base type or interface that broke it (from its
+   `extends` and `implements` rows). Its nested types count as part of it.
+2. **References resolve.** Every row of the TypeRef table (`Module.ResolveType`) and of the MemberRef table
+   (`Module.ResolveMember`).
+3. **Only when a reference failed: who uses it.** The method bodies' IL tokens are read to find which methods use it;
+   each use is resolved again in the method's generic context, and field, parameter, return and local types are read.
+
+Each failure is attributed to the mod's type, and for method bodies to the method, whose code uses it.
+[`ModFeatureMap`](../src/SkylineTogether.Core/Diagnostics/ModFeatureMap.cs) names the features of that code: every
+type of the game layer is listed on its own; there is no namespace default. Nested types, closures and state machines
+count as their outer type and method. Partial classes whose parts belong to different features have per-method
+entries: the codec's simulation-value methods belong to simulation values and agents, and the controller's mod-state
+capture belongs to mod support. Core counts as the session. A binding failure (`MissingMethodException`,
+`MissingFieldException`, `TypeLoadException`, a missing assembly) switches those features off. For a critical feature,
+hosting and joining are blocked with the reason instead. Without this, Mono would throw when it first compiles that
+method.
+
+Some failures are only warnings and switch nothing off:
+- a failure in code of no feature: diagnostics (`InstallInfo`, `DiagnosticsDump`, the performance overlay) and solo
+  testing (replay);
+- a type the map does not know (never the critical city sync);
+- other exceptions;
+- references that no method body, field or signature uses (custom attributes).
+
+`ModFeatureMapTests` checks without the game:
+- every type of the built `SkylineTogether.dll` maps to a feature or deliberately to none. The type list is
+  `src/SkylineTogether/Data/mod-types.generated.txt`, which `tools/build.sh` rewrites after every build
+  ([building.md](dev/building.md#type-list));
+- every feature id the map names is registered;
+- no entry is stale.
+
+The check runs no code of the mod and no static constructor (also verified on the game's Mono). It does not cover:
+- private members or names looked up at run time (the other probes do);
+- a member whose signature changed in a way that still binds.
+
+`RuntimeHelpers.PrepareMethod`, which an earlier version used, compiles nothing on the game's Mono. Offline,
+`tools/ApiCheck` checks the same references against the game's assemblies before a release
 ([building.md](dev/building.md#api-check)).
 
 ### Feature health and guards

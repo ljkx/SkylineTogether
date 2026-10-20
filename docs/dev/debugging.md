@@ -64,14 +64,36 @@ when its loopback self-test fails, connections run without Steam lanes (every me
 "connected: … , 3 lanes" is missing.
 
 `P-REFS` (`Diagnostics/ReferenceProbe.cs`, Core `Diagnostics/ReferenceCheck.cs`) is the in-game form of
-`tools/ApiCheck`: right after load, a background thread resolves every row of the TypeRef and MemberRef tables of
-`SkylineTogether.dll` and `SkylineTogether.Core.dll` against the assemblies the game loaded. The log has one line per DLL,
-for example `P-REFS SkylineTogether: 1206 type and 5560 member references resolved in 0.05 s, 0 missing, 0 other
-failure(s)`. When something does not resolve, the method bodies are read to find which types use it, and the log has a
-`P-REFS: MemberRef 0x0A000123 used by SkylineTogether.Sync.MoverClient.Apply(): MissingMethodException: ...` line per
-use. The feature of that type (namespace table in `ReferenceProbe`) is switched off. A reference that no method body,
-field or signature uses (a custom attribute) is only reported. It checks what the mod was compiled against
-(public game API); private members and names looked up at run time are the other probes' job.
+`tools/ApiCheck`. Right after load, a background thread checks `SkylineTogether.dll` and `SkylineTogether.Core.dll`
+against the assemblies the game loaded:
+
+- every type loads (its game base class and interfaces exist);
+- every row of the TypeRef and MemberRef tables resolves;
+- when a reference failed, the method bodies are read to find which methods use it.
+
+The log has one line per DLL, for example `P-REFS SkylineTogether: 1212 type and 5589 member references resolved in
+0.07 s, 0 missing, 0 other failure(s)`. Each failure has its own line naming the mod's type (and
+method) whose code is affected:
+
+- `P-REFS: MemberRef 0x0A000123 used by SkylineTogether.Sync.MoverClient.Apply(): MissingMethodException: ...` (a
+  removed member);
+- `P-REFS: type (its base type or interface Game.X) used by SkylineTogether.Sync.Y: TypeLoadException: ...` (a type
+  that does not load). The mod's type is named even though Mono's error names only the game type.
+
+`Core/Diagnostics/ModFeatureMap.cs` maps that type (and, for a few partial classes, the method) to its features, which
+are switched off. The self-test then lists `P-REFS` failures per feature.
+
+These are only warnings and switch nothing off:
+
+- code of no feature (diagnostics, the performance overlay, replay);
+- a type the map does not know ("… is not in the feature map (please report this)");
+- a reference that no method body, field or signature uses (a custom attribute).
+
+It checks what the mod was compiled against (the public game API). Private members and names looked up at run time are
+the other probes' job.
+
+When you add a type to the game layer, `tools/build.sh` adds it to `src/SkylineTogether/Data/mod-types.generated.txt`,
+and the Core tests fail until it has an entry in `ModFeatureMap` (its feature, or none for diagnostics).
 
 Results go to the log ("self-test: X/Y checks passed"), the diagnostics dump and the one-line summary in the player's
 language ("Self-test: X of Y checks passed", with "Switched off: …" naming the features that are off) in the panel and

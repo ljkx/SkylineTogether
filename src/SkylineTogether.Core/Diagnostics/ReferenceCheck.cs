@@ -24,7 +24,7 @@ namespace SkylineTogether.Core.Diagnostics
     /// again in the method's generic context (a reference of a generic type's code may need its type arguments), and
     /// failures that remain are attributed to the method's declaring type, which the caller maps to a feature. Field
     /// types, parameter, return and local types are read too (a type used only there fails when the method is compiled).
-    /// Types whose base type or interface is missing are reported by <see cref="TypesOf"/>.</item>
+    /// Types whose base type or interface is missing are reported by <see cref="TypesOf"/>, by their own name.</item>
     /// </list>
     /// Nothing of the module runs: resolving a reference loads types and members but runs no static constructor (neither
     /// Mono nor CoreCLR initialises a type to hand out its reflection object), so it is safe on a background thread.
@@ -317,9 +317,14 @@ namespace SkylineTogether.Core.Diagnostics
 
         /// <summary>
         /// The types of <paramref name="assembly"/>; types that fail to load (a base type or interface the game removed)
-        /// are added to <paramref name="failures"/> instead.
+        /// are added to <paramref name="failures"/> instead, each by its own name. Which types did not load is read from the
+        /// assembly's file (<see cref="TypeDefTable"/>; <paramref name="image"/> returns its bytes, by default the file at
+        /// <see cref="Assembly.Location"/>): Mono's loader exception names the missing game type, not the mod's, so the
+        /// mod's types are found by their names and matched to the exception by their base type and interfaces. Without a
+        /// readable image the loader exceptions are reported as they are (their type name is then usually the game's,
+        /// which maps to no feature: a warning).
         /// </summary>
-        public static List<Type> TypesOf(Assembly assembly, List<Failure> failures)
+        public static List<Type> TypesOf(Assembly assembly, List<Failure> failures, Func<byte[]> image = null)
         {
             if (assembly == null) throw new ArgumentNullException(nameof(assembly));
             Type[] types;
@@ -330,13 +335,16 @@ namespace SkylineTogether.Core.Diagnostics
             catch (ReflectionTypeLoadException e)
             {
                 types = e.Types ?? Array.Empty<Type>();
-                foreach (Exception loader in e.LoaderExceptions ?? Array.Empty<Exception>())
+                Exception[] loaders = Array.FindAll(e.LoaderExceptions ?? Array.Empty<Exception>(), x => x != null);
+                if (failures != null && !AddUnloaded(assembly, types, loaders, image, failures))
                 {
-                    if (loader == null) continue;
-                    failures?.Add(new Failure
+                    foreach (Exception loader in loaders)
                     {
-                        Reference = "type", User = (loader as TypeLoadException)?.TypeName, Error = Describe(loader), Binding = IsBindingFailure(loader),
-                    });
+                        failures.Add(new Failure
+                        {
+                            Reference = "type", User = (loader as TypeLoadException)?.TypeName, Error = Describe(loader), Binding = IsBindingFailure(loader),
+                        });
+                    }
                 }
             }
             var list = new List<Type>(types.Length);
@@ -346,6 +354,93 @@ namespace SkylineTogether.Core.Diagnostics
             }
             list.Sort((a, b) => string.CompareOrdinal(a.FullName, b.FullName));
             return list;
+        }
+
+        // the types of the assembly's TypeDef table that are not among the loaded ones, one failure each (a nested type of
+        // a type that did not load is covered by it); false when the table cannot be read or names no unloaded type
+        // (typeNameOf: the type a loader exception names; a test stands in for Mono with it)
+        internal static bool AddUnloaded(Assembly assembly, Type[] loaded, Exception[] loaders, Func<byte[]> image, List<Failure> failures, Func<Exception, string> typeNameOf = null)
+        {
+            if (typeNameOf == null) typeNameOf = e => (e as TypeLoadException)?.TypeName;
+            TypeDefTable table;
+            try
+            {
+                byte[] bytes = image != null ? image() : ReadLocation(assembly);
+                if (bytes == null) return false;
+                table = TypeDefTable.Read(bytes);
+            }
+            catch (Exception e) when (!(e is OutOfMemoryException))
+            {
+                return false;
+            }
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Type t in loaded)
+            {
+                if (t?.FullName != null) names.Add(t.FullName);
+            }
+            var byTypeName = new Dictionary<string, Exception>(StringComparer.Ordinal);
+            foreach (Exception loader in loaders)
+            {
+                string name = typeNameOf(loader);
+                if (!string.IsNullOrEmpty(name) && !byTypeName.ContainsKey(name.Replace('/', '+'))) byTypeName[name.Replace('/', '+')] = loader;
+            }
+            var unloaded = new Dictionary<string, TypeDefTable.Row>(StringComparer.Ordinal);
+            foreach (TypeDefTable.Row row in table.Types)
+            {
+                if (row.Token != 0x02000001 && !names.Contains(row.FullName)) unloaded[row.FullName] = row;
+            }
+            int added = 0;
+            foreach (TypeDefTable.Row row in table.Types)
+            {
+                if (!unloaded.ContainsKey(row.FullName ?? "") || row.Enclosing != null && unloaded.ContainsKey(row.Enclosing.FullName)) continue;
+                Exception cause = CauseOf(row, byTypeName, unloaded, 0, out string causeName) ?? (loaders.Length > 0 ? loaders[0] : null);
+                failures.Add(new Failure
+                {
+                    Reference = causeName != null && causeName != row.FullName ? "type (its base type or interface " + causeName + ")" : "type",
+                    User = row.FullName,
+                    Error = cause != null ? Describe(cause) : "TypeLoadException: the type does not load",
+                    Binding = cause == null || IsBindingFailure(cause),
+                });
+                added++;
+            }
+            return added > 0;
+        }
+
+        // the loader exception that names this type, its base type or one of its interfaces (following the mod's own bases)
+        private static Exception CauseOf(TypeDefTable.Row row, Dictionary<string, Exception> byTypeName, Dictionary<string, TypeDefTable.Row> unloaded, int depth, out string causeName)
+        {
+            causeName = null;
+            var candidates = new List<string> { row.FullName };
+            if (row.BaseName != null) candidates.Add(row.BaseName);
+            candidates.AddRange(row.InterfaceNames);
+            foreach (string name in candidates)
+            {
+                if (byTypeName.TryGetValue(name, out Exception e))
+                {
+                    causeName = name;
+                    return e;
+                }
+            }
+            if (depth < 16)
+            {
+                foreach (string name in candidates)
+                {
+                    if (name == row.FullName || !unloaded.TryGetValue(name, out TypeDefTable.Row inner)) continue;
+                    Exception e = CauseOf(inner, byTypeName, unloaded, depth + 1, out string innerCause);
+                    if (e != null)
+                    {
+                        causeName = innerCause;
+                        return e;
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static byte[] ReadLocation(Assembly assembly)
+        {
+            string location = assembly.Location;
+            return string.IsNullOrEmpty(location) || !System.IO.File.Exists(location) ? null : System.IO.File.ReadAllBytes(location);
         }
 
         // ------------------------------------------------------------------------------------------------- IL
@@ -484,36 +579,6 @@ namespace SkylineTogether.Core.Diagnostics
                    + (r.TimedOut ? " (time budget reached)" : "") + (r.Cancelled ? " (cancelled)" : "")
                    + ", " + binding.ToString(ci) + " missing, " + (r.Failures.Count - binding).ToString(ci) + " other failure(s)"
                    + (r.Unused > 0 ? ", " + r.Unused.ToString(ci) + " used by metadata only not checked in context" : "");
-        }
-    }
-
-    /// <summary>
-    /// What a type of the mod belongs to (its feature): the value of the first entry of an ordered prefix table whose prefix
-    /// the type's full name starts with (nested and compiler-generated types share their outer type's prefix), the
-    /// fallback otherwise. Pure.
-    /// </summary>
-    public sealed class PrefixMap<T>
-    {
-        private readonly (string Prefix, T Value)[] _entries;
-        private readonly T _fallback;
-
-        public PrefixMap(IEnumerable<(string Prefix, T Value)> entries, T fallback)
-        {
-            if (entries == null) throw new ArgumentNullException(nameof(entries));
-            _entries = new List<(string, T)>(entries).ToArray();
-            _fallback = fallback;
-        }
-
-        public T Of(string typeName)
-        {
-            if (typeName != null)
-            {
-                foreach ((string prefix, T value) in _entries)
-                {
-                    if (typeName.StartsWith(prefix, StringComparison.Ordinal)) return value;
-                }
-            }
-            return _fallback;
         }
     }
 }
