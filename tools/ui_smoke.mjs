@@ -232,7 +232,7 @@ const cases = {
   lobbyGame: { state: { ...base, mode: "None" } },
   lobbyMenu: { state: { ...base, mode: "None", inGame: false, canHost: false, hasPassword: true, allowDirect: true } },
   nosteam: { state: { ...base, mode: "None", steam: false, canHost: false, canJoin: false } },
-  hosting: { state: { ...base, mode: "Hosting", hold: true, status: "A player is joining – the game is paused until they are in. Anna is downloading the city (40 %).", sessionName: "X", directPort: 27015,
+  hosting: { state: { ...base, mode: "Hosting", hold: true, status: "A player is joining – the game is paused until they have joined. Anna is downloading the city (40 %).", sessionName: "X", directPort: 27015,
     sync: "12,345 objects in sync; verifying 9,000 objects every 30 s, 0 repairs sent; 812 movers", speed: "paused while a player joins", speedHeld: true, canInvite: true, inviteSteamId: "76561190000000000",
     players, chat }, net, presence: tags, friends, overlayAvailable: true, perf },
   hostingNoHud: { state: { ...base, mode: "Hosting", status: "Hosting", sessionName: "X", speed: "2×", speedValue: 2, canInvite: true }, net: { show: false, text: "" }, presence: { tags: [] }, friends: [], overlayAvailable: false },
@@ -373,7 +373,7 @@ const cases = {
   // the Paradox Mods screenshots (tools/paradox/make_images.py): a believable session with invented names, no Steam IDs
   // on screen and no build id in the footer, so the images do not go stale with the next release
   showcaseHosting: { state: { ...base, mode: "Hosting", build: "", hold: true, sessionName: "Riverside", directPort: 27015, canInvite: true, inviteSteamId: "76561190000000000",
-    status: "A player is joining – the game is paused until they are in. Priya is downloading the city (60 %).", speed: "paused while a player joins", speedHeld: true,
+    status: "A player is joining – the game is paused until they have joined. Priya is downloading the city (60 %).", speed: "paused while a player joins", speedHeld: true,
     sync: "48,210 objects in sync; verifying 9,000 objects every 30 s, 0 repairs sent; 1,904 movers",
     players: [{ id: 0, name: "Mara", host: true, you: true, state: "Live", ping: 0, progress: 1, color: "#f2b84b", role: "host" },
       { id: 1, name: "Jonas", host: false, you: false, state: "Live", ping: 38, progress: 1, color: "#3fb6e8", role: "builder" },
@@ -397,9 +397,9 @@ const cases = {
 const JOIN_ANYWAY = "Join anyway";
 const WARNING = "Different mods can make your cities drift apart or behave differently. The host's city always takes priority; differences are fixed where possible.";
 const EXPECT = {
-  endMods: { has: ["The host requires the same code mods. Change these, restart the game and join again.", "Anarchy"], lacks: [JOIN_ANYWAY, WARNING] },
-  endModsRequired: { has: ["The host requires the same code mods. Change these, restart the game and join again."], lacks: [JOIN_ANYWAY, WARNING] },
-  endModsOverridable: { has: [JOIN_ANYWAY, WARNING, "Your code mods differ from the host's. Best: change these, restart the game and join again. The host also lets you join anyway.", "Anarchy", "Traffic", "Move It", "Back"] },
+  endMods: { has: ["The host only accepts players with the same code mods. Make the changes listed below, restart the game and join again.", "Anarchy"], lacks: [JOIN_ANYWAY, WARNING] },
+  endModsRequired: { has: ["The host only accepts players with the same code mods. Make the changes listed below, restart the game and join again."], lacks: [JOIN_ANYWAY, WARNING] },
+  endModsOverridable: { has: [JOIN_ANYWAY, WARNING, "Your code mods differ from the host's. It's best to make the changes listed below, restart the game and join again. The host also lets you join as you are with \"Join anyway\".", "Anarchy", "Traffic", "Move It", "Back"] },
   endAssetsOverridable: { has: [JOIN_ANYWAY, WARNING, "Bus Stops"], lacks: ["The host requires the same asset packs."] },
   endLongModsOverridable: { has: [JOIN_ANYWAY, WARNING, "Version mod 79"] },
   endAssets: { lacks: [JOIN_ANYWAY] },
@@ -411,10 +411,10 @@ const EXPECT = {
   lobbyNoOverride: { has: ["Let players join with different mods"] },
   endModsCityData: { has: ["Mods required for this city", "Enable these mods to join (2)", "ZoningToolkit", "AreaBucket",
     "This city contains its data – loading it without the mod would crash the game.", "It can store data in a city – loading the city without the mod can crash the game.",
-    "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with \"Join anyway\". Enable or subscribe to them, restart the game and join again."],
+    "The host's city contains data from mods you don't have, and your game would crash while loading it without them. Enable or subscribe to these mods, restart the game and join again. \"Join anyway\" can't skip this."],
     lacks: [JOIN_ANYWAY, WARNING, "Other differences", "Try again"] },
   endModsCityDataRest: { has: ["Enable these mods to join (1)", "Other differences", "Anarchy", "Traffic", "Move It",
-    "The host's city stores data of mods you don't have. Your game would crash loading it without them, so you can't join until you enable them – not even with \"Join anyway\". Enable or subscribe to them, restart the game and join again. The host lets you join anyway with the other differences once these are enabled."],
+    "The host's city contains data from mods you don't have, and your game would crash while loading it without them. Enable or subscribe to these mods, restart the game and join again. \"Join anyway\" can't skip this. Once they are enabled, the host lets you join anyway with the other differences."],
     lacks: [JOIN_ANYWAY, WARNING] },
   endModsCityDataHostile: { lacks: [JOIN_ANYWAY] },
   endConflictYou: { has: ["Two multiplayer mods at once", "The \"CS2 Multiplayer Mod\" is enabled, and two multiplayer mods can't run at the same time. Disable it in your playset or unsubscribe from it, restart the game and join again."], lacks: [JOIN_ANYWAY, "Try again"] },

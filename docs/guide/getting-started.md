@@ -105,7 +105,7 @@ Hosting always starts from inside a loaded city.
      forwarding on your router. Steam connections work without it.
 
    **Enforce build checks on other players** is on the Options page only (Options → Skyline Together → Multiplayer):
-   off by default. When on, the host undoes other players' builds that a normal game could not make (locked buildings,
+   off by default. When on, the host undoes other players' builds that a normal game couldn't make (locked buildings,
    map tiles the city has not bought, impossible shapes). When off, such builds are kept and only written to the log.
 4. Click **Host this city**.
 5. Invite your friends:
