@@ -4,8 +4,13 @@ Usage (repo root, after tools/build.sh --package):
 
   python tools/paradox/publish_paradox.py check        validate everything and print the ModPublisher command (default)
   python tools/paradox/publish_paradox.py Publish      first upload of a new mod (ModId must be empty)
+  python tools/paradox/publish_paradox.py Release      a new release: NewVersion, then Update (the usual command)
   python tools/paradox/publish_paradox.py NewVersion   upload a new version (ModId set, new ModVersion and ChangeLog)
   python tools/paradox/publish_paradox.py Update       update only the page (texts, images, tags, links) from the config
+
+  NewVersion uploads the files, the ModVersion and the ChangeLog; the page (ShortDescription, LongDescription,
+  thumbnail, screenshots, tags, links) is written by Update. Release runs both, so the page always describes the
+  version that was just uploaded.
 
   options:  --dry-run        do everything except running ModPublisher
             --yes            do not ask before uploading
@@ -24,7 +29,7 @@ What it does (docs/dev/publishing-paradox-mods.md):
   4. writes dist/paradox/PublishConfiguration.xml: the configuration with absolute image paths and without the
      indentation of multi-line texts;
   5. runs  ModPublisher.exe <command> dist/paradox/PublishConfiguration.xml -c dist/paradox/SkylineTogether -v
-     (the same arguments as the toolchain's Mod.targets). ModPublisher logs in with the account of the running game, so
+     (the same arguments as the toolchain's Mod.targets); Release runs NewVersion and, when it succeeded, Update. ModPublisher logs in with the account of the running game, so
      start the game and log in to Paradox first. It needs the .NET 6 runtime; without one, DOTNET_ROLL_FORWARD=Major
      lets it run on a newer runtime.
   After a successful Publish, the new mod id is written into the ModId of PublishConfiguration.xml (commit it).
@@ -52,8 +57,10 @@ TOOLCHAIN = [
     ('Cities2_Data', 'Content', 'Game', '.ModdingToolchain', 'ModPublisher', 'ModPublisher.exe'),
     ('Cities2_Data', 'StreamingAssets', '~Tooling~', 'ModPublisher', 'ModPublisher.exe'),
 ]
-COMMANDS = {'check': 'check', 'publish': 'Publish', 'newversion': 'NewVersion', 'update': 'Update',
+COMMANDS = {'check': 'check', 'release': 'Release', 'publish': 'Publish', 'newversion': 'NewVersion', 'update': 'Update',
             'publishnewmod': 'Publish', 'publishnewversion': 'NewVersion', 'updatepublishedconfiguration': 'Update'}
+# the ModPublisher commands each command runs, in order: a release uploads the version, then refreshes the page
+STEPS = {'Publish': ['Publish'], 'NewVersion': ['NewVersion'], 'Update': ['Update'], 'Release': ['NewVersion', 'Update']}
 
 
 def fail(msg):
@@ -96,10 +103,10 @@ def check_config(command, version):
     mod_id = value('ModId')
     if command == 'Publish' and mod_id not in ('', '0'):
         problems.append('ModId is set (%s): a first upload needs it empty; use NewVersion or Update for the existing mod' % mod_id)
-    if command in ('NewVersion', 'Update') and not re.fullmatch(r'\d+', mod_id):
+    if command in ('NewVersion', 'Update', 'Release') and not re.fullmatch(r'\d+', mod_id):
         problems.append('ModId must be the id of the published mod for %s (it is "%s")' % (command, mod_id))
-    if command == 'NewVersion' and not value('ChangeLog'):
-        problems.append('NewVersion needs a ChangeLog')
+    if command in ('NewVersion', 'Release') and not value('ChangeLog'):
+        problems.append('%s needs a ChangeLog' % command)
     changelog = open(os.path.join(ROOT, 'CHANGELOG.md'), encoding='utf-8').read()
     if not re.search(r'^## \[%s\]' % re.escape(version), changelog, re.M):
         problems.append('CHANGELOG.md has no "## [%s]" section: move the Unreleased entries to it first' % version)
@@ -224,7 +231,7 @@ def main():
     args = ap.parse_args()
     command = COMMANDS.get(args.command.lower())
     if not command:
-        fail('unknown command "%s" (check, Publish, NewVersion, Update)' % args.command)
+        fail('unknown command "%s" (check, Release, Publish, NewVersion, Update)' % args.command)
 
     version = props_value('Version')
     if not version:
@@ -236,23 +243,30 @@ def main():
     write_effective_config()
     publisher = find_publisher(args.publisher, args.game_dir)
     env = dotnet_env()
-    shown = command if command != 'check' else '<Publish|NewVersion|Update>'
-    cmd = [publisher, shown, EFFECTIVE, '-c', CONTENT, '-v']
-    print('ModPublisher command:\n  ' + ' '.join('"%s"' % c if ' ' in c else c for c in cmd))
+    steps = STEPS.get(command, ['<Publish|NewVersion|Update>'])
+    for step in steps:
+        cmd = [publisher, step, EFFECTIVE, '-c', CONTENT, '-v']
+        print('ModPublisher command:\n  ' + ' '.join('"%s"' % c if ' ' in c else c for c in cmd))
+    if command == 'check':
+        print('a release runs NewVersion, then Update: python tools/paradox/publish_paradox.py Release')
     if command == 'check' or args.dry_run:
         print('not uploading (%s)' % ('check' if command == 'check' else '--dry-run'))
         return
     print('\nModPublisher logs in with the Paradox account of the running game: start Cities: Skylines II and log in first.')
     if not args.yes:
-        answer = input('Upload Skyline Together %s to Paradox Mods now (%s)? Type yes: ' % (version, command))
+        answer = input('Upload Skyline Together %s to Paradox Mods now (%s)? Type yes: ' % (version, ', then '.join(steps)))
         if answer.strip().lower() != 'yes':
             print('cancelled')
             return
-    proc = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr)
-    if proc.returncode != 0:
-        fail('ModPublisher exited with %d' % proc.returncode)
+    proc = None
+    for step in steps:
+        print('\n== ModPublisher ' + step)
+        proc = subprocess.run([publisher, step, EFFECTIVE, '-c', CONTENT, '-v'], env=env, capture_output=True, text=True, check=False)
+        sys.stdout.write(proc.stdout)
+        sys.stderr.write(proc.stderr)
+        if proc.returncode != 0:
+            later = '; the new version is up: run Update to refresh the page' if command == 'Release' and step == 'Update' else ''
+            fail('ModPublisher %s exited with %d%s' % (step, proc.returncode, later))
     m = re.search(r'Mod published with Id=\s*(\d+)', proc.stdout)
     if command == 'Publish' and m:
         text = open(CONFIG, encoding='utf-8').read()

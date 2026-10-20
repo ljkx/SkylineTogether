@@ -24,11 +24,17 @@ Co-op multiplayer for Cities: Skylines II. One player hosts their city, friends 
 - Game speed (the host's speed is everyone's; builders can change it for all)
 - Other players' cursors with name tags, their building previews in their colour, and chat
 
+## Hosting
+
+- Optional password, **Friends and invited only**, 2 to 16 players
+- Roles: builders, viewers (watch and chat) and co-hosts who help manage players; new players can start as viewers
+- Kick and ban, with an unban list
+
 ## Works with your mods
 
 - **Dedicated support for 12 mods:** Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It. Their saved data, their tools and the settings that affect the simulation are shared by all players.
-- **Any other code mod** is analysed automatically when a session starts: its saved data replicates, its simulation runs on the host and its tools are captured like player edits.
-- **Mod settings from the host:** settings that change the simulation use the host's values for everyone; your own values come back when you leave.
+- **Any other code mod** is analysed automatically when a session starts and handled by conservative rules: its saved data replicates, its simulation runs on the host and its tools are captured like player edits. Most mods work this way; the diagnostics file explains the decision for every mod.
+- **Mod settings from the host:** for these 12 mods (and mods that declare it), settings that change the simulation use the host's values for everyone; your own values come back when you leave.
 - **A clear join screen:** when mods differ, it lists exactly what to enable, disable or update. Mods that only change your own screen (translations, tooltips, icon libraries, overlays) may differ.
 - **Join anyway:** the host can let players join with harmless differences. Mods that store data in the city are always required, because the game cannot load the city without them.
 - **For mod authors:** an integration API to declare what your mod does and to send data to your mod on other PCs (see MOD-INTEGRATION.md on GitHub).
@@ -39,7 +45,7 @@ Co-op multiplayer for Cities: Skylines II. One player hosts their city, friends 
 
 **Join:** on the title screen click **Multiplayer**, then **Join a friend**. Paste the host's Steam ID and the password if there is one, and press **Join**, or accept the host's Steam invite. Your game downloads and loads the host's city; the host's game pauses until you are in. Press **Enter** to chat.
 
-No port forwarding is needed for Steam joins. Direct IP connections are optional and need a forwarded UDP port.
+No port forwarding is needed for Steam joins. Direct IP connections are optional and need a session password and a forwarded UDP port.
 
 ## Requirements and compatibility
 
@@ -48,17 +54,20 @@ No port forwarding is needed for Steam joins. Direct IP connections are optional
 - Use the same asset subscriptions on every PC. Objects whose asset a player lacks are left out on that player's game.
 - **Not compatible with other multiplayer mods.** Disable them.
 - **Install it only once.** Do not keep a copy in the local Mods folder (from the GitHub installer) while you are subscribed here: the game then loads only one of them. Skyline Together warns at start when it finds two copies.
-- A game update can switch features off until the mod is updated; the startup self-test (shown in the Skyline Together panel) shows which.
+- A game update can switch features off until the mod is updated; the self-test in the Skyline Together panel shows which.
 
 ## Known limitations
 
+- Play with people you trust: builders can change anything in the city, and joining loads a save file from the host.
+- Settings buttons of other mods that change the whole city at once ("apply to all") work only when the host presses them.
+- A game or mod update can switch a feature or a mod's dedicated support off until Skyline Together is updated; the self-test in the panel and the diagnostics show which.
 - Repairs of differences happen in the background and can take a moment.
 - The host's upload speed limits large sessions.
 
 ## Bugs, documentation and source code
 
 Everything is on GitHub: https://github.com/ljkx/SkylineTogether
-The user guide, the FAQ and troubleshooting are in the docs folder there. To report a bug, every player clicks **Write diagnostics** in the panel; then attach the newest SkylineTogether-diagnostics file and SkylineTogether.log from the Logs folder in %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II of every player to a GitHub issue. The files contain player names and Steam IDs. Never attach crash dumps (.dmp) to a public issue: they can contain passwords.
+The user guide, the FAQ and troubleshooting are in the docs folder there. To report a bug, every player clicks **Write diagnostics** in the panel. Then attach, from every player, the newest SkylineTogether-diagnostics file and SkylineTogether.log (folder Logs in %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II) to a GitHub issue. The files contain player names, Steam IDs and the session name, but no passwords or chat; Skyline Together writes your user folder as %USERPROFILE%, so they do not contain your Windows user name. Never attach crash dumps (.dmp): they can contain passwords.
 
 Open source under the MIT licence. Not affiliated with or endorsed by Paradox Interactive or Colossal Order.
 	</LongDescription>
@@ -72,17 +81,18 @@ Open source under the MIT licence. Not affiliated with or endorsed by Paradox In
 	<ModVersion Value="0.1.0-alpha.4" />
 	<!--The game version the build was compiled and tested against (1.6.2f1); another game version may switch features off-->
 	<GameVersion Value="1.6.2*" />
-	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened-->
+	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened (prepared for 0.2.0)-->
 	<ChangeLog>
-First release on Paradox Mods.
+First regular release. Players of earlier versions cannot join this version.
 
-- Host a loaded city; join by Steam ID, Steam invite or direct IP; optional password; 2 to 16 players
-- The host's city is saved, streamed to the joining player and loaded; the host pauses while someone joins
-- Host-authoritative sync of structures, economy, terrain, water, traffic, citizens and vehicles; every player builds with the normal tools
-- Roles, kick and ban, cursors with name tags, building previews, chat, shared game speed
-- Automatic integrity checks and repair, resync and reconnect
-- Works with your mods: dedicated support for 12 popular mods, automatic analysis of other code mods, a readable list of what to change
-- Solo test: record a session and verify it on one PC
+- New host option "New players join as viewers"; roles are remembered when a player rejoins
+- Safer joining: strangers learn nothing before the password, the password check is mutual and harder to guess, joins can no longer stall the host
+- Messages from the host appear in each player's language; a password lockout and a host that can't prove the password have their own screens
+- Fixes for crashes and differences on joined players' games (deleted and reused objects, events, resource painting, vehicles, mod systems)
+- Less network traffic for statistics in older cities
+- Logs and diagnostics no longer contain your Windows user name
+- Bug reports: the game and the guide say where to send the files and what they contain
+- New screenshots
 
 Full changelog: https://github.com/ljkx/SkylineTogether/blob/main/CHANGELOG.md
 	</ChangeLog>

@@ -33,8 +33,8 @@ The releases `0.1.0-alpha.1` to `0.1.0-alpha.4` predate this rule.
 ### Protocol version policy
 
 The handshake compares the build id anyway, so two different builds never play together whatever their protocol
-versions. The protocol version is still bumped on **every** wire change, because it is the first thing the host
-checks: a joiner with another version is refused with "Skyline Together versions differ" before the password
+versions. The protocol version is still bumped on **every** wire change, because the host checks it right after the
+ban list and the join policy: a joiner with another version is refused with "Skyline Together versions differ" before the password
 challenge and before any build, game or mod detail is compared or revealed, and solo recordings of another wire
 format are refused by version instead of failing half-way through a replay.
 
@@ -89,9 +89,11 @@ format are refused by version instead of failing half-way through a replay.
    tested with, the install routes, the SHA-256 checksums of both zips and how to report bugs.
 8. Paradox Mods: set `ModVersion` and `ChangeLog` in `src/SkylineTogether/Properties/PublishConfiguration.xml`, run
    `python tools/paradox/publish_paradox.py check` (it must print the build id of step 4), then, with the game running
-   and logged in to Paradox, `python tools/paradox/publish_paradox.py NewVersion` (`Publish` for the very first upload;
-   commit the `ModId` it writes). It uploads the files of the same release zip, so players from Paradox Mods and from
-   GitHub have the same build id. Details: [publishing-paradox-mods.md](publishing-paradox-mods.md).
+   and logged in to Paradox, `python tools/paradox/publish_paradox.py Release` (`Publish` for the very first upload;
+   commit the `ModId` it writes). `Release` runs `NewVersion` (the files, `ModVersion` and `ChangeLog`) and then
+   `Update` (page texts, thumbnail and screenshots), so the page matches the new version. It uploads the files of the
+   same release zip, so players from Paradox Mods and from GitHub have the same build id. Check the page afterwards.
+   Details: [publishing-paradox-mods.md](publishing-paradox-mods.md).
 
 Do not rebuild after testing: a rebuild is a different build. Upload exactly the files you tested, to GitHub and to
 Paradox Mods.
