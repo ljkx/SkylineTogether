@@ -96,10 +96,7 @@ namespace SkylineTogether.Settings
         /// <summary>Replaces <c>{NAME}</c> placeholders (pairs of name and value).</summary>
         public static string Format(string text, params string[] args)
         {
-            if (text == null || args == null || args.Length < 2) return text;
-            var sb = new StringBuilder(text);
-            for (int i = 0; i + 1 < args.Length; i += 2) sb.Replace("{" + args[i] + "}", args[i + 1] ?? "");
-            return sb.ToString();
+            return Core.Session.NetText.Format(text, args); // one pass: a value is never searched for placeholders again
         }
 
         public IEnumerable<KeyValuePair<string, string>> ReadEntries(IList<IDictionaryEntryError> errors, Dictionary<string, int> indexCounts)

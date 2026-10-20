@@ -239,8 +239,39 @@ namespace SkylineTogether.Core.Session
         public static string Format(string template, string[] args)
         {
             if (template == null || args == null || args.Length < 2) return template;
-            var sb = new StringBuilder(template);
-            for (int i = 0; i + 1 < args.Length; i += 2) sb.Replace("{" + args[i] + "}", args[i + 1] ?? "");
+            // one pass over the template: a value is never searched for placeholders again (a player named "{REASON}"
+            // got the next argument spliced into the name)
+            var sb = new StringBuilder(template.Length + 32);
+            int at = 0;
+            while (at < template.Length)
+            {
+                int open = template.IndexOf('{', at);
+                if (open < 0) break;
+                int close = template.IndexOf('}', open + 1);
+                if (close < 0) break;
+                string key = template.Substring(open + 1, close - open - 1);
+                string value = null;
+                for (int i = 0; i + 1 < args.Length; i += 2)
+                {
+                    if (string.Equals(args[i], key, StringComparison.Ordinal))
+                    {
+                        value = args[i + 1] ?? "";
+                        break;
+                    }
+                }
+                sb.Append(template, at, open - at);
+                if (value != null)
+                {
+                    sb.Append(value);
+                    at = close + 1;
+                }
+                else
+                {
+                    sb.Append('{');
+                    at = open + 1;
+                }
+            }
+            sb.Append(template, at, template.Length - at);
             return sb.ToString();
         }
     }
