@@ -87,6 +87,29 @@ namespace SkylineTogether.Core.Tests.Framework
         }
 
         [Test]
+        public void OnlyExecutedTestsCountTowardsTheMinimum()
+        {
+            // 4 selected, 2 of them skip: 2 executed
+            var (code, output) = Run("Fixtures.Passing", "Fixtures.Skipped", "--expect-at-least", "3");
+            Assert.Equal(TestRunner.UsageError, code, output);
+            Assert.Contains("ERROR 2 test(s) executed, expected at least 3", output);
+            Assert.Equal(0, Run("Fixtures.Passing", "Fixtures.Skipped", "--expect-at-least", "2").ExitCode);
+            var (failing, failingOutput) = Run("Fixtures.Failing", "--expect-at-least", "1");
+            Assert.Equal(1, failing, "a failed test was executed: " + failingOutput);
+        }
+
+        [Test]
+        public void SkippedTestsFailTheRunAboveTheirLimit()
+        {
+            var (code, output) = Run("Fixtures.Passing", "Fixtures.Skipped", "--max-skipped", "1");
+            Assert.Equal(TestRunner.UsageError, code, output);
+            Assert.Contains("ERROR 2 test(s) skipped, at most 1 allowed", output);
+            Assert.Equal(0, Run("Fixtures.Passing", "Fixtures.Skipped", "--max-skipped", "2").ExitCode);
+            Assert.Equal(0, Run("Fixtures.Passing", "--max-skipped", "0").ExitCode);
+            Assert.Equal(TestRunner.UsageError, Run("--max-skipped").ExitCode, "the number is required");
+        }
+
+        [Test]
         public void ListingRunsNothing()
         {
             var (code, output) = Run("Fixtures.Failing", "--list");

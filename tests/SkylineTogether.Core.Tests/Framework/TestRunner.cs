@@ -15,7 +15,9 @@ namespace SkylineTogether.Core.Tests.Framework
     /// a word starting with a single <c>-</c> excludes matching tests. Options:
     /// <c>--list</c> prints the selected names without running them; <c>--verbose</c> prints every test result;
     /// <c>--allow-empty</c> accepts a selection without tests (otherwise an error); <c>--expect-at-least N</c> fails the
-    /// run when fewer than N tests are selected (CI pins the size of the suite); <c>--culture NAME</c> runs every test
+    /// run when fewer than N tests are selected, or fewer than N were executed (passed or failed; skipped tests and tests
+    /// not run after a timeout do not count), so CI pins the size of the suite; <c>--max-skipped N</c> fails the run when
+    /// more than N tests were skipped (CI: 0, so a test that starts skipping itself is noticed); <c>--culture NAME</c> runs every test
     /// under that culture (default: the invariant culture); <c>--canary</c> runs only the canary tests, which are made to
     /// fail (CI checks that a failing test fails the run). Any other option starting with <c>--</c> is an error.
     /// Test names are <c>Area.Class.Method</c>, where Area is the namespace below <c>SkylineTogether.Core.Tests</c>
@@ -49,6 +51,7 @@ namespace SkylineTogether.Core.Tests.Framework
             public readonly List<string> Excludes = new List<string>();
             public bool List, Verbose, AllowEmpty, Canary;
             public int ExpectAtLeast;
+            public int MaxSkipped = -1; // -1: any number
             public CultureInfo Culture = CultureInfo.InvariantCulture;
         }
 
@@ -78,7 +81,7 @@ namespace SkylineTogether.Core.Tests.Framework
             if (!TryParse(args, out Options options, out string usage))
             {
                 output.WriteLine("ERROR " + usage);
-                output.WriteLine("usage: [name filters] [-excluded] [--list] [--verbose] [--allow-empty] [--expect-at-least N] [--culture NAME] [--canary]");
+                output.WriteLine("usage: [name filters] [-excluded] [--list] [--verbose] [--allow-empty] [--expect-at-least N] [--max-skipped N] [--culture NAME] [--canary]");
                 return UsageError;
             }
 
@@ -121,7 +124,7 @@ namespace SkylineTogether.Core.Tests.Framework
 
         private static int RunAll(List<TestCase> tests, int invalid, Options options, TextWriter output)
         {
-            int passed = 0, failed = invalid, skipped = 0, notRun = 0;
+            int passed = 0, failed = invalid, skipped = 0, notRun = 0, executed = 0;
             var total = Stopwatch.StartNew();
             for (int i = 0; i < tests.Count; i++)
             {
@@ -129,6 +132,7 @@ namespace SkylineTogether.Core.Tests.Framework
                 var watch = Stopwatch.StartNew();
                 Outcome outcome = Execute(test, options.Culture, out string detail);
                 watch.Stop();
+                if (outcome != Outcome.Skipped) executed++;
                 switch (outcome)
                 {
                     case Outcome.Passed:
@@ -167,6 +171,18 @@ namespace SkylineTogether.Core.Tests.Framework
                              + (notRun > 0 ? " (" + notRun + " not run)" : string.Empty)
                              + Filters(options)
                              + (options.Culture.Name.Length > 0 ? " (culture " + options.Culture.Name + ")" : string.Empty));
+            bool tooFew = executed < options.ExpectAtLeast;
+            bool tooManySkipped = options.MaxSkipped >= 0 && skipped > options.MaxSkipped;
+            if (tooFew)
+            {
+                output.WriteLine("ERROR " + executed + " test(s) executed, expected at least " + options.ExpectAtLeast
+                                 + " (skipped and not run tests do not count)");
+            }
+            if (tooManySkipped)
+            {
+                output.WriteLine("ERROR " + skipped + " test(s) skipped, at most " + options.MaxSkipped + " allowed");
+            }
+            if (tooFew || tooManySkipped) return UsageError;
             return Math.Min(failed, 125);
         }
 
@@ -199,6 +215,14 @@ namespace SkylineTogether.Core.Tests.Framework
                         if (i + 1 >= args.Length || !int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out options.ExpectAtLeast))
                         {
                             error = "--expect-at-least needs a number";
+                            return false;
+                        }
+                        i++;
+                        continue;
+                    case "--max-skipped":
+                        if (i + 1 >= args.Length || !int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out options.MaxSkipped))
+                        {
+                            error = "--max-skipped needs a number";
                             return false;
                         }
                         i++;
