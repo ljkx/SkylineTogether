@@ -1548,7 +1548,13 @@ thread below normal priority checks the game layer and Core against the assembli
    `extends` and `implements` rows). Its nested types count as part of it.
 2. **References resolve.** Every row of the TypeRef table (`Module.ResolveType`) and of the MemberRef table
    (`Module.ResolveMember`).
-3. **Only when a reference failed: who uses it.** The method bodies' IL tokens are read to find which methods use it;
+3. **Types set up.** For every type that loaded: `GetInterfaces`, `GetMethods` and `GetConstructors` (declared), and
+   for a non-generic class `GetInterfaceMap` per interface. On Mono this builds the type's method table, which fails
+   (`TypeLoadException: VTable setup of type … failed`, "invalid vtable method slot") when a game interface or abstract
+   class gained a member the mod's type does not implement, or a member it overrides changed. Mono builds method tables
+   lazily, so without this the failure would come the first time the type is used, mid-session (CoreCLR already
+   fails such a type in step 1). On Mono this also catches generic type definitions.
+4. **Only when a reference failed: who uses it.** The method bodies' IL tokens are read to find which methods use it;
    each use is resolved again in the method's generic context, and field, parameter, return and local types are read.
 
 Each failure is attributed to the mod's type, and for method bodies to the method, whose code uses it.
@@ -1559,7 +1565,7 @@ entries: the codec's simulation-value methods belong to simulation values and ag
 capture belongs to mod support. Core counts as the session. A binding failure (`MissingMethodException`,
 `MissingFieldException`, `TypeLoadException`, a missing assembly) switches those features off. For a critical feature,
 hosting and joining are blocked with the reason instead. Without this, Mono would throw when it first compiles that
-method.
+method or sets up that type.
 
 Some failures are only warnings and switch nothing off:
 - a failure in code of no feature: diagnostics (`InstallInfo`, `DiagnosticsDump`, the performance overlay) and solo

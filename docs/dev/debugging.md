@@ -69,14 +69,18 @@ against the assemblies the game loaded:
 
 - every type loads (its game base class and interfaces exist);
 - every row of the TypeRef and MemberRef tables resolves;
+- every type can be set up (its interfaces, methods and constructors are read, which makes Mono build its method
+  table: a game interface or abstract class that gained a member fails here);
 - when a reference failed, the method bodies are read to find which methods use it.
 
-The log has one line per DLL, for example `P-REFS SkylineTogether: 1212 type and 5589 member references resolved in
-0.07 s, 0 missing, 0 other failure(s)`. Each failure has its own line naming the mod's type (and
+The log has one line per DLL, for example `P-REFS SkylineTogether: 1212 type and 5589 member references resolved and
+309 types set up in 0.22 s, 0 missing, 0 other failure(s)`. Each failure has its own line naming the mod's type (and
 method) whose code is affected:
 
 - `P-REFS: MemberRef 0x0A000123 used by SkylineTogether.Sync.MoverClient.Apply(): MissingMethodException: ...` (a
   removed member);
+- `P-REFS: type setup used by SkylineTogether.Sync.NetWriter: TypeLoadException: VTable setup of type ... failed` (a
+  game interface or abstract class that gained a member);
 - `P-REFS: type (its base type or interface Game.X) used by SkylineTogether.Sync.Y: TypeLoadException: ...` (a type
   that does not load). The mod's type is named even though Mono's error names only the game type.
 

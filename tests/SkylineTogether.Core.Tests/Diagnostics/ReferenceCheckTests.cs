@@ -32,7 +32,7 @@ namespace SkylineTogether.Core.Tests.Diagnostics
     /// <see cref="ReferenceCheck"/>: an assembly built against members its reference no longer has (emitted here with
     /// System.Reflection.Metadata, the "stub" being this test assembly's <see cref="ReferenceCheckFixtureTarget"/>, which
     /// lacks them) has every missing reference found and attributed to the type whose method uses it; present references
-    /// pass without running any static constructor; the whole Core assembly resolves completely, every row
+    /// pass without running any static constructor; the whole Core assembly resolves and sets up completely, every row
     /// of its reference tables visited; the time budget and cancellation hold. Types whose base type or interface is
     /// missing are reported by their own name, also when the loader exception names only the missing type (Mono), with
     /// the TypeDef table read from the file (<see cref="TypeDefTable"/>, checked against System.Reflection.Metadata).
@@ -96,6 +96,7 @@ namespace SkylineTogether.Core.Tests.Diagnostics
             ReferenceCheck.Result r = ReferenceCheck.Run(assembly.ManifestModule, ReferenceCheck.WallClock(), 90, null, types);
             Assert.Equal(0, r.Failures.Count, string.Join("\n", r.Failures.ConvertAll(f => f.ToString())));
             Assert.False(r.TimedOut, ReferenceCheck.Summary(r));
+            Assert.Equal(types.Count, r.TypesSetUp, "every type was set up, without a false failure");
             // the enumeration ends exactly at each table's end
             using (var pe = new PEReader(File.OpenRead(assembly.Location)))
             {

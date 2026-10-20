@@ -15,7 +15,9 @@ namespace SkylineTogether.Diagnostics
     /// <c>tools/ApiCheck</c> checks offline, here against the assemblies the game actually loaded):
     /// <list type="bullet">
     /// <item>every type and member reference resolves;</item>
-    /// <item>every type of the mod loads (the game base classes and interfaces it uses still exist);</item>
+    /// <item>every type of the mod loads (the game base classes and interfaces it uses still exist) and can be set up (it
+    /// still implements every member of the game interfaces and abstract classes it derives from; Mono checks that only
+    /// when a type is first used);</item>
     /// <item>when something failed: which method of which type uses it.</item>
     /// </list>
     /// Each failure is attributed to the mod's type (and method) whose code uses it, and <see cref="ModFeatureMap"/> names

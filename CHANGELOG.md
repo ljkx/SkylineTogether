@@ -22,7 +22,8 @@ From this release on, regular releases have no pre-release suffix.
 - **Checksums**: the release notes list the SHA-256 checksums of both zips, with a `Get-FileHash` line to check a
   download.
 - **Startup check against game updates**: when the game starts, every game type and member Skyline Together uses is
-  looked up. If a game update broke something, only the part of Skyline Together that
+  looked up. Every part of Skyline Together that builds on a game class or interface is also checked, so a game
+  interface that gained a member is found. If a game update broke something, only the part of Skyline Together that
   uses it is switched off, instead of an error in the middle of a session:
   - Hosting and joining are blocked only if that part is essential, with the reason.
   - Optional parts are switched off on their own: city statistics, traffic lights, difference repairs, terrain and

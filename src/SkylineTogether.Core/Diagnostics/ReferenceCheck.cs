@@ -19,7 +19,12 @@ namespace SkylineTogether.Core.Diagnostics
     /// <see cref="Module.ResolveMember(int)"/>, until the runtime says the row is past the table's end
     /// (<see cref="ArgumentOutOfRangeException"/>; for a member reference only when its signature cannot be read either,
     /// because CoreCLR also reports a missing field as out of range).</item>
-    /// <item>Only when something failed: the IL of every method of the module is read
+    /// <item>Every type of the module is set up (<see cref="SetUp"/>): its interfaces, declared methods and constructors
+    /// are read, which makes Mono build the type's method table. A game interface or abstract class that gained a member
+    /// the mod's type does not implement fails here (<c>TypeLoadException: VTable setup of type ... failed</c>, "invalid
+    /// vtable method slot"), attributed to that type; Mono builds method tables lazily, so it would otherwise fail the
+    /// first time the type is used, possibly mid-session. CoreCLR already fails such a type in <see cref="TypesOf"/>.</item>
+    /// <item>Only when a reference failed: the IL of every method of the module is read
     /// (<see cref="MethodBody.GetILAsByteArray"/>) to find which methods use the failed references; each use is resolved
     /// again in the method's generic context (a reference of a generic type's code may need its type arguments), and
     /// failures that remain are attributed to the method's declaring type, which the caller maps to a feature. Field
@@ -56,6 +61,8 @@ namespace SkylineTogether.Core.Diagnostics
             public int TypeRefs, MemberRefs;
             /// <summary>References that failed without a generic context (before the uses were checked).</summary>
             public int FailedWithoutContext;
+            /// <summary>Types of the module set up (<see cref="SetUp"/>).</summary>
+            public int TypesSetUp;
             /// <summary>Methods whose IL was read (0 when every reference resolved at once).</summary>
             public int MethodsScanned;
             /// <summary>Failed references no method body uses (custom attributes, metadata only): logged, nothing switched off.</summary>
@@ -81,7 +88,7 @@ namespace SkylineTogether.Core.Diagnostics
         /// Resolves every type and member reference of <paramref name="module"/> (see the class summary) until done, until
         /// <paramref name="budgetSeconds"/> of <paramref name="seconds"/> have passed, or until <paramref name="cancelled"/>
         /// says so. <paramref name="types"/>: the module's types (<see cref="TypesOf"/>; null: read here, load failures
-        /// are then added to the result).
+        /// are then added to the result). Every type is set up (<see cref="SetUp"/>) after the reference tables.
         /// </summary>
         public static Result Run(Module module, Func<double> seconds, double budgetSeconds, Func<bool> cancelled = null, IReadOnlyList<Type> types = null)
         {
@@ -108,11 +115,13 @@ namespace SkylineTogether.Core.Diagnostics
             result.TypeRefs = Enumerate(TypeRefTable, t => module.ResolveType(t), failed, Stop, module);
             if (!result.TimedOut && !result.Cancelled) result.MemberRefs = Enumerate(MemberRefTable, t => module.ResolveMember(t), failed, Stop, module);
             result.FailedWithoutContext = failed.Count;
-            if (failed.Count > 0 && !result.TimedOut && !result.Cancelled)
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            if (!result.TimedOut && !result.Cancelled)
             {
                 if (types == null) types = TypesOf(module.Assembly, result.Failures);
-                Attribute(module, types, failed, result, Stop);
+                SetUp(module, types, result, seen, Stop);
             }
+            if (failed.Count > 0 && !result.TimedOut && !result.Cancelled) Attribute(module, types, failed, result, seen, Stop);
             result.Seconds = seconds() - start;
             return result;
         }
@@ -157,8 +166,53 @@ namespace SkylineTogether.Core.Diagnostics
             }
         }
 
+        /// <summary>
+        /// Sets up every type of <paramref name="module"/> without running any of its code: reads its interfaces, declared
+        /// methods and constructors, and (for a class) the map of each interface onto its methods. On Mono this builds the
+        /// type's method table (vtable), which fails when a game interface or abstract base class gained a member the type
+        /// does not implement, or a member it overrides changed; each failure is added to <paramref name="result"/>,
+        /// attributed to the type. Generic type definitions are set up as far as reflection allows (their interface maps
+        /// need an instantiation and are skipped).
+        /// </summary>
+        private static void SetUp(Module module, IReadOnlyList<Type> types, Result result, HashSet<string> seen, Func<bool> stop)
+        {
+            foreach (Type type in types)
+            {
+                if (type == null || type.Module != module) continue;
+                if (stop()) return;
+                string user = type.FullName ?? type.Name;
+                result.TypesSetUp++;
+                Type[] interfaces;
+                try
+                {
+                    interfaces = type.GetInterfaces();
+                    type.GetMethods(Declared);
+                    type.GetConstructors(Declared);
+                }
+                catch (Exception e) when (!(e is OutOfMemoryException))
+                {
+                    AddDirect(result, seen, "type setup", user, null, e);
+                    continue;
+                }
+                if (type.IsInterface || type.IsGenericTypeDefinition) continue;
+                foreach (Type i in interfaces)
+                {
+                    try
+                    {
+                        type.GetInterfaceMap(i);
+                    }
+                    catch (Exception e) when (!(e is OutOfMemoryException))
+                    {
+                        // only a binding failure is the game's doing; anything else (a runtime quirk) is not reported
+                        if (IsBindingFailure(e)) AddDirect(result, seen, "type setup", user, null, e);
+                        break;
+                    }
+                }
+            }
+        }
+
         // the second phase: which of the module's methods use the failed references, resolved in their generic context
-        private static void Attribute(Module module, IReadOnlyList<Type> types, Dictionary<int, Exception> failed, Result result, Func<bool> stop)
+        private static void Attribute(Module module, IReadOnlyList<Type> types, Dictionary<int, Exception> failed, Result result, HashSet<string> seen, Func<bool> stop)
         {
             bool typeRefsFailed = false, memberRefsFailed = false;
             foreach (int token in failed.Keys)
@@ -168,7 +222,6 @@ namespace SkylineTogether.Core.Diagnostics
             }
             var resolvedSomewhere = new HashSet<int>();
             var uses = new Dictionary<int, List<Failure>>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
             var tokens = new List<int>();
             foreach (Type type in types)
             {
@@ -574,7 +627,7 @@ namespace SkylineTogether.Core.Diagnostics
             {
                 if (f.Binding) binding++;
             }
-            return r.TypeRefs.ToString(ci) + " type and " + r.MemberRefs.ToString(ci) + " member references resolved in " + r.Seconds.ToString("0.00", ci) + " s"
+            return r.TypeRefs.ToString(ci) + " type and " + r.MemberRefs.ToString(ci) + " member references resolved and " + r.TypesSetUp.ToString(ci) + " types set up in " + r.Seconds.ToString("0.00", ci) + " s"
                    + (r.MethodsScanned > 0 ? " (" + r.FailedWithoutContext.ToString(ci) + " checked again in " + r.MethodsScanned.ToString(ci) + " method bodies)" : "")
                    + (r.TimedOut ? " (time budget reached)" : "") + (r.Cancelled ? " (cancelled)" : "")
                    + ", " + binding.ToString(ci) + " missing, " + (r.Failures.Count - binding).ToString(ci) + " other failure(s)"
