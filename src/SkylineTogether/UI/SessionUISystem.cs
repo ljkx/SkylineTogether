@@ -815,7 +815,7 @@ namespace SkylineTogether.UI
                 case ClientEndKind.SessionEnded: return "sessionEnded";
                 case ClientEndKind.Timeout: return "timeout";
                 case ClientEndKind.ConnectionLost: return "connectionLost";
-                case ClientEndKind.Dropped: return "connectionLost"; // a technical removal: joining again is offered
+                case ClientEndKind.Dropped: return "dropped"; // the host stopped the join or removed the player for a technical reason: joining again is offered
                 case ClientEndKind.Failed: return "failed";
                 case ClientEndKind.HostNotProven: return "hostProof"; // its own screen: check the host and the password
                 // the finer kinds map onto the error screen's categories

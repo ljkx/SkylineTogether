@@ -200,7 +200,7 @@ const EN = {
   "st.ui.host.friendsOnly": "Friends and invited only",
   "st.ui.host.friendsOnlyHint": "Only your Steam friends and players you invite from this panel can join through Steam. Direct IP joiners still need the password.",
   "st.ui.host.newPlayersViewer": "New players join as viewers",
-  "st.ui.host.newPlayersViewerHint": "Players joining for the first time in this session can watch but not build until you make them builders in the player list. Players who were here before keep their role when they rejoin.",
+  "st.ui.host.newPlayersViewerHint": "Players joining for the first time in this session can watch but not build until you make them builders in the player list. Players who were here before keep their role when they rejoin (after a direct IP join without Steam, only the viewer role is kept).",
   "st.ui.host.allowDirectNeedsPassword": "Set a password first: Steam does not check direct connections, so the password is what keeps strangers out.",
   "st.ui.host.bans": "Banned players",
   "st.ui.host.bansHint": "Banned players can't join your sessions until you unban them.",
@@ -260,6 +260,8 @@ const EN = {
   "st.ui.join.percent": "{P} %",
   "st.ui.time.seconds": "{N} s",
   "st.ui.time.minutes": "{M}:{S} min",
+  "st.ui.time.aboutMinutes": "about {N} minutes",
+  "st.ui.time.aboutHours": "about {N} hours",
   "st.ui.end.retry": "Try again",
   "st.ui.end.retryPassword": "Join with this password",
   "st.ui.end.joinAnyway": "Join anyway",
@@ -286,6 +288,7 @@ const EN = {
   "st.ui.end.title.game": "Game versions differ",
   "st.ui.end.text.game": "You both need the same game version. Update the game on the PC with the older version (restarting Steam usually does it), then join again.",
   "st.ui.end.versions": "Host: {HOST} · You: {YOU}",
+  "st.ui.end.protocols": "Network protocol: host {HOST} · you {YOU}",
   "st.ui.end.title.build": "Skyline Together versions differ",
   "st.ui.end.text.build": "You both need exactly the same Skyline Together build. Install the same release on both PCs (the build id is at the bottom of the panel), then join again.",
   "st.ui.end.builds": "Host build {HOST} · Your build {YOU}",
@@ -313,17 +316,21 @@ const EN = {
   "st.ui.end.title.full": "The session is full",
   "st.ui.end.text.full": "Ask the host to raise the player limit, or try again when someone leaves.",
   "st.ui.end.title.notAllowed": "You can't join this session",
-  "st.ui.end.text.notAllowed": "This session is open to the host's Steam friends and invited players only. Ask the host to send you a Steam invite. Joining by IP address also needs the host's password.",
+  "st.ui.end.text.notAllowed": "This session is open to the host's Steam friends and invited players only. Ask the host to send you a Steam invite. If you joined by IP address, the host must set a session password first.",
   "st.ui.end.title.notReady": "The host isn't ready yet",
   "st.ui.end.text.notReady": "The host's session is still starting, or an earlier join attempt is still running. Try again in a moment.",
+  "st.ui.end.title.cooldown": "Please wait before joining again",
+  "st.ui.end.text.cooldown": "Your last attempts to join this session didn't finish, and each one paused the game for everyone. You can join again in {WAIT}.",
   "st.ui.end.title.closing": "The host is closing the session",
   "st.ui.end.text.closing": "The session is shutting down. Join again once the host hosts a new one.",
   "st.ui.end.title.timeout": "No answer from the host",
   "st.ui.end.text.timeout": "The host didn't answer in time. Check the Steam ID or address and make sure the host is hosting right now, then try again.",
   "st.ui.end.title.lost": "Connection lost",
   "st.ui.end.text.lost": "The connection to the host was interrupted. Try again; if it keeps happening, check your internet connection.",
+  "st.ui.end.title.dropped": "The host stopped your join",
+  "st.ui.end.text.dropped": "The reason is shown below. Try joining again.",
   "st.ui.end.title.kicked": "You were removed from the session",
-  "st.ui.end.text.kicked": "The host removed you from the session. You can join again if the host lets you.",
+  "st.ui.end.text.kicked": "You can join again if the host lets you.",
   "st.ui.end.title.banned": "You are banned from this session",
   "st.ui.end.text.banned": "The host banned you. Only the host can lift the ban.",
   "st.ui.end.title.ended": "The session has ended",
@@ -431,7 +438,7 @@ const EN = {
   "st.ui.recovery.ended.title": "The session has ended",
   "st.ui.recovery.ended.text": "You can return to the main menu, or keep playing an offline copy of the host's city.",
   "st.ui.recovery.kicked.title": "You were removed from the session",
-  "st.ui.recovery.kicked.text": "The host removed you. You can return to the main menu, or keep playing an offline copy of the host's city.",
+  "st.ui.recovery.kicked.text": "You can return to the main menu, or keep playing an offline copy of the host's city.",
   "st.ui.recovery.banned.title": "You were removed and banned",
   "st.ui.recovery.banned.text": "The host removed you and banned you from this session. You can return to the main menu, or keep playing an offline copy of the host's city.",
   "st.ui.recovery.failed.title": "Not connected",
@@ -1236,6 +1243,15 @@ function duration(seconds) {
   if (sec < 60) return t("st.ui.time.seconds", { N: sec });
   const s = sec % 60;
   return t("st.ui.time.minutes", { M: Math.floor(sec / 60), S: (s < 10 ? "0" : "") + s });
+}
+
+// a wait the player reads ("40 s", "about 10 minutes", "about 4 hours"): rounded, as a host's wait is never exact
+function waitText(seconds) {
+  const sec = Math.round(Number(seconds));
+  if (!(sec >= 0) || !isFinite(sec)) return "–";
+  if (sec < 120) return t("st.ui.time.seconds", { N: sec });
+  if (sec < 7200) return t("st.ui.time.aboutMinutes", { N: Math.round(sec / 60) });
+  return t("st.ui.time.aboutHours", { N: Math.round(sec / 3600) });
 }
 
 function clock(ms) {
@@ -2803,12 +2819,15 @@ function endCopy(e) {
     if (r === "Full") return "full";
     if (r === "Banned") return "banned";
     if (r === "NotInvited") return "notAllowed";
-    if (r === "HostPreparing") return "notReady";
+    // a join cooldown (the host says when to try again) is not a host that is still starting
+    if (r === "HostPreparing") return Number(e.retryAfter) > 0 ? "cooldown" : "notReady";
     if (r === "HostShuttingDown") return "closing";
     return "failed";
   }
   if (e.kind === "timeout") return "timeout";
   if (e.kind === "connectionLost") return "lost";
+  // the host stopped the join (download or load stalled, took too long): its reason is in the details
+  if (e.kind === "dropped") return "dropped";
   if (e.kind === "kicked") return "kicked";
   if (e.kind === "banned") return "banned";
   if (e.kind === "sessionEnded") return "ended";
@@ -2819,6 +2838,9 @@ function endCopy(e) {
 
 // the ends a new attempt cannot fix: the player has to change something first (or cannot join at all)
 const NO_RETRY = { kicked: 1, banned: 1, notAllowed: 1, ended: 1, mods: 1, modsRequired: 1, conflictYou: 1, conflictHost: 1, game: 1, build: 1, content: 1, assets: 1 };
+
+// the ends whose main text already says everything the details would (the details stay in "Copy details")
+const NO_DETAILS = { cooldown: 1, hostProof: 1, passwordRequired: 1 };
 
 // the list titles of the screens with lists: code mods, DLC and content packs, asset packs
 const END_LISTS = {
@@ -2945,6 +2967,7 @@ function EndOverlay(p) {
   const title = t("st.ui.end.title." + (copy === "conflictYou" || copy === "conflictHost" ? "conflict" : copy));
   const text = canJoinAnyway ? t(copy === "assets" ? "st.ui.end.text.assetsOverridable" : "st.ui.end.text.modsOverridable")
     : copy === "modsRequired" && e.restOverridable === true ? t("st.ui.end.text.modsRequiredRest")
+    : copy === "cooldown" ? t("st.ui.end.text.cooldown", { WAIT: waitText(e.retryAfter) })
     : t("st.ui.end.text." + copy);
   const required = copy === "modsRequired" ? objs(e.required) : [];
   const missing = objs(e.missing);
@@ -2970,7 +2993,7 @@ function EndOverlay(p) {
         )
       : null,
     copy === "game" && str(e.hostGame) ? h(VersionLine, null, t("st.ui.end.versions", { HOST: str(e.hostGame), YOU: str(e.yourGame) || "?" })) : null,
-    copy === "build" && str(e.hostProto) && !str(e.hostBuild) ? h(VersionLine, null, t("st.ui.end.versions", { HOST: str(e.hostProto), YOU: str(e.yourProto) || "?" })) : null,
+    copy === "build" && str(e.hostProto) && !str(e.hostBuild) ? h(VersionLine, null, t("st.ui.end.protocols", { HOST: str(e.hostProto), YOU: str(e.yourProto) || "?" })) : null,
     copy === "build" && str(e.hostBuild) ? h(VersionLine, null, t("st.ui.end.builds", { HOST: str(e.hostBuild), YOU: str(e.yourBuild) || "?" })) : null,
     needsPassword
       ? h(
@@ -2988,7 +3011,7 @@ function EndOverlay(p) {
           h("div", { style: { flex: 1, minWidth: 0, fontSize: "14rem", color: OV.text, lineHeight: 1.4, overflowWrap: "break-word", wordBreak: "break-word" } }, t("st.ui.end.joinAnywayWarning"))
         )
       : null,
-    str(e.text) && !isMods
+    str(e.text) && !isMods && !NO_DETAILS[copy]
       ? h(
           "div",
           { style: { marginTop: "4rem", padding: "10rem 12rem", borderRadius: "4rem", backgroundColor: OV.well } },

@@ -858,11 +858,11 @@ namespace SkylineTogether.Core.Session
                     return;
                 case ControlKind.Kick:
                     EndText = LocalText.Read(_reader);
-                    End(NetText.Format(NetText.English[NetText.ClientKicked], new[] { "REASON", EndText.Text }), ClientEndKind.Kicked);
+                    End(NetText.Format(NetText.English[NetText.IsRemovalPhrase(EndText.Key) ? NetText.ClientKicked : NetText.ClientKickedFor], new[] { "REASON", EndText.Text }), ClientEndKind.Kicked);
                     return;
                 case ControlKind.Ban:
                     EndText = LocalText.Read(_reader);
-                    End(NetText.Format(NetText.English[NetText.ClientBanned], new[] { "REASON", EndText.Text }), ClientEndKind.Banned);
+                    End(NetText.Format(NetText.English[NetText.IsRemovalPhrase(EndText.Key) ? NetText.ClientBanned : NetText.ClientBannedFor], new[] { "REASON", EndText.Text }), ClientEndKind.Banned);
                     return;
                 case ControlKind.SessionEnd:
                     EndText = LocalText.Read(_reader);

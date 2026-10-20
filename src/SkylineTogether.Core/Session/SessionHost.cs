@@ -1857,7 +1857,8 @@ namespace SkylineTogether.Core.Session
             }
             if (PendingChallenges(p.AuthKeys) >= Math.Max(1, _options.MaxPendingChallengesPerKey))
             {
-                Refuse(p, RefuseReason.BadPassword, NetText.Of(NetText.RefuseTooManyAttempts));
+                // with a retry time, so the joiner's screen is the lockout one (wait, then try again), not "Wrong password"
+                Refuse(p, RefuseReason.BadPassword, NetText.Of(NetText.RefuseTooManyAttempts), RetryReport(5));
                 return;
             }
             p.AwaitingPassword = true;

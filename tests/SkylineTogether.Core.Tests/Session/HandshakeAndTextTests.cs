@@ -272,7 +272,7 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.NotNull(lines.Find(l => l.Key == NetText.ChatRemoved));
             Assert.Equal(ClientEndKind.Kicked, ben.EndKind);
             Assert.Equal(NetText.KickByHost, ben.EndText.Key);
-            Assert.Contains("Removed by the host", ben.EndReason);
+            Assert.Equal("You were removed by the host.", ben.EndReason);
 
             // the receiver's language, the English fallback for an unknown key, and no other key family
             var t = NetText.Of(NetText.ChatJoined, "NAME", "Anna");
@@ -396,7 +396,7 @@ namespace SkylineTogether.Core.Tests.Session
             LocalText.Write(w, NetText.Of(NetText.KickByCoHost, "NAME", "Zoë"));
             LocalText t = LocalText.Read(new ByteReader(w.Buffer, 0, w.Length));
             Assert.Equal(NetText.KickByCoHost, t.Key);
-            Assert.Equal("Removed by Zoë", t.Text);
+            Assert.Equal("removed by Zoë", t.Text);
             Assert.SequenceEqual(new[] { "NAME", "Zoë" }, t.Args);
         }
     }

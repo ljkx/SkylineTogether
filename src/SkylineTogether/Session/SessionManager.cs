@@ -1108,7 +1108,8 @@ namespace SkylineTogether.Session
                     }
                     else if (kind == ClientEndKind.SessionEnded)
                     {
-                        Notify(LocaleSource.Resolve("st.toast.recovery.ended", "REASON", reason ?? ""), ProgressState.Warning);
+                        // the toast starts with the reason: a host that sent none ended the session itself
+                        Notify(LocaleSource.Resolve("st.toast.recovery.ended", "REASON", string.IsNullOrEmpty(reason) ? LocaleSource.Resolve(NetText.EndByHost) : reason), ProgressState.Warning);
                     }
                     else if (kind == ClientEndKind.LocalFault)
                     {
@@ -1333,8 +1334,9 @@ namespace SkylineTogether.Session
             string text = LocaleSource.Localize(said);
             switch (client.EndKind)
             {
-                case ClientEndKind.Kicked: return LocaleSource.Resolve(NetText.ClientKicked, "REASON", text);
-                case ClientEndKind.Banned: return LocaleSource.Resolve(NetText.ClientBanned, "REASON", text);
+                // "removed by the host" goes into a sentence; a reason of its own (a sentence) follows a colon
+                case ClientEndKind.Kicked: return LocaleSource.Resolve(NetText.IsRemovalPhrase(said.Key) ? NetText.ClientKicked : NetText.ClientKickedFor, "REASON", text);
+                case ClientEndKind.Banned: return LocaleSource.Resolve(NetText.IsRemovalPhrase(said.Key) ? NetText.ClientBanned : NetText.ClientBannedFor, "REASON", text);
                 case ClientEndKind.HostNotProven: return text;
                 case ClientEndKind.Refused:
                 case ClientEndKind.RefusedTemporarily:

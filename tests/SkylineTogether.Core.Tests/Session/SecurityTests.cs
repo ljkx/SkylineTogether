@@ -253,6 +253,8 @@ namespace SkylineTogether.Core.Tests.Session
             Pump(rig, peers);
             Assert.Equal(2, peers.FindAll(p => p.Challenge() != null).Count, "two open challenges at most");
             Assert.Equal(RefuseReason.BadPassword, ReasonOf(peers[2]));
+            MismatchReport report = MismatchReport.Decode(peers[2].Refusal().MismatchReport);
+            Assert.True(report != null && report.RetryAfterSeconds > 0, "a retry time: the joiner sees the lockout screen, not \"Wrong password\"");
         }
 
         [Test]
@@ -529,7 +531,7 @@ namespace SkylineTogether.Core.Tests.Session
             rig.Run(30);
             Assert.Equal(SessionRole.Viewer, rig.Host.GetRole(ben.LocalPeer));
             Assert.Equal(ClientEndKind.Kicked, vic.EndKind);
-            Assert.Contains("Removed by Co", vic.EndReason);
+            Assert.Equal("You were removed by Co.", vic.EndReason);
 
             // demoted, the former co-host loses the rights
             Assert.True(rig.Host.SetRole(co.LocalPeer, SessionRole.Builder));
