@@ -54,7 +54,10 @@ function Hide-UserFolder([string]$file) {
     if (-not $profileDir) { return }
     try {
         $text = [IO.File]::ReadAllText($file)
-        $forms = @($profileDir, $profileDir.Replace('\', '/'), $profileDir.Replace('\', '\\')) | Select-Object -Unique
+        $paths = @($profileDir)
+        # the 8.3 short form of the user folder names the user too
+        try { $paths += (New-Object -ComObject Scripting.FileSystemObject).GetFolder($profileDir).ShortPath } catch { }
+        $forms = @($paths | ForEach-Object { $_; $_.Replace('\', '/'); $_.Replace('\', '\\') }) | Where-Object { $_ } | Select-Object -Unique
         foreach ($form in $forms) {
             $text = [Text.RegularExpressions.Regex]::Replace($text, [Text.RegularExpressions.Regex]::Escape($form), '%USERPROFILE%', 'IgnoreCase')
         }
@@ -176,8 +179,11 @@ while ($game) {
 }
 Write-Ok 'The game is not running'
 
-# leftovers of an install that was interrupted (outside the Mods folder, so the game never loads them)
-Get-ChildItem -LiteralPath $UserData -Directory -Filter "$ModName-setup-*" -ErrorAction SilentlyContinue | ForEach-Object { Remove-Dir $_.FullName }
+# leftovers of an install that was interrupted (outside the Mods folder, so the game never loads them); a previous copy
+# that could not be put back is kept while no copy is installed
+Get-ChildItem -LiteralPath $UserData -Directory -Filter "$ModName-setup-*" -ErrorAction SilentlyContinue |
+    Where-Object { -not $_.Name.StartsWith("$ModName-setup-old-") -or (Test-Path -LiteralPath (Join-Path $ModsDir $ModName)) } |
+    ForEach-Object { Remove-Dir $_.FullName }
 
 # ------------------------------------------------------------------------------------------- uninstall
 if ($Uninstall) {
@@ -253,6 +259,10 @@ try {
 catch {
     Write-Bad "Installing failed: $($_.Exception.Message)"
     if (Test-Path -LiteralPath $ModDir) { Write-Host '   The previously installed copy is unchanged.' }
+    elseif (Test-Path -LiteralPath $previous) {
+        # the old copy could not be put back: it is kept where it is, never deleted
+        Write-Warn2 "The previously installed copy could not be put back; it is kept in $previous. Rename that folder to $ModName to use it again."
+    }
     Remove-Dir $staging
     Remove-Dir $tmp
     Finish 1
@@ -260,7 +270,8 @@ catch {
 finally {
     Remove-Dir $tmp
     Remove-Dir $staging
-    Remove-Dir $previous
+    # the old copy goes only once a copy is in place (the new one, or the old one put back)
+    if (Test-Path -LiteralPath $ModDir) { Remove-Dir $previous }
 }
 $dll = Join-Path $ModDir 'SkylineTogether.dll'
 $installedBuild = (Get-Sha256 $dll).Substring(0, 12)
