@@ -1,6 +1,6 @@
 # Release notes template
 
-The notes of every GitHub release follow this structure ([releasing.md](releasing.md), step 7). Copy the block
+The notes of every GitHub release follow this structure ([releasing.md](releasing.md), step 6). Copy the block
 below, replace the `<...>` placeholders and delete sections that do not apply. Keep the wording plain: what changed for
 players first, technical detail only where a player needs it.
 
@@ -17,7 +17,7 @@ protocol, so it cannot play with earlier versions.">
 ## What's new
 
 <The CHANGELOG.md section of this version, shortened: one plain sentence per entry, grouped as Added / Changed /
-Fixed. Link the full section: https://github.com/ljkx/SkylineTogether/blob/main/CHANGELOG.md>
+Fixed. Link the full section: https://github.com/ljkx/SkylineTogether/blob/v<version>/CHANGELOG.md>
 
 ## Works with your mods
 
@@ -40,10 +40,10 @@ the game starts.
 
 Back up your saves before you host or join.
 
-## Build id
+## Build ID
 
-`<build id>`: shown at the bottom of the Skyline Together panel. The Paradox Mods version and this setup have the
-same build id, so players of both routes can play together. Built and tested with game version `<game version>`,
+`<build ID>`: shown at the bottom of the Skyline Together panel. The Paradox Mods version and this setup have the
+same build ID, so players of both routes can play together. Built and tested with game version `<game version>`,
 built from commit `<commit>` with .NET SDK `<sdk version>`.
 
 ## Checksums (SHA-256)
@@ -65,9 +65,10 @@ The hash must match the line above (letter case does not matter).
 
 Open an [issue](https://github.com/ljkx/SkylineTogether/issues/new/choose) with the logs of every player:
 [Reporting a bug](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug)
-explains where they are for both install routes and what they contain (player names, Steam IDs and the session name;
-Skyline Together writes your user folder as `%USERPROFILE%`). Never attach crash dumps (`.dmp`) to a public issue.
+explains where they are for both install routes and what they contain (player names, Steam IDs and the session name,
+and IP addresses only shortened; Skyline Together writes your user folder as `%USERPROFILE%`). Never attach crash dumps (`.dmp`) to a public issue.
 ````
 
-The checksums are printed at the end of `python tools/installer/make_installer.py`. Compute them again after any
-rebuild; a rebuilt zip has a different checksum and a different build id.
+The checksums are printed at the end of `python tools/installer/make_installer.py`. Builds and zips are reproducible
+([Reproducible builds](building.md#reproducible-builds)): the same commit, SDK, game assemblies and Python give the
+same checksums and build ID; a change of any of them gives new ones, so take the values from the files you tested.

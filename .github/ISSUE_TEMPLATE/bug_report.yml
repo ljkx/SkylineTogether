@@ -12,10 +12,11 @@ body:
         - **Installed from Paradox Mods:** attach `Logs\SkylineTogether.log` and the newest `Logs\SkylineTogether-diagnostics-*.txt`
           from `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`.
 
-        **Privacy:** issues are public. The files contain player names, Steam IDs, the session name and, for direct-IP bans,
-        IP addresses (never passwords or chat). Skyline Together 0.2.0 and later write your user folder as `%USERPROFILE%` in
-        their own files. `Player.log`, and the logs of older versions, contain your Windows user name in file paths unless
-        they were collected with the `Collect-Logs.cmd` of 0.2.0 or later; replace it before you attach them. If you do not
+        **Privacy:** issues are public. The files contain player names, Steam IDs and the session name, and IP addresses
+        only shortened (`203.0.113.x`); never passwords or chat. Skyline Together 0.2.0 and later write your user folder as
+        `%USERPROFILE%` in their own files. The game's own logs (`Player.log`, `Modding.log`, `UI.log`) contain your Windows
+        user name in file paths unless they were collected with the `Collect-Logs.cmd` of 0.2.0 or later, and the logs of
+        older versions also contain full IP addresses; remove them before you attach these files. If you do not
         want this public, say so and we will arrange another way to send the files.
         **Never attach crash dumps (`.dmp`) here**: they can contain passwords. Send them only privately, and only when asked.
         Details: [Reporting a bug](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug).
@@ -40,8 +41,8 @@ body:
   - type: input
     id: build
     attributes:
-      label: Build id
-      description: Shown at the bottom of the Skyline Together panel ("Build …") and printed by Install.cmd. Give every player's build id.
+      label: Build ID
+      description: Shown at the bottom of the Skyline Together panel ("Build …") and printed by Install.cmd. Give every player's build ID.
       placeholder: "host: 1a2b3c4d5e6f, other player: 1a2b3c4d5e6f"
     validations:
       required: true

@@ -88,7 +88,7 @@ netstandard2.0, so it also compiles for the net8.0 tests (decision 0001 lists th
 
 A plain `dotnet build` (or an IDE build) does not touch the Mods folder. `-p:DeployMod=true` copies the build into
 `ModDeployDir` afterwards (the `DeployMod` target); `tools/build.sh --deploy` does the same, but only after the checks
-and tests passed. (Before 0.2.0 a plain build deployed by default, which could replace a tested release build.)
+and tests passed. A plain `dotnet build` never deploys, so it cannot replace a tested release build in the Mods folder.
 
 ## Without the game
 
@@ -138,7 +138,7 @@ python tools/installer/make_installer.py
 The installer also takes `-Uninstall` (with `-RemoveSettings`) and, with `-CollectLogs`, `-IncludeDumps` (crash dumps
 are left out by default).
 
-The **build id** printed by the installer and written into `TWO-PLAYER-CHECKLIST.txt` is the first 12 hex digits of the
+The **build ID** printed by the installer and written into `TWO-PLAYER-CHECKLIST.txt` is the first 12 hex digits of the
 SHA-256 of `SkylineTogether.dll`. The game computes the same value from the DLL it loaded and compares it when a player
 joins. It changes whenever the DLL's bytes change; see [Reproducible builds](#reproducible-builds) and
 [releasing.md](releasing.md).
@@ -149,12 +149,12 @@ ModPublisher; see [publishing-paradox-mods.md](publishing-paradox-mods.md). The 
 ## Reproducible builds
 
 The build is deterministic: building the same commit again gives a byte-identical `SkylineTogether.dll`, so the same
-build id, on any machine and in any checkout folder, as long as these inputs are the same:
+build ID, on any machine and in any checkout folder, as long as these inputs are the same:
 
 - **the source files, including their line endings.** The deterministic PDB records a checksum of every source file
   and embedded resource, and the DLL embeds the PDB's id. `.gitattributes` therefore checks every text file out with
   LF on every platform, whatever `core.autocrlf` says (only `.ps1`, `.cmd`, `.bat` and `.sln` files are CRLF, and
-  none of them is compiled). Before this rule, a CRLF and an LF checkout of the same commit gave different build ids.
+  none of them is compiled). A CRLF checkout would give a different build ID.
   If an old clone still has CRLF files, refresh it once: `git rm -r --cached -q . && git reset --hard`.
 - **the .NET SDK, which brings the compiler.** `global.json` pins SDK 8.0.425 and allows later 8.0 feature bands and
   patches (`rollForward: latestFeature`). A different SDK can emit different IL, so a release states the SDK version

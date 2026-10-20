@@ -82,7 +82,6 @@ Details per mod: [MOD-COMPATIBILITY.md](docs/design/MOD-COMPATIBILITY.md).
 - A mod update can switch its dedicated support off until Skyline Together is updated (the diagnostics say so); the
   mod then gets the automatic handling.
 - Options-menu buttons of other mods that change the whole city ("apply to all") work only when the host presses them.
-- Objects from assets a player lacks are left out on that player's game.
 - Repairs of differences happen in the background and can take a moment.
 - The host's upload speed limits large sessions.
 
@@ -98,7 +97,7 @@ of them, and Skyline Together warns at start.
 1. Subscribe to [Skyline Together](https://mods.paradoxplaza.com/mods/163578/Windows) on the website, or in the game's
    main menu open **Paradox Mods** and search for **Skyline Together**. Make sure it is enabled in your active playset.
 2. Restart the game. Subscriptions update automatically, so everyone who subscribed has the same version after a
-   restart; the panel's footer shows the build id to compare.
+   restart; the panel's footer shows the build ID to compare.
 
 **With the setup from GitHub** (the same release as on Paradox Mods; new versions may appear here first)
 
@@ -107,10 +106,10 @@ of them, and Skyline Together warns at start.
    [Releases page](https://github.com/ljkx/SkylineTogether/releases) (not the green "Code" button: that is the source
    code), or [build it yourself](docs/dev/building.md#packaging-and-the-player-installer).
 3. Unzip it and double-click **`Install.cmd`**. It installs the mod into
-   `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether` and prints a **build id**:
+   `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether` and prints a **build ID**:
    every player must see the same one.
 
-A release published on both has the same build id, so players of both ways can play together. Disable any other
+A release published on both has the same build ID, so players of both ways can play together. Disable any other
 multiplayer mod. Details, manual installation and uninstalling: [Getting started](docs/guide/getting-started.md#install).
 
 ## Quick start
@@ -154,9 +153,11 @@ To report a bug, every player clicks **Write diagnostics** in the panel, then:
   `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`.
 
 Open a [bug report](https://github.com/ljkx/SkylineTogether/issues/new/choose) with the files of every player. They
-contain player names, Steam IDs and the session name, but no passwords or chat; Skyline Together writes your user folder
-as `%USERPROFILE%`, so its files do not contain your Windows user name. Never attach crash dumps (`.dmp`). See
-[Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug) for the details.
+contain player names, Steam IDs and the session name, and IP addresses only shortened (`203.0.113.x`); never passwords
+or chat. Skyline Together writes your user folder as `%USERPROFILE%`, so its files do not contain your Windows user
+name. The full IP addresses of players banned by address stay in the host's settings file, which is not part of a bug
+report. Never attach crash dumps (`.dmp`). See [Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug) for the
+details.
 
 ## Compatibility
 
@@ -169,7 +170,8 @@ as `%USERPROFILE%`, so its files do not contain your Windows user name. Never at
 
 ## Building from source
 
-Requires Windows, the game, the .NET SDK 8 or newer and Git Bash. No NuGet package is used.
+Requires Windows, the game, the .NET 8 SDK (8.0.425 or a later 8.0 SDK, see `global.json`) and Git Bash. No NuGet
+package is used.
 
 ```sh
 tools/build.sh                 # Release build, UI checks, tests

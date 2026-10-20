@@ -55,7 +55,7 @@ permissions back. To let new players only watch at first, turn on **New players 
 ### Can I ban a player?
 
 Yes. In the player list, **…** → **Ban** (click twice to confirm) removes the player and keeps them out of your sessions:
-by Steam ID, and also by address for a player who joined by direct IP (an IPv6 address by its /64 network). **Kick**
+by Steam ID, and also by address for a player who joined by direct IP. **Kick**
 only removes them;
 they may join again. The **Banned players** list in the host options has an **Unban** button per entry. To keep
 strangers out from the start, use a password or **Friends and invited only**.
@@ -129,8 +129,8 @@ Small differences are found and repaired automatically in the background. If som
 
 ### Can I check a build without a second PC?
 
-Yes, with the solo test: it records what a joining player would receive and replays it through the joining player's
-code path on the same PC. See [testing.md](testing.md#solo-test-one-pc).
+Yes, with the solo test: it records what a joining player would receive and replays it on the same PC the way a
+joining player's game would load it. See [testing.md](testing.md#solo-test-one-pc).
 
 ### How do I report a bug?
 

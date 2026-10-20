@@ -49,7 +49,8 @@ reference-assembly packages nor test frameworks.
   loop over their cases and name the failing case in the assertion message.
 - The Core assembly is built for `net472` (the game's profile) instead of `netstandard2.0`; it is loaded by the game's
   Mono exactly like the game assembly and depends on nothing the game does not ship.
-- Builds need the game installed (or `GameDir`/`GameManagedPath` pointing at a copy of its Managed folder).
+- The game layer needs the game installed (or `GameDir`/`GameManagedPath` pointing at a copy of its Managed folder);
+  Core and its tests build without it (see below).
 
 ## Verification
 

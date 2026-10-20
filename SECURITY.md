@@ -8,7 +8,7 @@ vulnerability reporting: the repository's **Security** tab → **Report a vulner
 open an issue that asks for a private contact, without any details.
 
 Please include what an attacker needs (a player in the session, someone who knows the host's Steam ID or IP address,
-...), what they can achieve, the version and build id you tested and, if possible, steps to reproduce. You will get an
+...), what they can achieve, the version and build ID you tested and, if possible, steps to reproduce. You will get an
 answer within a few days. Fixes go into the next release.
 
 ## Supported versions
@@ -107,8 +107,9 @@ identity. A locked-out player is told how long to wait (not "wrong password").
   settings and can be edited in the host options (unban).
 - **Roles are remembered** for the session: a player the host made a viewer (or co-host) gets the same role when they
   join again. A player without a Steam identity (direct IP) is remembered by address, which several people can share
-  (a home router, a carrier's NAT, a VPN): by address only the viewer role is remembered, never builder or co-host. With **New players join as viewers** (host option, off by default) players who join for the first time in
-  a session start as viewers until the host or a co-host makes them builders.
+  (a home router, a carrier's NAT, a VPN): by address only the viewer role is remembered, never builder or co-host.
+  With **New players join as viewers** (host option, off by default) players who join for the first time in a session
+  start as viewers until the host or a co-host makes them builders.
 - A player who stops responding, cannot keep up or whose changes keep failing is **dropped**, not kicked: their game
   offers to join again. Names are unique in a session and never the host's; the host's chat lines carry a badge and
   the session's own lines an info mark.
@@ -120,7 +121,7 @@ identity. A locked-out player is told how long to wait (not "wrong password").
 
 ## Known limitations
 
-These are known and accepted for now; reports about them are welcome only if you see a practical improvement.
+These are known limits of the design. Reports are welcome when you see a practical way to improve them.
 
 - **Trust the people you play with.** A builder can do anything a player can do in the city, including demolishing it.
   Use a password or **Friends and invited only**, and make players you do not know viewers (chat only).
@@ -140,10 +141,13 @@ These are known and accepted for now; reports about them are welcome only if you
 - **Visible identifiers.** Players in a session see each other's Steam IDs. With direct IP connections, joining players
   know the host's IP address. A hosted session creates a friends-only Steam lobby whose data includes the session name
   and whether a password is set.
-- **Logs and diagnostics** contain player names, Steam IDs, session names and, for direct-IP bans, IP addresses (not
-  passwords or chat). Other direct-IP addresses are shortened (`203.0.113.x`), and paths in the user folder are written
-  as `%USERPROFILE%`, so Skyline Together's own files do not contain the Windows user name. The game's `Player.log`
-  does; `Collect-Logs.cmd` replaces the user folder in the files it collects. Crash dumps (`.dmp`) can contain anything that was in the game's memory, including
-  passwords: share them only privately (`Collect-Logs.cmd` includes them only with `-IncludeDumps`). The mod's own log
-  is rate-limited and capped at 64 MiB per game start. Think before attaching files to a public issue; see
+- **Logs and diagnostics** contain player names, Steam IDs and session names, and IP addresses only shortened
+  (`203.0.113.x`); never passwords or chat. Paths in the user folder are written as `%USERPROFILE%`, so Skyline
+  Together's own files do not contain the Windows user name. The full IP addresses of players banned by address are
+  stored in the host's settings file, next to the passwords (see above), which no bug-report step collects. The game's
+  own logs (`Player.log`, `Modding.log`, `UI.log`) contain the user name; `Collect-Logs.cmd` replaces the user folder
+  in the files it collects. Files written by versions before 0.2.0 contain the user name and full IP addresses. Crash
+  dumps (`.dmp`) can contain anything that was in the game's memory, including passwords: share them only privately
+  (`Collect-Logs.cmd` includes them only with `-IncludeDumps`). The mod's own log is rate-limited and capped at 64 MiB
+  per game start. Think before attaching files to a public issue; see
   [Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug).

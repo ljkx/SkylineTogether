@@ -3,8 +3,8 @@ SKYLINE TOGETHER - TWO-PLAYER CHECKLIST (build __BUILDID__)
 
 SETUP (both players, 2 minutes)
 1. Close Cities: Skylines II.
-2. Double-click Install.cmd. It installs the mod and prints a "Build id".
-   Both players must see the SAME build id (also shown at the bottom of the Skyline Together panel).
+2. Double-click Install.cmd. It installs the mod and prints a "Build ID".
+   Both players must see the SAME build ID (also shown at the bottom of the Skyline Together panel).
 3. For the simplest setup, use an empty playset on BOTH PCs, so the mod lists match. Disable the old
    "CS2 Multiplayer Mod" if you have it.
 4. Have Steam running and be logged in on both PCs.
@@ -52,12 +52,12 @@ The same steps with the same numbers: docs/guide/testing.md on GitHub.
 IF SOMETHING IS WRONG (or after the session)
 - In the Skyline Together panel open "Network & diagnostics" and click "Write diagnostics" (both players).
 - Then double-click Collect-Logs.cmd -> a zip appears on your Desktop. Paths to your user folder are replaced in
-  the copied logs; the zip still contains player names and Steam IDs.
+  the copied logs; the zip still contains player names, Steam IDs and the session name.
 - Attach both zips to a bug report on GitHub (github.com/ljkx/SkylineTogether/issues) with a short note:
   which step, what each player saw (screenshots help).
 
 SOLO TEST (host alone, no second PC needed)
-Panel -> "Record test session" -> play 5-10 minutes -> "Stop recording" -> save your city ->
+Panel, "Solo test" tab -> "Record test session" -> play 5-10 minutes -> "Stop recording" -> save your city ->
 panel "Solo test" -> pick the recording -> "Replay & verify". The verdict appears in the panel;
 Collect-Logs.cmd includes it.
 

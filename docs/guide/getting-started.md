@@ -19,7 +19,7 @@ a session. Back up your saves before you host or join.
 - Cities: Skylines II, **Steam version**, with Steam running and logged in on every PC. All connections go through
   Steam, including direct IP connections.
 - Every player needs:
-  - the **same build** of Skyline Together (compare the build id at the bottom of the Skyline Together panel),
+  - the **same build** of Skyline Together (compare the build ID at the bottom of the Skyline Together panel),
   - the **same game version**,
   - by default, the **same code mods** in the same versions (the host can relax this, see [Mods](#mods)).
 - Windows (the installer is a PowerShell script).
@@ -28,14 +28,14 @@ a session. Back up your saves before you host or join.
 
 There are two ways to install Skyline Together: a Paradox Mods subscription or the setup from GitHub. Use **one** of
 them. If the game finds both a local copy and a subscription, it loads only one of them, and Skyline Together shows a
-warning that names both copies and their build ids. Keep one copy and restart the game.
+warning that names both copies and their build IDs. Keep one copy and restart the game.
 
 ### From Paradox Mods (recommended)
 
 1. Subscribe to [Skyline Together](https://mods.paradoxplaza.com/mods/163578/Windows) on the website, or in the game's
    main menu open **Paradox Mods**, search for **Skyline Together** and subscribe.
 2. Make sure it is enabled in your active playset, then restart the game.
-3. Compare the build id in the panel's footer with your friends'. Subscriptions update when the game starts, so after
+3. Compare the build ID in the panel's footer with your friends'. Subscriptions update when the game starts, so after
    a new version everyone needs a restart.
 
 To uninstall, unsubscribe (or disable it in the playset).
@@ -53,8 +53,9 @@ disable the mod in your playset) and use the installer below. Everyone in the se
 3. Unzip it and double-click **`Install.cmd`**. The installer:
    - checks that the game's user folder exists and that the game is not running,
    - copies the mod into `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether`,
-   - prints a **build id** (12 characters). Every player must see the same build id.
-   - lists your subscribed code mods and warns about a known conflicting multiplayer mod.
+   - prints a **build ID** (12 characters); every player must see the same one,
+   - lists your subscribed code mods and warns about a known conflicting multiplayer mod, and about a Paradox Mods
+     subscription of Skyline Together next to this copy.
 4. If you use another multiplayer mod, disable it in your playset. Two multiplayer mods at once conflict.
 
 The setup folder also contains `Collect-Logs.cmd` (see [Troubleshooting](troubleshooting.md#reporting-a-bug)) and
@@ -72,8 +73,8 @@ Solo test recordings in `ModsData\SkylineTogether` are kept; delete that folder 
 
 ### Manually
 
-Extract `SkylineTogether-<version>.zip` (made by `tools/build.sh --package`) into the `Mods` folder above, so the files
-end up in `Mods\SkylineTogether`. Local mods take precedence over Paradox Mods subscriptions of the same name, but
+Extract `SkylineTogether-<version>.zip` from the [Releases page](https://github.com/ljkx/SkylineTogether/releases) into
+the `Mods` folder above, so the files end up in `Mods\SkylineTogether`. Local mods take precedence over Paradox Mods subscriptions of the same name, but
 don't keep both: see the note at the top of this section.
 
 ## Host a city
@@ -99,7 +100,8 @@ Hosting always starts from inside a loaded city.
      panel can join through Steam; others are told they are not invited.
    - **New players join as viewers**: off by default. When on, players who join this session for the first time can
      watch and chat but not build until you (or a co-host) make them builders in the player list. Players who were in
-     the session before keep their role when they rejoin.
+     the session before keep their role when they rejoin (after a direct IP join without Steam, only a viewer role is
+     kept).
    - **Allow direct IP connections**: off by default, and only available while a password is set (Steam does not check
      direct joiners, so the password does). Also accepts connections on a UDP port (default 27015), which needs port
      forwarding on your router. Steam connections work without it.
@@ -113,8 +115,8 @@ Hosting always starts from inside a loaded city.
    - copy **Your Steam ID** (copy icon at the top of the panel) and send it to them. With direct IP enabled, they can
      also use your public IP address and port.
 
-While a player joins, your game saves the city for them and **your simulation is paused until they are in**. The panel
-shows "A player is joining – the game is paused until they are in." and the download progress per player.
+While a player joins, your game saves the city for them and **your simulation is paused until they have joined**. The
+panel shows "A player is joining – the game is paused until they have joined." and the download progress per player.
 
 ## Join a friend
 
@@ -162,7 +164,7 @@ and Esc goes back.
   and viewers. **Kick** and **Ban** ask for a second click (**Confirm kick**, **Confirm ban**) within 3 seconds.
 - **Closing the panel.** The **×** in its title bar, the Skyline Together button again, or Esc (when no text field
   has focus).
-- **Build id.** The panel's footer (and the main menu page) shows **Build &lt;12 characters&gt;**, the same id the
+- **Build ID.** The panel's footer (and the main menu page) shows **Build &lt;12 characters&gt;**, the same ID the
   GitHub installer prints. All players must show the same one.
 - **Resync.** If your city drifts apart from the host's in many places that repairs cannot fix, the panel offers
   **Rejoin now**: your game rejoins with a fresh copy of the city (as long as a join takes). **Not now** hides the offer
@@ -181,7 +183,7 @@ and Esc goes back.
 
 The host changes a role with **…** → **Make viewer** / **Make builder** / **Make co-host** in the player list, for
 players who are fully in. Roles are remembered for the session: a player who leaves and joins again gets the same
-role. A kicked player can join again; a banned one cannot until the host unbans them (host options,
+role (a player who joined by direct IP without Steam keeps only a viewer role). A kicked player can join again; a banned one cannot until the host unbans them (host options,
 **Banned players**). A player removed after loading the city sees "You were removed from the session" (or "removed and
 banned") and can return to the main menu or keep an offline copy.
 

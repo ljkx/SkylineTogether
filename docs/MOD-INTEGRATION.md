@@ -27,7 +27,9 @@ API version: **1**.
 
 Join check: a mod that can change the shared world must be on every machine in the same version. Skyline Together
 decides this from a scan of your assembly (saved components, saved systems, prefab types, runtime prefabs, tools,
-systems in world phases, Harmony patches outside UI code). A mod with none of these never blocks a join.
+systems in world phases, UI systems that write the city (entity writes other than highlights and batch updates, or
+calls into the game's budget, tax, loan and map-tile systems), Harmony patches outside UI code or of the game's UI
+systems that change the city). A mod with none of these never blocks a join.
 
 ## 2. Declarations
 

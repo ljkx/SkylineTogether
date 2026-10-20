@@ -153,7 +153,7 @@ Core types declare their thread with `[ThreadAffinity]`
 | [`Mod.cs`](../src/SkylineTogether/Mod.cs) | Entry point: `OnLoad` creates the controllers and registers the systems, each step guarded; `OnDispose` |
 | `Compat` | Mod compatibility: `ModAdapter` and the built-in adapters, `ModCompat` (registry, gates), `ModAssemblyScanner` + `HarmonyPatches` (automatic scan), `GenericModAdapter`, `ModIntegration` (API for other mods), `ModStateWatcher`, `ModSettingsSync`, `AssetSources` |
 | `Data` | Embedded locale tables |
-| `Diagnostics` | `Probes` (self-test), `Features` (the feature registry), `Guard`, `Perf`, `GameLog`, `DiagnosticsDump`, `InstallInfo` (installed copies, build id source) |
+| `Diagnostics` | `Probes` (self-test), `Features` (the feature registry), `Guard`, `Perf`, `GameLog`, `DiagnosticsDump`, `InstallInfo` (installed copies, build ID source) |
 | `Net` | `SteamSocketsTransport` |
 | `Presence` | Cursors, name tags and other players' tool previews |
 | `Replay` | `ReplayController`: Record test session, Replay & verify |
@@ -177,7 +177,9 @@ session panel, chat dock, name tags, join progress and error screens. It reads t
 `presence`, `perf`), [`ReplayUISystem`](../src/SkylineTogether/UI/ReplayUISystem.cs) (`replay`) and
 [`InviteUISystem`](../src/SkylineTogether/UI/InviteUISystem.cs) (`friends`, `overlayAvailable`) publish, and calls
 their triggers ([ui/README.md](../ui/README.md) lists them). Every string is a locale key resolved through `cs2/l10n` from
-`src/SkylineTogether/Data/locale.<id>.json` ([`LocaleSource`](../src/SkylineTogether/Settings/LocaleSource.cs)).
+`src/SkylineTogether/Data/locale.<id>.json` ([`LocaleSource`](../src/SkylineTogether/Settings/LocaleSource.cs)); texts
+the C# side builds for the UI (the self-test line, the network line, feature names) are resolved there in the player's
+language too.
 `tools/ui_smoke.mjs` checks bindings, triggers and keys against the C# side.
 
 ### Code rules
@@ -252,7 +254,7 @@ bans, the join policy and the password.
 sequenceDiagram
   participant C as Client
   participant H as Host
-  C->>H: Hello (protocol version, build id, game version, name, join flags)
+  C->>H: Hello (protocol version, build ID, game version, name, join flags)
   Note over H: Screen: ban list, join policy (transport identity)
   Note over H: protocol version differs: Refuse (no host version<br/>while a password is still owed)
   opt password needed
@@ -262,7 +264,7 @@ sequenceDiagram
   H->>C: Control Authenticated (host proof; empty without a password)
   Note over C: checks the host proof
   C->>H: Control ManifestDetail (mods, DLC, asset packs, mod settings)
-  Note over H: TryAdmit: build id, game version, old multiplayer mod, DLC,<br/>mods with city data (always), mods (if required),<br/>asset packs (if required), join cooldown,<br/>duplicate Steam ID (replace or refuse), session full;<br/>"join anyway" passes only the other mods and asset packs
+  Note over H: TryAdmit: build ID, game version, old multiplayer mod, DLC,<br/>mods with city data (always), mods (if required),<br/>asset packs (if required), join cooldown,<br/>duplicate Steam ID (replace or refuse), session full;<br/>"join anyway" passes only the other mods and asset packs
   H->>C: Welcome (peer id, role, permissions, session info)
   H->>C: Control JoinNotice (differences that do not block, if any)
   H->>C: Epoch batch: prefab table, id range, ledger epoch
@@ -313,7 +315,7 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   nothing. `ResolveDuplicate` replaces an
   older connection of the same Steam user, unless it is still loading (then the new attempt is refused with
   `HostPreparing`, which the client treats as retryable). The duplicate is resolved only here, after the password.
-- `TryAdmit` then compares the build id (first 48 bits of the SHA-256 of the loaded DLL,
+- `TryAdmit` then compares the build ID (first 48 bits of the SHA-256 of the loaded DLL,
   [`BuildId`](../src/SkylineTogether.Core/Session/BuildId.cs)) and the game version, and hands the rest to
   [`CompatibilityCheck`](../src/SkylineTogether.Core/Session/CompatibilityCheck.cs). The hello carries one digest per
   category ([`CompatibilityDigests`](../src/SkylineTogether.Core/Session/CompatibilityDigests.cs): XXH64 of the sorted
@@ -374,7 +376,7 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
   the player and the differences, and the host logs the accepted mismatch and lists it per peer in the diagnostics
   (`DescribePeers`). The flag changes nothing but the code mod and asset pack verdict of
   [`CompatibilityCheck`](../src/SkylineTogether.Core/Session/CompatibilityCheck.cs): protocol version, bans, join
-  policy and password come before it, build id, game version, the old multiplayer mod, DLC and mods that store city
+  policy and password come before it, build ID, game version, the old multiplayer mod, DLC and mods that store city
   data are refused whatever it says, and capacity is checked after it. With the option off the flag is ignored (logged) and the refusal is final. Nothing after the
   admission assumes identical mods: records of prefabs or component types the joiner lacks are skipped, the
   `ModSettings` channel only touches settings of loaded adapters, mod channel messages for a mod the receiver lacks are
@@ -387,7 +389,10 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
 - Refuse reasons: `Mismatch`, `Full`, `Banned`, `BadPassword`, `NotInvited`, `HostShuttingDown`, `ProtocolVersion`,
   `HostPreparing`. Every refusal (since protocol 6) carries a report with a "text" record: the detail's locale key and
   parameters ([`LocalText`, `NetText`](../src/SkylineTogether.Core/Session/LocalText.cs)), so the joiner shows it in its
-  own language; the `Refuse` layout itself is unchanged. Before admission a connection may send only `Hello`, `Control`
+  own language; the `Refuse` layout itself is unchanged. A wait travels as `SECONDS`, which each receiver words as
+  `{WAIT}` ("40 s", "about 10 minutes", "about 4 hours"); a feature travels as its English title plus `FEATURE_ID`,
+  which the receiver turns into its own `st.feature.<id>` name. The joining game's own end reasons (timeouts, a failed
+  download or load) are `st.net.client.*` texts too, so the end screen's details are in the player's language. Before admission a connection may send only `Hello`, `Control`
   and `Ping` (anything else ends it unread), bodies of at most 64 KiB until the password is proven and 1 MiB after it,
   4 MiB of decompressed data in total; it must send its hello within 10 s and finish the handshake within 30 s.
 - `Admit` assigns the lowest free peer id (1-254) and the role the player had earlier in the session, else builder (or
@@ -1499,7 +1504,9 @@ diagnostics file go through [`PathRedactor`](../src/SkylineTogether.Core/Diagnos
 profile folder becomes `%USERPROFILE%\...`, another path segment equal to the user name `%USERNAME%`), and the
 joiner's "connecting to" line, host-name lookups and Steam's connection descriptions go through
 [`AddressMask`](../src/SkylineTogether.Core/Diagnostics/AddressMask.cs) (`203.0.113.x`, `2001:db8:x:x:x:x:x:x`,
-`m***.example.org`). Addresses of address bans are kept: the host needs them to unban.
+`m***.example.org`), and every `PeerIdentity` is written with its address masked (connection lines, the name of a peer
+without one); ban, unban and wrong-password lines mask their address keys. The ban list keeps the full addresses of
+address bans (the host's settings): the host needs them to recognise and unban a player.
 
 ### Probes and self-test
 

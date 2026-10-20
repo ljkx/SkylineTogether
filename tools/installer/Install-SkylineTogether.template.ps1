@@ -13,7 +13,7 @@ param(
     [switch]$CollectLogs,
     [switch]$IncludeDumps,   # with -CollectLogs: also the crash dumps (memory snapshots that can contain passwords)
     [switch]$Uninstall,
-    [switch]$RemoveSettings, # with -Uninstall: also delete the mod's settings (host password, ban list)
+    [switch]$RemoveSettings, # with -Uninstall: also delete the mod's settings (session password, ban list)
     [switch]$NoPause,
     [string]$OutDir = '',
     [switch]$SkipGameCheck   # testing only
@@ -146,12 +146,12 @@ if ($CollectLogs) {
         Write-Warn2 ('The zip is {0:N0} MB; GitHub accepts at most 25 MB per file. Attach the files from the zip separately.' -f ($size / 1MB))
     }
     if ($dumps -gt 0) {
-        Write-Host '   It contains player names, Steam IDs and the session name; paths to your user folder were replaced by %USERPROFILE%.'
+        Write-Host '   It contains player names, Steam IDs, the session name and IP addresses only shortened; paths to your user folder were replaced by %USERPROFILE%.'
         Write-Warn2 "It also contains $dumps crash dump(s): snapshots of the game's memory, which can include passwords and chat."
         Write-Host  '        Send this zip privately to the person who asked for it, not as an attachment to a public bug report.'
     } else {
         Write-Host '   Attach this zip to your bug report on GitHub: https://github.com/ljkx/SkylineTogether/issues'
-        Write-Host '   It contains player names, Steam IDs and the session name (no passwords, no chat); paths to your user folder were replaced by %USERPROFILE%.'
+        Write-Host '   It contains player names, Steam IDs, the session name and IP addresses only shortened (no passwords, no chat); paths to your user folder were replaced by %USERPROFILE%.'
         Write-Host '   Crash dumps are not included. Add -IncludeDumps only when asked, and send dumps privately.'
     }
     Finish 0
@@ -198,12 +198,12 @@ if ($Uninstall) {
         if (Test-Path -LiteralPath $t) { Remove-Dir $t; $removedTemps++ }
     }
     if ($removedTemps -gt 0) { Write-Ok 'Removed temporary files' }
-    # the settings hold the host password and the ban list: deleted only when the player says so
+    # the settings hold the session password and the ban list: deleted only when the player says so
     $settingsDir = Join-Path $UserData "ModsSettings\$ModName"
     if (Test-Path -LiteralPath $settingsDir) {
         $remove = [bool]$RemoveSettings
         if (-not $remove -and -not $NoPause) {
-            $answer = Read-Host '   Also delete your Skyline Together settings (player name, host password, ban list)? [y/N]'
+            $answer = Read-Host '   Also delete your Skyline Together settings (player name, session password, ban list)? [y/N]'
             $remove = $answer -match '^\s*(y|yes|j|ja)\s*$'
         }
         if ($remove) { Remove-Dir $settingsDir; Write-Ok "Removed the settings ($settingsDir)" }
@@ -276,7 +276,7 @@ finally {
 $dll = Join-Path $ModDir 'SkylineTogether.dll'
 $installedBuild = (Get-Sha256 $dll).Substring(0, 12)
 Write-Ok "Installed to $ModDir"
-Write-Ok "Build id: $installedBuild  (the host must show the same build id)"
+Write-Ok "Build ID: $installedBuild  (every player must show the same build ID)"
 
 # ------------------------------------------------------------------------------------------- other mods
 Write-Step 'Checking your other mods'
@@ -314,7 +314,7 @@ if (Test-Path -LiteralPath $pdx) {
     }
 }
 if ($codeMods.Count -gt 0) {
-    Write-Host '   Subscribed code mods (only ENABLED ones matter):'
+    Write-Host '   Subscribed code mods (only enabled ones count):'
     $codeMods | Sort-Object -Unique | ForEach-Object { Write-Host "     - $_" }
     Write-Host '   Gameplay mods (e.g. Traffic, Move It, Anarchy) must be enabled on both PCs in the same version.'
     Write-Host '   Visual/UI-only mods (translations, tooltips, icon libraries, Skyve, overlays) may differ.'

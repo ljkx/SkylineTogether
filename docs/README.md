@@ -5,7 +5,7 @@
 - [Getting started](guide/getting-started.md): install, host, join, roles, chat, building previews, speed, saving
 - [Troubleshooting](guide/troubleshooting.md): refused joins, connection problems, desync, reporting a bug
 - [FAQ](guide/faq.md)
-- [Checking a build](guide/testing.md): the two-player checklist and the solo test
+- [Two-player checklist and solo test](guide/testing.md): check that everything works before a long session
 
 ## For contributors
 
@@ -15,7 +15,7 @@ Start with the [architecture](ARCHITECTURE.md) (how the mod works, written from 
 - [Building](dev/building.md): `tools/build.sh`, game path, building without the game, packaging
 - [Tests](dev/testing.md): unit tests, UI smoke test, repository checks, CI
 - [Debugging in game](dev/debugging.md): logs, diagnostics dump, self-test, status lines
-- [Releasing](dev/releasing.md): versions, build id, installer, release steps, and the
+- [Releasing](dev/releasing.md): versions, build ID, installer, release steps, and the
   [release notes template](dev/release-notes-template.md)
 - [Publishing on Paradox Mods](dev/publishing-paradox-mods.md): ModPublisher, the page config, new versions,
   installed twice

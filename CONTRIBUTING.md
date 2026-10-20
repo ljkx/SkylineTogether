@@ -11,7 +11,7 @@ The most useful contributions are:
 
 ## Setup
 
-You need Windows with Cities: Skylines II (Steam), the .NET SDK 8 or newer and Git Bash. Node.js and Python 3 are
+You need Windows with Cities: Skylines II (Steam), the .NET 8 SDK (8.0.425 or later 8.0) and Git Bash. Node.js and Python 3 are
 optional (UI checks, installer, repository checks). No NuGet package is used.
 
 ```sh
@@ -51,7 +51,8 @@ Rules that keep the architecture intact:
 - **Core stays pure .NET.** No Unity, Game or Colossal reference in `src/SkylineTogether.Core`. Use only APIs that exist
   in netstandard2.0 (the game's runtime is Mono/.NET Framework 4.7.2); [decision 0001](docs/decisions/0001-build-without-nuget.md)
   lists the usual traps (`Math.Clamp`, `HashCode`, `Dictionary.TryAdd`, span overloads, ...). No build or CI step
-  checks this (both compile against netstandard2.1 or newer), so reviewers check it by hand.
+  checks this: the game build compiles Core against the game's own runtime, whose `netstandard.dll` is a 2.1 facade,
+  and CI against netstandard2.1, so reviewers check it by hand.
 - **Untrusted input.** Everything decoded from the network goes through the limits in `Protocol/Limits.cs`, and decoders
   throw only `DecodeException` on bad input. See [SECURITY.md](SECURITY.md).
 - **Game internals.** Every game type or member you use must exist in the game version you build against

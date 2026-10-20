@@ -43,7 +43,7 @@ The first line after start is `Skyline Together <assembly version> loading`. The
 Together → Multiplayer) writes `Logs\SkylineTogether-diagnostics-<yyyyMMdd-HHmmss>.txt` (`Diagnostics/DiagnosticsDump.cs`)
 with these sections:
 
-- Versions (build id and how it was found, game version, locale, where the mod is installed and every other copy the game found)
+- Versions (build ID and how it was found, game version, locale, where the mod is installed and every other copy the game found)
 - Self-test and features (every probe result, which features are off and why)
 - Session (mode, recovery state, peers with ping, recent join timings, players, the last system messages)
 - Replication (the sync status line, per-frame timings and byte rates from `Perf`)
@@ -63,8 +63,9 @@ values) and about 20 seconds after the menu or a city appears (the UI module obs
 when its loopback self-test fails, connections run without Steam lanes (every message on lane 0) and the log line
 "connected: … , 3 lanes" is missing.
 
-Results go to the log, the diagnostics dump and the one-line summary "Self-test: X/Y checks passed" in the panel and on
-the title screen. A failed probe switches its feature off (`Diagnostics/Features.cs`), so the feature never touches a
+Results go to the log ("self-test: X/Y checks passed"), the diagnostics dump and the one-line summary in the player's
+language ("Self-test: X of Y checks passed", with "Switched off: …" naming the features that are off) in the panel and
+on the title screen. A failed probe switches its feature off (`Diagnostics/Features.cs`), so the feature never touches a
 member that was not verified. A failed critical feature (session, Steam, replication, speed) blocks hosting and joining
 with "Hosting and joining are unavailable: …". After a game update, the self-test is the first thing to check.
 
@@ -111,7 +112,7 @@ and [ARCHITECTURE.md](../ARCHITECTURE.md#solo-test-record-and-replay).
 
 ## Build identity
 
-One value identifies a build: the **build id**, the first 12 hex digits of the SHA-256 of `SkylineTogether.dll`. The
+One value identifies a build: the **build ID**, the first 12 hex digits of the SHA-256 of `SkylineTogether.dll`. The
 installer prints it (`tools/installer/make_installer.py`, `Install.cmd`, `TWO-PLAYER-CHECKLIST.txt`), and
 `publish_paradox.py` prints it for the Paradox Mods upload. The game computes it from the DLL it loaded
 (`Session/GameInfoProvider.cs`), compares it when a player joins and shows it in the panel's footer, refusals, the log
@@ -131,6 +132,6 @@ says `build id from the assembly's MVID (...)`. Such an id never equals the inst
 refused by a host whose id came from the file. Please report it with the log.
 
 When the game finds Skyline Together twice (the local Mods folder and a Paradox Mods subscription), the log has a
-warning `Skyline Together is installed more than once` with every copy's source and build id, the diagnostics dump has
+warning `Skyline Together is installed more than once` with every copy's source and build ID, the diagnostics dump has
 an `installed:` line and a notification asks the player to keep one copy; see
 [publishing-paradox-mods.md](publishing-paradox-mods.md#installed-twice).

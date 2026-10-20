@@ -10,7 +10,7 @@ steps with the same numbers) and the solo test that needs only one PC. How to re
 
 1. Close Cities: Skylines II.
 2. Install the same release on both PCs: the same Paradox Mods version, or `Install.cmd` from the same setup zip. Both
-   players must see the **same build id** (at the bottom of the Skyline Together panel; the installer prints it too).
+   players must see the **same build ID** (at the bottom of the Skyline Together panel; the installer prints it too).
 3. For the simplest setup, use an empty playset on both PCs, so the mod lists match. Disable any other multiplayer
    mod.
 4. Start Steam and log in on both PCs.

@@ -329,7 +329,7 @@
   "st.options.ShowNetworkHud.label": "Show network stats",
   "st.options.ShowNetworkHud.desc": "Show ping and network traffic (KB/s in and out) in the Skyline Together panel.",
   "st.options.WriteDiagnosticsButton.label": "Write diagnostics",
-  "st.options.WriteDiagnosticsButton.desc": "Write a text file with the session state, players, network statistics, versions, mods and recent log lines next to the game's log. Attach it to your bug report on GitHub (github.com/ljkx/SkylineTogether/issues). It contains player names, Steam IDs, the session name and the IP addresses of players banned by address. Passwords, chat messages and your Windows user name are not included.",
+  "st.options.WriteDiagnosticsButton.desc": "Write a text file with the session state, players, network statistics, versions, mods and recent log lines next to the game's log. Attach it to your bug report on GitHub (github.com/ljkx/SkylineTogether/issues). It contains player names, Steam IDs and the session name, and IP addresses only shortened. Passwords, chat messages and your Windows user name are not included.",
   "st.ui.recovery.lost.title": "Connection lost",
   "st.ui.recovery.lost.text": "Reconnecting in {S} s (attempt {N} of {MAX}). The city is paused until then; changes you make now are not kept.",
   "st.ui.recovery.attempt.title": "Reconnecting (attempt {N} of {MAX})",

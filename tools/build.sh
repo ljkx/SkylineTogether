@@ -175,7 +175,7 @@ Install: extract this archive into
   %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Mods
 so that the files end up in Mods\\SkylineTogether, then start the game.
 
-Every player of a session needs the same build of the mod (the build id at the bottom of the Skyline Together
+Every player of a session needs the same build of the mod (the build ID at the bottom of the Skyline Together
 panel), the same game version and, by default, the same code mods. If the mods differ, the joining player is told
 exactly what to enable, disable or update.
 
@@ -184,7 +184,7 @@ Play:
          Send the other players your Steam ID (copy icon at the top of the panel), or use "Invite friends".
   Join:  on the title screen click "Multiplayer", then "Join a friend". Paste the host's Steam ID (or IP:port)
          and the password if there is one, and press "Join".
-         Your game downloads and loads the host's city; the host's game pauses until you are in.
+         Your game downloads and loads the host's city; the host's game pauses until you have joined.
 
 Back up your saves before you host or join.
 
@@ -192,8 +192,9 @@ To report a bug, click "Write diagnostics" in the panel and attach these files o
 (https://github.com/ljkx/SkylineTogether/issues):
   %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Logs\\SkylineTogether.log
   %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Logs\\SkylineTogether-diagnostics-*.txt
-They contain player names, Steam IDs and the session name, but no passwords or chat; your user folder is written
-as %USERPROFILE%. Never attach crash dumps (.dmp): they can contain passwords. Details:
+They contain player names, Steam IDs and the session name, and IP addresses only shortened; never passwords or
+chat. Your user folder is written as %USERPROFILE%. Never attach crash dumps (.dmp): they can contain passwords.
+Details:
 https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug
 EOF
   # every file a player needs, or no package (copy_mod_files skips missing files silently)

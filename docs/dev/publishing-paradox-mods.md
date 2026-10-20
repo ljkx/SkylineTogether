@@ -59,7 +59,7 @@ both (`publish_paradox.py Release`).
 |---|---|
 | `src/SkylineTogether/Properties/PublishConfiguration.xml` | The page: `ModId`, `DisplayName`, `ShortDescription`, `LongDescription` (Paradox Mods markdown: headings, bullet lists, bold), `Thumbnail`, `Screenshot` (repeatable), `Tag` (`Code Mod`), `ModVersion`, `GameVersion`, `ChangeLog`, `ExternalLink` (GitHub), `AccessLevel` (Public, Unlisted or Private). Image paths are relative to `src/SkylineTogether`. Multi-line texts must not be indented. |
 | `src/SkylineTogether/Properties/Thumbnail.png` | 1024 x 1024. Paradox Mods shows thumbnails square (the installed mods' covers are 256 to 1024 px squares). Drawn with shapes from `tools/paradox/thumbnail.html`, without any game assets. |
-| `src/SkylineTogether/Properties/Screenshots/*.png` | 1920 x 1080. The UI module rendered by `tools/ui_smoke.mjs --html` in its showcase states (an invented session and players, no build id), over an original top-down city and with glyphs drawn by `tools/paradox/backdrop.py`; no game assets. |
+| `src/SkylineTogether/Properties/Screenshots/*.png` | 1920 x 1080. The UI module rendered by `tools/ui_smoke.mjs --html` in its showcase states (an invented session and players, no build ID), over an original top-down city and with glyphs drawn by `tools/paradox/backdrop.py`; no game assets. |
 | (no `ForumLink`) | Paradox Mods only accepts a Paradox forum URL there ("Must be of acceptable format for a Paradox forum url"); the GitHub link is an `ExternalLink`. |
 | `tools/paradox/make_images.py` | Renders the thumbnail and the screenshots with a headless Edge or Chrome. Run it after UI changes and look at the images before you commit them. |
 | `tools/paradox/publish_paradox.py` | Checks everything and runs ModPublisher (see below). |
@@ -76,11 +76,11 @@ platform accepts patterns such as `1.6.*` and `1.6.2*`).
 2. **Build once, from a pushed commit, and test that build.** Follow [releasing.md](releasing.md) up to the test:
    `tools/build.sh --package` and `python tools/installer/make_installer.py`. The script uploads the files of
    `dist/SkylineTogether-<version>.zip`, the same files the GitHub setup installs. A Paradox Mods player and a
-   GitHub player then have the same **build id** and can play together. Do not rebuild after testing.
+   GitHub player then have the same **build ID** and can play together. Do not rebuild after testing.
 3. **Check.** `python tools/paradox/publish_paradox.py check`. It validates the config and the images with the rules
    of the upload command (`Release` while `ModId` is set, `Publish` while it is empty; `--for <command>` to check
    another), checks that the zip of `<Version>` was built from the clean `HEAD`, extracts the
-   content folder `dist/paradox/SkylineTogether` from the zip, prints the **build id** (it must equal the one
+   content folder `dist/paradox/SkylineTogether` from the zip, prints the **build ID** (it must equal the one
    `make_installer.py` printed and the one in the GitHub release notes), scans the content and the config for
    personal data, writes `dist/paradox/PublishConfiguration.xml` (absolute image paths, multi-line texts without
    indentation) and prints the ModPublisher command.
@@ -108,15 +108,14 @@ The first upload created mod 163578 with version 0.1.0-alpha.4. The steps are ke
 6. Open the mod page (`https://mods.paradoxplaza.com/mods/<id>/Windows`), check texts, images and the version, and
    add the link to the GitHub release notes and to the README's install section.
 7. Subscribe on a test PC (without a local `Mods\SkylineTogether` folder) and check: the mod loads, the panel's footer
-   shows the build id from step 3 without "(mvid)", and `Logs\SkylineTogether.log` says `loaded from Paradox Mods (id
+   shows the build ID from step 3 without "(mvid)", and `Logs\SkylineTogether.log` says `loaded from Paradox Mods (id
    <id>, version 1), build <build id>, loaded`.
 
 ## A new version
 
-1. Release the version as in [releasing.md](releasing.md) (changelog section, `<Version>` bump, build, test, tag,
-   GitHub release).
-2. Set `ModVersion` to the new version and replace `ChangeLog` with the short version of the new changelog section
-   (the `ChangeLog` may already hold the prepared text for the next version; check that it matches the section).
+1. Release the version as in [releasing.md](releasing.md), steps 1-6. The release commit already sets `ModVersion`
+   (equal to `<Version>`) and replaces `ChangeLog` with the short version of the new changelog section.
+2. Check that `ChangeLog` still matches the CHANGELOG section; change nothing after the build.
 3. Do the steps of [Before every upload](#before-every-upload).
 4. With the game running and logged in:
 
@@ -149,8 +148,8 @@ The game loads subscribed mods from
 `.metadata\thumbnail.png` and a `.cpatch` folder there. The mod's own files keep the layout of the content folder. The
 code makes no assumptions about where it is installed:
 
-- **DLL and build id.** The game loads mod DLLs from their bytes (`Assembly.Load(byte[])`), so
-  `Assembly.Location` is empty in both kinds of install. The build id hashes the file that the game's mod manager
+- **DLL and build ID.** The game loads mod DLLs from their bytes (`Assembly.Load(byte[])`), so
+  `Assembly.Location` is empty in both kinds of install. The build ID hashes the file that the game's mod manager
   loaded (`ModManager.TryGetExecutableAsset` → `ExecutableAsset.path`, else the asset's read stream;
   `Diagnostics/InstallInfo.cs`). That is the same SHA-256 the installer prints. Only if that fails does the id fall
   back to the assembly's MVID, shown as "(mvid)" and explained in the log.
@@ -172,7 +171,7 @@ modules. With two different builds this means a panel that does not match the lo
 refusals, or crashes.
 
 Skyline Together detects this at start (`InstallInfo.CheckAtStartup`). It counts the DLLs and the UI modules named
-`SkylineTogether`, writes every copy with its source and build id into the log and the diagnostics dump, and shows a
+`SkylineTogether`, writes every copy with its source and build ID into the log and the diagnostics dump, and shows a
 notification that stays until it is clicked. The fix is to keep one copy: delete
 `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Mods\SkylineTogether` (or run the installer with
 `-Uninstall`), or unsubscribe on Paradox Mods. Then restart the game. The installer warns about this too when it finds
@@ -196,6 +195,6 @@ $env:DOTNET_ROLL_FORWARD = 'Major'   # only without a .NET 6 runtime
 ```
 
 Replace `Publish` with `NewVersion` or `Update` as above (a release: `NewVersion`, then `Update`). Run `python tools/check_personal_data.py` and compare the
-build id before you upload, as the script does.
+build ID before you upload, as the script does.
 
 The game's editor has its own upload for assets and maps. Code mods use ModPublisher, the toolchain's route.

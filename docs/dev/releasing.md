@@ -11,7 +11,7 @@ their download.
 | Release version | `<Version>` in `Directory.Build.props` | Used for the zip names and the file version of both DLLs. See [Version numbers](#version-numbers). |
 | Assembly version | `<AssemblyVersion>1.0.0.0</AssemblyVersion>` in both projects | **Never change it.** The network id system is saved in cities by assembly-qualified name. |
 | Protocol version | `ProtocolVersion.Current` in `src/SkylineTogether.Core/Protocol/ProtocolVersion.cs` | Increment it for every change of the wire format (see [Protocol version policy](#protocol-version-policy)); update the golden byte vectors of the tests (`Protocol/*GoldenTests.cs`) and the pinned corpus of `Protocol/WireCorpusTests.cs`, which fails for any layout change and names the samples that changed. Peers with different versions refuse each other, and solo test recordings cannot be replayed by another protocol version. |
-| Build id | First 12 hex digits of the SHA-256 of `SkylineTogether.dll` | Printed by the installer and by `publish_paradox.py`, shown in the panel footer and compared by the host on join (the game hashes the DLL file its mod manager loaded, in the local Mods folder or a Paradox Mods subscription; only if the file cannot be read does it fall back to the assembly's MVID, shown as "(mvid)"). |
+| Build ID | First 12 hex digits of the SHA-256 of `SkylineTogether.dll` | Printed by the installer and by `publish_paradox.py`, shown in the panel footer and compared by the host on join (the game hashes the DLL file its mod manager loaded, in the local Mods folder or a Paradox Mods subscription; only if the file cannot be read does it fall back to the assembly's MVID, shown as "(mvid)"). |
 | Paradox Mods id and version | `ModId` and `ModVersion` in `src/SkylineTogether/Properties/PublishConfiguration.xml` | `ModId` is 163578 ([the mod's page](https://mods.paradoxplaza.com/mods/163578/Windows)); `ModVersion` must equal `<Version>`. See [publishing-paradox-mods.md](publishing-paradox-mods.md). |
 
 Any change of the DLL's bytes is a different build that refuses to play with any other build, even at the same version
@@ -19,7 +19,7 @@ number. Rebuilding the same commit with the same SDK and game version gives the 
 ([Reproducible builds](building.md#reproducible-builds)), but a release is still built once and every route ships those
 same files.
 Players must therefore all install the same release: the same Paradox Mods version or the same setup zip (both carry
-the same build id).
+the same build ID).
 
 ### Version numbers
 
@@ -35,7 +35,7 @@ The releases `0.1.0-alpha.1` to `0.1.0-alpha.4` predate this rule.
 
 ### Protocol version policy
 
-The handshake compares the build id anyway, so two different builds never play together whatever their protocol
+The handshake compares the build ID anyway, so two different builds never play together whatever their protocol
 versions. The protocol version is still bumped on **every** wire change, because the host checks it right after the
 ban list and the join policy: a joiner with another version is refused with "Skyline Together versions differ" before the password
 challenge and before any build, game or mod detail is compared or revealed, and solo recordings of another wire
@@ -79,8 +79,8 @@ committed before the build, so the tag, the DLL's commit hash and the uploads al
    git log origin/main..HEAD               # nothing unpushed
    rm -rf dist
    tools/build.sh --package                # dist/SkylineTogether-<version>.zip; prints the .NET SDK version
-   python tools/installer/make_installer.py # dist/SkylineTogether-Setup.zip, prints the build id
-   python tools/paradox/publish_paradox.py check   # the rules of Release; prints the same build id
+   python tools/installer/make_installer.py # dist/SkylineTogether-Setup.zip, prints the build ID
+   python tools/paradox/publish_paradox.py check   # the rules of Release; prints the same build ID
    ```
 
    `make_installer.py` and `publish_paradox.py` take the zip of the `<Version>` in `Directory.Build.props` (never an
@@ -98,20 +98,20 @@ committed before the build, so the tag, the DLL's commit hash and the uploads al
    `tools/build.sh` printed.
 
 4. Test the setup zip itself (not a `--deploy` build): install it with `Install.cmd` on two PCs, check that both show
-   the build id printed in step 3, and run the [two-player checklist](../guide/testing.md#two-player-checklist) and a
+   the build ID printed in step 3, and run the [two-player checklist](../guide/testing.md#two-player-checklist) and a
    solo test. For a patch release, the solo test and the checklist steps that cover the fixed areas are enough.
 5. Tag the release commit (`git tag v<version>`, e.g. `v0.2.0`; it is `HEAD`, the commit the DLL names) and push
    the tag.
 6. Create a GitHub release for the tag, titled "Skyline Together <version>". Mark it as a pre-release only for a
    version with a pre-release suffix, so that regular releases show as "Latest". Attach `SkylineTogether-Setup.zip`
    (for players) and `SkylineTogether-<version>.zip` (manual install). Write the notes from the
-   [release notes template](release-notes-template.md): the changelog section, the build id, the game version it was
+   [release notes template](release-notes-template.md): the changelog section, the build ID, the game version it was
    tested with, the install routes, the SHA-256 checksums of both zips and how to report bugs.
 7. Paradox Mods: with the game running and logged in to Paradox, run
    `python tools/paradox/publish_paradox.py Release` from the same clean `HEAD`. `Release` runs `NewVersion` (the
    files, `ModVersion` and `ChangeLog`) and then `Update` (page texts, thumbnail and screenshots), so the page matches
    the new version. It uploads the files of the same release zip, so players from Paradox Mods and from GitHub have the
-   same build id. Check the page afterwards. (`Publish` was the very first upload; it writes the new `ModId`, which is
+   same build ID. Check the page afterwards. (`Publish` was the very first upload; it writes the new `ModId`, which is
    then committed.) Details: [publishing-paradox-mods.md](publishing-paradox-mods.md).
 
 Do not rebuild after testing: upload exactly the files you tested, to GitHub and to Paradox Mods. (A rebuild of the
