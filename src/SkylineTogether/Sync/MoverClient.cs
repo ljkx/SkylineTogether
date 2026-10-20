@@ -861,6 +861,7 @@ namespace SkylineTogether.Sync
         private void ReleaseRiders(EntityManager em, Entity vehicle)
         {
             _releasedVehicles.Add(vehicle); // riders its list does not name are released at the end of the apply
+            DeletionCascade.UnindexMover(em, vehicle);
             ReleasePassengers(em, vehicle);
             if (!em.HasBuffer<LayoutElement>(vehicle)) return;
             DynamicBuffer<LayoutElement> layout = em.GetBuffer<LayoutElement>(vehicle, true);

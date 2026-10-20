@@ -159,6 +159,9 @@ namespace SkylineTogether.Sync
         private AgentReferrerIndex<Entity> _index;
         private bool _indexBuilt;
         private Func<Entity, bool> _alive;
+
+        /// <summary>Targets of the referrer index whose gone referrers are pruned per frame (a background lap).</summary>
+        private const int IndexSweepTargetsPerFrame = 256;
         private NativeArray<ArchetypeChunk> _chunks;
         private int _check, _chunk = -1;
         private int _lapChunks, _lapVisited;
@@ -467,6 +470,8 @@ namespace SkylineTogether.Sync
             try
             {
                 if (!_indexBuilt) BuildIndex(em);
+                // the referrer index only grows otherwise (entries are added, never removed when a link changes)
+                else if (_index != null) _index.Sweep(_alive, IndexSweepTargetsPerFrame);
                 if (!_pacer.InLap) StartLap(now);
                 double progress = _lapChunks > 0 ? (double)_lapVisited / _lapChunks : 1.0;
                 long budget = (long)(_pacer.BudgetMs(now, progress) * Stopwatch.Frequency / 1000.0);

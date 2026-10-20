@@ -216,15 +216,32 @@ namespace SkylineTogether.Sync
         {
             AgentReferrerIndex<Entity> index = Index;
             if (index == null || mover == Entity.Null || !em.Exists(mover)) return 0;
+            // gone referrers of the same target are pruned in passing (a depot's chain held every vehicle it ever owned)
+            _aliveEm = em;
+            Func<Entity, bool> alive = _alive ?? (_alive = e => _aliveEm.Exists(e) && !_aliveEm.HasComponent<Deleted>(e));
             int n = 0;
             if (em.HasComponent<Vehicle>(mover))
             {
-                if (em.HasComponent<Owner>(mover) && index.Add(em.GetComponentData<Owner>(mover).m_Owner, mover)) n++;
-                if (em.HasComponent<PersonalCar>(mover) && index.Add(em.GetComponentData<PersonalCar>(mover).m_Keeper, mover)) n++;
+                if (em.HasComponent<Owner>(mover) && index.Add(em.GetComponentData<Owner>(mover).m_Owner, mover, alive)) n++;
+                if (em.HasComponent<PersonalCar>(mover) && index.Add(em.GetComponentData<PersonalCar>(mover).m_Keeper, mover, alive)) n++;
             }
-            if (em.HasComponent<Resident>(mover) && index.Add(em.GetComponentData<Resident>(mover).m_Citizen, mover)) n++;
-            if (em.HasComponent<Pet>(mover) && index.Add(em.GetComponentData<Pet>(mover).m_HouseholdPet, mover)) n++;
+            if (em.HasComponent<Resident>(mover) && index.Add(em.GetComponentData<Resident>(mover).m_Citizen, mover, alive)) n++;
+            if (em.HasComponent<Pet>(mover) && index.Add(em.GetComponentData<Pet>(mover).m_HouseholdPet, mover, alive)) n++;
             return n;
+        }
+
+        private static EntityManager _aliveEm;
+        private static Func<Entity, bool> _alive;
+
+        /// <summary>A mover is deleted here: the pairs <see cref="IndexMover"/> noted for it go (it names nothing any more).</summary>
+        public static void UnindexMover(EntityManager em, Entity mover)
+        {
+            AgentReferrerIndex<Entity> index = Index;
+            if (index == null || mover == Entity.Null || !em.Exists(mover)) return;
+            if (em.HasComponent<Owner>(mover)) index.Remove(em.GetComponentData<Owner>(mover).m_Owner, mover);
+            if (em.HasComponent<PersonalCar>(mover)) index.Remove(em.GetComponentData<PersonalCar>(mover).m_Keeper, mover);
+            if (em.HasComponent<Resident>(mover)) index.Remove(em.GetComponentData<Resident>(mover).m_Citizen, mover);
+            if (em.HasComponent<Pet>(mover)) index.Remove(em.GetComponentData<Pet>(mover).m_HouseholdPet, mover);
         }
 
         private static int ReleaseHotelGuests(EntityManager em, AgentLinkAccess access, Entity property)

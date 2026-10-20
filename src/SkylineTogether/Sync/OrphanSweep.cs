@@ -23,26 +23,67 @@ namespace SkylineTogether.Sync
     /// the mover channel. A replicated child is unbound and asked from the host (it answers with its despawn when it deleted
     /// it too); an object that only lost its parent and is replicated is detached instead and asked for.
     /// </para>
+    /// <para>
+    /// Cost: the children a deleted entity's own lists name (sub-objects, sub-nets, sub-areas, owned vehicles, installed
+    /// upgrades) are noted with it and checked the next frame directly. The scan over every owned and attached object,
+    /// which finds the children those lists missed, runs as a background lap at most every
+    /// <see cref="FullScanSeconds"/> (it ran on every frame after any deletion, a hitch of milliseconds in big cities
+    /// while the host edited); the deletions are kept until the lap ran.
+    /// </para>
     /// Main thread only.
     /// </summary>
     internal sealed class OrphanSweep
     {
+        /// <summary>The scan over every owned and attached object runs at most this often (seconds).</summary>
+        public const double FullScanSeconds = 1.0;
+
         private readonly IndexVersionSet _deleted = new IndexVersionSet();
         private readonly List<Entity> _orphans = new List<Entity>();
         private readonly List<Entity> _detach = new List<Entity>();
+        private readonly List<Entity> _candidates = new List<Entity>();
         private EntityQuery _owned, _attached;
         private World _world;
-        private long _deletedTotal, _detachedTotal, _sweeps;
+        private long _deletedTotal, _detachedTotal, _sweeps, _fullScans;
+        private double _lastFullScan = double.NegativeInfinity;
 
         /// <summary>The ids of replicated children it deleted or detached (the controller asks the host for them).</summary>
         public Action<uint> Request;
 
         public NetIdSystem Ids;
 
-        public string Describe() => "orphan sweep: " + _sweeps + " sweeps, " + _deletedTotal + " owned objects deleted with their owner, " + _detachedTotal + " detached from a deleted parent";
+        public string Describe() => "orphan sweep: " + _sweeps + " sweeps (" + _fullScans + " full scans), " + _deletedTotal + " owned objects deleted with their owner, " + _detachedTotal + " detached from a deleted parent";
 
-        /// <summary>Notes an entity deleted this frame; the next frame's sweep looks for its children.</summary>
-        public void NoteDeleted(Entity e) => _deleted.Add(e.Index, e.Version);
+        /// <summary>
+        /// Notes an entity deleted this frame (it still exists) and the children its own lists name; the next frame's
+        /// sweep checks them, the next full scan looks for any other child.
+        /// </summary>
+        public void NoteDeleted(EntityManager em, Entity e)
+        {
+            _deleted.Add(e.Index, e.Version);
+            try
+            {
+                AddChildren<Game.Objects.SubObject>(em, e, x => x.m_SubObject);
+                AddChildren<Game.Net.SubNet>(em, e, x => x.m_SubNet);
+                AddChildren<Game.Areas.SubArea>(em, e, x => x.m_Area);
+                AddChildren<Game.Vehicles.OwnedVehicle>(em, e, x => x.m_Vehicle);
+                AddChildren<Game.Buildings.InstalledUpgrade>(em, e, x => x.m_Upgrade);
+            }
+            catch (Exception)
+            {
+                // the full scan finds them
+            }
+        }
+
+        private void AddChildren<T>(EntityManager em, Entity e, Func<T, Entity> child) where T : unmanaged, IBufferElementData
+        {
+            if (!em.HasBuffer<T>(e)) return;
+            DynamicBuffer<T> buffer = em.GetBuffer<T>(e, true);
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                Entity c = child(buffer[i]);
+                if (c != Entity.Null) _candidates.Add(c);
+            }
+        }
 
         public bool HasWork => _deleted.Count > 0;
 
@@ -50,14 +91,25 @@ namespace SkylineTogether.Sync
         {
             if (_deleted.Count == 0) return;
             long start = Perf.Start();
+            double now = Perf.Now;
+            bool full = now - _lastFullScan >= FullScanSeconds;
             try
             {
                 Ensure(em);
                 _sweeps++;
                 _orphans.Clear();
                 _detach.Clear();
-                Collect<Game.Common.Owner>(em, _owned, OwnerOf, _orphans);
-                Collect<Game.Objects.Attached>(em, _attached, ParentOf, _detach);
+                if (full)
+                {
+                    _lastFullScan = now;
+                    _fullScans++;
+                    Collect<Game.Common.Owner>(em, _owned, OwnerOf, _orphans);
+                    Collect<Game.Objects.Attached>(em, _attached, ParentOf, _detach);
+                }
+                else
+                {
+                    CollectCandidates(em);
+                }
                 foreach (Entity e in _orphans) Delete(em, e);
                 foreach (Entity e in _detach)
                 {
@@ -86,12 +138,32 @@ namespace SkylineTogether.Sync
             }
             finally
             {
-                _deleted.Clear();
+                if (full) _deleted.Clear(); // kept until a full scan looked for the children the lists missed
+                _candidates.Clear();
                 _orphans.Clear();
                 _detach.Clear();
                 Perf.Stop(Perf.ReferenceRepair, start);
             }
         }
+
+        /// <summary>The children the deleted entities' own lists named, checked like the full scan checks every child.</summary>
+        private void CollectCandidates(EntityManager em)
+        {
+            foreach (Entity c in _candidates)
+            {
+                if (!em.Exists(c) || em.HasComponent<Game.Common.Deleted>(c) || em.HasComponent<Game.Tools.Temp>(c) || em.HasComponent<Game.Net.Lane>(c)) continue;
+                if (em.HasComponent<Game.Common.Owner>(c) && IsGoneDeleted(em, em.GetComponentData<Game.Common.Owner>(c).m_Owner))
+                {
+                    if (!_orphans.Contains(c)) _orphans.Add(c);
+                }
+                else if (em.HasComponent<Game.Objects.Attached>(c) && IsGoneDeleted(em, em.GetComponentData<Game.Objects.Attached>(c).m_Parent))
+                {
+                    if (!_detach.Contains(c)) _detach.Add(c);
+                }
+            }
+        }
+
+        private bool IsGoneDeleted(EntityManager em, Entity target) => target != Entity.Null && _deleted.Contains(target.Index, target.Version) && !em.Exists(target);
 
         private static readonly Func<Game.Common.Owner, Entity> OwnerOf = x => x.m_Owner;
         private static readonly Func<Game.Objects.Attached, Entity> ParentOf = x => x.m_Parent;
@@ -170,10 +242,12 @@ namespace SkylineTogether.Sync
         public void Reset()
         {
             _deleted.Clear();
+            _candidates.Clear();
             _orphans.Clear();
             _detach.Clear();
             _world = null;
-            _deletedTotal = _detachedTotal = _sweeps = 0;
+            _deletedTotal = _detachedTotal = _sweeps = _fullScans = 0;
+            _lastFullScan = double.NegativeInfinity;
         }
     }
 }

@@ -180,7 +180,7 @@ namespace SkylineTogether.Sync
                     }
                     else
                     {
-                        if (MayHaveChildren(em, e)) sync.Orphans.NoteDeleted(e);
+                        if (MayHaveChildren(em, e)) sync.Orphans.NoteDeleted(em, e);
                         if (done || !HasLinks(em, e)) continue;
                         DeletionCascade.Apply(em, e, null);
                         DeletionCascade.LocalDeletions++;

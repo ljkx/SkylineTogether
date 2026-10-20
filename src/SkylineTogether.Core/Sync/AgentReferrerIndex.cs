@@ -132,6 +132,98 @@ namespace SkylineTogether.Core.Sync
             return false;
         }
 
+        /// <summary>Forgets one pair (a referrer that no longer names the target: a mover despawned). Returns true when it was held.</summary>
+        public bool Remove(TEntity target, TEntity referrer)
+        {
+            if (!_heads.TryGetValue(target, out int head)) return false;
+            int previous = -1;
+            for (int node = head; node >= 0; node = _next[node])
+            {
+                if (!_eq.Equals(_referrer[node], referrer))
+                {
+                    previous = node;
+                    continue;
+                }
+                int next = _next[node];
+                if (previous < 0) head = next;
+                else _next[previous] = next;
+                Release(node);
+                if (_large.TryGetValue(target, out Large large)) large.Members.Remove(referrer);
+                if (head < 0)
+                {
+                    _heads.Remove(target);
+                    _large.Remove(target);
+                }
+                else
+                {
+                    _heads[target] = head;
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private readonly List<TEntity> _sweepTargets = new List<TEntity>();
+        private int _sweepCursor;
+
+        /// <summary>
+        /// Prunes the referrers <paramref name="alive"/> rejects, for at most <paramref name="maxTargets"/> targets per call,
+        /// round-robin over every target (a lap snapshots the target list). Chains only grow otherwise: a depot's chain
+        /// collected every vehicle it ever owned. Returns the entries removed.
+        /// </summary>
+        public int Sweep(Func<TEntity, bool> alive, int maxTargets)
+        {
+            if (alive == null) throw new ArgumentNullException(nameof(alive));
+            if (_sweepCursor >= _sweepTargets.Count)
+            {
+                _sweepTargets.Clear();
+                _sweepTargets.AddRange(_heads.Keys);
+                _sweepCursor = 0;
+            }
+            int removed = 0;
+            int end = Math.Min(_sweepTargets.Count, _sweepCursor + Math.Max(1, maxTargets));
+            for (; _sweepCursor < end; _sweepCursor++)
+            {
+                TEntity target = _sweepTargets[_sweepCursor];
+                if (!_heads.TryGetValue(target, out int head)) continue;
+                if (!alive(target))
+                {
+                    removed += RemoveTarget(target);
+                    continue;
+                }
+                int previous = -1;
+                for (int node = head; node >= 0;)
+                {
+                    int next = _next[node];
+                    TEntity r = _referrer[node];
+                    if (!alive(r))
+                    {
+                        if (previous < 0) head = next;
+                        else _next[previous] = next;
+                        if (_large.TryGetValue(target, out Large large)) large.Members.Remove(r);
+                        Release(node);
+                        Pruned++;
+                        removed++;
+                    }
+                    else
+                    {
+                        previous = node;
+                    }
+                    node = next;
+                }
+                if (head < 0)
+                {
+                    _heads.Remove(target);
+                    _large.Remove(target);
+                }
+                else
+                {
+                    _heads[target] = head;
+                }
+            }
+            return removed;
+        }
+
         /// <summary>Forgets the referrers of <paramref name="target"/> (it was deleted); returns how many entries went.</summary>
         public int RemoveTarget(TEntity target)
         {
@@ -151,6 +243,8 @@ namespace SkylineTogether.Core.Sync
 
         public void Clear()
         {
+            _sweepTargets.Clear();
+            _sweepCursor = 0;
             _heads.Clear();
             _large.Clear();
             Array.Clear(_referrer, 0, _used);
