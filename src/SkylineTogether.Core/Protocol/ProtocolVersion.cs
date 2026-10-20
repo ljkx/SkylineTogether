@@ -29,7 +29,9 @@ namespace SkylineTogether.Core.Protocol
         /// 7: the id generation byte in entity records (<see cref="Sync.SyncRecord.Generation"/>), the painted-cell mask of
         /// resource paint patches and statistics appends (<see cref="Sync.StatisticsMessage.TypeMixed"/>); 8: the load heartbeat
         /// at the end of <see cref="ControlKind.LoadProgress"/> (<see cref="Session.SessionPayloads.WriteLoadProgress"/>) and
-        /// the id generation byte in mover records (<see cref="Sync.SyncRecordKind.MoverSpawn"/>, <see cref="Sync.SyncRecordKind.MoverState"/>).
+        /// the id generation byte in mover records (<see cref="Sync.SyncRecordKind.MoverSpawn"/>, <see cref="Sync.SyncRecordKind.MoverState"/>),
+        /// and statistics appends that carry the newest sample sent again (the receiver overwrites the samples it holds,
+        /// <see cref="Sync.StatisticsDelta"/>).
         /// </summary>
         public const int Current = 8;
     }

@@ -172,22 +172,28 @@ namespace SkylineTogether.Core.Sync
         public bool Valid;
         /// <summary>The length of the host's whole buffer when it was last sent.</summary>
         public long Total;
-        /// <summary>The last sample sent (its bits), the seam the next append continues.</summary>
+        /// <summary>The last sample sent (its bits): the newest sample, which the game may still change in place.</summary>
         public long LastValueBits, LastTotalBits;
+        /// <summary>The sample before it (its bits), which must not change any more; <see cref="HasPrevious"/> when there was one.</summary>
+        public long PreviousValueBits, PreviousTotalBits;
+        public bool HasPrevious;
     }
 
     /// <summary>
-    /// Statistics are appended to, never rewritten (<c>CityStatisticsSystem</c> adds a sample per interval), so after the
-    /// whole series only the new samples travel (the whole history went to every peer at every sample: megabytes per
-    /// sampling in an older city). Every message names the host buffer length its samples end at, so a receiver appends
-    /// exactly what it lacks, whatever it held before (a joiner's snapshot, a message that arrived while it joined). A
-    /// series that does not continue the last one sent (shorter, or the last sent sample changed) is sent whole. Pure.
+    /// Statistics are appended to (<c>CityStatisticsSystem</c> adds a sample per interval) and only their newest sample is
+    /// changed in place (the game adds income, trade, population and other events into it as they happen), so after the
+    /// whole series only the newest sample sent and the samples appended since travel (the whole history went to every peer
+    /// at every sample: megabytes per sampling in an older city). Every message names the host buffer length its samples
+    /// end at, so a receiver overwrites the samples it holds already (the newest one changed since) and appends what it
+    /// lacks, whatever it held before (a joiner's snapshot, a message that arrived while it joined). A series that does not
+    /// continue the last one sent (shorter, or a sample older than the newest one sent changed) is sent whole. Pure.
     /// </summary>
     public static class StatisticsDelta
     {
         /// <summary>
         /// Host: what to send for the series' current window (<paramref name="window"/>, its newest samples, with
-        /// <see cref="StatisticSeries.TotalLength"/>): an append, the whole window, or null when nothing changed; and the state after it.
+        /// <see cref="StatisticSeries.TotalLength"/>): an append (the newest sample sent again, then the new ones), the
+        /// whole window, or null when nothing changed; and the state after it.
         /// </summary>
         public static StatisticSeries Plan(StatisticSentState sent, StatisticSeries window, out StatisticSentState next)
         {
@@ -200,20 +206,32 @@ namespace SkylineTogether.Core.Sync
                 next.LastValueBits = BitConverter.DoubleToInt64Bits(window.Values[n - 1]);
                 next.LastTotalBits = BitConverter.DoubleToInt64Bits(window.Totals[n - 1]);
             }
-            if (!sent.Valid || total < n) return Whole(window, n);
+            if (n > 1)
+            {
+                next.HasPrevious = true;
+                next.PreviousValueBits = BitConverter.DoubleToInt64Bits(window.Values[n - 2]);
+                next.PreviousTotalBits = BitConverter.DoubleToInt64Bits(window.Totals[n - 2]);
+            }
+            if (!sent.Valid || total < n || n == 0) return Whole(window, n);
             long appended = total - sent.Total;
             if (appended == 0 && next.LastValueBits == sent.LastValueBits && next.LastTotalBits == sent.LastTotalBits) return null;
-            if (appended <= 0 || appended >= n) return Whole(window, n);
-            // the seam: the last sample sent is still there, unchanged
+            // the newest sample sent is index seam now; it must still be in the window, and the one before it unchanged
+            if (appended < 0 || appended >= n) return Whole(window, n);
             int seam = n - 1 - (int)appended;
-            if (BitConverter.DoubleToInt64Bits(window.Values[seam]) != sent.LastValueBits || BitConverter.DoubleToInt64Bits(window.Totals[seam]) != sent.LastTotalBits) return Whole(window, n);
+            if (sent.HasPrevious)
+            {
+                if (seam < 1) return Whole(window, n);
+                if (BitConverter.DoubleToInt64Bits(window.Values[seam - 1]) != sent.PreviousValueBits
+                    || BitConverter.DoubleToInt64Bits(window.Totals[seam - 1]) != sent.PreviousTotalBits) return Whole(window, n);
+            }
+            int k = (int)appended + 1;
             var delta = new StatisticSeries
             {
                 Type = window.Type, Parameter = window.Parameter, Append = true, TotalLength = total,
-                Values = new double[appended], Totals = new double[appended],
+                Values = new double[k], Totals = new double[k],
             };
-            Array.Copy(window.Values, n - (int)appended, delta.Values, 0, (int)appended);
-            Array.Copy(window.Totals, n - (int)appended, delta.Totals, 0, (int)appended);
+            Array.Copy(window.Values, seam, delta.Values, 0, k);
+            Array.Copy(window.Totals, seam, delta.Totals, 0, k);
             return delta;
         }
 
@@ -224,9 +242,10 @@ namespace SkylineTogether.Core.Sync
 
         /// <summary>
         /// Client: applies an append to its copy, whose newest sample is the host's sample <paramref name="copyTotal"/> - 1:
-        /// the samples it lacks are appended (none when it is already that far), and the copy keeps its newest
-        /// <see cref="StatisticsMessage.MaxSamples"/>. False when the append starts after the copy ends (a gap: the copy is
-        /// left alone until a whole series arrives).
+        /// the samples of the append the copy holds already are overwritten (the newest one may have changed on the host
+        /// since), the ones it lacks are appended, and the copy keeps its newest <see cref="StatisticsMessage.MaxSamples"/>.
+        /// A copy that is ahead of the append (a joiner's newer snapshot) is left alone. False when the append starts after
+        /// the copy ends (a gap: the copy is left alone until a whole series arrives).
         /// </summary>
         public static bool TryAppend(double[] values, double[] totals, long copyTotal, StatisticSeries append, out double[] newValues, out double[] newTotals)
         {
@@ -238,17 +257,25 @@ namespace SkylineTogether.Core.Sync
             long start = append.TotalLength - k;
             newValues = values;
             newTotals = totals;
-            if (copyTotal >= append.TotalLength) return true; // nothing new
+            if (copyTotal > append.TotalLength) return true; // the copy is newer
             if (copyTotal < start) return false;
-            int skip = (int)(copyTotal - start), add = k - skip;
+            int overlap = (int)(copyTotal - start), add = k - overlap;
             int length = Math.Min(StatisticsMessage.MaxSamples, have + add);
             int keep = length - add;
             newValues = new double[length];
             newTotals = new double[length];
             Array.Copy(values, have - keep, newValues, 0, keep);
             Array.Copy(totals, have - keep, newTotals, 0, keep);
-            Array.Copy(append.Values, skip, newValues, keep, add);
-            Array.Copy(append.Totals, skip, newTotals, keep, add);
+            // the samples held already: the copy's sample of host index h is at keep - (copyTotal - h)
+            for (int i = 0; i < overlap; i++)
+            {
+                int at = keep - overlap + i;
+                if (at < 0) continue;
+                newValues[at] = append.Values[i];
+                newTotals[at] = append.Totals[i];
+            }
+            Array.Copy(append.Values, overlap, newValues, keep, add);
+            Array.Copy(append.Totals, overlap, newTotals, keep, add);
             return true;
         }
     }

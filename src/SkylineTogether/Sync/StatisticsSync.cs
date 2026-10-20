@@ -177,23 +177,30 @@ namespace SkylineTogether.Sync
                 _nextFull = now + FullCompareInterval;
                 List<StatisticSeries> series = Collect();
                 var changed = new List<StatisticSeries>();
+                var nextStates = new List<(long Key, StatisticSentState State)>();
                 foreach (StatisticSeries s in series)
                 {
                     long key = Key(s.Type, s.Parameter);
                     _sentStates.TryGetValue(key, out StatisticSentState sentState);
-                    // only the samples appended since the last message (the whole series when it does not continue)
+                    // the newest sample sent and the ones appended since (the whole series when it does not continue)
                     StatisticSeries plan = StatisticsDelta.Plan(sentState, s, out StatisticSentState next);
-                    _sentStates[key] = next;
-                    if (plan != null) changed.Add(plan);
+                    if (plan == null) continue;
+                    if (changed.Count >= StatisticsMessage.MaxSeries) break; // the rest next time (not recorded as sent)
+                    changed.Add(plan);
+                    nextStates.Add((key, next));
                 }
                 bool first = _lastCount == int.MinValue;
                 _lastCount = count;
                 _lastFrame = frame;
                 // the first poll only records the baseline (the join snapshots carry it)
-                if (first || (changed.Count == 0 && !sampled)) return;
-                Encode(changed);
-                host.Broadcast(MessageKind.Statistics, _out.Buffer, 0, _out.Length);
-                _sent++;
+                if (!first && (changed.Count > 0 || sampled))
+                {
+                    Encode(changed);
+                    host.Broadcast(MessageKind.Statistics, _out.Buffer, 0, _out.Length);
+                    _sent++;
+                }
+                // recorded as sent only once it is on its way (a failure before leaves the series to the next message)
+                foreach ((long key, StatisticSentState state) in nextStates) _sentStates[key] = state;
             }
             catch (Exception ex)
             {

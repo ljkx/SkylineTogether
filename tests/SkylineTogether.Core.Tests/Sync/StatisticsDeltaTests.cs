@@ -48,7 +48,7 @@ namespace SkylineTogether.Core.Tests.Sync
                 host.Add(1000 + sample);
                 StatisticSeries plan = RoundTrip(StatisticsDelta.Plan(state, Window(host), out state));
                 Assert.True(plan.Append);
-                Assert.Equal(1, plan.Values.Length, "one sample, not the history");
+                Assert.Equal(2, plan.Values.Length, "the newest sample sent and the new one, not the history");
                 Assert.True(StatisticsDelta.TryAppend(copyV, copyT, copyTotal, plan, out copyV, out copyT));
                 copyTotal = plan.TotalLength;
             }
@@ -83,7 +83,7 @@ namespace SkylineTogether.Core.Tests.Sync
         {
             var host = new List<double> { 1, 2, 3 };
             StatisticsDelta.Plan(default(StatisticSentState), Window(host), out StatisticSentState state);
-            host[2] = 99; // the last sent sample changed
+            host[1] = 99; // a sample before the newest one sent changed
             host.Add(4);
             Assert.False(StatisticsDelta.Plan(state, Window(host), out state).Append);
             host.RemoveAt(0); // shorter
