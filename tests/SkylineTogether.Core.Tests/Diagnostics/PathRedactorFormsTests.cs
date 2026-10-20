@@ -71,7 +71,7 @@ namespace SkylineTogether.Core.Tests.Diagnostics
         {
             PathRedactor r = Profile(@"D:\Profiles\Alexandra Smith", "Alexandra Smith");
             Assert.Equal("file:///%USERPROFILE%/AppData/LocalLow/x.png", r.Apply("file:///D:/Profiles/Alexandra%20Smith/AppData/LocalLow/x.png"));
-            Assert.Equal("file:///%USERPROFILE%/AppData", r.Apply("file:///d:/profiles/alexando%20smith/AppData"), "lower-case hex and letters");
+            Assert.Equal("file:///%USERPROFILE%/AppData", r.Apply("file:///d:/profiles/alexandra%20smith/AppData"), "lower-case hex and letters");
             Assert.Equal("see /srv/%USERNAME%/x", r.Apply("see /srv/Alexandra%20Smith/x"), "the user name as a segment");
             PathRedactor j = Profile("D:\\Profiles\\J\u00f6rg M\u00fcller", "J\u00f6rg M\u00fcller");
             Assert.Equal("file:///%USERPROFILE%/AppData", j.Apply("file:///D:/Profiles/J%C3%B6rg%20M%C3%BCller/AppData"), "UTF-8 bytes, percent-encoded");
