@@ -351,6 +351,28 @@ namespace SkylineTogether.Core.Session
         private readonly Queue<string> _rememberedOrder = new Queue<string>();
         // failed or abandoned joins by identity (IdentityKey): the cooldown before the next admission
         private readonly ConnectionRateLimiter _connectionRate;
+        private readonly ConnectionRateLimiter _handshakeLines = new ConnectionRateLimiter(60, 60);
+        private long _handshakeLinesQuiet;
+
+        /// <summary>
+        /// A line about a connection that is not admitted (yet): at most 60 a minute at Info, the rest at Debug, so strangers
+        /// connecting in a loop do not fill the log or spend the line budget of the host's own lines (LogFloodGuard).
+        /// </summary>
+        private void HandshakeLine(string line)
+        {
+            if (_handshakeLines.Allow("handshake", _clock.Seconds))
+            {
+                if (_handshakeLinesQuiet > 0)
+                {
+                    _log.Info(LogCategory.Session, _handshakeLinesQuiet + " more connection line(s) were logged at debug level only (too many connection attempts)");
+                    _handshakeLinesQuiet = 0;
+                }
+                _log.Info(LogCategory.Session, line);
+                return;
+            }
+            _handshakeLinesQuiet++;
+            _log.Debug(LogCategory.Session, line);
+        }
         private readonly Dictionary<string, JoinFailures> _joinFailures = new Dictionary<string, JoinFailures>(StringComparer.Ordinal);
         private readonly ByteWriter _body = new ByteWriter(4096);
         private readonly ByteWriter _broadcastEnvelope = new ByteWriter(4096); // a broadcast's shared envelope
@@ -1195,7 +1217,7 @@ namespace SkylineTogether.Core.Session
             peer.Channel.InboundLimit = UnadmittedLimit;
             peer.Channel.RejectUnexpectedKinds = true;
             _peers[connection] = peer;
-            _log.Info(LogCategory.Session, "connection from " + connection.Peer + "; waiting for its hello");
+            HandshakeLine("connection from " + connection.Peer + "; waiting for its hello");
         }
 
         void ITransportEventSink.OnDisconnected(IConnection connection, int reason, string text)
@@ -1501,7 +1523,7 @@ namespace SkylineTogether.Core.Session
                     // replaced it, so anyone could pose as (and replace the connection of) another player
                     if (p.Hello.SteamId != 0 && p.Hello.SteamId != p.SteamId)
                     {
-                        _log.Info(LogCategory.Session, p.Name + " claims Steam ID " + p.Hello.SteamId + (p.SteamAuthenticated ? " but Steam authenticated " + p.SteamId : " without Steam authentication") + "; the claim is ignored");
+                        HandshakeLine(p.Name + " claims Steam ID " + p.Hello.SteamId + (p.SteamAuthenticated ? " but Steam authenticated " + p.SteamId : " without Steam authentication") + "; the claim is ignored");
                     }
                     // a second connection of a player already in the session is resolved only once it is fully
                     // admitted (TryAdmit): before the password, a connection claiming someone's identity must not affect them
@@ -2433,7 +2455,8 @@ namespace SkylineTogether.Core.Session
         private void Refuse(Peer p, RefuseReason reason, LocalText detail, MismatchReport report = null)
         {
             detail = detail ?? LocalText.Plain("");
-            _log.Info(LogCategory.Session, "refused " + p.Name + " (" + reason + "): " + detail.Text);
+            if (p.Admitted) _log.Info(LogCategory.Session, "refused " + p.Name + " (" + reason + "): " + detail.Text);
+            else HandshakeLine("refused " + p.Name + " (" + reason + "): " + detail.Text);
             _body.Reset();
             // the report carries the detail's key so the joiner reads it in its own language (the layout of the
             // refusal itself never changes)

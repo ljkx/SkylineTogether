@@ -5,7 +5,8 @@ namespace SkylineTogether.Core.Diagnostics
 {
     /// <summary>
     /// Keeps the mod's log file bounded whatever peers send (ARCHITECTURE.md#logs): lines are rate-limited (a token bucket,
-    /// errors with a bucket of their own), and once <see cref="MaxBytes"/> were written in this run only errors are
+    /// warnings and errors each with a bucket of their own, so a flood of information lines, such as strangers' connection
+    /// attempts, never hides the session's warnings), and once <see cref="MaxBytes"/> were written in this run only errors are
     /// written, up to a further quarter of it, then nothing. Suppressed lines are counted; the next line written is
     /// preceded by a notice saying how many were left out. The game's logger owns the file (it starts it anew with every
     /// game start), so the cap applies per run. Pure: time is passed in. Thread-safe.
@@ -20,6 +21,10 @@ namespace SkylineTogether.Core.Diagnostics
         public double LinesPerSecond = 200;
         public double Burst = 2000;
 
+        /// <summary>Warning lines per second on average, and their burst.</summary>
+        public double WarningsPerSecond = 50;
+        public double WarningBurst = 500;
+
         /// <summary>Error lines per second on average, and their burst.</summary>
         public double ErrorsPerSecond = 20;
         public double ErrorBurst = 200;
@@ -27,6 +32,7 @@ namespace SkylineTogether.Core.Diagnostics
         private readonly object _lock = new object();
         private double _tokens = double.NaN;
         private double _errorTokens = double.NaN;
+        private double _warningTokens = double.NaN;
         private double _refilledAt = double.NaN;
         private long _written;
         private long _suppressed;
@@ -55,25 +61,29 @@ namespace SkylineTogether.Core.Diagnostics
                 {
                     _tokens = Burst;
                     _errorTokens = ErrorBurst;
+                    _warningTokens = WarningBurst;
                     _refilledAt = now;
                 }
                 double elapsed = Math.Max(0, now - _refilledAt);
                 _refilledAt = Math.Max(_refilledAt, now);
                 _tokens = Math.Min(Burst, _tokens + elapsed * LinesPerSecond);
                 _errorTokens = Math.Min(ErrorBurst, _errorTokens + elapsed * ErrorsPerSecond);
+                _warningTokens = Math.Min(WarningBurst, _warningTokens + elapsed * WarningsPerSecond);
                 bool error = level >= LogLevel.Error;
+                bool warning = !error && level >= LogLevel.Warn;
                 bool overCap = _written >= MaxBytes;
                 if (overCap && (!error || _written >= MaxBytes + MaxBytes / 4))
                 {
                     Suppress();
                     return false;
                 }
-                if (error ? _errorTokens < 1 : _tokens < 1)
+                if (error ? _errorTokens < 1 : warning ? _warningTokens < 1 : _tokens < 1)
                 {
                     Suppress();
                     return false;
                 }
                 if (error) _errorTokens -= 1;
+                else if (warning) _warningTokens -= 1;
                 else _tokens -= 1;
                 if (overCap && !_capNoticed)
                 {

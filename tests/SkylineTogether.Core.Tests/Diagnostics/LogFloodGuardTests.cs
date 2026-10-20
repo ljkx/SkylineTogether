@@ -13,7 +13,7 @@ namespace SkylineTogether.Core.Tests.Diagnostics
             int written = 0;
             for (int i = 0; i < 1000; i++)
             {
-                if (g.Allow(LogLevel.Warn, 50, 0.0, out _)) written++;
+                if (g.Allow(LogLevel.Info, 50, 0.0, out _)) written++;
             }
             Assert.Equal(20, written, "the burst, then nothing in the same instant");
             Assert.Equal(980L, g.SuppressedTotal);
