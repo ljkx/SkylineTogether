@@ -114,7 +114,8 @@ namespace SkylineTogether.Core.Motion
         /// <paramref name="updateFrame"/> mod 16). A mover already in interest only merges the frames into its history
         /// (or, if its update frame changed, is released and entered again).
         /// </summary>
-        public void EnterInterest(PeerId peer, NetSlot slot, byte updateFrame, MotionFrame[] fourSlots, uint[] fourTicks)
+        /// <returns>False when the entry was refused (an unknown peer, or a baseline that is not valid): the mover is then not in the peer's interest.</returns>
+        public bool EnterInterest(PeerId peer, NetSlot slot, byte updateFrame, MotionFrame[] fourSlots, uint[] fourTicks)
         {
             if (slot.IsNone) throw new ArgumentException("a mover slot must not be none", nameof(slot));
             if (updateFrame > 15) throw new ArgumentOutOfRangeException(nameof(updateFrame), updateFrame, "UpdateFrame is 0..15");
@@ -122,7 +123,7 @@ namespace SkylineTogether.Core.Motion
             if (fourTicks == null) throw new ArgumentNullException(nameof(fourTicks));
             if (fourSlots.Length < 4 || fourTicks.Length < 4) throw new ArgumentException("four frames and four ticks are required");
             PeerState state = GetPeer(peer);
-            if (state == null) return;
+            if (state == null) return false;
 
             string problem = MotionCodec.DescribeBaselineProblem(updateFrame, fourTicks);
             for (int i = 0; problem == null && i < 4; i++)
@@ -135,14 +136,14 @@ namespace SkylineTogether.Core.Motion
                 {
                     state.Stats.EntriesRejected++;
                     WarnOnce(state, PeerWarning.Baseline, "motion: interest entry of " + slot + " for " + state.Peer + " refused: " + problem);
-                    return;
+                    return false;
                 }
                 if (state.TrackOf.TryGetValue(slot.Value, out int existing))
                 {
                     if (state.Tracks[existing].UpdateFrame == updateFrame)
                     {
                         for (int i = 0; i < 4; i++) PushHistory(state, existing, fourTicks[i], fourSlots[i]);
-                        return;
+                        return true;
                     }
                     // the mover's phase changed (the client's assignment carries the old one): release and enter again
                     ExitLocked(state, existing);
@@ -151,6 +152,7 @@ namespace SkylineTogether.Core.Motion
                 for (int i = 0; i < 4; i++) PushHistory(state, track, fourTicks[i], fourSlots[i]);
                 QueueOp(state, new ControlOp { Kind = MotionWire.OpAssign, Track = track, Version = state.Tracks[track].Version });
                 state.Stats.Entries++;
+                return true;
             }
         }
 

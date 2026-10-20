@@ -546,6 +546,12 @@ namespace SkylineTogether.Sync
             _inner.Read(out value);
         }
 
-        public void Skip(int size) => _inner.Skip(size);
+        public void Skip(int size)
+        {
+            // a skip past the payload end was only warned about afterwards, and the value was committed
+            if (size < 0) Fail("skip of " + size + " byte(s)");
+            Need(size);
+            _inner.Skip(size);
+        }
     }
 }

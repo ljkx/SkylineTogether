@@ -392,11 +392,21 @@ namespace SkylineTogether.Sync
             }
             catch (Exception ex)
             {
-                _log.Debug(LogCategory.Integrity, "hashing #" + id + " failed: " + ex.Message);
+                // the constant never matches: the entity keeps being repaired, so the cause must be visible
+                _hashFailures++;
+                double now = Diagnostics.Perf.Now;
+                if (now - _lastHashFailureLog >= 60.0)
+                {
+                    _lastHashFailureLog = now;
+                    _log.Warn(LogCategory.Integrity, "hashing #" + id + " failed (" + _hashFailures + " hash failures so far; such objects always count as different): " + ex.GetType().Name + ": " + ex.Message);
+                }
                 hash = 0xBAD;
                 return true;
             }
         }
+
+        private long _hashFailures;
+        private double _lastHashFailureLog = double.NegativeInfinity;
 
         private void HashBucket(uint bucket, List<EntityHash> output)
         {

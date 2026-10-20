@@ -240,6 +240,12 @@ namespace SkylineTogether.Sync
         {
             try
             {
+                // nothing drains the inbox while the feature is off: it grew for the rest of the session
+                if (!Features.FlowStatus.IsAvailable)
+                {
+                    _inbox.Clear();
+                    return;
+                }
                 var copy = new byte[e.BodyCount];
                 Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                 _inbox.Enqueue(copy);

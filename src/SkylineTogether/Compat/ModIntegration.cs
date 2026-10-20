@@ -93,7 +93,9 @@ namespace SkylineTogether.Compat
                 };
                 client.BecameLive += () => Guard.Run(Features.Mods, "mod integration session start", () => Started(false));
             });
-            sessions.SessionEnded += () => Guard.Run(Features.Mods, "mod integration session end", Ended);
+            // always, also after the feature tripped: a mod that saw the session start must see it end (or it stays in
+            // its multiplayer mode, its own systems switched off, in single player)
+            sessions.SessionEnded += () => Guard.RunAlways(Features.Mods, "mod integration session end", Ended);
         }
 
         private static void HostReceive(PeerId peer, Envelope e) => Guard.Run(Features.Mods, "mod channel receive", () => OnHostMessage(peer, e));
@@ -341,7 +343,13 @@ namespace SkylineTogether.Compat
         private static void Started(bool host)
         {
             _started = true;
-            foreach (Bound b in Channels.Values) Invoke(b, "OnSessionStarted", () => b.SessionStarted?.Invoke(host));
+            foreach (Bound b in Channels.Values)
+            {
+                // a new session: message failures of an earlier one (a peer's malformed payloads) no longer count
+                b.Off = false;
+                b.Failures = 0;
+                Invoke(b, "OnSessionStarted", () => b.SessionStarted?.Invoke(host), true);
+            }
         }
 
         private static void Ended()
@@ -350,24 +358,34 @@ namespace SkylineTogether.Compat
             Warned.Clear(); // the next session warns again (peer ids are reused)
             if (!_started) return;
             _started = false;
-            foreach (Bound b in Channels.Values) Invoke(b, "OnSessionEnded", () => b.SessionEnded?.Invoke());
+            foreach (Bound b in Channels.Values) Invoke(b, "OnSessionEnded", () => b.SessionEnded?.Invoke(), true);
         }
 
-        private static void Invoke(Bound b, string what, Action call)
+        /// <summary>
+        /// Calls a mod's callback. Lifecycle callbacks (<paramref name="lifecycle"/>: session start and end) always run and
+        /// never count; message callbacks are switched off for the session after <see cref="MaxFailures"/> failures (they
+        /// may be caused by peer-relayed payloads).
+        /// </summary>
+        private static void Invoke(Bound b, string what, Action call, bool lifecycle = false)
         {
-            if (b.Off) return;
+            if (b.Off && !lifecycle) return;
             try
             {
                 call();
             }
             catch (Exception ex)
             {
+                if (lifecycle)
+                {
+                    _log?.Warn(LogCategory.Compat, "mod integration: " + b.TypeName + "." + what + " threw", ex);
+                    return;
+                }
                 b.Failures++;
                 _log?.Warn(LogCategory.Compat, "mod integration: " + b.TypeName + "." + what + " threw (" + b.Failures + " of " + MaxFailures + ")", ex);
                 if (b.Failures >= MaxFailures)
                 {
                     b.Off = true;
-                    _log?.Warn(LogCategory.Compat, "mod integration: the callbacks of " + b.Channel + " are off for the rest of this game");
+                    _log?.Warn(LogCategory.Compat, "mod integration: the message callback of " + b.Channel + " is off for the rest of this session");
                 }
             }
         }

@@ -171,7 +171,8 @@ only your mod receives what you send; a machine without your mod drops it silent
 
 - Nothing you declare or do can throw into the game or into a session. Unreadable declarations, unknown roles, wrong
   targets and contradictions are reported, then ignored.
-- A callback that throws is logged; after 3 failures your callbacks are switched off for the rest of the game.
+- A callback that throws is logged. After 3 failures your message callback is switched off for the rest of the session;
+  the session start and end callbacks are always called.
 - Declarations are read once, when the game has loaded every mod. Host and clients read the same declarations from the
   same version of your mod, so they decide the same.
 - A newer `ApiVersion` than Skyline Together knows is reported; the parts it knows still apply.

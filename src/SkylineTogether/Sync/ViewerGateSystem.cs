@@ -33,12 +33,16 @@ namespace SkylineTogether.Sync
 
         protected override void OnUpdate()
         {
+            SessionClient client = Mod.Sessions?.Client;
+            if (client == null)
+            {
+                _failed = false; // one failure disabled the gate for the rest of the game; it is tried again next session
+                return;
+            }
             if (_failed || _setApplyMode == null) return;
             try
             {
-                SessionManager sessions = Mod.Sessions;
-                SessionClient client = sessions?.Client;
-                if (client == null || client.State != ClientState.Live || RolePermissions.Predicts(client.LocalRole)) return;
+                if (client.State != ClientState.Live || RolePermissions.Predicts(client.LocalRole)) return;
                 ToolBaseSystem tool = _tools.activeTool;
                 if (tool == null || tool.applyMode != Game.Tools.ApplyMode.Apply) return;
                 _setApplyMode.Invoke(tool, new object[] { Game.Tools.ApplyMode.Clear });

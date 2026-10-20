@@ -950,7 +950,7 @@ namespace SkylineTogether.Sync
             _missingAssets.TryGetValue(asset, out int n);
             _missingAssets[asset] = n + 1;
             if (n == 0) _log.Warn(LogCategory.Replication, "skipped #" + netId + " and every other object that uses a missing asset: " + ExplainMissing(asset));
-            result.Problems.Add("#" + netId + " needs missing " + asset);
+            if (n < 3) result.Problems.Add("#" + netId + " needs missing " + asset); // counted per asset; a string only for the first few
         }
 
         // ================================================================== applying

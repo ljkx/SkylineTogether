@@ -125,9 +125,9 @@ namespace SkylineTogether.Sync
         public void Close()
         {
             if (_closed) return;
-            _closed = true;
             World world = World.DefaultGameObjectInjectionWorld;
-            if (world == null) return;
+            if (world == null) return; // not closed: a later call (with a world) applies the gates
+            _closed = true;
             int found = 0;
             foreach (string name in Gated) found += Disable(world, name, false) ? 1 : 0;
             foreach (string name in RouteSystems) found += Disable(world, name, true) ? 1 : 0;

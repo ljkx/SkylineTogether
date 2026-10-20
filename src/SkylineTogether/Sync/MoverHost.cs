@@ -193,6 +193,8 @@ namespace SkylineTogether.Sync
                 {
                     if (!_peers.TryGetValue(peer.Value, out PeerView view))
                     {
+                        // a view report that arrives after its peer left must not bring its stream back
+                        if (_sessions.Host?.GetPeerOutput(peer) == null) return;
                         view = new PeerView { Peer = peer };
                         _peers[peer.Value] = view;
                         _encoder?.AddPeer(peer);
@@ -827,7 +829,8 @@ namespace SkylineTogether.Sync
                                     _fourTicks[k] = t;
                                     _four[k] = ToMotion(ring[(int)((t >> 4) & 3)]);
                                 }
-                                _encoder.EnterInterest(v.Peer, new NetSlot(id), (byte)(tick & 15), _four, _fourTicks);
+                                // a refused entry (a baseline frame that is not finite) is not streamed; it is tried again
+                                if (!_encoder.EnterInterest(v.Peer, new NetSlot(id), (byte)(tick & 15), _four, _fourTicks)) continue;
                             }
                             else
                             {

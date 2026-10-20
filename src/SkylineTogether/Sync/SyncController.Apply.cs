@@ -449,7 +449,7 @@ namespace SkylineTogether.Sync
             foreach ((uint start, uint count) in r.IdRanges) _pool.Add(start, count);
             if (r.Clock.HasValue) FollowClock(r.Clock.Value);
             if (r.Spawned + r.Upserted + r.Despawned > 0) LastApply = r.ToString();
-            if (r.Problems.Count > 0) _log.Debug(LogCategory.Replication, "apply problems: " + string.Join("; ", r.Problems));
+            if (r.Problems.Count > 0 && _log.IsEnabled(LogLevel.Debug)) _log.Debug(LogCategory.Replication, "apply problems: " + string.Join("; ", r.Problems)); // joined only when logged
             ApplyZoneRecords(records);
             ApplyGlobal(data, PeerId.Host, false);
             if (Features.Integrity.IsAvailable)

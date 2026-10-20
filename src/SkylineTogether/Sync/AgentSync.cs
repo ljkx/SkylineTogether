@@ -408,7 +408,12 @@ namespace SkylineTogether.Sync
             if (e.Kind != MessageKind.View && e.Kind != MessageKind.AgentRefresh) return;
             try
             {
-                if (!_peers.TryGetValue(peer.Value, out HostPeer p)) _peers[peer.Value] = p = new HostPeer { Peer = peer };
+                if (!_peers.TryGetValue(peer.Value, out HostPeer p))
+                {
+                    // a message that arrives after its peer left must not bring its state back
+                    if (_sessions.Host?.GetPeerOutput(peer) == null) return;
+                    _peers[peer.Value] = p = new HostPeer { Peer = peer };
+                }
                 if (e.Kind == MessageKind.View)
                 {
                     ViewReport.ReadInto(new ByteReader(e.Body, e.BodyOffset, e.BodyCount), p.Report);

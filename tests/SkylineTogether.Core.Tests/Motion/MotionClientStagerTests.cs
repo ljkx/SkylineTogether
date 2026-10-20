@@ -72,6 +72,24 @@ namespace SkylineTogether.Core.Tests.Motion
         }
 
         [Test]
+        public void ARefusedInterestEntrySaysSo()
+        {
+            var enc = new MotionHostEncoder(NullLog.Instance);
+            var frames = new MotionFrame[4];
+            var ticks = new uint[4];
+            for (int k = 0; k < 4; k++)
+            {
+                ticks[k] = 800 - (uint)(16 * k);
+                frames[k] = Car(ticks[k]);
+            }
+            Assert.False(enc.EnterInterest(P, new NetSlot(5), 0, frames, ticks), "an unknown peer");
+            enc.AddPeer(P);
+            Assert.True(enc.EnterInterest(P, new NetSlot(5), 0, frames, ticks));
+            frames[2].X = float.NaN;
+            Assert.False(enc.EnterInterest(P, new NetSlot(6), 0, frames, ticks), "a baseline that is not finite: the mover must not count as streamed");
+        }
+
+        [Test]
         public void BaselineAndFramesArriveAndSampleExactly()
         {
             var enc = new MotionHostEncoder(NullLog.Instance);

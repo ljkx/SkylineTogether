@@ -206,6 +206,9 @@ namespace SkylineTogether.Sync
 
         public void Reset()
         {
+            // a filter that failed in one session is tried again in the next (the feature is re-armed with it)
+            _filterBroken = false;
+            _filterReady = false;
             _sent.Clear();
             _seen.Clear();
             _passOwners.Clear();
