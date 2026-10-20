@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using SkylineTogether.Core.Buffers;
 using SkylineTogether.Core.Modding;
@@ -153,7 +154,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             for (int c = 0; c <= 0xFFFF; c++)
             {
                 bool expected = c < 0x20 || (c >= 0x7F && c <= 0x9F) || (c >= 0x202A && c <= 0x202E) || (c >= 0x2066 && c <= 0x2069) || c == 0x2028 || c == 0x2029;
-                Assert.Equal(expected, ProtocolText.IsStripped((char)c), "U+" + c.ToString("X4"));
+                Assert.Equal(expected, ProtocolText.IsStripped((char)c), "U+" + c.ToString("X4", CultureInfo.InvariantCulture));
             }
             Assert.Equal("", ProtocolText.Sanitize(null));
             Assert.Equal("", ProtocolText.Sanitize(""));

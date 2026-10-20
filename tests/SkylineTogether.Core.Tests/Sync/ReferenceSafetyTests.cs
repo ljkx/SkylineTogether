@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using SkylineTogether.Core.Hashing;
@@ -200,7 +201,7 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.True(output.All(e => alive.Contains(e) || e <= 2600), "pruned");
             Assert.True(index.Pruned >= 2500, "pruned " + index.Pruned);
             Assert.Equal(output.Count, output.Distinct().Count());
-            foreach (int e in alive) Assert.True(index.Contains(7, e), e.ToString());
+            foreach (int e in alive) Assert.True(index.Contains(7, e), e.ToString(CultureInfo.InvariantCulture));
             Assert.True(index.RemoveTarget(7) > 0);
             Assert.Equal(0, index.LargeTargets);
             Assert.Equal(0, index.Count);

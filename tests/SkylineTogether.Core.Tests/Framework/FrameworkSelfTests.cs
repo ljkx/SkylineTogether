@@ -35,6 +35,13 @@ namespace SkylineTogether.Core.Tests.Framework
             Assert.Throws<AssertionException>(() => Assert.Throws<InvalidOperationException>(() => { }));
         }
 
+        /// <summary>
+        /// Made to fail, and run only with <c>--canary</c>: CI runs it and requires exit code 1, which proves end to end
+        /// (process exit code included) that a failing test fails the build.
+        /// </summary>
+        [Test(Canary = true)]
+        public void TheCanaryFails() => Assert.Fail("the canary fails on purpose (--canary)");
+
         [Test]
         public void SkipThrowsSkipException()
         {

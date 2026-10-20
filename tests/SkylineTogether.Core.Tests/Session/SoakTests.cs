@@ -346,7 +346,7 @@ namespace SkylineTogether.Core.Tests.Session
             {
                 Assert.Equal(RejoinPhase.Idle, p.Rejoin.Phase);
                 Assert.Equal(0, p.Gaps, p.Name + ": every session's stream is gapless");
-                foreach (string end in p.Ends) Assert.True(end.StartsWith("ConnectionLost") || end.StartsWith("Timeout") || end.StartsWith("RefusedTemporarily") || end.StartsWith("Unreachable"), p.Name + ": unexpected end " + end);
+                foreach (string end in p.Ends) Assert.True(end.StartsWith("ConnectionLost", StringComparison.Ordinal) || end.StartsWith("Timeout", StringComparison.Ordinal) || end.StartsWith("RefusedTemporarily", StringComparison.Ordinal) || end.StartsWith("Unreachable", StringComparison.Ordinal), p.Name + ": unexpected end " + end);
             }
             Assert.True(rig.Snapshots.Requests >= 6, "each rejoin took a fresh snapshot: " + rig.Snapshots.Requests);
             rig.Run(2);

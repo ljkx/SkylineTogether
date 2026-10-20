@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Diagnostics;
 using System.Threading;
 using SkylineTogether.Core.Session;
@@ -131,7 +132,7 @@ namespace SkylineTogether.Core.Tests.Transport
                 if (t > 50 && t < 50 + dt) Assert.True(c.Rate < 4 << 20, "followed the link down: " + c);
             }
             double rate = measured / (40 - measuredFrom);
-            Assert.True(rate > 0.65 * (6 << 20), "uses most of the 6 MiB/s link: " + (rate / 1048576.0).ToString("0.00") + " MiB/s; " + c);
+            Assert.True(rate > 0.65 * (6 << 20), "uses most of the 6 MiB/s link: " + (rate / 1048576.0).ToString("0.00", CultureInfo.InvariantCulture) + " MiB/s; " + c);
             Assert.True(c.Decreases > 0, "it probed above the capacity and backed off");
         }
 
@@ -199,7 +200,7 @@ namespace SkylineTogether.Core.Tests.Transport
         {
             const int bandwidth = 8 << 20;
             double rate = DownloadRate(bandwidth, 0, SoakRig.Frame, 24_000_000, 201);
-            Assert.True(rate > 0.85 * bandwidth, "8 MiB/s link: " + (rate / 1048576.0).ToString("0.00") + " MiB/s");
+            Assert.True(rate > 0.85 * bandwidth, "8 MiB/s link: " + (rate / 1048576.0).ToString("0.00", CultureInfo.InvariantCulture) + " MiB/s");
         }
 
         [Test(TimeoutSeconds = 120)]
@@ -208,9 +209,9 @@ namespace SkylineTogether.Core.Tests.Transport
             const int bandwidth = 8 << 20;
             // the host renders at 12 fps (a held, big city): the one-second bulk window bridges the frames
             double slow = DownloadRate(bandwidth, 0, 1 / 12.0, 24_000_000, 211);
-            Assert.True(slow > 0.8 * bandwidth, "at 12 fps: " + (slow / 1048576.0).ToString("0.00") + " MiB/s");
+            Assert.True(slow > 0.8 * bandwidth, "at 12 fps: " + (slow / 1048576.0).ToString("0.00", CultureInfo.InvariantCulture) + " MiB/s");
             double lossy = DownloadRate(bandwidth, 0.01, SoakRig.Frame, 16_000_000, 221);
-            Assert.True(lossy > 0.65 * bandwidth, "with 1 % loss: " + (lossy / 1048576.0).ToString("0.00") + " MiB/s");
+            Assert.True(lossy > 0.65 * bandwidth, "with 1 % loss: " + (lossy / 1048576.0).ToString("0.00", CultureInfo.InvariantCulture) + " MiB/s");
         }
     }
 }

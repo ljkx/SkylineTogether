@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Text;
 using SkylineTogether.Core.Testing;
@@ -237,11 +238,11 @@ namespace SkylineTogether.Core.Tests.Framework
                 }
                 catch (AssertionException e)
                 {
-                    throw new AssertionException(name + " failed at iteration " + i + " (case seed 0x" + caseSeed.ToString("X16") + "): " + e.Message);
+                    throw new AssertionException(name + " failed at iteration " + i + " (case seed 0x" + caseSeed.ToString("X16", CultureInfo.InvariantCulture) + "): " + e.Message);
                 }
                 catch (Exception e)
                 {
-                    throw new AssertionException(name + " threw at iteration " + i + " (case seed 0x" + caseSeed.ToString("X16") + "): "
+                    throw new AssertionException(name + " threw at iteration " + i + " (case seed 0x" + caseSeed.ToString("X16", CultureInfo.InvariantCulture) + "): "
                                                  + e.GetType().Name + ": " + e.Message + Environment.NewLine + e.StackTrace);
                 }
             }

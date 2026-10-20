@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using SkylineTogether.Core.Fields;
 using SkylineTogether.Core.Testing;
 using SkylineTogether.Core.Tests.Framework;
@@ -69,7 +70,7 @@ namespace SkylineTogether.Core.Tests.Fields
         {
             foreach (float s in new[] { 0.002f, 0.0021f, 0.01f, 0.5f, 1f, 3f, 1e30f, -0.002f, -0.7f, float.PositiveInfinity, float.NegativeInfinity })
             {
-                Assert.Equal(s, BrushStrengthCompensation.Map(s), "strength " + s.ToString("R"));
+                Assert.Equal(s, BrushStrengthCompensation.Map(s), "strength " + s.ToString("R", CultureInfo.InvariantCulture));
             }
             Assert.True(float.IsNaN(BrushStrengthCompensation.Map(float.NaN)));
             Assert.Equal(0f, BrushStrengthCompensation.Map(0f));
@@ -80,12 +81,12 @@ namespace SkylineTogether.Core.Tests.Fields
         {
             foreach (float s in Strengths(100000, 3765))
             {
-                Assert.Equal(BitConverter.SingleToInt32Bits(GameMapped(s)), BitConverter.SingleToInt32Bits(BrushStrengthCompensation.Map(s)), "strength " + s.ToString("R"));
+                Assert.Equal(BitConverter.SingleToInt32Bits(GameMapped(s)), BitConverter.SingleToInt32Bits(BrushStrengthCompensation.Map(s)), "strength " + s.ToString("R", CultureInfo.InvariantCulture));
             }
             for (int bits = 1; bits < 1000; bits++)
             {
                 float subnormal = BitConverter.Int32BitsToSingle(bits * 7919);
-                Assert.Equal(GameMapped(subnormal), BrushStrengthCompensation.Map(subnormal), "subnormal " + subnormal.ToString("R"));
+                Assert.Equal(GameMapped(subnormal), BrushStrengthCompensation.Map(subnormal), "subnormal " + subnormal.ToString("R", CultureInfo.InvariantCulture));
             }
         }
 
@@ -114,11 +115,11 @@ namespace SkylineTogether.Core.Tests.Fields
                 float roundTrip = BrushStrengthCompensation.Unmap(BrushStrengthCompensation.Map(s));
                 if (Math.Abs(s) >= BrushStrengthCompensation.LinearThreshold)
                 {
-                    Assert.Equal(s, roundTrip, "identity region, strength " + s.ToString("R"));
+                    Assert.Equal(s, roundTrip, "identity region, strength " + s.ToString("R", CultureInfo.InvariantCulture));
                     continue;
                 }
                 // the inverse power 1/0.055 amplifies the float rounding of f(s) about 18 times
-                Assert.True(Math.Abs(roundTrip - s) <= Math.Abs(s) * 6e-6, "strength " + s.ToString("R") + " → " + roundTrip.ToString("R"));
+                Assert.True(Math.Abs(roundTrip - s) <= Math.Abs(s) * 6e-6, "strength " + s.ToString("R", CultureInfo.InvariantCulture) + " → " + roundTrip.ToString("R", CultureInfo.InvariantCulture));
             }
         }
 
@@ -130,7 +131,7 @@ namespace SkylineTogether.Core.Tests.Fields
                 float s = BitConverter.Int32BitsToSingle(bits);   // positive subnormals
                 float mapped = BrushStrengthCompensation.Map(s);
                 float again = BrushStrengthCompensation.Map(BrushStrengthCompensation.Unmap(mapped));
-                Assert.True(Math.Abs(again - mapped) <= mapped * 1e-6, "subnormal " + s.ToString("R"));
+                Assert.True(Math.Abs(again - mapped) <= mapped * 1e-6, "subnormal " + s.ToString("R", CultureInfo.InvariantCulture));
             }
             Assert.Equal(float.Epsilon, BrushStrengthCompensation.Unmap(1e-30f), "below the float range the smallest subnormal is used, never 0");
             Assert.Equal(-float.Epsilon, BrushStrengthCompensation.Unmap(-1e-30f));
@@ -256,7 +257,7 @@ namespace SkylineTogether.Core.Tests.Fields
                     {
                         float expected = GameHeightDelta(s, originDeltaTime, tool);
                         float actual = GameHeightDelta(compensated, localDeltaTime, tool);
-                        string what = "strength " + s.ToString("R") + " tool " + tool + " dt " + originDeltaTime + " → " + localDeltaTime;
+                        string what = "strength " + s.ToString("R", CultureInfo.InvariantCulture) + " tool " + tool + " dt " + originDeltaTime + " → " + localDeltaTime;
                         if (target >= resolutionLimit)
                         {
                             AssertNear(expected, actual, what);
@@ -266,7 +267,7 @@ namespace SkylineTogether.Core.Tests.Fields
                         {
                             // the error stays below one minimal nonzero effect of the game
                             double minimalEffect = 1.1e-5 * BrushStrengthCompensation.ClampDelta(localDeltaTime) * tool / HeightScale;
-                            Assert.True(Math.Abs(expected - actual) <= minimalEffect, what + ": expected " + expected.ToString("R") + ", actual " + actual.ToString("R"));
+                            Assert.True(Math.Abs(expected - actual) <= minimalEffect, what + ": expected " + expected.ToString("R", CultureInfo.InvariantCulture) + ", actual " + actual.ToString("R", CultureInfo.InvariantCulture));
                         }
                     }
                 }
@@ -278,7 +279,7 @@ namespace SkylineTogether.Core.Tests.Fields
         private static void AssertNear(float expected, float actual, string message)
         {
             double tolerance = Math.Abs(expected) * 2e-6 + 1e-30;
-            Assert.True(Math.Abs(expected - actual) <= tolerance, message + ": expected " + expected.ToString("R") + ", actual " + actual.ToString("R"));
+            Assert.True(Math.Abs(expected - actual) <= tolerance, message + ": expected " + expected.ToString("R", CultureInfo.InvariantCulture) + ", actual " + actual.ToString("R", CultureInfo.InvariantCulture));
         }
     }
 }

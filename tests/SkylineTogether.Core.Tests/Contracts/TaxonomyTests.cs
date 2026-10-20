@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Reflection;
 using SkylineTogether.Core.Tests.Framework;
@@ -15,7 +16,7 @@ namespace SkylineTogether.Core.Tests.Contracts
         {
             foreach ((TEnum value, int expected) in pins)
             {
-                Assert.Equal(expected, Convert.ToInt32(value), typeof(TEnum).Name + "." + value);
+                Assert.Equal(expected, Convert.ToInt32(value, CultureInfo.InvariantCulture), typeof(TEnum).Name + "." + value);
             }
         }
 
@@ -25,7 +26,7 @@ namespace SkylineTogether.Core.Tests.Contracts
             for (int i = 0; i < names.Length; i++)
             {
                 var value = (TEnum)Enum.Parse(typeof(TEnum), names[i]);
-                Assert.Equal(first + i, Convert.ToInt32(value), typeof(TEnum).Name + "." + names[i]);
+                Assert.Equal(first + i, Convert.ToInt32(value, CultureInfo.InvariantCulture), typeof(TEnum).Name + "." + names[i]);
             }
         }
 
@@ -48,7 +49,7 @@ namespace SkylineTogether.Core.Tests.Contracts
             };
             for (int i = 0; i < sequential.Length; i++)
             {
-                Assert.Equal(1 + i, Convert.ToInt32((MessageKind)Enum.Parse(typeof(MessageKind), sequential[i])), "MessageKind." + sequential[i]);
+                Assert.Equal(1 + i, Convert.ToInt32((MessageKind)Enum.Parse(typeof(MessageKind), sequential[i]), CultureInfo.InvariantCulture), "MessageKind." + sequential[i]);
             }
             // reserved ranges: 60-64 network id reuse, 65-69 simulation values
             Pin((MessageKind.ApplyAck, 60), (MessageKind.SimValues, 65), (MessageKind.CellMaps, 66), (MessageKind.Statistics, 67));
@@ -97,7 +98,7 @@ namespace SkylineTogether.Core.Tests.Contracts
                 Assert.NotNull(type.GetCustomAttribute<FlagsAttribute>(), type.Name + " is [Flags]");
                 foreach (object value in Enum.GetValues(type))
                 {
-                    ulong bits = Convert.ToUInt64(value);
+                    ulong bits = Convert.ToUInt64(value, CultureInfo.InvariantCulture);
                     string name = Enum.GetName(type, value);
                     if (name == "None" || name == "All") continue;
                     Assert.True(bits != 0 && (bits & (bits - 1)) == 0, type.Name + "." + name + " is one bit");

@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using SkylineTogether.Core.Sync;
@@ -618,7 +619,7 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.Near(0.3, pacer.BudgetMs(101, 0.5), 1e-9); // ahead
             Assert.Near(0.3, pacer.BudgetMs(105, 0.5), 1e-9); // on schedule
             double behind = pacer.BudgetMs(105, 0.4);
-            Assert.True(behind > 0.3 && behind < 2.0, behind.ToString());
+            Assert.True(behind > 0.3 && behind < 2.0, behind.ToString(CultureInfo.InvariantCulture));
             Assert.Near(2.0, pacer.BudgetMs(105, 0.1), 1e-9); // far behind
             Assert.Near(2.0, pacer.BudgetMs(111, 0.99), 1e-9); // overdue
             pacer.LapDone(112);

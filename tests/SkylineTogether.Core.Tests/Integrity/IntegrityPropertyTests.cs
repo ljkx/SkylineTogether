@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using SkylineTogether.Core.Integrity;
@@ -172,7 +173,7 @@ namespace SkylineTogether.Core.Tests.Integrity
         public void ModMismatchReportsListExactlyTheBlockingDifferences()
         {
             var pool = new List<ModEntry>();
-            for (int i = 0; i < 12; i++) pool.Add(new ModEntry { Name = "Gameplay Mod " + i, Version = "1." + i, PlatformId = i % 4 == 3 ? "" : (1000 + i).ToString() });
+            for (int i = 0; i < 12; i++) pool.Add(new ModEntry { Name = "Gameplay Mod " + i, Version = "1." + i, PlatformId = i % 4 == 3 ? "" : (1000 + i).ToString(CultureInfo.InvariantCulture) });
             Prop.ForAll("mismatch report", 1920, 300, g =>
             {
                 var host = new List<ModEntry>();

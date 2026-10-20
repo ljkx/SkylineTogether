@@ -14,7 +14,8 @@
     <RootNamespace>SkylineTogether.Core.Tests</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- not invariant: the game runs with the player's locale, so the runner option "culture" (de-DE, tr-TR) must be able to run the tests under a
+         real culture; by default the runner sets the invariant culture on every test thread -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>

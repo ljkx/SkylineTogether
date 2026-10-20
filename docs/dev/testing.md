@@ -12,13 +12,22 @@ dotnet run --project tests/SkylineTogether.Core.Tests -c Release -- Json        
 dotnet run --project tests/SkylineTogether.Core.Tests -c Release -- Session -Soak # "Session" but not "Soak"
 dotnet run --project tests/SkylineTogether.Core.Tests -c Release -- --list       # list the selected tests
 dotnet run --project tests/SkylineTogether.Core.Tests -c Release -- --verbose    # print every result
+dotnet run --project tests/SkylineTogether.Core.Tests -c Release -- --culture tr-TR # under a real culture
 ```
 
 - Plain words are case-insensitive substring filters on the test name (a test runs when it matches any of them); a word
-  starting with `-` excludes matching tests.
+  starting with a single `-` excludes matching tests.
 - Test names are `Area.Class.Method`, for example `Buffers.ByteWriterReaderTests.VarUInt32GoldenBytes`.
-- The exit code is the number of failed tests, capped at 125. `tools/build.sh` runs the built DLL and fails on a
-  non-zero exit code.
+- The exit code is the number of failed tests, capped at 125. A selection without any test, an unknown `--` option
+  and fewer tests than `--expect-at-least N` are errors (exit code 126); `--allow-empty` accepts an empty selection.
+  `tools/build.sh` runs the built DLL and fails on a non-zero exit code.
+- Every test runs under the invariant culture unless `--culture <name>` says otherwise; the game runs with the
+  player's locale, so CI also runs the suite under `tr-TR` and `de-DE`.
+- A test that exceeds its time limit cannot be stopped, so the run stops after it: the remaining tests are listed as
+  not run and counted as failed.
+- `--canary` runs only the canary tests (`[Test(Canary = true)]`), which are made to fail: CI requires that run to
+  exit with 1, which proves that a failing test fails the build. `Framework/RunnerSelfTests.cs` tests the runner
+  itself (exit codes, empty selections, unknown options, timeouts, cultures).
 
 The tests build and run without the game ([building.md](building.md#without-the-game)); only the cross-checks against
 the game's `System.IO.Hashing.dll` need it (`HAVE_SYSTEM_IO_HASHING`).

@@ -15,5 +15,11 @@ namespace SkylineTogether.Core.Tests.Framework
 
         /// <summary>When not null, the test is not run and is reported as skipped with this reason.</summary>
         public string Skip { get; set; }
+
+        /// <summary>
+        /// A canary: a test made to fail, run only with <c>--canary</c> (and then alone). CI runs the canaries and requires
+        /// the run to fail, which proves that a failing test fails the build.
+        /// </summary>
+        public bool Canary { get; set; }
     }
 }

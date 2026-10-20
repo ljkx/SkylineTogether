@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
@@ -154,7 +155,7 @@ namespace SkylineTogether.Core.Tests.Session
             RefuseMessage r = peer.Refusal();
             Assert.Equal(RefuseReason.ProtocolVersion, r.Reason);
             Assert.True(MismatchReport.Decode(r.MismatchReport).CarriesNoDetails);
-            Assert.DoesNotContain(ProtocolVersion.Current.ToString(), r.Detail);
+            Assert.DoesNotContain(ProtocolVersion.Current.ToString(CultureInfo.InvariantCulture), r.Detail);
         }
 
         [Test]
@@ -307,7 +308,7 @@ namespace SkylineTogether.Core.Tests.Session
         private static string Hex(byte[] b)
         {
             var sb = new StringBuilder();
-            foreach (byte x in b) sb.Append(x.ToString("x2"));
+            foreach (byte x in b) sb.Append(x.ToString("x2", CultureInfo.InvariantCulture));
             return sb.ToString();
         }
 

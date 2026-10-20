@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using SkylineTogether.Core.Fields;
 using SkylineTogether.Core.Testing;
 using SkylineTogether.Core.Tests.Framework;
@@ -18,13 +19,13 @@ namespace SkylineTogether.Core.Tests.Fields
                 float actual = HalfFloat.ToSingle(half);
                 if (float.IsNaN(expected))
                 {
-                    Assert.True(float.IsNaN(actual), "NaN half 0x" + bits.ToString("x4"));
+                    Assert.True(float.IsNaN(actual), "NaN half 0x" + bits.ToString("x4", CultureInfo.InvariantCulture));
                     Assert.False(HalfFloat.IsFinite(half));
                     Assert.True(float.IsNaN(HalfFloat.ToSingle(HalfFloat.FromSingle(actual))), "NaN stays NaN");
                     continue;
                 }
-                Assert.Equal(BitConverter.SingleToInt32Bits(expected), BitConverter.SingleToInt32Bits(actual), "half 0x" + bits.ToString("x4"));
-                Assert.Equal(half, HalfFloat.FromSingle(actual), "round trip of half 0x" + bits.ToString("x4"));
+                Assert.Equal(BitConverter.SingleToInt32Bits(expected), BitConverter.SingleToInt32Bits(actual), "half 0x" + bits.ToString("x4", CultureInfo.InvariantCulture));
+                Assert.Equal(half, HalfFloat.FromSingle(actual), "round trip of half 0x" + bits.ToString("x4", CultureInfo.InvariantCulture));
                 Assert.Equal(!float.IsInfinity(expected), HalfFloat.IsFinite(half));
             }
         }
@@ -51,7 +52,7 @@ namespace SkylineTogether.Core.Tests.Fields
                     Assert.True(float.IsNaN(HalfFloat.ToSingle(actual)));
                     continue;
                 }
-                Assert.Equal(expected, actual, "value " + value.ToString("R"));
+                Assert.Equal(expected, actual, "value " + value.ToString("R", CultureInfo.InvariantCulture));
             }
         }
 
