@@ -92,6 +92,8 @@ namespace SkylineTogether.Sync
             // client: local global-state edits are detected before host data can overwrite them
             if (!IsHost)
             {
+                // mod systems gated here that their mod switched back on stay off for the session
+                if (_clientLive) SafeCall("mod gates", _reassertCall ?? (_reassertCall = ReassertGates), Features.ModCompat);
                 // the children of what was deleted last frame (bulldozing, despawns) whose owner or parent is gone now go
                 // first, before any game system of this frame follows their Owner or Attached (ARCHITECTURE.md#reference-safety)
                 if (Orphans.HasWork) SafeCall("orphan sweep", _orphanCall);
@@ -259,6 +261,18 @@ namespace SkylineTogether.Sync
                 _log.Error(LogCategory.Replication, peer + ": its changes keep failing on the host; removing it from the session", ex);
                 _sessions.Host?.Drop(peer, Core.Session.NetText.Of(Core.Session.NetText.DropApplyFailed)); // a rejoin repairs it: not a kick
             }
+        }
+
+        private Action _reassertCall;
+        private readonly HashSet<string> _reassertLogged = new HashSet<string>();
+
+        private void ReassertGates()
+        {
+            Compat.ModCompat.ReassertGates(system =>
+            {
+                string name = system.GetType().FullName;
+                if (_reassertLogged.Add(name)) _log.Warn(LogCategory.Gate, name + " was switched on again while gated on this client (a mod's own setting?); held off for the session");
+            });
         }
 
         /// <summary>Runs a step in its own guard; a failure counts against <paramref name="feature"/> (player actions by default).</summary>

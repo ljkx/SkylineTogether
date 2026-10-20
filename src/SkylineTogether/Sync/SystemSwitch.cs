@@ -37,6 +37,20 @@ namespace SkylineTogether.Sync
         }
 
         /// <summary>
+        /// Holds <paramref name="system"/> off again when something switched it back on (a mod that sets its own systems'
+        /// <c>Enabled</c> when a city finished loading ran them with the client's settings for the rest of the session).
+        /// The owner's wish counts when the hold ends: the system's original state becomes on. Returns true when it was
+        /// switched off again; a system this class does not hold is left alone.
+        /// </summary>
+        public static bool Reassert(ComponentSystemBase system)
+        {
+            if (system == null || !system.Enabled || !Entries.TryGetValue(system, out Entry e)) return false;
+            e.Original = true;
+            system.Enabled = false;
+            return true;
+        }
+
+        /// <summary>
         /// Releases one hold; when it was the last, the system gets its recorded original state back. A system this
         /// class does not know (e.g. the world was recreated) gets <paramref name="original"/>.
         /// </summary>

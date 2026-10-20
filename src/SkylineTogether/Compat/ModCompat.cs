@@ -346,6 +346,29 @@ namespace SkylineTogether.Compat
 
         // ---------------------------------------------------------------------------------------------- client gates
 
+        /// <summary>
+        /// Client, every frame: the mod systems gated here stay off (a mod that switched one back on, for example when a
+        /// city finished loading, ran it with the client's own settings). <paramref name="flipped"/> gets each one switched
+        /// off again. Only the mod gates: the game's own gated systems are toggled on purpose (the route preview window).
+        /// </summary>
+        public static int ReassertGates(Action<ComponentSystemBase> flipped)
+        {
+            int n = 0;
+            foreach ((ComponentSystemBase system, bool _) in JoinGated)
+            {
+                if (!SkylineTogether.Sync.SystemSwitch.Reassert(system)) continue;
+                n++;
+                flipped?.Invoke(system);
+            }
+            foreach ((ComponentSystemBase system, bool _) in LiveGated)
+            {
+                if (!SkylineTogether.Sync.SystemSwitch.Reassert(system)) continue;
+                n++;
+                flipped?.Invoke(system);
+            }
+            return n;
+        }
+
         /// <summary>A client starts joining: load-time mutators of the player's own settings are switched off.</summary>
         public static void OnClientStarted(ILog log)
         {
