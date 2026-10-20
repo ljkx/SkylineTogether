@@ -98,8 +98,10 @@ namespace SkylineTogether.Sync
                     foreach (Entity e in changed)
                     {
                         bool isDeleted = em.HasComponent<Game.Common.Deleted>(e);
-                        // an entity the applier touched and the local game then deleted is still a deletion to handle
-                        if (_appliedThisFrame.Contains(e) && !isDeleted) continue;
+                        // an entity the applier touched and the local game then deleted is still a deletion to handle; one
+                        // the player's own tool applied to in the same frame is the player's edit (it was never proposed and
+                        // the integrity repair reverted it later without a word)
+                        if (_appliedThisFrame.Contains(e) && !isDeleted && !(toolPath && (em.HasComponent<Game.Common.Applied>(e) || _toolOriginals.Contains(e)))) continue;
                         if (!toolPath && !isDeleted) continue;
                         Family family = _codec.Families.Classify(em, e);
                         // mod compatibility: vehicles, cims and animals a mod tool deleted (Better Bulldozer)

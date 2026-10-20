@@ -38,9 +38,36 @@ namespace SkylineTogether.Sync
         /// <summary>The texels, row-major (<see cref="Width"/> × <see cref="Height"/> × channels), once <see cref="Done"/>.</summary>
         public T[] Data { get; private set; }
 
-        public bool Done { get; private set; }
+        /// <summary>
+        /// A request that has not completed after this many seconds counts as failed: after a device loss Unity may never
+        /// call back, and the owner (one job at a time) stopped auditing terrain or sampling water for good.
+        /// </summary>
+        public const double TimeoutSeconds = 10.0;
 
-        public bool Failed { get; private set; }
+        private bool _done, _failed;
+        private double _startedAt;
+
+        /// <summary>Completed, failed, or timed out (<see cref="TimeoutSeconds"/>).</summary>
+        public bool Done => _done || TimedOut;
+
+        public bool Failed => _failed || (!_done && TimedOut);
+
+        private bool TimedOut => Now - _startedAt > TimeoutSeconds;
+
+        private static double Now
+        {
+            get
+            {
+                try
+                {
+                    return Time.realtimeSinceStartupAsDouble;
+                }
+                catch (Exception)
+                {
+                    return 0;
+                }
+            }
+        }
 
         /// <summary>Whether this machine can read textures back asynchronously at all.</summary>
         public static bool Supported
@@ -62,7 +89,7 @@ namespace SkylineTogether.Sync
         public static GpuReadback<T> Start(Texture texture, int x, int y, int width, int height, int generation, object tag, ILog log)
         {
             if (texture == null || width <= 0 || height <= 0) return null;
-            var job = new GpuReadback<T> { X = x, Y = y, Width = width, Height = height, Generation = generation, Tag = tag };
+            var job = new GpuReadback<T> { X = x, Y = y, Width = width, Height = height, Generation = generation, Tag = tag, _startedAt = Now };
             try
             {
                 AsyncGPUReadback.Request(texture, 0, x, width, y, height, 0, 1, job.OnComplete);
@@ -81,7 +108,7 @@ namespace SkylineTogether.Sync
             {
                 if (request.hasError)
                 {
-                    Failed = true;
+                    _failed = true;
                     return;
                 }
                 NativeArray<T> data = request.GetData<T>();
@@ -91,11 +118,11 @@ namespace SkylineTogether.Sync
             }
             catch (Exception)
             {
-                Failed = true;
+                _failed = true;
             }
             finally
             {
-                Done = true;
+                _done = true;
             }
         }
     }
