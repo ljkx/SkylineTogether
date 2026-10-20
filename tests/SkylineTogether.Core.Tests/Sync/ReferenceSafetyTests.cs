@@ -172,13 +172,21 @@ namespace SkylineTogether.Core.Tests.Sync
                 Assert.True(index.Add(7, w + 100, e => alive.Contains(e)));
             }
             Assert.Equal(1, index.LargeTargets);
-            // every worker noted again (the sweep and every apply do that): nothing is added twice
-            var watch = System.Diagnostics.Stopwatch.StartNew();
+            // every worker noted again (the sweep and every apply do that): nothing is added twice, and a known pair costs
+            // one set lookup (counted, not timed: a walk of the chain would ask about every member)
+            long aliveCalls = 0;
             for (int round = 0; round < 10; round++)
             {
-                for (int w = 1; w <= 5000; w++) Assert.False(index.Add(7, w + 100, e => alive.Contains(e)));
+                for (int w = 1; w <= 5000; w++)
+                {
+                    Assert.False(index.Add(7, w + 100, e =>
+                    {
+                        aliveCalls++;
+                        return alive.Contains(e);
+                    }));
+                }
             }
-            Assert.True(watch.ElapsedMilliseconds < 2000, "re-noting took " + watch.ElapsedMilliseconds + " ms");
+            Assert.Equal(0L, aliveCalls, "re-noting a known pair walks nothing");
             Assert.Equal(5000, index.Count);
             // half of them leave the city; the chain is pruned once it doubled
             for (int w = 1; w <= 2500; w++) alive.Remove(w + 100);

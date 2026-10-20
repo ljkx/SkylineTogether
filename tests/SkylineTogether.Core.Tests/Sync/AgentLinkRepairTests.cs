@@ -547,13 +547,41 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.Equal(0, m.Members(otherSchool, AgentLink.SchoolStudent).Count);
         }
 
-        [Test]
-        public void PlanningIsLinearInTheReferrersOfALargeWorkplace()
+        /// <summary>Counts the work a plan does through the view (calls and list elements copied).</summary>
+        private sealed class CountingView : IAgentLinkView<int>
+        {
+            private readonly Model _m;
+            public long Work;
+
+            public CountingView(Model m) => _m = m;
+
+            public bool IsUsable(int entity)
+            {
+                Work++;
+                return _m.IsUsable(entity);
+            }
+
+            public bool TryGetForward(int holder, AgentLink link, out int target)
+            {
+                Work++;
+                return _m.TryGetForward(holder, link, out target);
+            }
+
+            public bool GetMembers(int owner, AgentLink link, List<int> members)
+            {
+                int before = members.Count;
+                bool found = _m.GetMembers(owner, link, members);
+                Work += 1 + members.Count - before;
+                return found;
+            }
+        }
+
+        private static long PlanWork(int workerCount)
         {
             var m = new Model();
             int company = m.New();
             var workers = new List<int>();
-            for (int i = 0; i < 20000; i++)
+            for (int i = 0; i < workerCount; i++)
             {
                 int w = m.New();
                 m.Link(w, AgentLink.Worker, company);
@@ -563,13 +591,21 @@ namespace SkylineTogether.Core.Tests.Sync
             m.IndexAll();
             var referrers = new List<int>();
             m.Index.Get(company, referrers);
-            Assert.Equal(20000, referrers.Count);
-            var watch = System.Diagnostics.Stopwatch.StartNew();
+            Assert.Equal(workerCount, referrers.Count);
+            var view = new CountingView(m);
             var ops = new List<AgentLinkOp<int>>();
             var deletions = new List<int>();
-            AgentLinkGraph.PlanDeletion(m, company, t => referrers, ops, deletions);
-            Assert.Equal(20000, ops.Count, "one change per worker, not one per list and referrer");
-            Assert.True(watch.ElapsedMilliseconds < 2000, "planning took " + watch.ElapsedMilliseconds + " ms");
+            AgentLinkGraph.PlanDeletion(view, company, t => referrers, ops, deletions);
+            Assert.Equal(workerCount, ops.Count, "one change per worker, not one per list and referrer");
+            return view.Work;
+        }
+
+        [Test]
+        public void PlanningIsLinearInTheReferrersOfALargeWorkplace()
+        {
+            // counted, not timed (a wall-clock limit failed on slow machines and debug builds)
+            long small = PlanWork(2000), large = PlanWork(20000);
+            Assert.True(large <= 12 * small, "ten times the workers cost " + large + " against " + small + " (a quadratic plan costs about a hundred times)");
         }
 
         // ------------------------------------------------------------------ pacing and bookkeeping

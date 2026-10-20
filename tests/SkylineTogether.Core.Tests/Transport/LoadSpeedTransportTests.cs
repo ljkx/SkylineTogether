@@ -159,7 +159,17 @@ namespace SkylineTogether.Core.Tests.Transport
                 Assert.Equal(after, Volatile.Read(ref calls), "never called after its registration was disposed");
                 bad.Dispose();
                 Assert.Equal(0, pump.Count);
+                // the round in progress when the last registration went may still count itself (the counter is
+                // incremented after the round lock is released): wait until the count settles, then it must stay
                 long rounds = pump.Rounds;
+                var settle = Stopwatch.StartNew();
+                while (settle.ElapsedMilliseconds < 5000)
+                {
+                    Thread.Sleep(20);
+                    long now = pump.Rounds;
+                    if (now == rounds) break;
+                    rounds = now;
+                }
                 Thread.Sleep(30);
                 Assert.Equal(rounds, pump.Rounds, "the thread sleeps while nothing is registered");
             }

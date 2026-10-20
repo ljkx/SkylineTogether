@@ -170,7 +170,7 @@ namespace SkylineTogether.Core.Tests.Motion
             Enter(enc, 9, u, start);
             enc.Flush(P, output);
             output.Deliver(stager, pins);
-            int sent = 0;
+            int delivered = 0;
             for (uint step = 1; step <= 24; step++)
             {
                 uint tick = start + step * 16;
@@ -178,13 +178,17 @@ namespace SkylineTogether.Core.Tests.Motion
                 enc.Flush(P, output);
                 bool drop = step % 3 == 1;
                 output.Deliver(stager, pins, i => drop);
-                sent++;
+                if (!drop) delivered++;
                 if (stager.TryGetNewest(0, out uint newest, out MotionFrame f))
                 {
                     Assert.Near(Car(newest).X, f.X, 1.0 / 64, "frame of tick " + newest);
                 }
             }
-            Assert.True(stager.FramesDropped + stager.FramesAccepted > 0);
+            // every delivered frame is either applied or refused; a delta whose reference was lost is refused, never
+            // decoded against another frame (the per-step check above verifies the applied ones)
+            Assert.Equal((long)delivered, stager.FramesAccepted + stager.FramesDropped, "one frame per delivered datagram");
+            Assert.True(stager.FramesDropped > 0, "deltas against a lost reference are refused");
+            Assert.True(stager.FramesAccepted >= delivered / 2, "keyframes and deltas against delivered references apply: " + stager.FramesAccepted);
             Assert.True(stager.TryGetNewest(0, out uint last, out _));
             Assert.True(last >= start + 20 * 16, "keyframes resynchronise after losses");
         }
