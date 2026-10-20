@@ -102,7 +102,7 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.Equal(2.0, v[0]);
             Assert.Equal(-2.0, v[v.Length - 1]);
         }
-    
+
         [Test]
         public void TheMixedLayoutIsPinned()
         {
@@ -111,7 +111,8 @@ namespace SkylineTogether.Core.Tests.Sync
             StatisticsMessage.WriteMixed(w, 7, 0x01020304u, new[] { append });
             byte[] expected =
             {
-                StatisticsMessage.Version, StatisticsMessage.TypeMixed, 7, 0, 0, 0, 0x04, 0x03, 0x02, 0x01, 1,
+                // literals, not StatisticsMessage.Version/TypeMixed: changing either constant is a wire change
+                1, 2, 7, 0, 0, 0, 0x04, 0x03, 0x02, 0x01, 1, // version 1, type mixed (2), sampleCount 7, lastSampleFrame, 1 series
                 1, 4, 1, 0xAC, 0x02, 1, // append, type 2 (zigzag 4), parameter -1 (zigzag 1), total 300, one sample
                 0, 0, 0, 0, 0, 0, 0xF0, 0x3F, 0, 0, 0, 0, 0, 0, 0, 0x40, // 1.0, 2.0
             };
