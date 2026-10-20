@@ -79,6 +79,33 @@ namespace SkylineTogether.Core.Tests.Sync
         }
 
         [Test]
+        public void AnAppendOlderThanTheCopyDoesNotMoveItsTotalBack()
+        {
+            // R3 T1: an append (total 99) queued from admission arrives after the joiner's snapshot, whose copy holds 100
+            var host = new List<double>();
+            for (int i = 0; i < 99; i++) host.Add(i);
+            StatisticsDelta.Plan(default(StatisticSentState), Window(host), out StatisticSentState state);
+            host.Add(99);
+            double[] v = Window(host).Values, t = Window(host).Totals;
+            long copyTotal = host.Count; // 100
+            var old = new StatisticSeries { Type = 3, Parameter = 7, Append = true, TotalLength = 99, Values = new double[] { 98 }, Totals = new double[] { 980 } };
+            Assert.True(StatisticsDelta.TryAppend(v, t, copyTotal, old, out v, out t), "the copy is newer: left alone");
+            copyTotal = StatisticsDelta.CopyTotalAfter(copyTotal, old);
+            Assert.Equal(100L, copyTotal, "not moved back to 99");
+            // the next append resends sample 99 (maybe changed) and adds 100: sample 99 is overwritten, not duplicated
+            host[99] = 99.5;
+            host.Add(100);
+            StatisticSeries next = StatisticsDelta.Plan(state, Window(host), out _);
+            Assert.True(next.Append);
+            Assert.True(StatisticsDelta.TryAppend(v, t, copyTotal, next, out v, out _));
+            copyTotal = StatisticsDelta.CopyTotalAfter(copyTotal, next);
+            Assert.Equal(101L, copyTotal);
+            Assert.SequenceEqual(Window(host).Values, v);
+            // a whole series sets the total, also backwards
+            Assert.Equal(40L, StatisticsDelta.CopyTotalAfter(101, new StatisticSeries { TotalLength = 40, Values = new double[0], Totals = new double[0] }));
+        }
+
+        [Test]
         public void AHistoryThatDoesNotContinueIsSentWhole()
         {
             var host = new List<double> { 1, 2, 3 };

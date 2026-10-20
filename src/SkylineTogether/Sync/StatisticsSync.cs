@@ -323,10 +323,10 @@ namespace SkylineTogether.Sync
                 DynamicBuffer<CityStatistic> buffer = em.GetBuffer<CityStatistic>(e);
                 long seriesKey = Key(s.Type, s.Parameter);
                 double[] values = s.Values, totals = s.Totals;
+                // a copy not written by the host's messages yet is the snapshot's: the host's whole buffer then
+                if (!_copyTotals.TryGetValue(seriesKey, out long copyTotal)) copyTotal = buffer.Length;
                 if (s.Append)
                 {
-                    // a copy not written by the host's messages yet is the snapshot's: the host's whole buffer then
-                    if (!_copyTotals.TryGetValue(seriesKey, out long copyTotal)) copyTotal = buffer.Length;
                     var oldValues = new double[buffer.Length];
                     var oldTotals = new double[buffer.Length];
                     for (int k = 0; k < buffer.Length; k++)
@@ -343,7 +343,7 @@ namespace SkylineTogether.Sync
                 int n = Math.Min(values.Length, totals.Length);
                 buffer.ResizeUninitialized(n);
                 for (int k = 0; k < n; k++) buffer[k] = new CityStatistic { m_Value = Finite(values[k]), m_TotalValue = Finite(totals[k]) };
-                _copyTotals[seriesKey] = s.TotalLength;
+                _copyTotals[seriesKey] = StatisticsDelta.CopyTotalAfter(copyTotal, s); // never backwards for an append
                 written++;
             }
             // the charts allocate this many samples (EnsureDataSize); a wild value is clamped

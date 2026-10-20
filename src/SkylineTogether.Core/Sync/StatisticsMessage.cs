@@ -241,6 +241,18 @@ namespace SkylineTogether.Core.Sync
         }
 
         /// <summary>
+        /// Client: the host's sample count its copy of a series holds after <paramref name="applied"/> was written to it:
+        /// a whole series sets it, an append never moves it backwards (an append queued from admission that is older than
+        /// the joiner's snapshot leaves the copy alone, and the next append must still overwrite the copy's newest sample,
+        /// not add it again).
+        /// </summary>
+        public static long CopyTotalAfter(long copyTotal, StatisticSeries applied)
+        {
+            if (applied == null) throw new ArgumentNullException(nameof(applied));
+            return applied.Append ? Math.Max(copyTotal, applied.TotalLength) : applied.TotalLength;
+        }
+
+        /// <summary>
         /// Client: applies an append to its copy, whose newest sample is the host's sample <paramref name="copyTotal"/> - 1:
         /// the samples of the append the copy holds already are overwritten (the newest one may have changed on the host
         /// since), the ones it lacks are appended, and the copy keeps its newest <see cref="StatisticsMessage.MaxSamples"/>.
