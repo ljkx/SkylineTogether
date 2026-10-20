@@ -163,7 +163,7 @@ namespace SkylineTogether.Diagnostics
             }
             else
             {
-                SkylineTogether.Session.SessionManager.Notify(Settings.LocaleSource.Resolve("st.toast.featureOff", "FEATURE", feature.Title), Colossal.PSI.Common.ProgressState.Warning);
+                SkylineTogether.Session.SessionManager.Notify(Settings.LocaleSource.Resolve("st.toast.featureOff", "FEATURE", Features.LocalTitle(feature)), Colossal.PSI.Common.ProgressState.Warning);
             }
         }
     }

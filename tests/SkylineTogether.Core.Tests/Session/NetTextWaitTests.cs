@@ -54,6 +54,35 @@ namespace SkylineTogether.Core.Tests.Session
         }
 
         [Test]
+        public void AFeatureIsNamedInTheReceiversLanguage()
+        {
+            LocalText t = NetText.Of(NetText.EndHostError, "FEATURE", "city sync", NetText.FeatureIdArg, "replication");
+            Assert.Equal("The host's game hit an error (city sync), so the session ended. The host can start it again.", t.Text);
+            var german = new Dictionary<string, string>
+            {
+                [NetText.EndHostError] = "Fehler ({FEATURE}).",
+                ["st.feature.replication"] = "Stadtabgleich",
+            };
+            Assert.Equal("Fehler (Stadtabgleich).", t.Render(k => german.TryGetValue(k, out string v) ? v : null));
+            Assert.Equal("Fehler (city sync).", t.Render(k => k == NetText.EndHostError ? "Fehler ({FEATURE})." : null), "no name here: the host's");
+            LocalText odd = NetText.Of(NetText.EndHostError, "FEATURE", "x", NetText.FeatureIdArg, "../ui");
+            Assert.Equal("Fehler (x).", odd.Render(k => k == NetText.EndHostError ? "Fehler ({FEATURE})." : "INJECTED"), "only plain ids are looked up");
+        }
+
+        [Test]
+        public void AJoiningGamesOwnReasonCarriesAKey()
+        {
+            var rig = new SessionRig(new HostOptions { HostName = "Hosty" });
+            var (anna, _, _) = rig.AddClient("Anna");
+            rig.HostTransport.Dispose(); // nobody answers
+            rig.Run(120);
+            Assert.Equal(ClientState.Ended, anna.State);
+            Assert.NotNull(anna.EndText, anna.EndReason);
+            Assert.True(anna.EndText.Key.StartsWith(NetText.ClientKeyPrefix, System.StringComparison.Ordinal), anna.EndText.Key);
+            Assert.Equal(anna.EndText.Text, anna.EndReason, "the English reason is the key's English text");
+        }
+
+        [Test]
         public void AKickedPlayerIsToldOnceWhy()
         {
             var rig = new SessionRig(new HostOptions { HostName = "Hosty" });

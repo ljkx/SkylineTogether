@@ -262,9 +262,9 @@ namespace SkylineTogether.Core.Diagnostics
             }
             var sb = new StringBuilder();
             sb.Append("Self-test: ").Append(ok.ToString(CultureInfo.InvariantCulture)).Append('/').Append(total.ToString(CultureInfo.InvariantCulture)).Append(" checks passed");
-            if (warn > 0) sb.Append(", ").Append(warn.ToString(CultureInfo.InvariantCulture)).Append(" warnings");
+            if (warn > 0) sb.Append(", ").Append(warn.ToString(CultureInfo.InvariantCulture)).Append(warn == 1 ? " warning" : " warnings");
             if (off.Count > 0) sb.Append("; off: ").Append(string.Join(", ", off.ToArray()));
-            if (total == 0) return off.Count > 0 ? "Off: " + string.Join(", ", off.ToArray()) : "";
+            if (total == 0) return off.Count > 0 ? "off: " + string.Join(", ", off.ToArray()) : "";
             return sb.ToString();
         }
 

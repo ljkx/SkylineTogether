@@ -223,8 +223,36 @@ namespace SkylineTogether.Diagnostics
         /// <summary>The latest report as text lines (log and diagnostics).</summary>
         public static IEnumerable<string> ReportLines() => Features.Registry.ReportLines();
 
-        /// <summary>One line for the panel.</summary>
+        /// <summary>One line for the log (English).</summary>
         public static string Summary => Features.Registry.Summary();
+
+        /// <summary>
+        /// The panel's line in the player's language ("Self-test: 30 of 31 checks passed, 1 with a warning. Switched off:
+        /// city sync"); <paramref name="off"/> tells whether a feature is off. "" before the first stage with nothing off.
+        /// </summary>
+        public static string LocalSummary(out bool off)
+        {
+            int ok = 0, warn = 0, total = 0;
+            foreach (ProbeResult r in Features.Registry.Results)
+            {
+                total++;
+                if (r.Ok) ok++;
+                else if (r.WarningOnly) warn++;
+            }
+            var names = new List<string>();
+            foreach (FeatureHealth f in Features.Registry.Features)
+            {
+                if (!f.IsAvailable) names.Add(Features.LocalTitle(f));
+            }
+            off = names.Count > 0;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            string offText = off ? Settings.LocaleSource.Resolve("st.ui.selftest.off", "LIST", string.Join(", ", names.ToArray())) : null;
+            if (total == 0) return offText ?? "";
+            string line = Settings.LocaleSource.Resolve("st.ui.selftest.summary", "OK", ok.ToString(ci), "TOTAL", total.ToString(ci));
+            if (warn > 0) line += ", " + Settings.LocaleSource.Resolve("st.ui.selftest.warnings", "N", warn.ToString(ci));
+            if (offText != null) line += ". " + offText;
+            return line;
+        }
 
         // ---------------------------------------------------------------- stages
 

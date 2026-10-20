@@ -271,7 +271,7 @@ namespace SkylineTogether.Session
             for (int i = 0; i < features.Count; i++)
             {
                 FeatureHealth f = features[i];
-                if (f.Critical && f != Features.Steam && f.ProbeFailed) return f.Title + ": " + f.UnavailableReason;
+                if (f.Critical && f != Features.Steam && f.ProbeFailed) return Features.LocalTitle(f) + ": " + f.UnavailableReason;
             }
             return null;
         }
@@ -1198,18 +1198,19 @@ namespace SkylineTogether.Session
                 {
                     _log.Error(LogCategory.Session, "critical failure in " + feature.Title + "; ending the session");
                     DiagnosticsDump.Write();
-                    StopHost(NetText.Of(NetText.EndHostError, "FEATURE", feature.Title));
-                    Notify(LocaleSource.Resolve("st.toast.critical.host", "FEATURE", feature.Title), ProgressState.Failed);
+                    // the feature's id goes along, so each player reads its name in their own language
+                    StopHost(NetText.Of(NetText.EndHostError, "FEATURE", feature.Title, NetText.FeatureIdArg, feature.Id));
+                    Notify(LocaleSource.Resolve("st.toast.critical.host", "FEATURE", Features.LocalTitle(feature)), ProgressState.Failed);
                 }
                 else if (Client != null)
                 {
                     _log.Error(LogCategory.Session, "critical failure in " + feature.Title + "; leaving the session");
-                    Client.Abort(LocaleSource.Resolve("st.chat.criticalLeft", "FEATURE", feature.Title));
+                    Client.Abort(LocaleSource.Resolve("st.chat.criticalLeft", "FEATURE", Features.LocalTitle(feature)));
                     EndClient();
                 }
                 else if (feature != Features.Session)
                 {
-                    Notify(LocaleSource.Resolve("st.toast.critical.other", "FEATURE", feature.Title), ProgressState.Failed);
+                    Notify(LocaleSource.Resolve("st.toast.critical.other", "FEATURE", Features.LocalTitle(feature)), ProgressState.Failed);
                 }
             });
         }
@@ -1344,7 +1345,8 @@ namespace SkylineTogether.Session
                 case ClientEndKind.Dropped:
                     return string.IsNullOrEmpty(text) ? client.EndReason : text;
                 default:
-                    return client.EndReason;
+                    // the joining game's own reasons (a timeout, a failed download or load) are keyed too
+                    return said.Key != null && said.Key.StartsWith(NetText.ClientKeyPrefix, StringComparison.Ordinal) && !string.IsNullOrEmpty(text) ? text : client.EndReason;
             }
         }
 

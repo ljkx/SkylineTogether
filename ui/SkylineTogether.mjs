@@ -453,7 +453,7 @@ const EN = {
   "st.ui.resync.text": "Parts of your city no longer match the host's, and automatic repairs couldn't fix them. Rejoin with a fresh copy of the host's city? It takes about as long as joining.",
   "st.ui.resync.now": "Rejoin now",
   "st.ui.resync.later": "Not now",
-  "st.ui.selftest.details": "Details",
+  "st.ui.selftest.details": "Write diagnostics",
   // solo testing (record/replay verdict)
   "st.ui.test.title": "Solo test (no second PC needed)",
   "st.ui.test.subtitle": "Check the sync on this PC, no second player needed",
@@ -1706,7 +1706,7 @@ function SelfTest(p) {
   const s = p.state;
   const probes = str(s.probes);
   if (!probes) return null;
-  const off = probes.indexOf("off:") >= 0;
+  const off = s.probesOff === true;
   return h(
     "div",
     { style: merge({ fontSize: FS.xs, lineHeight: 1.35, color: off ? T.warn : p.menu ? T.menuText2 : T.textDimmer }, p.style) },

@@ -263,10 +263,11 @@ namespace SkylineTogether.UI
             string text;
             {
                 SessionNetStats n = s.Host != null ? s.Host.GetNetStats() : s.Client.GetNetStats();
-                text = (n.PingMs >= 0 ? "ping " + n.PingMs.ToString(CultureInfo.InvariantCulture) + " ms · " : "")
-                       + "in " + (n.InBytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture) + " KB/s · out "
-                       + (n.OutBytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture) + " KB/s"
-                       + (n.QueuedBytes > 64 * 1024 ? " · queued " + (n.QueuedBytes / 1024).ToString(CultureInfo.InvariantCulture) + " KB" : "");
+                // in the player's language, like the Options page that switches the line on
+                text = (n.PingMs >= 0 ? LocaleSource.Resolve("st.ui.net.ping", "PING", n.PingMs.ToString(CultureInfo.InvariantCulture)) + " · " : "")
+                       + LocaleSource.Resolve("st.ui.net.rates", "IN", (n.InBytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture),
+                           "OUT", (n.OutBytesPerSecond / 1024f).ToString("0.0", CultureInfo.InvariantCulture))
+                       + (n.QueuedBytes > 64 * 1024 ? " · " + LocaleSource.Resolve("st.ui.net.queued", "N", (n.QueuedBytes / 1024).ToString(CultureInfo.InvariantCulture)) : "");
             }
             var sb = new StringBuilder(128);
             sb.Append('{');
@@ -579,7 +580,8 @@ namespace SkylineTogether.UI
             Prop(sb, "canInvite", steam && inviteTarget != 0).Append(',');
             Prop(sb, "inviteSteamId", inviteTarget != 0 ? inviteTarget.ToString(CultureInfo.InvariantCulture) : "").Append(',');
             // the self-test (ARCHITECTURE.md#probes-and-self-test) in one line, and what blocks hosting/joining if anything
-            Prop(sb, "probes", Probes.Summary ?? "").Append(',');
+            Prop(sb, "probes", Probes.LocalSummary(out bool probesOff) ?? "").Append(',');
+            Prop(sb, "probesOff", probesOff).Append(',');
             Prop(sb, "blocked", SessionManager.BlockingReason() ?? "").Append(',');
             // the old multiplayer mod is loaded here: nobody can join this game and it cannot join others (panel warning)
             Prop(sb, "conflictMod", GameInfoProvider.ConflictingMod() ?? "").Append(',');

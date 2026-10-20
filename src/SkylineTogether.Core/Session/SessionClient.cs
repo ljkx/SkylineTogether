@@ -219,8 +219,9 @@ namespace SkylineTogether.Core.Session
         public MismatchReport EndReport { get; private set; }
 
         /// <summary>
-        /// What the host said about the end (a kick, ban, end or drop reason, a refusal's detail) with its locale key, so
-        /// the game shows it in the player's language; null when the end has a local reason.
+        /// Why the session ended with its locale key, so the game shows it in the player's language: what the host said (a
+        /// kick, ban, end or drop reason, a refusal's detail) or this game's own reason (<c>st.net.client.*</c>); null for
+        /// an end without either (the player left, a fault).
         /// </summary>
         public LocalText EndText { get; private set; }
 
@@ -369,7 +370,7 @@ namespace SkylineTogether.Core.Session
             _connection = _transport.Connect(endpoint);
             if (_connection == null)
             {
-                End("Could not start the connection to " + Diagnostics.AddressMask.EndpointText(endpoint) + ".", ClientEndKind.Unreachable);
+                End(NetText.Of(NetText.ClientUnreachable, "TARGET", Diagnostics.AddressMask.EndpointText(endpoint)), ClientEndKind.Unreachable);
             }
         }
 
@@ -387,36 +388,36 @@ namespace SkylineTogether.Core.Session
             double now = _clock.Seconds;
             if ((State == ClientState.Connecting || State == ClientState.Handshaking) && now - _stateSince > _options.ConnectTimeoutSeconds)
             {
-                End(State == ClientState.Connecting ? "The host did not answer. Check the address or Steam ID and that the host is hosting." : "The host did not finish the handshake.", ClientEndKind.Timeout);
+                End(NetText.Of(State == ClientState.Connecting ? NetText.ClientNoAnswer : NetText.ClientHandshake), ClientEndKind.Timeout);
                 return;
             }
             // join watchdogs: a host that never sends the city (or never answers the load) must not leave the player
             // waiting forever; the load itself is local and has no time limit
             if (State == ClientState.WaitingForSnapshot && now - _stateSince > _options.SnapshotWaitTimeoutSeconds)
             {
-                End("The host did not send the city in time. Try joining again.", ClientEndKind.Timeout);
+                End(NetText.Of(NetText.ClientNoCity), ClientEndKind.Timeout);
                 return;
             }
             if (State == ClientState.Downloading && now - _lastChunkAt > _options.DownloadStallTimeoutSeconds)
             {
-                End("The city download stalled (nothing received for " + (int)_options.DownloadStallTimeoutSeconds + " s). Try joining again.", ClientEndKind.Timeout);
+                End(NetText.Of(NetText.ClientDownloadStalled, "SECONDS", Whole(_options.DownloadStallTimeoutSeconds)), ClientEndKind.Timeout);
                 return;
             }
             if (State == ClientState.Loading && _loadedAt < 0 && _options.LoadTimeoutSeconds > 0 && now - _stateSince > _options.LoadTimeoutSeconds)
             {
                 // not retried automatically: the next attempt would load just as long (and hold the host's game again)
-                End("Loading the host's city did not finish in " + (int)(_options.LoadTimeoutSeconds / 60) + " minutes. Try joining again.", ClientEndKind.LoadFailed);
+                End(NetText.Of(NetText.ClientLoadTimeout, "MINUTES", Whole(_options.LoadTimeoutSeconds / 60)), ClientEndKind.LoadFailed);
                 return;
             }
             if (State == ClientState.Live && _options.LiveSilenceTimeoutSeconds > 0 && now - _lastHeard > _options.LiveSilenceTimeoutSeconds)
             {
                 // the transport polled first, so anything that was waiting for this side counted already
-                End("The host stopped responding (nothing received for " + (int)(now - _lastHeard) + " s). Their game may be frozen or closed.", ClientEndKind.Timeout);
+                End(NetText.Of(NetText.ClientHostSilent, "SECONDS", Whole(now - _lastHeard)), ClientEndKind.Timeout);
                 return;
             }
             if (State == ClientState.Loading && _loadedAt >= 0 && now - _loadedAt > _options.LiveWaitTimeoutSeconds)
             {
-                End("The host did not confirm the join after the city loaded. Try joining again.", ClientEndKind.Timeout);
+                End(NetText.Of(NetText.ClientNoConfirm), ClientEndKind.Timeout);
                 return;
             }
             if (_challenge != null && _answerKey == null) AnswerChallenge(); // the key may have been derived meanwhile
@@ -666,9 +667,8 @@ namespace SkylineTogether.Core.Session
         {
             if (connection != _connection || State == ClientState.Ended) return;
             bool connecting = State == ClientState.Connecting;
-            End(connecting
-                ? "Could not connect to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString(CultureInfo.InvariantCulture) : text) + ")."
-                : "Lost the connection to the host (" + (string.IsNullOrEmpty(text) ? reason.ToString(CultureInfo.InvariantCulture) : text) + ").",
+            End(NetText.Of(connecting ? NetText.ClientConnectFailed : NetText.ClientConnectionLost,
+                    "DETAIL", string.IsNullOrEmpty(text) ? reason.ToString(CultureInfo.InvariantCulture) : text),
                 connecting ? ClientEndKind.Unreachable : ClientEndKind.ConnectionLost);
         }
 
@@ -684,7 +684,7 @@ namespace SkylineTogether.Core.Session
             catch (DecodeException ex)
             {
                 _log.Warn(LogCategory.Protocol, "malformed message from the host: " + ex.Message);
-                End("The host sent data this version cannot read (" + ex.Message + ").", ClientEndKind.ProtocolError);
+                End(NetText.Of(NetText.ClientUnreadable, "DETAIL", ex.Message), ClientEndKind.ProtocolError);
             }
             catch (Exception ex)
             {
@@ -707,7 +707,8 @@ namespace SkylineTogether.Core.Session
                     RefusedFor = r.Reason;
                     EndReport = MismatchReport.Decode(r.MismatchReport);
                     EndText = new LocalText { Text = r.Detail ?? "", Key = EndReport?.TextKey, Args = EndReport?.TextArgs ?? Array.Empty<string>() };
-                    End(string.IsNullOrEmpty(r.Detail) ? "The host refused the connection (" + r.Reason + ")." : r.Detail, r.Reason == RefuseReason.HostPreparing ? ClientEndKind.RefusedTemporarily : ClientEndKind.Refused);
+                    if (string.IsNullOrEmpty(r.Detail)) EndText = NetText.Of(NetText.ClientRefused, "DETAIL", r.Reason.ToString());
+                    End(string.IsNullOrEmpty(r.Detail) ? EndText.Text : r.Detail, r.Reason == RefuseReason.HostPreparing ? ClientEndKind.RefusedTemporarily : ClientEndKind.Refused);
                     return;
                 }
                 case MessageKind.Welcome:
@@ -812,7 +813,7 @@ namespace SkylineTogether.Core.Session
                     if (_challenge != null) return; // one challenge per connection
                     if (string.IsNullOrEmpty(_options.Password))
                     {
-                        End("This session needs a password. Enter it below and try again.", ClientEndKind.PasswordRequired);
+                        End(NetText.Of(NetText.ClientPasswordRequired), ClientEndKind.PasswordRequired);
                         return;
                     }
                     _challenge = ch;
@@ -900,7 +901,7 @@ namespace SkylineTogether.Core.Session
             catch (Exception ex)
             {
                 _log.Error(LogCategory.Join, "could not prepare the download", ex);
-                End("Could not prepare the city download: " + ex.Message, ClientEndKind.LoadFailed);
+                End(NetText.Of(NetText.ClientPrepareFailed, "DETAIL", ex.Message), ClientEndKind.LoadFailed);
                 return;
             }
             _lastChunkAt = _clock.Seconds;
@@ -927,7 +928,7 @@ namespace SkylineTogether.Core.Session
             _receiver.OnChunk(buffer, offset, count);
             if (_receiver.IsFailed)
             {
-                End("The city download failed: " + _receiver.FailureReason, ClientEndKind.JoinFailed);
+                End(NetText.Of(NetText.ClientDownloadFailed, "DETAIL", _receiver.FailureReason), ClientEndKind.JoinFailed);
                 return;
             }
             if (_receiver.IsComplete) OnDownloadComplete();
@@ -940,7 +941,7 @@ namespace SkylineTogether.Core.Session
             // the digest was computed while the chunks arrived in order; only chunks that came ahead of a gap are read back
             if (!_receiver.VerifyDigest())
             {
-                End("The downloaded city is damaged (checksum mismatch). Try joining again.", ClientEndKind.JoinFailed);
+                End(NetText.Of(NetText.ClientDamaged), ClientEndKind.JoinFailed);
                 return;
             }
             Timeline.Mark(JoinStage.Verified, _clock.Seconds);
@@ -1011,7 +1012,7 @@ namespace SkylineTogether.Core.Session
             if (!outcome.Success)
             {
                 // "busy": this game was still loading another city (e.g. an earlier attempt's); a retry can succeed
-                End("Loading the host's city failed: " + (outcome.FailureDetail ?? outcome.FailureKey ?? "unknown error"),
+                End(NetText.Of(NetText.ClientLoadFailed, "DETAIL", outcome.FailureDetail ?? outcome.FailureKey ?? "unknown error"),
                     outcome.FailureKey == "busy" ? ClientEndKind.JoinFailed : ClientEndKind.LoadFailed);
             }
             else
@@ -1136,6 +1137,16 @@ namespace SkylineTogether.Core.Session
             _stateSince = _clock.Seconds;
             StateChanged?.Invoke();
         }
+
+        /// <summary>Ends with a text of this game's own (<see cref="NetText"/>), shown in the player's language.</summary>
+        private void End(LocalText text, ClientEndKind kind)
+        {
+            if (State == ClientState.Ended) return;
+            EndText = text;
+            End(text.Text, kind);
+        }
+
+        private static string Whole(double value) => ((int)value).ToString(CultureInfo.InvariantCulture);
 
         private void End(string reason, ClientEndKind kind = ClientEndKind.Failed)
         {

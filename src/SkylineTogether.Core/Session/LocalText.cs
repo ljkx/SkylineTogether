@@ -38,7 +38,8 @@ namespace SkylineTogether.Core.Session
         /// <summary>
         /// The text in the receiver's language: <paramref name="lookup"/> returns the template of a key (null when unknown),
         /// whose <c>{NAME}</c> placeholders are filled from <see cref="Args"/>; else the English <see cref="Text"/>. Only
-        /// keys of the <c>st.net.</c> family are looked up (a host cannot make a joiner show any other string).
+        /// keys of the <c>st.net.</c> family are looked up (a host cannot make a joiner show any other string), plus a
+        /// feature's name (<c>st.feature.</c>, <see cref="NetText.WithFeature"/>).
         /// </summary>
         public string Render(Func<string, string> lookup)
         {
@@ -53,7 +54,7 @@ namespace SkylineTogether.Core.Session
                 template = null;
             }
             if (string.IsNullOrEmpty(template)) return Text ?? "";
-            return NetText.Format(template, NetText.WithWait(Args, k => SafeLookup(lookup, k)));
+            return NetText.Format(template, NetText.WithFeature(NetText.WithWait(Args, k => SafeLookup(lookup, k)), k => SafeLookup(lookup, k)));
         }
 
         private static string SafeLookup(Func<string, string> lookup, string key)
@@ -120,8 +121,14 @@ namespace SkylineTogether.Core.Session
     /// </summary>
     public static class NetText
     {
-        /// <summary>Every key starts with it (and a receiver looks up no other key).</summary>
+        /// <summary>Every key starts with it (and a receiver looks up no other key, apart from feature names).</summary>
         public const string KeyPrefix = "st.net.";
+
+        /// <summary>The locale keys of the mod's feature names (<c>st.feature.replication</c>).</summary>
+        public const string FeatureKeyPrefix = "st.feature.";
+
+        /// <summary>The argument that names a feature by its id, so the receiver can word <c>{FEATURE}</c> in its language.</summary>
+        public const string FeatureIdArg = "FEATURE_ID";
 
         // system chat lines
         public const string ChatJoining = "st.net.chat.joining";
@@ -184,12 +191,34 @@ namespace SkylineTogether.Core.Session
         public const string TimeMinutes = "st.net.time.minutes";
         public const string TimeHours = "st.net.time.hours";
 
+        /// <summary>The keys of what a joining game says itself (<c>st.net.client.*</c>).</summary>
+        public const string ClientKeyPrefix = "st.net.client.";
+
         // what a joiner says about the host (game layer)
         public const string ClientKicked = "st.net.client.kicked";
         public const string ClientBanned = "st.net.client.banned";
         public const string ClientKickedFor = "st.net.client.kickedFor";
         public const string ClientBannedFor = "st.net.client.bannedFor";
         public const string ClientHostNotProven = "st.net.client.hostProof";
+
+        // why a joining game ended the join itself (its own words, shown in the player's language)
+        public const string ClientUnreachable = "st.net.client.unreachable";
+        public const string ClientNoAnswer = "st.net.client.noAnswer";
+        public const string ClientHandshake = "st.net.client.handshake";
+        public const string ClientNoCity = "st.net.client.noCity";
+        public const string ClientDownloadStalled = "st.net.client.downloadStalled";
+        public const string ClientLoadTimeout = "st.net.client.loadTimeout";
+        public const string ClientHostSilent = "st.net.client.hostSilent";
+        public const string ClientNoConfirm = "st.net.client.noConfirm";
+        public const string ClientConnectFailed = "st.net.client.connectFailed";
+        public const string ClientConnectionLost = "st.net.client.connectionLost";
+        public const string ClientUnreadable = "st.net.client.unreadable";
+        public const string ClientRefused = "st.net.client.refused";
+        public const string ClientPasswordRequired = "st.net.client.passwordRequired";
+        public const string ClientPrepareFailed = "st.net.client.prepareFailed";
+        public const string ClientDownloadFailed = "st.net.client.downloadFailed";
+        public const string ClientDamaged = "st.net.client.damaged";
+        public const string ClientLoadFailed = "st.net.client.loadFailed";
 
         /// <summary>The English text of every key (the fallback sent along, and the reference for the locale tables).</summary>
         public static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -251,6 +280,23 @@ namespace SkylineTogether.Core.Session
             [ClientBanned] = "You were removed from the session and {REASON}.",
             [ClientKickedFor] = "You were removed from the session: {REASON}",
             [ClientBannedFor] = "You were removed from the session and banned: {REASON}",
+            [ClientUnreachable] = "Could not start the connection to {TARGET}.",
+            [ClientNoAnswer] = "The host did not answer. Check the address or Steam ID and that the host is hosting.",
+            [ClientHandshake] = "The host did not finish the handshake.",
+            [ClientNoCity] = "The host did not send the city in time. Try joining again.",
+            [ClientDownloadStalled] = "The city download stalled (nothing received for {SECONDS} s). Try joining again.",
+            [ClientLoadTimeout] = "Loading the host's city did not finish in {MINUTES} minutes. Try joining again.",
+            [ClientHostSilent] = "The host stopped responding (nothing received for {SECONDS} s). Their game may be frozen or closed.",
+            [ClientNoConfirm] = "The host did not confirm the join after the city loaded. Try joining again.",
+            [ClientConnectFailed] = "Could not connect to the host ({DETAIL}).",
+            [ClientConnectionLost] = "Lost the connection to the host ({DETAIL}).",
+            [ClientUnreadable] = "The host sent data this version cannot read ({DETAIL}).",
+            [ClientRefused] = "The host refused the connection ({DETAIL}).",
+            [ClientPasswordRequired] = "This session needs a password. Enter it below and try again.",
+            [ClientPrepareFailed] = "Could not prepare the city download: {DETAIL}",
+            [ClientDownloadFailed] = "The city download failed: {DETAIL}",
+            [ClientDamaged] = "The downloaded city is damaged (checksum mismatch). Try joining again.",
+            [ClientLoadFailed] = "Loading the host's city failed: {DETAIL}",
             [ClientHostNotProven] = "The host couldn't prove that it knows the session password.",
         };
 
@@ -267,6 +313,33 @@ namespace SkylineTogether.Core.Session
         /// and follows a colon (<see cref="ClientKickedFor"/>, <see cref="ClientBannedFor"/>).
         /// </summary>
         public static bool IsRemovalPhrase(string key) => key == KickByHost || key == KickByCoHost || key == BanByHost;
+
+        /// <summary>
+        /// <paramref name="args"/> with <c>FEATURE</c> in the receiver's language when a <see cref="FeatureIdArg"/> names the
+        /// feature (<c>st.feature.&lt;id&gt;</c> from <paramref name="lookup"/>); unchanged otherwise. Only lower-case letter
+        /// ids are looked up.
+        /// </summary>
+        public static string[] WithFeature(string[] args, Func<string, string> lookup)
+        {
+            if (args == null || lookup == null) return args;
+            int featureAt = -1;
+            string id = null;
+            for (int i = 0; i + 1 < args.Length; i += 2)
+            {
+                if (string.Equals(args[i], "FEATURE", StringComparison.Ordinal)) featureAt = i + 1;
+                else if (string.Equals(args[i], FeatureIdArg, StringComparison.Ordinal)) id = args[i + 1];
+            }
+            if (featureAt < 0 || string.IsNullOrEmpty(id) || id.Length > 32) return args;
+            foreach (char c in id)
+            {
+                if (c < 'a' || c > 'z') return args;
+            }
+            string title = lookup(FeatureKeyPrefix + id);
+            if (string.IsNullOrEmpty(title)) return args;
+            var copy = (string[])args.Clone();
+            copy[featureAt] = title;
+            return copy;
+        }
 
         /// <summary>
         /// <paramref name="args"/> plus <c>WAIT</c>, the <c>SECONDS</c> argument worded as a wait (<see cref="Wait"/>).
