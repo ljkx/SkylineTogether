@@ -128,7 +128,9 @@ namespace SkylineTogether.ApiCheck
 
         /// <summary>
         /// CI's check of the checker (no game there): this tool's own DLL resolves completely against the running .NET
-        /// runtime, and does not once System.Reflection.Metadata is taken away.
+        /// runtime, does not once System.Reflection.Metadata is taken away, and a copy of it with one referenced member
+        /// renamed, or with one member reference's parameter type changed, has exactly that one problem (the member-level
+        /// checks: name, then signature).
         /// </summary>
         private static int SelfTest()
         {
@@ -138,11 +140,118 @@ namespace SkylineTogether.ApiCheck
             int complete = Check(new[] { self }, new[] { runtime }, _ => true, quiet);
             using var withoutSrm = new StringWriter(CultureInfo.InvariantCulture);
             int missing = Check(new[] { self }, new[] { runtime }, f => !string.Equals(f, "System.Reflection.Metadata.dll", StringComparison.OrdinalIgnoreCase), withoutSrm);
-            bool ok = complete == 0 && missing > 0 && withoutSrm.ToString().Contains("assembly System.Reflection.Metadata", StringComparison.Ordinal);
-            Console.WriteLine("ApiCheck self-test: " + (ok ? "ok" : "FAILED") + " (" + complete + " problem(s) against the runtime, " + missing + " without System.Reflection.Metadata)");
-            if (!ok) Console.WriteLine(quiet.ToString() + withoutSrm);
+            bool assemblyLevel = complete == 0 && missing > 0 && withoutSrm.ToString().Contains("assembly System.Reflection.Metadata", StringComparison.Ordinal);
+            string renamed = MutatedSelfCheck(self, runtime, SelfMutation.RenameMember, out string renamedReport);
+            string retyped = MutatedSelfCheck(self, runtime, SelfMutation.ChangeParameter, out string retypedReport);
+            bool ok = assemblyLevel && renamed != null && retyped != null;
+            Console.WriteLine("ApiCheck self-test: " + (ok ? "ok" : "FAILED") + " (" + complete + " problem(s) against the runtime, " + missing
+                              + " without System.Reflection.Metadata; a renamed member: " + (renamed ?? "not found") + "; a changed parameter: " + (retyped ?? "not found") + ")");
+            if (!ok) Console.WriteLine(quiet.ToString() + withoutSrm + renamedReport + retypedReport);
             return ok ? 0 : 1;
         }
+
+        private enum SelfMutation { RenameMember, ChangeParameter }
+
+        /// <summary>
+        /// Patches one member reference of a copy of <paramref name="self"/> (its name in the #Strings heap, or the first
+        /// parameter type in its signature blob) and checks the copy: the first candidate whose check reports exactly one
+        /// problem of the expected kind is the result (that problem line), null when no candidate does (the member-level
+        /// check resolves what it must not). Candidates whose patched bytes are shared with other metadata are tried in
+        /// turn; a working checker finds one among the first few.
+        /// </summary>
+        private static string MutatedSelfCheck(string self, string runtime, SelfMutation mutation, out string report)
+        {
+            byte[] original = File.ReadAllBytes(self);
+            var sb = new StringBuilder();
+            string dir = Path.Combine(Path.GetTempPath(), "ApiCheck-self-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                var candidates = new List<(int Offset, byte Value, string Member)>();
+                using (var pe = new PEReader(original.ToImmutableArray()))
+                {
+                    MetadataReader md = pe.GetMetadataReader();
+                    int metadataStart = pe.PEHeaders.MetadataStartOffset;
+                    var nameUses = new Dictionary<int, int>();
+                    foreach (MemberReferenceHandle h in md.MemberReferences)
+                    {
+                        int offset = MetadataTokens.GetHeapOffset(md.GetMemberReference(h).Name);
+                        nameUses[offset] = nameUses.TryGetValue(offset, out int n) ? n + 1 : 1;
+                    }
+                    foreach (MemberReferenceHandle h in md.MemberReferences)
+                    {
+                        MemberReference m = md.GetMemberReference(h);
+                        string name = md.GetString(m.Name);
+                        if (m.GetKind() != MemberReferenceKind.Method || name.StartsWith(".", StringComparison.Ordinal)) continue;
+                        if (mutation == SelfMutation.RenameMember)
+                        {
+                            int offset = MetadataTokens.GetHeapOffset(m.Name);
+                            if (nameUses[offset] != 1 || name.Length < 4) continue;
+                            // the last letter of the name in the #Strings heap: WriteLine -> WriteLinf
+                            int at = metadataStart + md.GetHeapMetadataOffset(HeapIndex.String) + offset + name.Length - 1;
+                            candidates.Add((at, (byte)(original[at] == (byte)'f' ? 'g' : 'f'), name));
+                        }
+                        else
+                        {
+                            // HASTHIS? | param count | void or a primitive return type | first parameter: a primitive -> u8
+                            BlobReader blob = md.GetBlobReader(m.Signature);
+                            int start = metadataStart + md.GetHeapMetadataOffset(HeapIndex.Blob) + MetadataTokens.GetHeapOffset(m.Signature) + CompressedLengthSize(blob.Length);
+                            if (blob.Length < 4) continue;
+                            byte header = original[start], count = original[start + 1], ret = original[start + 2], first = original[start + 3];
+                            if ((header & 0x1F) != 0 || count == 0 || count > 0x7F) continue;
+                            if (ret < 0x01 || ret > 0x0E || first < 0x02 || first > 0x0E || first == 0x0B) continue;
+                            candidates.Add((start + 3, 0x0B, name));
+                        }
+                    }
+                }
+                foreach (var (offset, value, member) in candidates.Take(40))
+                {
+                    byte[] copy = (byte[])original.Clone();
+                    copy[offset] = value;
+                    string path = Path.Combine(dir, Path.GetFileName(self));
+                    File.WriteAllBytes(path, copy);
+                    string output = CheckQuietly(path, runtime, out int problems);
+                    if (output == null) continue; // a patch that broke the metadata itself
+                    string[] lines = output.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.StartsWith("  MISSING ", StringComparison.Ordinal)).ToArray();
+                    sb.AppendLine(mutation + " " + member + ": " + problems + " problem(s)");
+                    bool expected = mutation == SelfMutation.RenameMember
+                        ? lines.Length == 1 && lines[0].Contains("::" + member.Substring(0, member.Length - 1), StringComparison.Ordinal) && lines[0].EndsWith("(no member of that name)", StringComparison.Ordinal)
+                        : lines.Length == 1 && lines[0].Contains("::" + member + " ", StringComparison.Ordinal) && lines[0].Contains("UInt64", StringComparison.Ordinal) && lines[0].Contains("(the game has: ", StringComparison.Ordinal);
+                    if (problems == 1 && expected) return lines[0].Trim().Length > 160 ? lines[0].Trim().Substring(0, 160) + "..." : lines[0].Trim();
+                }
+                return null;
+            }
+            finally
+            {
+                report = sb.ToString();
+                try
+                {
+                    Directory.Delete(dir, true);
+                }
+                catch (IOException)
+                {
+                    // a scanner still holds the copy: the temp folder is cleaned up eventually
+                }
+            }
+        }
+
+        // the report of checking one DLL against the runtime, or null when its metadata cannot be read
+        private static string CheckQuietly(string dll, string runtime, out int problems)
+        {
+            using var output = new StringWriter(CultureInfo.InvariantCulture);
+            try
+            {
+                problems = Check(new[] { dll }, new[] { runtime }, _ => true, output);
+                return output.ToString();
+            }
+            catch (Exception e) when (e is BadImageFormatException || e is InvalidOperationException || e is ArgumentException)
+            {
+                problems = 0;
+                return null;
+            }
+        }
+
+        private static int CompressedLengthSize(int length) => length < 0x80 ? 1 : length < 0x4000 ? 2 : 4;
 
         private static string DefaultManagedPath()
         {
