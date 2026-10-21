@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-21
+
 First regular release: big cities can be joined on slower PCs, safer joining and passwords, a viewer-first option for
 hosts, and fixes for crashes and differences on joined players' games. Skyline Together is available on
 [Paradox Mods](https://mods.paradoxplaza.com/mods/163578/Windows) and on GitHub with the same build, so players of both
@@ -334,7 +336,8 @@ First public release (pre-release). Back up your saves before playing.
   request templates, GitHub Actions CI (Core build and tests without the game, UI smoke test, link and personal-data
   checks), `.editorconfig` and `.gitattributes`.
 
-[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.1.0-alpha.4...main
+[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.2.0...main
+[0.2.0]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.2.0
 [0.1.0-alpha.4]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.2
