@@ -42,20 +42,27 @@ From this release on, regular releases have no pre-release suffix.
   - Developer detail: hardened handshake, id generation in entity and mover records, painted-cell masks in resource
     paint patches, statistics appends that resend the newest sample, a load heartbeat in the load progress report.
 - **Messages from the host appear in each player's language**: chat lines such as "… joined the city", kick, ban and
-  end reasons, and refusal details. So do the joining game's own reasons, the names of the mod's features, the
-  self-test line and the network line.
-- **Clearer join screens.** A password lockout has its own screen ("Too many wrong passwords") instead of "Wrong
-  password", a host that cannot prove that it knows the password has its own screen ("Couldn't confirm the host")
-  instead of "Joining failed", a join cooldown says how long to wait ("Please wait before joining again") instead of
-  "The host isn't ready yet", and a join the host stopped says so ("The host stopped your join") instead of
-  "Connection lost". Waits read "about 10 minutes" instead of "600 s"; the mod screens read as plain sentences.
+  end reasons, and refusal details (a short sentence per kind of refusal next to the lists). So do the joining game's
+  own reasons, the names of the mod's features, the self-test line, the network line (with the player's number
+  format), the notification about objects left out for missing assets, and the reason why hosting is unavailable.
+- **Clearer join screens.** Four new screens:
+  - a password lockout or too many join attempts at once: "Too many attempts" instead of "Wrong password";
+  - a host that cannot prove that it knows the password: "Couldn't confirm the host" instead of "Joining failed";
+  - a join cooldown says how long to wait ("Please wait before joining again") instead of "The host isn't ready yet",
+    and offers "Try again" only once the wait has passed;
+  - a join the host stopped says so ("The host stopped your join") instead of "Connection lost".
+
+  A direct IP join to a host without a session password says so ("Direct connections need a password") instead of
+  the friends-only text. Waits read "about 10 minutes" instead of "600 s", the mod screens read as plain sentences,
+  and **Details** is shown only where it adds something.
 - **Bug reports go to GitHub issues.** The texts in the game, the installer and the release zip say where to send the
   diagnostics file and logs; the guide explains how to collect them for a Paradox Mods install (which has no
   `Collect-Logs.cmd`) and what they contain.
-- **Your Windows user name and IP addresses stay out of the logs.** Skyline Together's log, the diagnostics file and
+- **Your Windows user name and full IP addresses stay out of the logs.** Skyline Together's log, the diagnostics file and
   its notifications write paths in your user folder as `%USERPROFILE%` and IP addresses shortened (`203.0.113.x`);
   only the host's ban list keeps the full address of a player banned by address. `Collect-Logs.cmd` replaces the user
-  folder in the game's logs too, and leaves crash dumps out: they can contain passwords and are collected only with
+  folder in the game's logs too (also in `file:///` URLs), leaves out diagnostics files of older versions (they contain
+  full IP addresses), and leaves crash dumps out: they can contain passwords and are collected only with
   `-IncludeDumps`, for sending privately.
 - **Dropped, not kicked.** A player who stops responding, cannot keep up or whose changes keep failing is
   disconnected rather than kicked, so their game offers to join again.
@@ -124,10 +131,11 @@ another object.
   switch terrain sync off for everyone; such strokes are checked first, and a player whose strokes keep failing is
   ignored.
 - **Mods behave on joined players.** A joined player's copy of a mod system no longer sends its own recomputed values
-  to the host as the player's edits, not even later when the player clicks something (moving the camera or chatting
-  no longer counts as editing, and a mod-panel change made by a long slider drag or a held key is no longer lost); mods whose panels write the city count as
-  world-affecting, mods that only draw things do not; mod systems switched off on joined players stay off from the
-  start of the join, and are not switched on at the session end; mods always see the session end.
+  to the host as the player's edits, not even later when the player clicks something. Moving the camera or chatting
+  no longer counts as editing, and a mod-panel change made by a long slider drag or a held key is no longer lost.
+- **Mod classification.** Mods whose panels write the city count as world-affecting; mods that only draw things do
+  not. Mod systems switched off on joined players stay off from the start of the join and are not switched on at the
+  session end, and mods always see the session end.
 - **Events, disasters and chirps** deleted after the events feature switched itself off are deleted for everyone.
 - **Resource painting** merges only the painted cells (it overwrote nearby groundwater with older values) and keeps
   groundwater consistent.

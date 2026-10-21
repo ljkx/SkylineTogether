@@ -75,7 +75,8 @@ Rules that keep the architecture intact:
   [docs/dev/testing.md](docs/dev/testing.md) for the framework and filters.
 - Bug fixes come with a test that fails without the fix, where the bug is reachable from Core.
 - CI fails when fewer tests run than the minimum in `.github/workflows/ci.yml` (`--expect-at-least`); raise it when you
-  add tests. It also runs the suite under `tr-TR` and `de-DE` and checks that a failing test fails the run.
+  add tests. A test that skips itself (`Assert.Skip`) also fails CI (`--max-skipped 0`). CI also runs the suite under
+  `tr-TR` and `de-DE` and checks that a failing test fails the run.
 - Game layer changes are tested in game: at least the solo test (record and replay), and a two-player session for
   anything that involves another player. Say in the pull request what you tested.
 

@@ -28,21 +28,22 @@ The texts on these screens come from the host in your game's language (English w
 
 | Screen title | Cause | What to do |
 |---|---|---|
-| **Skyline Together versions differ** | The protocol versions differ, the two DLLs are different builds, or the host sent data your version cannot read. Every compile is a different build, even with the same version number. The screen shows "Host build … · Your build …" (or the network protocol of each side). | Use the same release on every PC (the same Paradox Mods version, or the same setup zip) and compare the build ID at the bottom of the Skyline Together panel. |
-| **Game versions differ** | The game versions differ (shown as "Host: … · You: …"). | Update the game on the PC with the older version (Steam may hold back an update until the game restarts). |
+| **Skyline Together versions differ** | The protocol versions differ, the two DLLs are different builds, or the host sent data your version cannot read. A build from other sources, or made with another compiler, is a different build even with the same version number. The screen shows "Build: host … · you …" (or the network protocol of each side). | Use the same release on every PC (the same Paradox Mods version, or the same setup zip) and compare the build ID at the bottom of the Skyline Together panel. |
+| **Game versions differ** | The game versions differ (shown as "Game version: host … · you …"). | Update the game on the PC with the older version (restarting Steam usually makes it download the update). |
 | **Mods required for this city** | The host's city stores data of mods you don't have. Loading the city without them would crash your game, so the join is refused whatever the host's options say, and there is no **Join anyway**. The screen lists them under **Enable these mods to join**, each with "This city contains its data" or "It can store data in a city"; other differences are listed below them. | Enable or subscribe to the listed mods, restart the game and join again. See [Mods required for this city](#mods-required-for-this-city). |
 | **Two multiplayer mods at once** | You, or the host, have the old "CS2 Multiplayer Mod" enabled. | Disable it on the PC that has it, restart the game and join again. See [Two multiplayer mods at once](#two-multiplayer-mods-at-once). |
 | **Your mods don't match the host's** | The host requires the same code mods and yours differ. The screen lists what to **Enable or subscribe**, **Disable** and **Update to the host's version**. | Change the mods as listed, restart the game, join again. See [Different builds, game versions or mods](#different-builds-game-versions-or-mods). |
 | **You're missing DLC or content packs the host has** | The host owns DLC or content packs that you don't; the host's city can contain objects from them, which your game can't load. The screen lists them under **Get these** (and, for information, what only you have). | Get the listed DLC (Steam or the Paradox launcher), restart the game and join again. See [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings). |
-| **Your asset packs don't match the host's** | The host turned on **Require the same asset packs** and yours differ. The screen lists what to **Subscribe**, **Disable (the host doesn't have them)** and **Update to the host's version**, each with its Paradox Mods id. "The asset packs differ (too many to list)" in the details means one side has too many packs to compare one by one. | Change the asset packs as listed, restart the game, join again; or ask the host to turn the option off. |
+| **Your asset packs don't match the host's** | The host turned on **Require the same asset packs** and yours differ. The screen lists what to **Subscribe**, **Disable (the host doesn't have them)** and **Update to the host's version**, each with its Paradox Mods id. "Your asset packs differ from the host's, but the lists are too long to show what differs." in the details means one side has too many packs to compare one by one. | Change the asset packs as listed, restart the game, join again; or ask the host to turn the option off. |
 | **The session is full** | The session already has as many players as **Max players** (which counts the host). | Ask the host to raise the limit, or wait until someone leaves. |
 | **Wrong password** | The password does not match. | Enter the right password in the field on the screen and click **Join with this password**. |
-| **Too many wrong passwords** | There were too many wrong passwords from your Steam ID or address ("Try again in …": three wrong guesses are free, then each one locks you out longer, up to 10 minutes), or several join attempts of yours were running at the same time ("Too many join attempts at once" in **Details**). | Wait the time shown in **Details**, check the password with the host, then try again. |
+| **Too many attempts** | There were too many wrong passwords from your Steam ID or address ("Try again in …": three wrong guesses are free, then each one locks you out longer, up to 10 minutes), or several join attempts from your Steam ID or address were running at the same time, for example two players behind one router joining by direct IP at once ("Too many join attempts at once" in **Details**). | Wait the time shown in **Details**, check the password with the host, then try again. |
 | **This session needs a password** | No password was entered (for example after accepting a Steam invite, which does not carry the password). | Ask the host for it and enter it on the screen. |
 | **The host isn't ready yet** | An earlier join attempt of yours is still running on the host (the host heard from it in the last 15 seconds). | Wait a moment and click **Try again**, or restart the game. |
-| **Please wait before joining again** | Your last joins did not finish, and each one paused the game for everyone ("You can join again in …": the first such join costs nothing, unless the host dropped it for making no progress; then 30 seconds, 2, 10 and 30 minutes, and longer, up to 4 hours, once your failed joins have held everyone's game for more than half an hour in total). | Wait the time shown, then click **Try again**. If your joins keep failing, see [Join fails or times out](#join-fails-or-times-out). |
+| **Please wait before joining again** | Your last joins did not finish, and each one paused the game for everyone ("You can join again in …": the first such join costs nothing, unless the host dropped it for making no progress; then 30 seconds, 2, 10 and 30 minutes, and longer, up to 4 hours, once your failed joins have held everyone's game for more than half an hour in total). | Wait the time shown: **Try again** appears once it has passed. If your joins keep failing, see [Join fails or times out](#join-fails-or-times-out). |
 | **You are banned from this session** | The host banned you (by Steam ID, and by address if you joined by direct IP). | Only the host can lift it (host options, **Banned players**, **Unban**). |
-| **You can't join this session** | The host allows only Steam friends and invited players, or you connected by direct IP to a host without a password. | Ask the host for an invite (or to set a password for direct IP). |
+| **You can't join this session** | The host allows only Steam friends and invited players. | Ask the host for a Steam invite. |
+| **Direct connections need a password** | You connected by direct IP to a host that has no session password set (the host accepts direct IP connections only with one). | Join through Steam with the host's Steam ID, or ask the host to set a session password. |
 | **The host is closing the session** | The host stopped hosting or left the city while you were joining. | Join again when the host hosts again. |
 | **You were removed from the session** | The host or a co-host kicked you. | You can join again unless the host also banned you. |
 | **The session has ended** | The host ended the session or left the city. | Join again when the host hosts again. |
@@ -55,38 +56,39 @@ happened.
 | Title / details line | Meaning | What to do |
 |---|---|---|
 | **Your game couldn't load the host's city** | The city arrived, but loading it failed (for example missing map or climate assets). | Try again. If it keeps failing, see [Missing assets](#missing-assets) and attach the copied details to a [bug report](#reporting-a-bug). |
-| **No answer from the host** ("The host didn't answer in time. Check the Steam ID or address and make sure the host is hosting right now, then try again.") | Nothing answered within 30 seconds, or the connection could not be started. | Check the Steam ID (17 digits) or the address. The host must have clicked **Host this city** and still be in the city. |
-| **No answer from the host**: "The host could not save the city (…). Try joining again." or "The host did not send the city in time. Try joining again." | The host's game did not finish saving the city within 6 minutes (your game waits 7). | Very large cities on slow PCs; try again. The host's log shows how long saving took. |
-| **No answer from the host**: "The city download stalled (nothing received for 120 s). Try joining again." | The download stopped. | Usually a network problem on either side; try again. |
-| **No answer from the host**: "The host did not confirm the join after the city loaded. Try joining again." | Your game loaded the city but the host did not confirm within 2 minutes. | Try again; if it repeats, [report it](#reporting-a-bug) with both players' logs. |
-| **Your game couldn't load the host's city**: "Loading the host's city did not finish in 20 minutes. Try joining again." | Your game took longer than 20 minutes to load the city. | Close other programs and try again; very large cities need a fast PC. |
-| **No answer from the host**: "The host stopped responding (nothing received for N s). …" | The host's game froze, closed or lost its connection. | Ask the host; join again when they are hosting. |
+| **No answer from the host**: "Nothing answered the connection request.", "The host stopped answering while the connection was being set up." or "Couldn't start the connection to …" | Nothing answered within 30 seconds, or the connection could not be started. | Check the Steam ID (17 digits) or the address. The host must have clicked **Host this city** and still be in the city. |
+| **No answer from the host**: "The host didn't send the city in time. Try joining again." | The host's game did not deliver the city within 7 minutes. | Very large cities on slow PCs; try again. The host's log shows how long saving took. |
+| **The host stopped your join**: "The host couldn't save the city (…). Try joining again." | Saving the city failed on the host, or did not finish within 6 minutes. | Try again; if it repeats, the host's log shows why. |
+| **No answer from the host**: "The city download stalled (nothing received for about 2 minutes). Try joining again." | The download stopped. | Usually a network problem on either side; try again. |
+| **No answer from the host**: "The host didn't confirm the join after the city loaded. Try joining again." | Your game loaded the city but the host did not confirm within 2 minutes. | Try again; if it repeats, [report it](#reporting-a-bug) with both players' logs. |
+| **Your game couldn't load the host's city**: "Loading the host's city didn't finish in 20 minutes. …", "Loading the city took more than 20 minutes. …" or "Joining took too long (more than 30 minutes). …" | Your game took longer than 20 minutes to load the city, or the whole join took longer than 30 minutes. | Close other programs and try again; very large cities need a fast PC. |
+| **No answer from the host**: "The host stopped responding (nothing received for …). …" | The host's game froze, closed or lost its connection. | Ask the host; join again when they are hosting. |
 | **Joining failed**: "The downloaded city is damaged (checksum mismatch). Try joining again." | The download arrived corrupted. | Try again. |
-| **The host stopped your join** | The host's game stopped your join for a technical reason: the download or the load made no progress, the join took too long, or your game stopped responding or could not keep up. **Details** says which. | Try again; if it repeats, [collect logs](#reporting-a-bug) from both PCs. |
+| **The host stopped your join** | The host's game stopped your join for a technical reason: the download or the load made no progress, the download kept failing, the host could not save the city, or your game could not keep up. **Details** says which. | Try again; if it repeats, [collect logs](#reporting-a-bug) from both PCs. |
 | **Connection lost** / **Joining failed** | The connection broke, or something failed while joining. The details line says what. | Try again (a joined player's game reconnects by itself); if it repeats, [collect logs](#reporting-a-bug) from both PCs. |
 | **Couldn't confirm the host** | The host could not prove that it knows the session password: on a direct IP join it did not ask for the password at all, or it answered the check wrongly. You may have connected to someone else, or the host changed the password. | Check the Steam ID or address and the password with the host, then enter the password on the screen and click **Join with this password**. |
 | "Looking up …" (joining by host name) | The name is resolved in the background before the connection starts. | Wait; if the name cannot be resolved, check it or use the IP address. |
-| "The host's city uses map or climate assets you do not have (…)" | The host's map or climate comes from a Paradox Mods asset you lack. | Subscribe to the host's map on Paradox Mods (or use the same map) and join again. |
+| "The host's city uses map or climate assets you don't have (…)" | The host's map or climate comes from a Paradox Mods asset you lack. | Subscribe to the host's map on Paradox Mods (or use the same map) and join again. |
 
 On the host, a player that sends nothing for 3 minutes while joining is dropped, with the chat line "&lt;name&gt; stopped
-responding while joining." A join is also dropped when its download makes no progress for 3 minutes, its game stops
-working on the load for 5 minutes or the load takes more than 20, the whole join takes more than 30 minutes
-("&lt;name&gt; took too long to join."), or it keeps asking for the city again ("&lt;name&gt; could not finish
+responding while joining." A join is also dropped when its download makes no progress for 3 minutes, its load shows
+no sign of progress for 5 minutes or the load takes more than 20, the whole join takes more than 30 minutes
+("&lt;name&gt; took too long to join."), or it keeps asking for the city again ("&lt;name&gt; couldn't finish
 joining."). The joining player is told why and can try again after a short wait.
 
 ## Different builds, game versions or mods
 
 - **Build.** The game compares the build ID of the Skyline Together DLL, so every player must install the very same
   build. The build ID is the start of the DLL's SHA-256: the panel's footer and the diagnostics show it, the GitHub
-  installer prints it, and a refusal shows both players' ids; compare it before you play. Building the mod yourself
+  installer prints it, and a refusal shows both players' build IDs; compare it before you play. Building the mod yourself
   from the same commit does not guarantee an identical DLL on another PC; use a published release instead.
   A Paradox Mods subscription and the GitHub setup of the same release have the same build ID. If the footer shows
-  "(mvid)" after the id, the game could not find the DLL file; please [report it](#reporting-a-bug) with the log.
+  "(mvid)" after the ID, the game could not find the DLL file; please [report it](#reporting-a-bug) with the log.
 - **Installed twice.** The notification "Skyline Together is installed twice" means the game found a copy in the
   local `Mods` folder and a Paradox Mods subscription (or two of either). Only one is loaded, and it may not be the
   build you expect. Delete `Mods\SkylineTogether` (or run the installer with `-Uninstall`) or unsubscribe, then
   restart the game.
-- **Game version.** Compared exactly. Update both games.
+- **Game version.** Compared exactly. Update the game on the PC with the older version.
 - **Mods.** Only code mods count here (DLC and asset packs have their own check, see
   [Different DLC, asset packs or mod settings](#different-dlc-asset-packs-or-mod-settings)). Mods are matched by name
   and compared by version. Mods that only
@@ -247,13 +249,13 @@ If something stays different (a road, a building, a line, a number in a panel):
 
 Each part of Skyline Together runs behind a guard. When a part fails 5 times within 30 seconds:
 
-- a non-critical feature switches off for the session: "Skyline Together: … hit repeated errors and is off for this
-  session. Please use "Write diagnostics" and attach the file to a bug report on GitHub
+- a non-critical feature switches off for the session: "Skyline Together: … hit repeated errors and is switched off
+  for this session. Please use "Write diagnostics" and attach the file to a bug report on GitHub
   (github.com/ljkx/SkylineTogether/issues)."
 - if the city sync on a joined player's game fails repeatedly, that game leaves the session: "Your game hit repeated
-  errors in …, so it left the session. Reconnect to get a fresh copy of the city."
+  errors in …, so it left the session. Reconnecting gives you a fresh copy of the city."
 - if the host cannot apply one player's changes repeatedly, that player is disconnected (not kicked: their game
-  offers to join again): "The host could not process your changes. Join again to get a fresh copy of the city."
+  offers to join again): "The host couldn't process your changes. Join again to get a fresh copy of the city."
 - a critical failure on the host ends the session, and diagnostics are written automatically.
 
 All of these are bugs. Please [report them](#reporting-a-bug) with the diagnostics file and logs.
@@ -289,7 +291,8 @@ player in the session and a short note: what you did, what each player saw. Scre
    400 log lines. Diagnostics are also written automatically after a critical failure.
 2. Collect the files. This depends on how you installed Skyline Together:
    - **GitHub setup:** double-click **`Collect-Logs.cmd`** in the setup folder. It writes
-     `SkylineTogether-logs-<date>-<time>.zip` to your Desktop with the mod's log and diagnostics files,
+     `SkylineTogether-logs-<date>-<time>.zip` to your Desktop (if Windows reports none, to your user folder; the window
+     shows where) with the mod's log and diagnostics files,
      `Logs\Modding.log`, `Logs\UI.log`, the game's `Player.log` and `Player-prev.log`, the verdicts of the 3 newest
      solo test recordings and the text files of the game's last two crash reports. Paths to your user folder are
      replaced by `%USERPROFILE%` in the copied logs. Crash dumps (`.dmp`) are left out unless you ask for them (see
@@ -313,15 +316,16 @@ Locations, under `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines 
 contain:
 
 - player names, Steam IDs and the session name;
-- IP addresses only shortened (`203.0.113.x`). The full IP addresses of players banned by address stay in the host's
-  settings file, which is not part of a bug report;
+- IP addresses, but only in shortened form (`203.0.113.x`); the full addresses of players banned by address stay in the
+  host's settings file, which is not part of a bug report;
 - in the game's own logs (`Player.log`, `Modding.log`, `UI.log`), paths that include your Windows user name
   (`Collect-Logs.cmd` replaces them; if you attach these files yourself, replace the user name in a text editor
   first).
 
 Skyline Together's own files (`SkylineTogether.log` and the diagnostics file) write paths in your user folder as
-`%USERPROFILE%`, so they do not contain your Windows user name. Files written by versions before 0.2.0 contain your
-user name and full IP addresses; remove them before you attach these files.
+`%USERPROFILE%`, so they do not contain your Windows user name. Files written by versions before 0.2.0 can contain your
+user name and full IP addresses. `Collect-Logs.cmd` leaves out diagnostics files written before the installed version
+(and says so); if you attach files yourself, delete old `SkylineTogether-diagnostics-*.txt` files first.
 
 If you would rather not post this publicly, say so in the issue and ask for another way to send the files.
 

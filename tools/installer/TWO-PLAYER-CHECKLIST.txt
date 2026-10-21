@@ -13,7 +13,7 @@ CONNECT
 Host:    load a city (back up your save first) -> Skyline Together button (top left) -> "Host this city"
          -> copy "Your Steam ID" (copy icon) and send it to the other player (or "Invite friends" -> "Invite").
 Joining: title screen -> "Multiplayer" (below Load Game) -> "Join a friend" -> paste the Steam ID -> "Join".
-         You see the download and loading progress; the host's game pauses until you are in.
+         You see the download and loading progress; the host's game pauses until you have joined.
 
 CHECKLIST (do each step, then both look at the same spot and compare; "the other player" is the one who joined)
 The same steps with the same numbers: docs/guide/testing.md on GitHub.

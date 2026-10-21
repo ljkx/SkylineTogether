@@ -143,7 +143,7 @@ These are known limits of the design. Reports are welcome when you see a practic
 - **Visible identifiers.** Players in a session see each other's Steam IDs. With direct IP connections, joining players
   know the host's IP address. A hosted session creates a friends-only Steam lobby whose data includes the session name
   and whether a password is set.
-- **Logs and diagnostics** contain player names, Steam IDs and session names, and IP addresses only shortened
+- **Logs and diagnostics** contain player names, Steam IDs, session names and IP addresses, but only in shortened form
   (`203.0.113.x`); never passwords or chat. Paths in the user folder are written as `%USERPROFILE%`, so Skyline
   Together's own files do not contain the Windows user name. The full IP addresses of players banned by address are
   stored in the host's settings file, next to the passwords (see above), which no bug-report step collects. The game's

@@ -157,11 +157,12 @@ same mod (it only adds generic and declared rules).
 - **Join message.** The join snapshot's manifest lists the city's asset sources with prefab counts. Before loading, the
   joiner compares them with its own (packages by Paradox Mods id among its loaded prefabs, runtime prefabs by the
   creating mod being loaded, the host's local assets by prefab name, which also finds DLC content without a package id;
-  runtime prefabs of an unnamed mod are left to the per-record report) and shows one toast naming what is missing
-  and what to do, e.g. `The package "China Pack" (Paradox Mods 100454) (12 prefabs): subscribe to Paradox Mods 100454,
-  restart the game and join again.` The join goes on; objects using the missing prefabs are left out. Each missing
-  prefab is also logged and listed in the diagnostics with its explanation (Core `MissingAssets.Describe/Summary`), and
-  the first missing record in a session raises the same kind of toast from the source records.
+  runtime prefabs of an unnamed mod are left to the per-record report) and shows one toast in the player's language
+  naming what is missing and what to do, e.g. `China Pack (Paradox Mods 100454): subscribe to it, restart the game and
+  join again` (Core `MissingAssets.Summary`, locale keys `st.toast.missingAssets.*`). The join goes on; objects using
+  the missing prefabs are left out. Each missing prefab is also logged and listed in the diagnostics with its English
+  explanation (`MissingAssets.Describe`), and the first missing record in a session raises the same kind of toast from
+  the source records.
 - **Runtime prefabs bind across peers** when their `PrefabID` matches (type, name, and the hash of their asset, which
   is empty for prefabs without one). When the exact id does not resolve, a local prefab with the same type and name is
   taken if the match is unambiguous and it is the same kind of prefab: the host's id has no hash, or the local prefab

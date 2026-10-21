@@ -65,9 +65,12 @@ committed before the build, so the tag, the DLL's commit hash and the uploads al
 
 1. Make sure `main` is green on CI and `tools/build.sh` passes locally with the game.
 2. Prepare the release commit:
-   - [CHANGELOG.md](../../CHANGELOG.md): move the entries under *Unreleased* to a new version section with the date;
+   - [CHANGELOG.md](../../CHANGELOG.md): move the entries under *Unreleased* to a new version section with the date,
+     and update the link references at the end: `[Unreleased]: …/compare/v<version>...main` and
+     `[<version>]: …/releases/tag/v<version>`;
    - `<Version>` in `Directory.Build.props`;
-   - `ModVersion` (equal to `<Version>`) and `ChangeLog` in `src/SkylineTogether/Properties/PublishConfiguration.xml`;
+   - `ModVersion` (equal to `<Version>`) and `ChangeLog` in `src/SkylineTogether/Properties/PublishConfiguration.xml`
+     (its "Full changelog" link names the tag `v<version>`);
    - if the wire format changed since the last release, check that `ProtocolVersion.Current` was incremented (it
      should have been, with each change; see the policy above).
 

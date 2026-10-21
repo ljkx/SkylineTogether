@@ -74,8 +74,8 @@ Solo test recordings in `ModsData\SkylineTogether` are kept; delete that folder 
 ### Manually
 
 Extract `SkylineTogether-<version>.zip` from the [Releases page](https://github.com/ljkx/SkylineTogether/releases) into
-the `Mods` folder above, so the files end up in `Mods\SkylineTogether`. Local mods take precedence over Paradox Mods subscriptions of the same name, but
-don't keep both: see the note at the top of this section.
+the `Mods` folder above, so the files end up in `Mods\SkylineTogether`. Local mods take precedence over Paradox Mods
+subscriptions of the same name, but don't keep both: see the note at the top of this section.
 
 ## Host a city
 
@@ -183,8 +183,9 @@ and Esc goes back.
 
 The host changes a role with **…** → **Make viewer** / **Make builder** / **Make co-host** in the player list, for
 players who are fully in. Roles are remembered for the session: a player who leaves and joins again gets the same
-role (a player who joined by direct IP without Steam keeps only a viewer role). A kicked player can join again; a banned one cannot until the host unbans them (host options,
-**Banned players**). A player removed after loading the city sees "You were removed from the session" (or "removed and
+role (after a direct IP join without Steam, only a viewer role is kept: a builder or co-host starts again with the
+default role). A kicked player can join again; a banned one cannot until the host unbans them (host options, **Banned
+players**). A player removed after loading the city sees "You were removed from the session" (or "removed and
 banned") and can return to the main menu or keep an offline copy.
 
 ## Game speed

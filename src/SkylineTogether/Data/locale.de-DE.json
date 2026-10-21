@@ -343,7 +343,7 @@
   "st.options.ShowNetworkHud.label": "Netzwerkwerte anzeigen",
   "st.options.ShowNetworkHud.desc": "Ping und Netzwerkverkehr (empfangene und gesendete KB/s) im Skyline-Together-Fenster anzeigen.",
   "st.options.WriteDiagnosticsButton.label": "Diagnose schreiben",
-  "st.options.WriteDiagnosticsButton.desc": "Schreibt eine Textdatei mit Sitzungszustand, Spielern, Netzwerkwerten, Versionen, Mods und den letzten Logzeilen in den Log-Ordner des Spiels. Füge sie deinem Fehlerbericht auf GitHub bei (github.com/ljkx/SkylineTogether/issues). Sie enthält Spielernamen, Steam-IDs, den Sitzungsnamen und gekürzte IP-Adressen, aber nie Passwörter, Chatnachrichten oder deinen Windows-Benutzernamen.",
+  "st.options.WriteDiagnosticsButton.desc": "Schreibt eine Textdatei mit Sitzungszustand, Spielern, Netzwerkwerten, Versionen, Mods und den letzten Logzeilen in den Log-Ordner des Spiels. Füge sie deinem Fehlerbericht auf GitHub bei (github.com/ljkx/SkylineTogether/issues). Sie enthält Spielernamen, Steam-IDs, den Sitzungsnamen und IP-Adressen, aber nur in gekürzter Form; nie Passwörter, Chatnachrichten oder deinen Windows-Benutzernamen.",
   "st.ui.recovery.lost.title": "Verbindung verloren",
   "st.ui.recovery.lost.text": "Neuer Verbindungsversuch in {S} s (Versuch {N} von {MAX}). Die Stadt ist bis dahin pausiert; was du jetzt änderst, bleibt nicht erhalten.",
   "st.ui.recovery.attempt.title": "Neuer Verbindungsversuch ({N} von {MAX})",

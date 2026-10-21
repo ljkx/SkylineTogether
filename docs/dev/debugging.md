@@ -65,7 +65,7 @@ when its loopback self-test fails, connections run without Steam lanes (every me
 
 `P-REFS` (`Diagnostics/ReferenceProbe.cs`, Core `Diagnostics/ReferenceCheck.cs`) is the in-game form of
 `tools/ApiCheck`. Right after load, a background thread checks `SkylineTogether.dll` and `SkylineTogether.Core.dll`
-against the assemblies the game loaded:
+against the assemblies the game loaded (about 0.4 s for both on the game's Mono):
 
 - every type loads (its game base class and interfaces exist);
 - every row of the TypeRef and MemberRef tables resolves;
@@ -99,7 +99,7 @@ the other probes' job.
 When you add a type to the game layer, `tools/build.sh` adds it to `src/SkylineTogether/Data/mod-types.generated.txt`,
 and the Core tests fail until it has an entry in `ModFeatureMap` (its feature, or none for diagnostics).
 
-Results go to the log ("self-test: X/Y checks passed"), the diagnostics dump and the one-line summary in the player's
+Results go to the log ("loaded; Self-test: X/Y checks passed"), the diagnostics dump and the one-line summary in the player's
 language ("Self-test: X of Y checks passed", with "Switched off: …" naming the features that are off) in the panel and
 on the title screen. A failed probe switches its feature off (`Diagnostics/Features.cs`), so the feature never touches a
 member that was not verified. A failed critical feature (session, Steam, replication, speed) blocks hosting and joining

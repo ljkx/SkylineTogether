@@ -66,7 +66,7 @@ No port forwarding is needed for Steam joins. Direct IP connections are optional
 ## Bugs, documentation and source code
 
 Everything is on GitHub: https://github.com/ljkx/SkylineTogether
-The user guide, the FAQ and troubleshooting are in the docs folder there. To report a bug, every player clicks **Write diagnostics** in the panel. Then attach, from every player, the newest SkylineTogether-diagnostics file and SkylineTogether.log (folder Logs in %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II) to a GitHub issue. The files contain player names, Steam IDs and the session name, and IP addresses only shortened (203.0.113.x); never passwords or chat. Skyline Together writes your user folder as %USERPROFILE%, so its own files do not contain your Windows user name. The full IP addresses of players banned by address stay in the host's settings file, which is not part of a bug report. Never attach crash dumps (.dmp): they can contain passwords.
+The user guide, the FAQ and troubleshooting are in the docs folder there. To report a bug, every player clicks **Write diagnostics** in the panel. Then attach, from every player, the newest SkylineTogether-diagnostics file and SkylineTogether.log (folder Logs in %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II) to a GitHub issue. The files contain player names, Steam IDs, the session name and IP addresses, but only in shortened form (203.0.113.x); never passwords or chat. Skyline Together writes your user folder as %USERPROFILE%, so its own files do not contain your Windows user name. The full IP addresses of players banned by address stay in the host's settings file, which is not part of a bug report. Never attach crash dumps (.dmp): they can contain passwords.
 
 Open source under the MIT licence. Not affiliated with or endorsed by Paradox Interactive or Colossal Order.
 	</LongDescription>
@@ -88,14 +88,14 @@ First regular release. Players of earlier versions cannot join this version.
 - Big cities: a slow load is no longer dropped after 5 minutes; loading counts as long as the game keeps working (up to 20 minutes)
 - New host option "New players join as viewers"; roles are remembered when a player rejoins
 - Safer joining: nothing about the session is revealed before the password, the password check is mutual and harder to guess, and joins can no longer stall the host
-- Messages from the host appear in each player's language; a password lockout and a host that can't prove the password have their own screens
+- Messages from the host appear in each player's language; clearer screens for a password lockout, a host that can't prove the password, a join cooldown and a join the host stopped
 - Fixes for crashes and differences on joined players' games (deleted and reused objects, events, resource painting, vehicles, mod systems)
 - Less network traffic for statistics in older cities
-- Skyline Together's log and diagnostics file no longer contain your Windows user name
+- Skyline Together's log and diagnostics file no longer contain your Windows user name or full IP addresses
 - Bug reports: the game and the guide say where to send the files and what they contain
 - New screenshots
 
-Full changelog: https://github.com/ljkx/SkylineTogether/blob/main/CHANGELOG.md
+Full changelog: https://github.com/ljkx/SkylineTogether/blob/v0.2.0/CHANGELOG.md
 	</ChangeLog>
 	<ExternalLink Type="github" Url="https://github.com/ljkx/SkylineTogether" />
 	<!--Public, Unlisted (only people with the link find it) or Private-->

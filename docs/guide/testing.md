@@ -1,7 +1,7 @@
-# Checking a build
+# Two-player checklist and solo test
 
-This page describes the two-player checklist for checking a build (`TWO-PLAYER-CHECKLIST.txt` in the setup zip has the same
-steps with the same numbers) and the solo test that needs only one PC. How to report what you find:
+This page describes the two-player checklist (`TWO-PLAYER-CHECKLIST.txt` in the setup zip has the same steps with the
+same numbers) and the solo test that needs only one PC. How to report what you find:
 [Troubleshooting → Reporting a bug](troubleshooting.md#reporting-a-bug).
 
 ## Two-player checklist
@@ -20,7 +20,7 @@ steps with the same numbers) and the solo test that needs only one PC. How to re
 - **Host:** load a city (back up your save first), click the Skyline Together button in the top-left corner, **Host
   this city**, then send your Steam ID (copy icon at the top of the panel) or use **Invite friends**.
 - **Joining player:** title screen → **Multiplayer** → **Join a friend** → paste the Steam ID → **Join**. The host's
-  game pauses until the joining player is in.
+  game pauses until the joining player has joined.
 
 ### Checklist
 

@@ -12,8 +12,8 @@ body:
         - **Installed from Paradox Mods:** attach `Logs\SkylineTogether.log` and the newest `Logs\SkylineTogether-diagnostics-*.txt`
           from `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`.
 
-        **Privacy:** issues are public. The files contain player names, Steam IDs and the session name, and IP addresses
-        only shortened (`203.0.113.x`); never passwords or chat. Skyline Together 0.2.0 and later write your user folder as
+        **Privacy:** issues are public. The files contain player names, Steam IDs, the session name and IP addresses, but
+        only in shortened form (`203.0.113.x`); never passwords or chat. Skyline Together 0.2.0 and later write your user folder as
         `%USERPROFILE%` in their own files. The game's own logs (`Player.log`, `Modding.log`, `UI.log`) contain your Windows
         user name in file paths unless they were collected with the `Collect-Logs.cmd` of 0.2.0 or later, and the logs of
         older versions also contain full IP addresses; remove them before you attach these files. If you do not

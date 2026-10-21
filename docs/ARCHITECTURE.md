@@ -394,7 +394,10 @@ Details ([`SessionHost.Handle`](../src/SkylineTogether.Core/Session/SessionHost.
 - Refuse reasons: `Mismatch`, `Full`, `Banned`, `BadPassword`, `NotInvited`, `HostShuttingDown`, `ProtocolVersion`,
   `HostPreparing`. Every refusal (since protocol 6) carries a report with a "text" record: the detail's locale key and
   parameters ([`LocalText`, `NetText`](../src/SkylineTogether.Core/Session/LocalText.cs)), so the joiner shows it in its
-  own language; the `Refuse` layout itself is unchanged. A wait travels as `SECONDS`, which each receiver words as
+  own language; the `Refuse` layout itself is unchanged. A mod, asset-pack, DLC, city-data or conflict refusal sends a
+  short sentence per report kind (`CompatibilityResult.RefusalKey`) next to the report's lists; its English detail
+  (`RefusalDetail`, every difference spelled out) is the text sent along for the logs. The text key also picks the
+  screen where one refuse reason has several causes (`NotInvited` for a direct IP join without a session password). A wait travels as `SECONDS`, which each receiver words as
   `{WAIT}` ("40 s", "about 10 minutes", "about 4 hours"); a feature travels as its English title plus `FEATURE_ID`,
   which the receiver turns into its own `st.feature.<id>` name. The joining game's own end reasons (timeouts, a failed
   download or load) are `st.net.client.*` texts too, so the end screen's details are in the player's language. Before admission a connection may send only `Hello`, `Control`
@@ -1539,7 +1542,7 @@ only warns; the summary is in the log, the panel and the dump. Features read the
 [`ReferenceCheck`](../src/SkylineTogether.Core/Diagnostics/ReferenceCheck.cs)) covers the public game API the mod is
 compiled against, the run-time form of [`tools/ApiCheck`](../tools/ApiCheck/Program.cs). After `OnLoad`, a background
 thread below normal priority checks the game layer and Core against the assemblies the game loaded, bounded to 30 s
-(well under a second in practice). It checks exactly this, per DLL:
+(about 0.4 s for both DLLs on the game's Mono). It checks exactly this, per DLL:
 
 1. **Types load.** `Assembly.GetTypes()`. A type whose game base class or interface is gone does not load. Mono's
    loader exception then names the missing game type, not the mod's, so the DLL's own TypeDef table is read from its
@@ -1585,7 +1588,7 @@ The check runs no code of the mod and no static constructor (also verified on th
 - private members or names looked up at run time (the other probes do);
 - a member whose signature changed in a way that still binds.
 
-`RuntimeHelpers.PrepareMethod`, which an earlier version used, compiles nothing on the game's Mono. Offline,
+(`RuntimeHelpers.PrepareMethod` is not an alternative: it compiles nothing on the game's Mono.) Offline,
 `tools/ApiCheck` checks the same references against the game's assemblies before a release
 ([building.md](dev/building.md#api-check)).
 

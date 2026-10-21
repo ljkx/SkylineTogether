@@ -65,8 +65,8 @@ The hash must match the line above (letter case does not matter).
 
 Open an [issue](https://github.com/ljkx/SkylineTogether/issues/new/choose) with the logs of every player:
 [Reporting a bug](https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug)
-explains where they are for both install routes and what they contain (player names, Steam IDs and the session name,
-and IP addresses only shortened; Skyline Together writes your user folder as `%USERPROFILE%`). Never attach crash dumps (`.dmp`) to a public issue.
+explains where they are for both install routes and what they contain (player names, Steam IDs, the session name and IP
+addresses, but only in shortened form; Skyline Together writes your user folder as `%USERPROFILE%`). Never attach crash dumps (`.dmp`) to a public issue.
 ````
 
 The checksums are printed at the end of `python tools/installer/make_installer.py`. Builds and zips are reproducible

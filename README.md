@@ -153,8 +153,8 @@ To report a bug, every player clicks **Write diagnostics** in the panel, then:
   `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\`.
 
 Open a [bug report](https://github.com/ljkx/SkylineTogether/issues/new/choose) with the files of every player. They
-contain player names, Steam IDs and the session name, and IP addresses only shortened (`203.0.113.x`); never passwords
-or chat. Skyline Together writes your user folder as `%USERPROFILE%`, so its files do not contain your Windows user
+contain player names, Steam IDs, the session name and IP addresses, but only in shortened form (`203.0.113.x`); never
+passwords or chat. Skyline Together writes your user folder as `%USERPROFILE%`, so its files do not contain your Windows user
 name. The full IP addresses of players banned by address stay in the host's settings file, which is not part of a bug
 report. Never attach crash dumps (`.dmp`). See [Reporting a bug](docs/guide/troubleshooting.md#reporting-a-bug) for the
 details.

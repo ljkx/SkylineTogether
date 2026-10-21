@@ -202,8 +202,8 @@ To report a bug, click "Write diagnostics" in the panel and attach these files o
 (https://github.com/ljkx/SkylineTogether/issues):
   %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Logs\\SkylineTogether.log
   %USERPROFILE%\\AppData\\LocalLow\\Colossal Order\\Cities Skylines II\\Logs\\SkylineTogether-diagnostics-*.txt
-They contain player names, Steam IDs and the session name, and IP addresses only shortened; never passwords or
-chat. Your user folder is written as %USERPROFILE%. Never attach crash dumps (.dmp): they can contain passwords.
+They contain player names, Steam IDs, the session name and IP addresses, but only in shortened form; never passwords
+or chat. Your user folder is written as %USERPROFILE%. Never attach crash dumps (.dmp): they can contain passwords.
 Details:
 https://github.com/ljkx/SkylineTogether/blob/main/docs/guide/troubleshooting.md#reporting-a-bug
 EOF
