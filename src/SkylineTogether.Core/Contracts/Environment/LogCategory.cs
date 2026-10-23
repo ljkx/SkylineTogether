@@ -23,5 +23,7 @@ namespace SkylineTogether.Core
         public const string Fields = "fields";
         public const string Compat = "compat";
         public const string Diagnostics = "diagnostics";
+        /// <summary>Breadcrumbs for native crashes: local tool applies, the mod's clean-ups, frame markers (rate-limited).</summary>
+        public const string Forensics = "forensics";
     }
 }

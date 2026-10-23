@@ -399,6 +399,10 @@ namespace SkylineTogether.Sync
             }
             if (n == 0) return 0;
             Total += dead;
+            // every repair is a forensics line (rate-limited per second, not per minute like the warning below)
+            Forensics.Cleanup("reference audit", _world.EntityManager, holder, rule.Name + (afterApply ? " after an apply" : "") + " named "
+                                                                           + (state == LinkTarget.Null ? "nobody" : Forensics.Describe(_world.EntityManager, target)) + " -> "
+                                                                           + (rule.IsBuffer ? dead + " element(s) dropped" : Fix(rule.Decide(state))));
             if (_stats.Note((int)link, dead, true, afterApply, now))
             {
                 string who = id != 0 ? "#" + id + " (" + _ids.GetFamily(id) + ")" : holder + " (unbound)";

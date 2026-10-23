@@ -122,8 +122,10 @@ namespace SkylineTogether.Sync
     /// <item>vehicles: their riders leave them (the game's <c>ObjectEmergeSystem</c> is off on clients; a rider kept pointing
     /// at the destroyed vehicle); a creature leaves its vehicle's passenger list;</item>
     /// <item>buildings, nets, areas and owners of sub-objects or vehicles: noted for the next frame's <see cref="OrphanSweep"/> (children whose owner or parent is
-    /// then gone).</item>
+    /// then gone), except a node or edge the player's own tool replaced or removed (tagged <c>Applied</c>): the game's
+    /// ungated Modification systems re-own or delete its children in the same frame.</item>
     /// </list>
+    /// Every clean-up it makes is a forensics line (<see cref="Forensics"/>).
     /// It runs before the game destroys them at the end of the frame, so nothing keeps naming them.
     /// </summary>
     public sealed class RemovalCascadeSystem : GameSystemBase
@@ -173,17 +175,29 @@ namespace SkylineTogether.Sync
                     if (!em.Exists(e)) continue;
                     bool done = DeletionCascade.DoneThisFrame.Contains(e);
                     bool mover = em.HasComponent<Game.Vehicles.Vehicle>(e) || em.HasComponent<Game.Creatures.Creature>(e);
+                    bool byTool = em.HasComponent<Game.Common.Applied>(e); // the player's own tool apply of this frame
                     if (mover)
                     {
                         // riders out of a vehicle the game deleted here (idempotent for the channel's own despawns)
+                        if (!done && em.HasBuffer<Game.Vehicles.Passenger>(e) && em.GetBuffer<Game.Vehicles.Passenger>(e, true).Length > 0)
+                        {
+                            Forensics.Cleanup("removal cascade", em, e, "deleted here: its " + em.GetBuffer<Game.Vehicles.Passenger>(e, true).Length + " rider(s) leave it");
+                        }
                         movers?.OnDeletedLocally(em, e);
                     }
                     else
                     {
-                        if (MayHaveChildren(em, e)) sync.Orphans.NoteDeleted(em, e);
+                        // a node or edge the player's own tool replaced or removed: the game's own (ungated) Modification
+                        // systems re-own or delete its sub-objects, sub-nets, lanes and zone blocks in this very frame, so the
+                        // orphan sweep leaves its children to them (ARCHITECTURE.md#reference-safety)
+                        bool toolNet = byTool && (em.HasComponent<Game.Net.Node>(e) || em.HasComponent<Game.Net.Edge>(e));
+                        if (!toolNet && MayHaveChildren(em, e)) sync.Orphans.NoteDeleted(em, e);
                         if (done || !HasLinks(em, e)) continue;
-                        DeletionCascade.Apply(em, e, null);
+                        // agents and movers that name a building or agent list the player (or the game) deleted here: the
+                        // game's removal systems are off on clients; nothing of the tool apply itself is touched
+                        int n = DeletionCascade.Apply(em, e, null);
                         DeletionCascade.LocalDeletions++;
+                        if (n > 0) Forensics.Cleanup("removal cascade", em, e, "deleted here (" + (byTool ? "by the player's tool" : "by the game or a mod") + "): " + n + " agent link(s), list entries or movers cleaned");
                     }
                 }
                 // riders of the vehicles deleted above that their passenger lists did not name, this frame (before the
@@ -231,7 +245,8 @@ namespace SkylineTogether.Sync
     /// an entity (<see cref="EntityCodec"/> checks every spawn), so this is the last line: each such chunk is named once per
     /// archetype in the log with its component types, family and prefab, a created entity of it is deleted (its id released
     /// and asked from the host again), and a deleted one (harmless to the game, but a sign of a link removed from it) is
-    /// reported. During a session only.
+    /// reported. An entity the player's own tool apply created this frame (<c>Applied</c>) is reported only: the game owns
+    /// it, as in single player. During a session only.
     /// </summary>
     public sealed class UpdateFrameGuardSystem : GameSystemBase
     {
@@ -244,6 +259,9 @@ namespace SkylineTogether.Sync
 
         /// <summary>Deleted entities without a marker seen this session (diagnostics).</summary>
         public static long SeenDeleted;
+
+        /// <summary>Entities the player's own tool created without a marker, left to the game this session (diagnostics).</summary>
+        public static long LeftToTool;
 
         protected override void OnCreate()
         {

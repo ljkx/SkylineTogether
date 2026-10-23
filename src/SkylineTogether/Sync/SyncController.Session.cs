@@ -158,6 +158,8 @@ namespace SkylineTogether.Sync
             _watcher?.Stop();
             _audit.Reset();
             Orphans.Reset();
+            _markers.Reset();
+            Forensics.ResetSession();
             _modSettings.Reset();
             _holds.Clear();
             _localDeletes.Clear();

@@ -34,6 +34,7 @@ SkylineTogether.Compat.WaterFeaturesAdapter
 SkylineTogether.Compat.ZoningToolkitAdapter
 SkylineTogether.Diagnostics.DiagnosticsDump
 SkylineTogether.Diagnostics.Features
+SkylineTogether.Diagnostics.Forensics
 SkylineTogether.Diagnostics.GameLog
 SkylineTogether.Diagnostics.Guard
 SkylineTogether.Diagnostics.InstallInfo

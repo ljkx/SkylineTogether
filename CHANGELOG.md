@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Fixed
+
+- **Joined players' clean-ups leave the player's own building to the game.** What the player's own tool just built or
+  replaced (the roads, nodes and objects of a road connection, and what the tool created) is no longer touched by
+  Skyline Together's clean-ups on joined players; the game's own systems handle it, as in single player.
+- **Crash reports say more.** Joined players' logs now name every tool use (what was built, removed and changed, and
+  the change sent to the host), every clean-up Skyline Together makes in the world, and a frame marker every few
+  seconds while building, so the last lines before a crash show what happened. At most 20 such lines are written per
+  second.
+
 ## [0.2.0] - 2026-10-21
 
 First regular release: big cities can be joined on slower PCs, safer joining and passwords, a viewer-first option for

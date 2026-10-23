@@ -471,6 +471,7 @@ namespace SkylineTogether.Sync
                           + (IsHost ? "" : ", " + _failedBatches + " failed host batches, " + _derivedModChanges + " local mod-state derivations not proposed") + ", " + _staged.Count + " despawns awaiting their broadcast");
                 if (!IsHost) lines.Add(_audit.Describe());
                 if (!IsHost) lines.Add(Orphans.Describe());
+                lines.Add("forensics: " + Forensics.Cleanups + " clean-ups written as breadcrumbs this session");
             }
             _agents.Describe(lines);
             MoverSync movers = MoverSync.Instance;

@@ -61,6 +61,8 @@ namespace SkylineTogether.Core.Diagnostics
             ("SkylineTogether.Diagnostics.ShortPaths", F(Session)),
             // diagnostics only (the build id falls back to the assembly's MVID when InstallInfo fails): warnings
             ("SkylineTogether.Diagnostics.DiagnosticsDump", None),
+            // crash breadcrumbs: every call is contained, a failure only loses a line
+            ("SkylineTogether.Diagnostics.Forensics", None),
             ("SkylineTogether.Diagnostics.InstallInfo", None),
             ("SkylineTogether.UI.PerfOverlay", None),
             // solo testing (replay of a recording): no feature of a session

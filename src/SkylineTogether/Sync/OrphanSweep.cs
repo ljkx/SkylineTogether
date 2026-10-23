@@ -127,6 +127,7 @@ namespace SkylineTogether.Sync
                     {
                         // a replicated object keeps living without its parent until the host's record arrives
                         Game.Objects.Attached attached = em.GetComponentData<Game.Objects.Attached>(e);
+                        Forensics.Cleanup("orphan sweep", em, e, "its parent " + Forensics.Describe(em, attached.m_Parent) + " was deleted here -> detached, asked from the host");
                         attached.m_Parent = Entity.Null;
                         em.SetComponentData(e, attached);
                         if (!em.HasComponent<Game.Common.Updated>(e)) em.AddComponent<Game.Common.Updated>(e);
@@ -180,6 +181,8 @@ namespace SkylineTogether.Sync
         {
             if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return;
             bool mover = em.HasComponent<Game.Vehicles.Vehicle>(e) || em.HasComponent<Game.Creatures.Creature>(e);
+            Entity owner = em.HasComponent<Game.Common.Owner>(e) ? em.GetComponentData<Game.Common.Owner>(e).m_Owner : Entity.Null;
+            Forensics.Cleanup("orphan sweep", em, e, (owner != Entity.Null ? "its owner " + Forensics.Describe(em, owner) : "its parent") + " was deleted here -> deleted");
             if (mover && DeletionCascade.DeleteMover != null && DeletionCascade.DeleteMover(em, e))
             {
                 _deletedTotal++;

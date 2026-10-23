@@ -92,6 +92,10 @@ namespace SkylineTogether.Sync
             writes.Clear();
             deletions.Clear();
             uint nextSeq = _seq + 1;
+            long proposalSent = 0;
+            // forensics: what this frame's tool apply changed (ARCHITECTURE.md#logs)
+            bool tally = _toolApplied || localTool;
+            _tally.Clear();
             try
             {
                 try
@@ -99,6 +103,7 @@ namespace SkylineTogether.Sync
                     foreach (Entity e in changed)
                     {
                         bool isDeleted = em.HasComponent<Game.Common.Deleted>(e);
+                        if (tally && !_appliedThisFrame.Contains(e)) TallyToolChange(em, e, isDeleted);
                         // an entity the applier touched and the local game then deleted is still a deletion to handle; one
                         // the player's own tool applied to in the same frame is the player's edit (it was never proposed and
                         // the integrity repair reverted it later without a word)
@@ -210,7 +215,11 @@ namespace SkylineTogether.Sync
                 }
                 if (_toolCost != 0) _batch.Cost(_toolCost);
                 // sequence, base ledger epoch and kind of the proposal (host validation, rollback)
-                if (!_batch.IsEmpty) _batch.ProposalHeader(++_seq, _baseEpoch, flags);
+                if (!_batch.IsEmpty)
+                {
+                    _batch.ProposalHeader(++_seq, _baseEpoch, flags);
+                    proposalSent = _seq;
+                }
                 if (_pool.ShouldRequestMore(_sessions.Clock.Seconds)) _batch.Request(SyncRequest.MoreIds); // retried with backoff
                 if (!_batch.IsEmpty)
                 {
@@ -223,7 +232,11 @@ namespace SkylineTogether.Sync
             finally
             {
                 FinishDeletions(deletions, nextSeq);
+                // a vanilla tool's apply, or a mod tool that proposed something (a direct-write tool is active every frame)
+                if (_toolApplied || (localTool && proposalSent != 0)) WriteToolApply(proposalSent);
+                _tally.Clear();
             }
+            WriteFrameMarker(now);
             HashBaselines(false); // a budgeted slice of the applier's entities (all of them before a tool can edit)
         }
 

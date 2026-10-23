@@ -32,9 +32,16 @@ namespace SkylineTogether.Sync
                     NativeArray<Entity> entities = chunk.GetNativeArray(entityType);
                     if (entities.Length == 0) continue;
                     Entity first = entities[0];
-                    // a tool preview (Temp) belongs to the local tool, which regenerates it every frame: reported only
+                    // a tool preview (Temp) belongs to the local tool, which regenerates it every frame: reported only; so is
+                    // what the player's own tool apply created this frame (Applied): the game owns it, as in single player
                     bool created = em.HasComponent<Game.Common.Created>(first) && !em.HasComponent<Game.Common.Deleted>(first) && !em.HasComponent<Game.Tools.Temp>(first);
-                    if (created)
+                    bool byTool = created && em.HasComponent<Game.Common.Applied>(first);
+                    if (byTool)
+                    {
+                        UpdateFrameGuardSystem.LeftToTool += entities.Length;
+                        Forensics.Cleanup("update-group guard", em, first, "created by the player's tool without an update-group marker (" + entities.Length + " like it): left to the game");
+                    }
+                    else if (created)
                     {
                         UpdateFrameGuardSystem.Deleted += entities.Length;
                         for (int i = 0; i < entities.Length; i++) _guardCreated.Add(entities[i]);
@@ -43,7 +50,7 @@ namespace SkylineTogether.Sync
                     {
                         UpdateFrameGuardSystem.SeenDeleted += entities.Length;
                     }
-                    if (logged.Add(chunk.Archetype)) LogUnsupported(em, chunk.Archetype, first, entities.Length, created);
+                    if (logged.Add(chunk.Archetype)) LogUnsupported(em, chunk.Archetype, first, entities.Length, created, byTool);
                 }
             }
             finally
@@ -54,6 +61,7 @@ namespace SkylineTogether.Sync
             {
                 if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
                 uint id = _ids != null ? _ids.GetNetId(e) : 0;
+                Forensics.Cleanup("update-group guard", em, e, "created without an update-group marker -> deleted" + (!IsHost && id != 0 ? " and asked from the host" : ""));
                 EntityCodec.SanitizeForDelete(em, e);
                 if (!IsHost && id != 0)
                 {
@@ -67,7 +75,7 @@ namespace SkylineTogether.Sync
             _guardCreated.Clear();
         }
 
-        private void LogUnsupported(EntityManager em, EntityArchetype archetype, Entity sample, int count, bool created)
+        private void LogUnsupported(EntityManager em, EntityArchetype archetype, Entity sample, int count, bool created, bool byTool)
         {
             var names = new List<string>();
             NativeArray<ComponentType> types = archetype.GetComponentTypes(Allocator.Temp);
@@ -98,7 +106,8 @@ namespace SkylineTogether.Sync
             }
             _log.Warn(LogCategory.Replication, "update-group guard: " + count + " " + (created ? "created" : "deleted") + " entit" + (count == 1 ? "y" : "ies")
                                                + " with UpdateFrame but no update-group marker, e.g. " + who + " prefab '" + prefab + "'; components: " + string.Join(", ", names)
-                                               + (created ? "; deleted before the game's update-group system and asked from the host again" : "; harmless to the game, a link was removed from it earlier"));
+                                               + (byTool ? "; created by the player's own tool: left to the game"
+                                                  : created ? "; deleted before the game's update-group system and asked from the host again" : "; harmless to the game, a link was removed from it earlier"));
         }
     }
 }

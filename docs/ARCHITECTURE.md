@@ -745,8 +745,9 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
    [`UpdateGroupMarkers`](../src/SkylineTogether.Core/Sync/SpawnCompleteness.cs)), logs "UpdateFrame added to unsupported
    type" when there is none, gives a created entity an update frame out of range and indexes its Burst job with it.
    `UpdateFrameGuardSystem` checks every created entity once more right before that system (any source: the applier,
-   the mover channel, the player's tools): it deletes such an entity (a client releases the id and asks the host) and
-   logs each archetype once with its component type names;
+   the mover channel, mod tools): it deletes such an entity (a client releases the id and asks the host) and logs each
+   archetype once with its component type names. What the player's own tool apply created in the frame (`Applied`) is
+   only reported: the game owns it, as in single player;
 5. writes the values; enabled bits of enableable components. New entities are atomic
    ([`SpawnTransaction`](../src/SkylineTogether.Core/Sync/ApplyTransaction.cs)): one whose component set or values
    failed is destroyed and unbound right after that step and asked for again, and when the apply throws outside the
@@ -872,7 +873,11 @@ The client deletes cleanly in these places, all through [`AgentLinkAccess`](../s
   (without `CurrentVehicle` and `Moving` it had no update-group marker). At the end of the mover apply, riders still
   attached (`Relative`, `CurrentVehicle`) to a vehicle deleted here that its passenger list did not name are released
   too. Every building, net, area and owner of sub-objects or vehicles deleted in the frame
-  is noted for the orphan sweep, with the children its own lists name.
+  is noted for the orphan sweep, with the children its own lists name, except a node or edge the player's own tool
+  replaced or removed (`Applied`, for example the edge split where a new road connects): the game's own Modification
+  systems, which run on clients, re-own or delete its sub-objects, sub-nets, lanes and zone blocks in that very frame,
+  and the mod leaves them to it. Nothing of a local tool apply is changed by these clean-ups: they touch agents,
+  movers and children whose owner is gone, never the tool's own nets, objects or previews.
 - **Orphan sweep** ([`OrphanSweep`](../src/SkylineTogether/Sync/OrphanSweep.cs), the start of the next frame, before
   any game system): an owned object (lanes excepted, the game regenerates them) whose `Owner` is one of them and no
   longer exists is made safe and deleted with it, an owned vehicle through the mover channel; an object whose
@@ -1518,6 +1523,27 @@ second (burst 2000), warnings to 50 per second (burst 500) and errors to 20 per 
 kind never hides the others; after 64 MiB in one run only errors are written, up to a
 further 16 MiB, then nothing. The next line written is preceded by `N log line(s) left out`. Warnings caused by peer
 input are logged once per key.
+
+**Forensics.** A crash in a Burst job leaves no managed stack, so the last lines before it must say what just happened
+([`Forensics`](../src/SkylineTogether/Diagnostics/Forensics.cs), category `forensics`, at most 20 lines a second with a
+summary of what was left out: [`BreadcrumbLimiter`](../src/SkylineTogether.Core/Diagnostics/ForensicsTrail.cs)):
+
+- a client writes one line per local tool apply: `tool apply: <tool> '<prefab>'; tool +2 NetEdge, -1 NetEdge, ~2
+  NetNode; game +12 Lane, -6 Lane, ~1 Aggregate; proposal 17` (`+` created, `~` updated, `-` deleted; "tool" counts
+  the tool's own changes (`Applied` and the recorded originals), "game" what the game derived in the same frame; the
+  proposal's sequence number, or `nothing proposed`);
+- every clean-up the mod makes in the world writes `cleanup: <who>: <entity> <what>`: the removal cascade of local
+  deletions, the orphan sweep, the update-group guard and the [reference audit](#reference-audit)'s repairs, the
+  entity named by kind, prefab name and net id (or index), for example `cleanup: orphan sweep: object 'Street Light'
+  4410:2 its owner destroyed entity 5121:3 was deleted here -> deleted`;
+- while the player has a tool other than the default one selected, a client writes `frame marker: frame <n>, tool
+  <id> selected; <a> tool apply(s) and <c> clean-up(s) since the last marker; <b> host batch(es) waiting` every 5 s,
+  and once when the tool is put away ([`FrameMarkerClock`](../src/SkylineTogether.Core/Diagnostics/ForensicsTrail.cs)).
+
+The game's logger writes every line synchronously and flushes it to the file
+(`Colossal.Logging.UnityLogger.Internal_WriteStream` ends with `Flush()`), so a line logged before a native crash is in
+`SkylineTogether.log`. Forensics lines name prefabs (asset names) and entity numbers only, and go through the same
+redaction as every line.
 
 The log holds no Windows user name and no full network address: every line, exception text, notification and the
 diagnostics file go through [`PathRedactor`](../src/SkylineTogether.Core/Diagnostics/PathRedactor.cs) (a path inside the
