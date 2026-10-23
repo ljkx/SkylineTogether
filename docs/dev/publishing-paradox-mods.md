@@ -36,9 +36,10 @@ both (`publish_paradox.py Release`).
   | `NewVersion` | `PublishNewVersion` | Uploads a new version of the mod `ModId`. Needs a new `ModVersion` and a `ChangeLog`. |
   | `Update` | `UpdatePublishedConfiguration` | Updates only the page (texts, images, tags, links, game version, access level); no new files. |
 
-  `NewVersion` uploads the files with their `ModVersion` and `ChangeLog`; the page texts and images are written by
-  `Update`. The script's `Release` command therefore runs `NewVersion` and then `Update`, so the page always describes
-  the version that was just uploaded.
+  `NewVersion` uploads the files with their `ModVersion` and `ChangeLog` and also writes the page texts, the thumbnail
+  and the screenshots, so the page always describes the version that was just uploaded. An `Update` right after it is
+  refused with "User version already exists for this mod"; the script's `Release` command therefore runs `NewVersion`
+  only.
 
 - Usage: `ModPublisher <command> <PublishConfiguration.xml> -c <content folder> -v`. The content folder is uploaded as
   it is and lands in the players'
@@ -125,9 +126,7 @@ The first upload created mod 163578 with version 0.1.0-alpha.4. The steps are ke
    python tools/paradox/publish_paradox.py Release
    ```
 
-   It asks once, then runs `NewVersion` (files, version, changelog) and, when that succeeded, `Update` (page texts,
-   thumbnail, screenshots). If `Update` fails, the new version is already up: run
-   `python tools/paradox/publish_paradox.py Update` once the problem is fixed.
+   It asks once, then runs `NewVersion` (files, version, changelog, page texts, thumbnail and screenshots).
 5. Open the mod page and check the version, the changelog, the texts and the images.
 6. Subscribed players get the update when they start the game. Players of a session must all be on the same build:
    tell players who use the GitHub setup to install the matching release.
@@ -196,7 +195,7 @@ $env:DOTNET_ROLL_FORWARD = 'Major'   # only without a .NET 6 runtime
     Publish Properties\PublishConfiguration.xml -c ..\..\dist\paradox-manual\SkylineTogether -v
 ```
 
-Replace `Publish` with `NewVersion` or `Update` as above (a release: `NewVersion`, then `Update`). Run `python tools/check_personal_data.py` and compare the
+Replace `Publish` with `NewVersion` or `Update` as above (a release: `NewVersion`). Run `python tools/check_personal_data.py` and compare the
 build ID before you upload, as the script does.
 
 The game's editor has its own upload for assets and maps. Code mods use ModPublisher, the toolchain's route.

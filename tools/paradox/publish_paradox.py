@@ -6,13 +6,13 @@ Usage (repo root, after tools/build.sh --package):
                                                        the rules are those of the command --for names (default: Publish
                                                        while ModId is empty, else Release)
   python tools/paradox/publish_paradox.py Publish      first upload of a new mod (ModId must be empty)
-  python tools/paradox/publish_paradox.py Release      a new release: NewVersion, then Update (the usual command)
+  python tools/paradox/publish_paradox.py Release      a new release: NewVersion (the usual command)
   python tools/paradox/publish_paradox.py NewVersion   upload a new version (ModId set, new ModVersion and ChangeLog)
   python tools/paradox/publish_paradox.py Update       update only the page (texts, images, tags, links) from the config
 
-  NewVersion uploads the files, the ModVersion and the ChangeLog; the page (ShortDescription, LongDescription,
-  thumbnail, screenshots, tags, links) is written by Update. Release runs both, so the page always describes the
-  version that was just uploaded.
+  NewVersion uploads the files, the ModVersion and the ChangeLog together with the page (ShortDescription,
+  LongDescription, thumbnail, screenshots), so the page always describes the version that was just uploaded. An
+  Update right after it is refused ("User version already exists for this mod"), so Release runs NewVersion only.
 
   options:  --dry-run        do everything except running ModPublisher
             --yes            do not ask before uploading
@@ -72,7 +72,7 @@ TOOLCHAIN = [
 COMMANDS = {'check': 'check', 'release': 'Release', 'publish': 'Publish', 'newversion': 'NewVersion', 'update': 'Update',
             'publishnewmod': 'Publish', 'publishnewversion': 'NewVersion', 'updatepublishedconfiguration': 'Update'}
 # the ModPublisher commands each command runs, in order: a release uploads the version, then refreshes the page
-STEPS = {'Publish': ['Publish'], 'NewVersion': ['NewVersion'], 'Update': ['Update'], 'Release': ['NewVersion', 'Update']}
+STEPS = {'Publish': ['Publish'], 'NewVersion': ['NewVersion'], 'Update': ['Update'], 'Release': ['NewVersion']}
 
 
 def fail(msg):
@@ -83,7 +83,7 @@ props_value = release_common.props_value
 
 
 def implied_command():
-    """The command a check validates by default: Publish while ModId is empty, else Release (NewVersion, then Update)."""
+    """The command a check validates by default: Publish while ModId is empty, else Release (NewVersion)."""
     _, value = read_config()
     return 'Publish' if value('ModId') in ('', '0') else 'Release'
 
@@ -302,7 +302,7 @@ def main():
         cmd = [publisher, step, EFFECTIVE, '-c', CONTENT, '-v']
         print('ModPublisher command:\n  ' + ' '.join('"%s"' % c if ' ' in c else c for c in cmd))
     if command == 'check' and rules == 'Release':
-        print('a release runs NewVersion, then Update: python tools/paradox/publish_paradox.py Release')
+        print('a release runs NewVersion: python tools/paradox/publish_paradox.py Release')
     if command == 'check' or args.dry_run:
         print('not uploading (%s)' % ('check' if command == 'check' else '--dry-run'))
         return
@@ -325,8 +325,7 @@ def main():
             output.append(line)
         returncode = proc.wait()
         if returncode != 0:
-            later = '; the new version is up: run Update to refresh the page' if command == 'Release' and step == 'Update' else ''
-            fail('ModPublisher %s exited with %d%s' % (step, returncode, later))
+            fail('ModPublisher %s exited with %d' % (step, returncode))
     m = re.search(r'Mod published with Id=\s*(\d+)', ''.join(output))
     if command == 'Publish' and not m:
         fail('ModPublisher reported no "Mod published with Id=": write the new mod id into ModId of %s by hand' % os.path.relpath(CONFIG, ROOT))

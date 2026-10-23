@@ -116,9 +116,9 @@ committed before the build, so the tag, the DLL's commit hash and the uploads al
    [release notes template](release-notes-template.md): the changelog section, the build ID, the game version it was
    tested with, the install routes, the SHA-256 checksums of both zips and how to report bugs.
 7. Paradox Mods: with the game running and logged in to Paradox, run
-   `python tools/paradox/publish_paradox.py Release` from the same clean `HEAD`. `Release` runs `NewVersion` (the
-   files, `ModVersion` and `ChangeLog`) and then `Update` (page texts, thumbnail and screenshots), so the page matches
-   the new version. It uploads the files of the same release zip, so players from Paradox Mods and from GitHub have the
+   `python tools/paradox/publish_paradox.py Release` from the same clean `HEAD`. `Release` runs `NewVersion`, which
+   uploads the files, `ModVersion` and `ChangeLog` together with the page texts, thumbnail and screenshots, so the page
+   matches the new version. It uploads the files of the same release zip, so players from Paradox Mods and from GitHub have the
    same build ID. Check the page afterwards. (`Publish` was the very first upload; it writes the new `ModId`, which is
    then committed.) Details: [publishing-paradox-mods.md](publishing-paradox-mods.md).
 
