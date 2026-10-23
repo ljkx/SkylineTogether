@@ -76,6 +76,9 @@ namespace SkylineTogether.Sync
         /// <summary>Client: the owned and attached objects of entities deleted last frame (<see cref="OrphanSweep"/>).</summary>
         internal OrphanSweep Orphans { get; } = new OrphanSweep();
 
+        /// <summary>Host and client: the derived net links (streets, road connections) never name a destroyed entity (<see cref="DerivedLinkGuard"/>).</summary>
+        internal DerivedLinkGuard Links { get; } = new DerivedLinkGuard();
+
         private Action _orphanCall;
 
         /// <summary>
@@ -471,6 +474,7 @@ namespace SkylineTogether.Sync
                           + (IsHost ? "" : ", " + _failedBatches + " failed host batches, " + _derivedModChanges + " local mod-state derivations not proposed") + ", " + _staged.Count + " despawns awaiting their broadcast");
                 if (!IsHost) lines.Add(_audit.Describe());
                 if (!IsHost) lines.Add(Orphans.Describe());
+                lines.Add(Links.Describe());
                 lines.Add("forensics: " + Forensics.Cleanups + " clean-ups written as breadcrumbs this session");
             }
             _agents.Describe(lines);

@@ -7,9 +7,17 @@ All notable changes to this project are documented in this file. The format is b
 
 ### Fixed
 
-- **Joined players' clean-ups leave the player's own building to the game.** What the player's own tool just built or
-  replaced (the roads, nodes and objects of a road connection, and what the tool created) is no longer touched by
-  Skyline Together's clean-ups on joined players; the game's own systems handle it, as in single player.
+- **Joined players crashed when they connected new roads to existing ones.**
+  - Street names (which roads form one street) and road connections of buildings are kept as a pair of links: a
+    street lists its roads and every road names its street; a building names its road and every road lists its
+    buildings. Only one side of each pair travels between players; each game derives the other. Updates from the host
+    rewrote one side and left the other as the joined player's game had derived it, so deleting a road or building
+    could leave a street or road still pointing at it. Building or connecting a road next to it then crashed the game.
+  - A street the host lists a road in now takes the road on joined players too, a building the host connects to a road
+    is listed by that road, and at the end of every frame nothing may keep pointing at a road, street or building that
+    is being deleted. The game's own systems that read these links are checked right before they run.
+  - The clean-ups of joined players leave everything the player's own tool just built or replaced to the game itself
+    (the roads, nodes and objects of a road connection, and what the tool created).
 - **Crash reports say more.** Joined players' logs now name every tool use (what was built, removed and changed, and
   the change sent to the host), every clean-up Skyline Together makes in the world, and a frame marker every few
   seconds while building, so the last lines before a crash show what happened. At most 20 such lines are written per

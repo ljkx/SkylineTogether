@@ -469,6 +469,8 @@ namespace SkylineTogether.Sync
             {
                 _codec.MissingIds = null;
             }
+            // the street lists and road edges the batch wrote take their derived direction with them (ARCHITECTURE.md#derived-net-links)
+            AfterApplyLinks(r.Touched);
             if (_structureRepairs.Count > 0 || r.DanglingIds.Count > 0) RequestStructureRepairs(r);
             // no agent link the batch wrote, tagged or cascaded is left dangling for this frame's game systems
             // (ARCHITECTURE.md#reference-safety)
@@ -725,6 +727,7 @@ namespace SkylineTogether.Sync
                 throw;
             }
             RebaseBuildOrders(r.SpawnedEntities, touchedEdges);
+            AfterApplyLinks(r.Touched);
             for (int i = 0; i < records.Count; i++)
             {
                 SyncRecord rec = records[i];

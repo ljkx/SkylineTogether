@@ -82,6 +82,8 @@ SkylineTogether.Sync.AgentSync+ChunkLap
 SkylineTogether.Sync.AgentSync+HostPeer
 SkylineTogether.Sync.AgentSync+KeyKind
 SkylineTogether.Sync.AgentSync+RecordWriter
+SkylineTogether.Sync.AggregateLinkGuardSystem
+SkylineTogether.Sync.AggregateMeshGuardSystem
 SkylineTogether.Sync.ApplyResult
 SkylineTogether.Sync.AttentionValues
 SkylineTogether.Sync.AttentionValues+HostPeer
@@ -95,6 +97,9 @@ SkylineTogether.Sync.ClientGate
 SkylineTogether.Sync.DataHandler`1
 SkylineTogether.Sync.DeletionCascade
 SkylineTogether.Sync.DerivedKey
+SkylineTogether.Sync.DerivedLinkCleanupSystem
+SkylineTogether.Sync.DerivedLinkGuard
+SkylineTogether.Sync.DerivedLinkRun
 SkylineTogether.Sync.EntityCodec
 SkylineTogether.Sync.EntityRefCollector
 SkylineTogether.Sync.EntityRefListHandler`1
@@ -150,6 +155,7 @@ SkylineTogether.Sync.ReferenceAudit+Check
 SkylineTogether.Sync.ReferenceAudit+DataCheck`1
 SkylineTogether.Sync.RemovalCascadeSystem
 SkylineTogether.Sync.RenterListHandler
+SkylineTogether.Sync.RoadConnectionGuardSystem
 SkylineTogether.Sync.RouteSegmentsHandler
 SkylineTogether.Sync.RouteWaypointsHandler
 SkylineTogether.Sync.SignalFollower

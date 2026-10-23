@@ -33,6 +33,7 @@ namespace SkylineTogether.Sync
             if (world == null) return false;
             Compat.ModCompat.Refresh(_log); // mod compatibility: before the classifier caches any archetype
             _ids = world.GetOrCreateSystemManaged<NetIdSystem>();
+            Links.Ids = _ids;
             _codec = new EntityCodec(world, _ids, _log);
             _watcher = new Compat.ModStateWatcher(_codec, _ids, _log);
             Integrity.Attach(_codec, _ids);
@@ -77,6 +78,7 @@ namespace SkylineTogether.Sync
             host.PeerLeft += OnPeerLeft;
             host.PeerLeft += Integrity.OnPeerLeft;
             Integrity.Reset();
+            Links.Reset(); // the full pass runs in the first frame of the session
             ResetGameplay();
             ResetHostState();
             ResetPlacement();
@@ -117,6 +119,7 @@ namespace SkylineTogether.Sync
             _clientLive = false;
             _pool.Clear();
             Integrity.Reset();
+            Links.Reset(); // the full pass runs in the first frame the client is live
             _shadow.Clear();
             _baselinesPending.Clear();
             ResetGameplay();
@@ -158,6 +161,7 @@ namespace SkylineTogether.Sync
             _watcher?.Stop();
             _audit.Reset();
             Orphans.Reset();
+            Links.Reset();
             _markers.Reset();
             Forensics.ResetSession();
             _modSettings.Reset();

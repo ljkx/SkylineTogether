@@ -10,9 +10,9 @@ namespace SkylineTogether.Diagnostics
     /// <summary>
     /// Breadcrumbs for native crashes (ARCHITECTURE.md#logs): a crash in a Burst job leaves no managed stack, so the log's
     /// last lines must say what just happened. One <c>[forensics]</c> line per local tool apply on a client, one per clean-up
-    /// the mod makes in the world (removal cascade, orphan sweep, update-group guard, reference audit), and a frame marker
-    /// every few seconds while the player builds. At most <see cref="BreadcrumbLimiter.PerSecond"/> lines a second, the
-    /// rest summarised. The game's logger writes and flushes every line synchronously
+    /// the mod makes in the world (removal cascade, orphan sweep, update-group guard, reference audit, derived net links),
+    /// and a frame marker every few seconds while the player builds. At most <see cref="BreadcrumbLimiter.PerSecond"/> lines
+    /// a second, the rest summarised. The game's logger writes and flushes every line synchronously
     /// (<c>Colossal.Logging.UnityLogger.Internal_WriteStream</c> ends with <c>Flush()</c>), so a line logged before a crash is
     /// in the file. Entities are named by kind, prefab name, net id or index: no paths, no player names. Main thread only.
     /// </summary>

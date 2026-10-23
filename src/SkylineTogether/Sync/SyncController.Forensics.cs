@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Game.Tools;
 using SkylineTogether.Core;
 using SkylineTogether.Core.Diagnostics;
@@ -7,12 +8,26 @@ using Unity.Entities;
 
 namespace SkylineTogether.Sync
 {
-    // Crash forensics of the client's own edits (ARCHITECTURE.md#logs).
+    // Crash forensics of the client's own edits (ARCHITECTURE.md#logs) and the derived net links after an apply.
     public sealed partial class SyncController
     {
         private readonly ToolApplyTally _tally = new ToolApplyTally();
         private readonly FrameMarkerClock _markers = new FrameMarkerClock();
         private int _appliesSinceMarker;
+
+        /// <summary>The derived direction of the street lists and road edges an apply wrote (ARCHITECTURE.md#derived-net-links).</summary>
+        private void AfterApplyLinks(HashSet<Entity> touched)
+        {
+            if (_codec == null || touched == null || touched.Count == 0 || !Features.Replication.IsAvailable) return;
+            try
+            {
+                Links.AfterApply(_codec.EntityManager, touched);
+            }
+            catch (Exception ex)
+            {
+                Guard.Report(Features.Replication, "derived net links (after apply)", ex);
+            }
+        }
 
         /// <summary>Counts one entity of a frame in which the local tool applied (the tool's own change or the game's derivation).</summary>
         private void TallyToolChange(EntityManager em, Entity e, bool deleted)
