@@ -78,12 +78,14 @@ Open source under the MIT licence. Not affiliated with or endorsed by Paradox In
 	<!--"Code Mod" is the tag every code mod on Paradox Mods carries; the platform has no multiplayer tag-->
 	<Tag Value="Code Mod" />
 	<!--The release version: <Version> of Directory.Build.props (tools/paradox/publish_paradox.py checks that they match)-->
-	<ModVersion Value="0.2.0" />
+	<ModVersion Value="0.2.1" />
 	<!--The game version the build was compiled and tested against (1.6.2f1); another game version may switch features off-->
 	<GameVersion Value="1.6.2*" />
-	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened (prepared for 0.2.0)-->
+	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened (prepared for 0.2.1; it includes 0.2.0, which was not uploaded here)-->
 	<ChangeLog>
-First regular release. Players of earlier versions cannot join this version.
+Fixes a crash of joined players when they connect new roads to existing ones, and names every tool use in the log of joined players so a crash report shows what happened last.
+
+Includes the first regular release, 0.2.0. Players of 0.1 versions cannot join this version:
 
 - Big cities: a slow load is no longer dropped after 5 minutes; loading counts as long as the game keeps working (up to 20 minutes)
 - New host option "New players join as viewers"; roles are remembered when a player rejoins
@@ -95,7 +97,7 @@ First regular release. Players of earlier versions cannot join this version.
 - Bug reports: the game and the guide say where to send the files and what they contain
 - New screenshots
 
-Full changelog: https://github.com/ljkx/SkylineTogether/blob/v0.2.0/CHANGELOG.md
+Full changelog: https://github.com/ljkx/SkylineTogether/blob/v0.2.1/CHANGELOG.md
 	</ChangeLog>
 	<ExternalLink Type="github" Url="https://github.com/ljkx/SkylineTogether" />
 	<!--Public, Unlisted (only people with the link find it) or Private-->

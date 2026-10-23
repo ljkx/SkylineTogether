@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-23
+
 ### Fixed
 
 - **Joined players crashed when they connected new roads to existing ones.**
@@ -354,7 +356,8 @@ First public release (pre-release). Back up your saves before playing.
   request templates, GitHub Actions CI (Core build and tests without the game, UI smoke test, link and personal-data
   checks), `.editorconfig` and `.gitattributes`.
 
-[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.2.0...main
+[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.2.1...main
+[0.2.1]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.2.0
 [0.1.0-alpha.4]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.3
