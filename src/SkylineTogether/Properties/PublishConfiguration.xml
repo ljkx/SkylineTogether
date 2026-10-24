@@ -78,26 +78,20 @@ Open source under the MIT licence. Not affiliated with or endorsed by Paradox In
 	<!--"Code Mod" is the tag every code mod on Paradox Mods carries; the platform has no multiplayer tag-->
 	<Tag Value="Code Mod" />
 	<!--The release version: <Version> of Directory.Build.props (tools/paradox/publish_paradox.py checks that they match)-->
-	<ModVersion Value="0.2.1" />
+	<ModVersion Value="0.3.0" />
 	<!--The game version the build was compiled and tested against (1.6.2f1); another game version may switch features off-->
 	<GameVersion Value="1.6.2*" />
-	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened (prepared for 0.2.1; it includes 0.2.0, which was not uploaded here)-->
+	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened (prepared for 0.3.0)-->
 	<ChangeLog>
-Fixes a crash of joined players when they connect new roads to existing ones, and names every tool use in the log of joined players so a crash report shows what happened last.
+Dedicated support for more mods, and fixes for crashes of joined players when building roads.
 
-Includes the first regular release, 0.2.0. Players of 0.1 versions cannot join this version:
+- Placemaker: parks and places built with it appear for every player, joined players can build, edit and remove them, and its automatic dressing runs on the host only
+- Cim Census: the statistics panel also fills for joined players
+- Achievement Fixer, ExtraLib and Cim Route Highlighter no longer block a join; achievements stay off for joined players during a session
+- Fixed: joined players crashed when they built or connected roads next to existing ones (crossings, street names and road connections could still point at a removed road)
+- Joined players' logs name every tool use and repair, so a crash report shows what happened last
 
-- Big cities: a slow load is no longer dropped after 5 minutes; loading counts as long as the game keeps working (up to 20 minutes)
-- New host option "New players join as viewers"; roles are remembered when a player rejoins
-- Safer joining: nothing about the session is revealed before the password, the password check is mutual and harder to guess, and joins can no longer stall the host
-- Messages from the host appear in each player's language; clearer screens for a password lockout, a host that can't prove the password, a join cooldown and a join the host stopped
-- Fixes for crashes and differences on joined players' games (deleted and reused objects, events, resource painting, vehicles, mod systems)
-- Less network traffic for statistics in older cities
-- Skyline Together's log and diagnostics file no longer contain your Windows user name or full IP addresses
-- Bug reports: the game and the guide say where to send the files and what they contain
-- New screenshots
-
-Full changelog: https://github.com/ljkx/SkylineTogether/blob/v0.2.1/CHANGELOG.md
+Full changelog: https://github.com/ljkx/SkylineTogether/blob/v0.3.0/CHANGELOG.md
 	</ChangeLog>
 	<ExternalLink Type="github" Url="https://github.com/ljkx/SkylineTogether" />
 	<!--Public, Unlisted (only people with the link find it) or Private-->

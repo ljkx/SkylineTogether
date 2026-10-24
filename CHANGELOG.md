@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-24
+
 ### Added
 
 - **Support for ExtraLib, Achievement Fixer, Cim Census and Cim Route Highlighter.**
@@ -396,7 +398,8 @@ First public release (pre-release). Back up your saves before playing.
   request templates, GitHub Actions CI (Core build and tests without the game, UI smoke test, link and personal-data
   checks), `.editorconfig` and `.gitattributes`.
 
-[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.2.1...main
+[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.3.0...main
+[0.3.0]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.3.0
 [0.2.1]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.2.0
 [0.1.0-alpha.4]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.1.0-alpha.4
