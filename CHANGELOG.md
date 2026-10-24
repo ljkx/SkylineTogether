@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Fixed
+
+- **Joined players could still crash when they built or connected roads next to existing ones.**
+  - Every crossing keeps a list of the roads that meet there, which each game derives from the roads themselves. When
+    an update from the host moved a road to other crossings (for example when the host corrected a road that differed),
+    the crossing it left kept it in its list; once that road was removed, the crossing still pointed at it, and the next
+    road built or connected there (or a street name or arrow redrawn on it, such as on highways) crashed the game.
+  - Crossings a road leaves are now updated with it, and at the end of every frame no crossing may keep a road that is
+    being deleted (and no road a crossing that is being deleted). The game's own systems that read these lists are
+    checked right before they run, and the periodic reference check of joined players now repairs these lists instead
+    of only reporting them. Each repair is written to the log.
+
 ## [0.2.1] - 2026-10-23
 
 ### Fixed

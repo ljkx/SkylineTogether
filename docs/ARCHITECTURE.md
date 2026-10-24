@@ -212,10 +212,11 @@ The registrations in [`Mod.OnLoad`](../src/SkylineTogether/Mod.cs) are authorita
 | `ChirpDrainSystem` | ModificationEnd, before `CreateChirpSystem` | Client: empties the local chirp queue |
 | `UpdateFrameGuardSystem` | Modification5, before `UpdateGroupSystem` | No created entity reaches the game's update groups without its marker ([client apply](#client-apply)) |
 | `RemovalCascadeSystem` | ModificationEnd | Client: the reference clean-up of entities deleted on this client this frame, riders out of deleted vehicles, deleted owners noted for the next frame's orphan sweep ([reference safety](#reference-safety)) |
+| `NetReferenceGuardSystem` | Modification2B, before `Net.ReferencesSystem` | The edge lists of the modified nodes and of the nodes the modified edges name, and those edges' middle connections and ends, name live edges and nodes ([derived net links](#derived-net-links)) |
 | `AggregateLinkGuardSystem` | Modification2B, before `AggregateSystem` | The streets the modified edges and their neighbours name are usable and list only edges ([derived net links](#derived-net-links)) |
 | `RoadConnectionGuardSystem` | Modification4B, before `RoadConnectionSystem` | The building lists of modified edges and the road edges of the buildings it processes name live entities ([derived net links](#derived-net-links)) |
-| `DerivedLinkCleanupSystem` | ModificationEnd, after `ModificationEndBarrier` | Nothing derived keeps naming an edge, street or building deleted this frame; once per session a full pass ([derived net links](#derived-net-links)) |
-| `AggregateMeshGuardSystem` | PreCulling, before `AggregateMeshSystem` | The lists of the streets whose labels are rebuilt name edges ([derived net links](#derived-net-links)) |
+| `DerivedLinkCleanupSystem` | ModificationEnd, after `ModificationEndBarrier` | Nothing derived keeps naming an edge, node, street or building deleted this frame; once per session a full pass ([derived net links](#derived-net-links)) |
+| `AggregateMeshGuardSystem` | PreCulling, before `AggregateMeshSystem` | The lists of the streets whose labels are rebuilt, and their nodes' edge lists, name edges ([derived net links](#derived-net-links)) |
 | `SyncBindSystem` | MainLoop, before `SaveGameSystem` | Host: binds entities created this frame (a snapshot taken now carries them); client: warns about local saves |
 | `MoverCaptureSystem` | MainLoop, before `SaveGameSystem` | Host: mover existence and motion |
 | `SyncCaptureSystem` | MainLoop, before `PrepareCleanUpSystem` | `SyncController.CaptureOutgoing`: every tag of the frame is still visible |
@@ -779,7 +780,8 @@ spawned this frame. [`EntityCodec.Apply`](../src/SkylineTogether/Sync/EntityCode
    would crash the game. Middle connections (`ConnectedNode`) of a kept edge to a node that is
    gone are dropped;
 8. tags: created entities carry `Created`/`Updated` from their archetype; edits get `Updated` with the net closure (an
-   edge's nodes and their edges); agents are never tagged.
+   edge's nodes and their edges), and so do the nodes an existing edge stops naming when a record (a values record
+   too) rewrites its ends or middle connections ([derived net links](#derived-net-links)); agents are never tagged.
 
 Right after each batch (and each agent value message) the client repairs the agent links of every entity the apply
 wrote, tagged or cascaded ([reference safety](#reference-safety)), so no link the batch left dangling reaches the game
@@ -918,43 +920,73 @@ on both sides.
 
 ### Derived net links
 
-Four net-side links travel in one direction only
+Net-side links travel in one direction only
 ([`DerivedNetLinks`](../src/SkylineTogether.Core/Sync/DerivedNetLinks.cs)): a street aggregate's edge list
-(`AggregateElement`) and a building's road edge (`Building.m_RoadEdge`) are data, while the reverse directions, an
-edge's street (`Aggregated`) and an edge's building list (`ConnectedBuilding`), are presence-only in saves and records.
-The game rebuilds them when a city loads (`AggregatedSystem`, `ConnectedBuildingSystem`) and keeps both directions in
-step as it edits. A peer whose two directions came from different sources did not: the host's records rewrote street
-lists and road edges while the reverse direction stayed what the peer had derived itself (an edge the host added to a
-street kept the client's own street, which listed it as well; a building the host moved to another edge stayed in the
-old edge's list). Deleting such an edge or building cleaned the direction the game knows of, and the other one kept
-naming a destroyed entity. `AggregateSystem` (Modification2B: `m_AggregateElements[...]`, `dynamicBuffer[0]`, the
-prefab of every listed edge), `AggregateMeshSystem` (PreCulling: `Edge` and the nodes' `ConnectedEdge` of every listed
-edge) and `RoadConnectionSystem` (Modification4B: the building of every list entry, the geometry and list of every
-nearby building's road edge) index these references without a check exactly when a road is built or connected next to
-them, the most likely cause of the native crash of a client connecting new roads to existing ones in 0.2.0 (no managed
-stack, and no line of the mod's own clean-ups before it: none of them covered these links).
+(`AggregateElement`), a building's road edge (`Building.m_RoadEdge`) and an edge's ends and middle connections
+(`Edge.m_Start/m_End`, `ConnectedNode`) are data, while the reverse directions, an edge's street (`Aggregated`), an
+edge's building list (`ConnectedBuilding`) and a node's edge list (`ConnectedEdge`), are presence-only in saves and
+records. The game rebuilds them when a city loads (`AggregatedSystem`, `ConnectedBuildingSystem`, `ConnectedEdgeSystem`)
+and keeps both directions in step as it edits. A peer whose two directions came from different sources did not: the
+host's records rewrote street lists and road edges while the reverse direction stayed what the peer had derived itself
+(an edge the host added to a street kept the client's own street, which listed it as well; a building the host moved
+to another edge stayed in the old edge's list). Deleting such an edge or building cleaned the direction the game knows
+of, and the other one kept naming a destroyed entity. `AggregateSystem` (Modification2B: `m_AggregateElements[...]`,
+`dynamicBuffer[0]`, the prefab of every listed edge), `AggregateMeshSystem` (PreCulling: `Edge` and the nodes'
+`ConnectedEdge` of every listed edge) and `RoadConnectionSystem` (Modification4B: the building of every list entry, the
+geometry and list of every nearby building's road edge) index these references without a check exactly when a road is
+built or connected next to them, the most likely cause of the native crash of a client connecting new roads to existing
+ones in 0.2.0 (no managed stack, and no line of the mod's own clean-ups before it: none of them covered these links).
 
-[`DerivedLinkGuard`](../src/SkylineTogether/Sync/DerivedLinkGuard.cs) keeps them free of destroyed entities, on the host
-(which applies proposals the same way) and on clients:
+**Node edge lists.** `Net.ReferencesSystem` (Modification2B) takes an updated edge out of a node's `ConnectedEdge`
+only when that node is updated in the same frame, adds it to the nodes the edge names now, and takes a deleted edge out
+of the lists of the nodes it names at that moment. The game updates the nodes an edge leaves itself
+(`ApplyNetSystem`). The applier tagged the net closure of the values it had just written, so a node an edge left (a
+record rewrote its ends or middle connections: an integrity repair re-sending one edge, a values record, a stale id
+binding written across) was never updated and kept the edge; once the edge was deleted that entry named a destroyed
+entity. The geometry, lane, composition and search systems, `AggregateMeshSystem` (`CompositionChange` indexes both
+entries of a node with two edges: the highway arrows) and many simulation systems iterate node lists and index each
+entry unchecked: the native crash of a client building next to such a node (the log of a crashed 0.2.0 client ended with
+`dangling reference: Net.ConnectedEdge.m_Edge ...` lines on highway nodes). The applier now tags the nodes an edge
+leaves with their closure ([`EdgeNodeChange`](../src/SkylineTogether.Core/Sync/DerivedNetLinks.cs)), and a values record
+that changes an edge's nodes tags the edge as well. A created entity the update-group guard deletes (Modification5, after
+`Net.ReferencesSystem` listed it) is the other known way an edge left a list behind; the end-of-Modification pass below
+covers it.
+
+[`DerivedLinkGuard`](../src/SkylineTogether/Sync/DerivedLinkGuard.cs) (streets and road connections) and
+[`DerivedLinkGuard.Nodes`](../src/SkylineTogether/Sync/DerivedLinkGuard.Nodes.cs) (node and edge lists) keep them free
+of destroyed entities, on the host (which applies proposals the same way) and on clients:
 
 - **After every apply** (host batch, proposal): an aggregate whose list a record wrote takes its listed edges: each
   names it and leaves the list of the street it named before, as `AggregatedSystem` does on load
   ([`AggregateMembership`](../src/SkylineTogether.Core/Sync/DerivedNetLinks.cs)); a street of the peer's own (no net
   id) left empty is deleted. A written building is listed by its road edge.
 - **End of the Modification phases** (`DerivedLinkCleanupSystem`, after `ModificationEndBarrier`): in every frame that
-  deletes edges, aggregates or buildings (tool previews never count), whatever still names one of them is cleared:
-  list elements dropped, pointers set to null (null is a normal value of both pointers). The game already moved what
-  it knows of, so only stale references are touched; they would name a destroyed entity from the next frame on. The
-  first frame of a session (a client: the first frame it is live) checks every link once.
-- **Right before the game reads them**: the streets the modified edges and their neighbours name, the building lists
-  of the modified edges, the road edges of the buildings `RoadConnectionSystem` will process, and the lists of the
-  streets whose labels are rebuilt are checked again (a destroyed or wrong-kind target is cleared).
+  deletes edges, nodes, aggregates or buildings (tool previews never count), whatever still names one of them is
+  cleared: list elements dropped, pointers set to null (null is a normal value of both pointers). The game already
+  moved what it knows of, so only stale references are touched; they would name a destroyed entity from the next frame
+  on. Every node's edge list is scanned for the edges deleted this frame (a bitmap test per entry); an edge that still
+  ends at a node deleted this frame is deleted at the start of the next frame. The first frame of a session (a client:
+  the first frame it is live) checks every link once.
+- **Right before the game reads them**: before `Net.ReferencesSystem`, the edge lists of the modified nodes and of the
+  nodes the modified edges name, and those edges' middle connections and ends (a deleted edge whose node is gone is
+  made safe, a kept one deleted); the streets the modified edges and their neighbours name, the building lists of the
+  modified edges, the road edges of the buildings `RoadConnectionSystem` will process, and the lists of the streets
+  whose labels are rebuilt, with their edges' node lists, are checked again (a destroyed or wrong-kind target is
+  cleared).
+- **The start of the next frame** (`SyncController.ApplyIncoming`, before the apply and every game system): a node or
+  edge whose list was repaired after the game had built it is tagged `Updated` with its net closure, so the
+  Modification phases rebuild its geometry, composition and lanes without the entry (an `Updated` tag added after them
+  would only reach the rendering systems); an edge found ending at a node that is gone is deleted the way the applier
+  deletes a dangling edge (the gone node replaced by the other one, so `Net.ReferencesSystem` drops it from the node it
+  keeps; a client releases the id and asks the host for it, the host's capture broadcasts the despawn).
 
 It never writes a tool preview (`Temp`; the tool regenerates them, and the game's code handles a preview's references
 itself), never creates an entity, and every repair is a forensics line ([logs](#logs)) and a counter in the
-diagnostics (`derived net links: ...`). A repaired entity differs from the host's until the integrity check's repair
-brings the host's record, which the membership pass then applies consistently. The scans cost one chunk walk of the
-holders of a link in frames that delete such entities (streets, buildings, edges), and nothing in other frames.
+diagnostics (`derived net links: ...`; the applier's `nodes an edge left updated with it` under reference safety). A
+repaired entity differs from the host's until the integrity check's repair brings the host's record, which the
+membership pass then applies consistently. The scans cost one chunk walk of the holders of a link in frames that delete
+such entities (streets, buildings, edges: every node list, a few milliseconds in the largest cities), and nothing in
+other frames; the checks before the game's systems cost a lookup per entity those systems process.
 
 ### Client proposals
 
@@ -1691,8 +1723,12 @@ bytes per peer and the apply queue in game. See [dev/debugging.md](dev/debugging
 [`ReferenceAudit`](../src/SkylineTogether/Sync/ReferenceAudit.cs) walks, on clients, one reference type at a time
 chunk by chunk and finds references to null, destroyed or deleted entities that the game's jobs would follow unchecked.
 Links of the agent graph are **repaired** with the game's own clean-up ([reference safety](#reference-safety)) and
-the holder is asked from the host again; the other references (net topology, owners, sub-objects, routes, passengers)
-are reported only, since their own channels repair them. A lap over every type must finish within 20 s (8 s for the
+the holder is asked from the host again; the node and edge lists (`ConnectedEdge`, `ConnectedNode`, `Edge`) are
+repaired by the [derived net links](#derived-net-links) guard (an entry naming a destroyed entity or the wrong kind
+dropped, the node or edge re-derived the next frame, an edge whose node is gone deleted the next frame); for them a
+target that is only being deleted is not dangling (the game itself drops it in this frame's Modification phases, and
+the sweep runs after the apply, before them), and a log line says `(deleted)` or `(destroyed)` for what it found. The
+other references (owners, sub-objects, routes, passengers) are reported only, since their own channels repair them. A lap over every type must finish within 20 s (8 s for the
 first lap after going live): each frame gets 0.3 ms, more (up to 2 ms) while the lap is behind its schedule
 ([`SweepPacer`](../src/SkylineTogether.Core/Sync/LinkRepairPacing.cs)). The same repair runs right after every applied
 batch for the entities it touched. Each repair is counted per link; the log gets at most three lines per link and

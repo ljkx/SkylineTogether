@@ -598,7 +598,7 @@ Generated from **748** serializable components and buffers and **73** serializab
 | `BuildOrder` | component | `structure` | structure codec | net nodes and edges |
 | `CarLane` | component | `derived` | lanes | derived |
 | `Composition` | component (empty) | `derived` | CompositionSelect on every peer | derived |
-| `ConnectedEdge` | buffer (empty) | `derived` | reference systems | derived |
+| `ConnectedEdge` | buffer (empty) | `derived` | reference systems; the applier updates the nodes an edge leaves, the derived link guard drops entries naming destroyed edges (ARCHITECTURE.md#derived-net-links) | derived |
 | `ConnectedNode` | buffer | `structure` | structure codec | net nodes and edges |
 | `ConnectionLane` | component | `derived` | lanes | derived |
 | `CoverageServiceType` | shared | `derived` | coverage | shared component of coverage data |

@@ -39,7 +39,7 @@ jobs:
         # the exit code is the number of failed tests; fewer executed tests than this means some were lost (raise it as
         # the suite grows, close to the count; the no-game build runs 4 tests fewer than a build with the game), and a
         # test that skips itself fails the run
-        run: dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll --expect-at-least 1450 --max-skipped 0
+        run: dotnet tests/SkylineTogether.Core.Tests/bin/Release/net8.0/SkylineTogether.Core.Tests.dll --expect-at-least 1464 --max-skipped 0
       - name: A failing test fails the run (canary)
         shell: bash
         run: |
