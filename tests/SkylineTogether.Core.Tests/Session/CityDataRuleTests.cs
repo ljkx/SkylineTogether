@@ -86,6 +86,38 @@ namespace SkylineTogether.Core.Tests.Session
         }
 
         [Test]
+        public void ASavedTypeTheModNeverWritesIsCityDataOnlyWhereEntitiesHaveIt()
+        {
+            // Cim Route Highlighter declares a saved DeleteTimer and never puts it on an entity: only the save's type table
+            // names it, which a game without the mod reads without data
+            var tracker = new ModFacts { AssemblyName = "EmploymentTracker", PhasesKnown = true };
+            tracker.Components.Add(new ComponentFact { Name = "EmploymentTracker.DeleteTimer", Serializable = true });
+            CityDataEvidence e = CityDataEvidence.Of(tracker);
+            Assert.False(e.StoresData);
+            Assert.Equal(0, e.Components.Count);
+            Assert.SequenceEqual(new[] { "EmploymentTracker.DeleteTimer" }, e.Dormant);
+            Assert.Contains("stores no data in the city but declares 1 saved component type it never writes (EmploymentTracker.DeleteTimer", e.Describe());
+            Assert.SequenceEqual(new[] { "EmploymentTracker.DeleteTimer" }, CityDataRule.DormantSavedTypes("employmenttracker"));
+            ModReport r = ModClassifier.Classify(tracker);
+            Assert.DoesNotContain("a joiner without the mod is refused", string.Join("\n", r.Describe()));
+
+            // any other saved type of the same mod is city data as usual
+            tracker.Components.Add(new ComponentFact { Name = "EmploymentTracker.RouteCache", Serializable = true });
+            e = CityDataEvidence.Of(tracker);
+            Assert.True(e.StoresData);
+            Assert.SequenceEqual(new[] { "EmploymentTracker.RouteCache" }, e.Components);
+            Assert.Contains("; declares 1 saved component type it never writes", e.Describe());
+
+            // the list is per mod: the same type name in another assembly is city data
+            var other = new ModFacts { AssemblyName = "Other" };
+            other.Components.Add(new ComponentFact { Name = "EmploymentTracker.DeleteTimer", Serializable = true });
+            Assert.True(CityDataEvidence.Of(other).StoresData);
+            Assert.Equal(0, CityDataRule.DormantSavedTypes("Other").Count);
+            Assert.Equal(0, CityDataRule.DormantSavedTypes(null).Count);
+            Assert.True(CityDataEvidence.Of(new ModFacts { AssemblyName = "EmploymentTracker", ScanFailed = true }).StoresData, "fail closed");
+        }
+
+        [Test]
         public void DeclarationsNeverHideCityData()
         {
             var facts = new ModFacts { AssemblyName = "Declared", PhasesKnown = true };

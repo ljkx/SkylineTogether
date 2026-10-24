@@ -102,10 +102,13 @@ namespace SkylineTogether.Core.Diagnostics
 
             // mod support and the integration API
             ("SkylineTogether.Compat.ModIntegration", F(Mods)),
+            ("SkylineTogether.Compat.AchievementFixerAdapter", F(ModCompat)),
             ("SkylineTogether.Compat.AnarchyAdapter", F(ModCompat)),
             ("SkylineTogether.Compat.AssetSources", F(ModCompat)),
             ("SkylineTogether.Compat.BetterBulldozerAdapter", F(ModCompat)),
+            ("SkylineTogether.Compat.CimCensusAdapter", F(ModCompat)),
             ("SkylineTogether.Compat.CityDataProbe", F(ModCompat)),
+            ("SkylineTogether.Compat.EmploymentTrackerAdapter", F(ModCompat)),
             ("SkylineTogether.Compat.FindItAdapter", F(ModCompat)),
             ("SkylineTogether.Compat.FiveTwentyNineTilesAdapter", F(ModCompat)),
             ("SkylineTogether.Compat.GenericModAdapter", F(ModCompat)),

@@ -25,6 +25,12 @@ namespace SkylineTogether.Core.Session
             return false;
         }
 
+        /// <summary>
+        /// True when something switched the flag back on while the session holds it off (Achievement Fixer does so after
+        /// every load): the session sets it off again.
+        /// </summary>
+        public bool NeedsReassert(bool current) => _held && current;
+
         /// <summary>The value to put back when one is held; releases it.</summary>
         public bool TryRestore(out bool value)
         {

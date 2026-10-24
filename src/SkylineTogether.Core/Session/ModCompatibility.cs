@@ -41,7 +41,9 @@ namespace SkylineTogether.Core.Session
     /// the same version; a mod that only presents information to its own player may differ freely. The classification
     /// is a built-in list of known mods, then the hint each peer computes for its own mods
     /// (<see cref="ModEntry.ClientLocalHint"/>: the mod registers no serializable component, saved system, prefab or tool
-    /// and patches nothing), and otherwise <see cref="ModClass.WorldAffecting"/> (fail closed). Pure and thread-safe.
+    /// and patches nothing), and otherwise <see cref="ModClass.WorldAffecting"/> (fail closed). A client-local entry that
+    /// was checked against one version holds only while each peer's copy matches it (<see cref="BeyondVerifiedLocal"/>).
+    /// Pure and thread-safe.
     /// </summary>
     [ThreadAffinity(ThreadKind.Any)]
     public static class ModCompatibility
@@ -51,11 +53,13 @@ namespace SkylineTogether.Core.Session
         {
             "I18NEverywhere", "ExtendedTooltip", "AssetIconLibrary", "UnifiedIconLibrary", "ToggleableOverlays",
             "EmploymentTracker", "CimCensus", "Skyve Mod", "Skyve.Mod.CS2", "Skyve", "FindIt",
+            "ExtraLib", "AchievementFixer",
         };
 
         private static readonly HashSet<string> LocalIds = new HashSet<string>(StringComparer.Ordinal)
         {
             "75426", "78188", "79634", "74417", "80931", "76662", "85825", "75804", "77240",
+            "75724", "121256",
         };
 
         // known world-affecting mods: never relaxed, whatever a peer's own scan says
@@ -84,11 +88,84 @@ namespace SkylineTogether.Core.Session
                    || (!string.IsNullOrEmpty(platformId) && WorldIds.Contains(platformId));
         }
 
+        // client-local mods whose classification was checked by hand against one version (MOD-COMPATIBILITY.md §2): the
+        // parts of its scan that look world-affecting (Modding.ModClassifier.WorldItems) and were found to change nothing
+        // shared. A copy with any other such part is not that version any more and is classified by its scan.
+        private static readonly Dictionary<string, string[]> Verified = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            // ExtraLib 1.4.11: MainSystem is disabled from its creation and never updates; the prefabs are toolbar menus
+            // and categories created in the main menu, which no object of a city references
+            ["ExtraLib"] = new[]
+            {
+                "system ExtraLib.Systems.MainSystem in LateUpdate",
+                "prefab type ExtraLib.Prefabs.UIAssetChildCategoryPrefab", "prefab type ExtraLib.Prefabs.UIAssetParentCategoryPrefab",
+                "runtime prefabs in ExtraLib.Systems.MainSystem", "runtime prefabs in ExtraLib.Helpers.PrefabsHelper",
+            },
+            // Achievement Fixer 1.3.1: switches the player's own achievements flag on after a load; writes no entity
+            ["AchievementFixer"] = new[] { "system AchievementFixer.AchievementFixerSystem in MainLoop" },
+            // Cim Census 1.8: counts citizens, workers and vehicles for its panel (read-only jobs)
+            ["CimCensus"] = new[] { "system CimCensus.StatisticsCalculationSystem in GameSimulation" },
+            // Cim Route Highlighter 1.26: highlights the selected building's employees (Highlighted, BatchesUpdated);
+            // DeleteTimer is declared but never put on an entity
+            ["EmploymentTracker"] = new[] { "saved component EmploymentTracker.DeleteTimer", "system EmploymentTracker.HighlightEmployeesSystem in MainLoop" },
+        };
+
+        private static readonly Dictionary<string, string> VerifiedIds = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["75724"] = "ExtraLib", ["121256"] = "AchievementFixer", ["85825"] = "CimCensus", ["76662"] = "EmploymentTracker",
+        };
+
+        /// <summary>
+        /// True for a client-local mod of the built-in list whose classification is tied to the version checked by hand:
+        /// its entries say whether the sending peer's copy is still that version (<see cref="ModEntry.RegistersTypesOrSystemsOrPrefabs"/>
+        /// set only when <see cref="BeyondVerifiedLocal"/> found more).
+        /// </summary>
+        public static bool HasVerifiedProfile(string assemblyName, string platformId)
+        {
+            return (!string.IsNullOrEmpty(assemblyName) && Verified.ContainsKey(assemblyName))
+                   || (!string.IsNullOrEmpty(platformId) && VerifiedIds.ContainsKey(platformId));
+        }
+
+        /// <summary>The parts of the checked version's scan that were found to change nothing shared (empty when unchecked).</summary>
+        public static IReadOnlyList<string> VerifiedLocalItems(string assemblyName)
+        {
+            return !string.IsNullOrEmpty(assemblyName) && Verified.TryGetValue(assemblyName, out string[] items) ? items : Array.Empty<string>();
+        }
+
+        /// <summary>
+        /// The world-affecting parts of a scan (<see cref="Modding.ModClassifier.WorldItems"/>) that the hand check of the
+        /// mod's built-in client-local classification did not cover; empty when the copy matches the checked version, null
+        /// when the mod has no such check. A runtime-prefab entry covers every method of its type and the types nested in it.
+        /// </summary>
+        public static List<string> BeyondVerifiedLocal(Modding.ModFacts facts)
+        {
+            if (facts?.AssemblyName == null || !Verified.TryGetValue(facts.AssemblyName, out string[] verified)) return null;
+            var beyond = new List<string>();
+            foreach (string item in Modding.ModClassifier.WorldItems(facts))
+            {
+                if (!Covers(verified, item)) beyond.Add(item);
+            }
+            return beyond;
+        }
+
+        private static bool Covers(string[] verified, string item)
+        {
+            foreach (string v in verified)
+            {
+                if (string.Equals(v, item, StringComparison.Ordinal)) return true;
+                if (v.StartsWith("runtime prefabs in ", StringComparison.Ordinal) && item.Length > v.Length
+                    && item.StartsWith(v, StringComparison.Ordinal) && (item[v.Length] == '.' || item[v.Length] == '+')) return true;
+            }
+            return false;
+        }
+
         /// <summary>The class of one mod entry: built-in list first, then the peer's hint, else world-affecting.</summary>
         public static ModClass Classify(ModEntry m)
         {
             if (m == null) return ModClass.WorldAffecting;
             if (IsKnownWorldAffecting(m.Name, m.PlatformId)) return ModClass.WorldAffecting;
+            // a checked client-local mod whose peer found more in its copy than in the checked version: the scan decides
+            if (IsKnownClientLocal(m.Name, m.PlatformId) && HasVerifiedProfile(m.Name, m.PlatformId) && m.RegistersTypesOrSystemsOrPrefabs) return ModClass.WorldAffecting;
             if (IsKnownClientLocal(m.Name, m.PlatformId)) return ModClass.LocalOnly;
             if (m.RegistersTypesOrSystemsOrPrefabs) return ModClass.WorldAffecting;
             return m.ClientLocalHint || m.IsUiModule ? ModClass.LocalOnly : ModClass.WorldAffecting;
@@ -146,7 +223,7 @@ namespace SkylineTogether.Core.Session
         {
             if (m == null) return false;
             if (IsKnownWorldAffecting(m.Name, m.PlatformId)) return true;
-            return m.RegistersTypesOrSystemsOrPrefabs && !IsKnownClientLocal(m.Name, m.PlatformId);
+            return m.RegistersTypesOrSystemsOrPrefabs && (!IsKnownClientLocal(m.Name, m.PlatformId) || HasVerifiedProfile(m.Name, m.PlatformId));
         }
 
         private static Dictionary<string, ModEntry> Index(IReadOnlyList<ModEntry> mods)

@@ -41,5 +41,22 @@ namespace SkylineTogether.Core.Tests.Session
             Assert.True(f.TryRestore(out bool value));
             Assert.True(value);
         }
+
+        [Test]
+        public void AFlagSwitchedOnWhileHeldIsSetOffAgain()
+        {
+            // Achievement Fixer switches achievements on after every load, also in the host's city
+            var f = new SuspendedFlag();
+            Assert.False(f.NeedsReassert(true), "nothing held: the player's own value");
+            f.Suspend(true);
+            Assert.True(f.NeedsReassert(true));
+            Assert.False(f.NeedsReassert(false));
+            Assert.True(f.TryRestore(out bool value));
+            Assert.True(value, "the player's value from before the join comes back");
+            Assert.False(f.NeedsReassert(true));
+            f.Suspend(false);
+            f.Forget();
+            Assert.False(f.NeedsReassert(true), "another city decides the flag");
+        }
     }
 }

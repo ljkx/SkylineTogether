@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+
+- **Support for ExtraLib, Achievement Fixer, Cim Census and Cim Route Highlighter.**
+  - All four only change what their own player sees, so joining never fails because one player has them and another
+    does not, or has another version. ExtraLib and Achievement Fixer were refused before; ExtraLib is still needed by
+    the mods that use it, which are compared on their own.
+  - Skyline Together knows the versions it was checked against. A later version that does more is compared like any
+    other mod until it is checked again, and the log says why.
+  - Cim Census: the statistics panel now also fills for joined players (it stayed empty).
+  - Cim Route Highlighter: a joined player no longer needs it only because the host has it. It declares a saved type it
+    never uses; the host requires the mod only if its city really contains that data.
+  - Achievement Fixer: achievements stay off for joined players in the host's city, as they are without the mod; the
+    mod no longer switches them back on there. The player's own setting returns when the session ends, and the host's
+    achievements work as in single player.
+
 ### Fixed
 
 - **Joined players could still crash when they built or connected roads next to existing ones.**

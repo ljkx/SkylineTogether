@@ -986,6 +986,7 @@ namespace SkylineTogether.Session
             if (_disposed) return;
             _main.Drain();
             FinishLookup();
+            _loader.HoldAchievementsOff(); // mod compatibility: Achievement Fixer switches them on after each load
             if (!Features.Session.IsAvailable && Host == null && Client == null && !_rejoin.Recovering) return;
             // timed only in a city (the perf frame closes at the end of the in-game capture)
             bool timed = Host != null || (Client != null && Client.State == ClientState.Live);

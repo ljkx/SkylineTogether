@@ -14,7 +14,9 @@ namespace SkylineTogether.Core.Session
     /// types or saved system state in it (<see cref="Modding.CityDataEvidence"/>, carried in
     /// <see cref="ModEntry.StoresCityData"/>), when the scan failed, or when the built-in list knows it does. Whether the
     /// current city holds the mod's data only changes the wording: a mod that can store data but has none in this city is
-    /// still required, because nothing proves that the save carries no trace of it (system state, a type table).</item>
+    /// still required, because nothing proves that the save carries no trace of it (system state, a type table). The one
+    /// exception are saved types a mod is known never to write (<see cref="DormantSavedTypes"/>): they are city data only
+    /// when the city has entities with them.</item>
     /// <item><b>The old multiplayer mod.</b> A peer with the "CS2 Multiplayer Mod" loaded (assembly name
     /// <see cref="OldMultiplayerModAssembly"/> or Paradox Mods id <see cref="OldMultiplayerModId"/>; detected by name and
     /// id only) cannot take part: two multiplayer mods at once conflict.</item>
@@ -43,6 +45,24 @@ namespace SkylineTogether.Core.Session
         {
             "80095", "74604", "75250", "75613", "75750", "75826", "75993",
         };
+
+        // saved component types a mod declares but never puts on an entity (checked by hand in the installed version,
+        // MOD-COMPATIBILITY.md §10). A save lists every saved type of every loaded mod in its type table, used or not, and
+        // the game's loader reads an entry of a type it does not know without any data (one "Not serializable type"
+        // warning); only entities that carry the type need the mod. Such a type is city data only where entities have it.
+        private static readonly Dictionary<string, string[]> Dormant = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["EmploymentTracker"] = new[] { "EmploymentTracker.DeleteTimer" },
+        };
+
+        /// <summary>
+        /// The saved component types of the mod (by assembly name) that it never puts on an entity: they count as city data
+        /// only when the city has entities with them (<see cref="Modding.CityDataEvidence.Dormant"/>). Empty for most mods.
+        /// </summary>
+        public static IReadOnlyList<string> DormantSavedTypes(string assemblyName)
+        {
+            return !string.IsNullOrEmpty(assemblyName) && Dormant.TryGetValue(assemblyName, out string[] types) ? types : Array.Empty<string>();
+        }
 
         /// <summary>True for a mod the built-in list knows to save data with the city.</summary>
         public static bool IsKnownCityData(string assemblyName, string platformId)

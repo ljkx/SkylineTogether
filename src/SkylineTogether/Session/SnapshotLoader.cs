@@ -62,6 +62,7 @@ namespace SkylineTogether.Session
         /// </summary>
         public void RestoreAchievements(bool forget = false)
         {
+            _achievementsReasserted = false;
             if (forget)
             {
                 _achievements.Forget();
@@ -76,6 +77,31 @@ namespace SkylineTogether.Session
             catch (Exception ex)
             {
                 _log.Debug(LogCategory.Join, "could not restore achievements: " + ex.Message);
+            }
+        }
+
+        private bool _achievementsReasserted;
+
+        /// <summary>
+        /// Every frame: while the session holds the achievements flag off, it stays off. A mod may switch it back on in
+        /// the host's city (Achievement Fixer does after every load, before its own system is gated, see
+        /// <c>Compat.AchievementFixerAdapter</c>); the player's own value still comes back at the session end.
+        /// </summary>
+        public void HoldAchievementsOff()
+        {
+            if (!_achievements.Held) return;
+            try
+            {
+                PlatformManager platform = PlatformManager.instance;
+                if (platform == null || !_achievements.NeedsReassert(platform.achievementsEnabled)) return;
+                platform.achievementsEnabled = false;
+                if (_achievementsReasserted) return;
+                _achievementsReasserted = true;
+                _log.Info(LogCategory.Join, "achievements were switched on in the host's city (by a mod such as Achievement Fixer); kept off until the session ends");
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(LogCategory.Join, "could not keep achievements off: " + ex.Message);
             }
         }
 

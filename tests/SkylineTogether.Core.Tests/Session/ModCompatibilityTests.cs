@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using SkylineTogether.Core.Modding;
 using SkylineTogether.Core.Session;
 using SkylineTogether.Core.Tests.Framework;
 
@@ -19,16 +20,165 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void TheUsersClientLocalModsAreKnownByNameAndId()
         {
-            foreach (string name in new[] { "I18NEverywhere", "ExtendedTooltip", "AssetIconLibrary", "UnifiedIconLibrary", "ToggleableOverlays", "EmploymentTracker", "CimCensus", "FindIt", "Skyve Mod" })
+            foreach (string name in new[] { "I18NEverywhere", "ExtendedTooltip", "AssetIconLibrary", "UnifiedIconLibrary", "ToggleableOverlays", "EmploymentTracker", "CimCensus", "FindIt", "Skyve Mod", "ExtraLib", "AchievementFixer" })
             {
                 Assert.Equal(ModClass.LocalOnly, ModCompatibility.Classify(M(name)), name);
             }
-            foreach (string id in new[] { "75426", "78188", "79634", "74417", "80931", "76662", "85825", "75804", "77240" })
+            foreach (string id in new[] { "75426", "78188", "79634", "74417", "80931", "76662", "85825", "75804", "77240", "75724", "121256" })
             {
                 Assert.Equal(ModClass.LocalOnly, ModCompatibility.Classify(M("renamed", id: id)), id);
             }
-            // known local beats a peer's scan (Employment Tracker declares an unused serializable component)
-            Assert.Equal(ModClass.LocalOnly, ModCompatibility.Classify(M("EmploymentTracker", registers: true)));
+            // known local beats a peer's scan for a mod without a check against one version (I18N Everywhere patches
+            // localization code, Find It creates prefabs)
+            Assert.Equal(ModClass.LocalOnly, ModCompatibility.Classify(M("I18NEverywhere", registers: true)));
+            Assert.Equal(ModClass.LocalOnly, ModCompatibility.Classify(M("FindIt", registers: true)));
+        }
+
+        // ------------------------------------------------------------------------------------------ checked versions
+
+        private static ModFacts Scan(string assembly, params SystemFact[] systems)
+        {
+            var facts = new ModFacts { AssemblyName = assembly, PhasesKnown = true, PatchedMethods = new List<string>() };
+            facts.Systems.AddRange(systems);
+            return facts;
+        }
+
+        private static SystemFact Sys(string name, params string[] phases)
+        {
+            var s = new SystemFact { Name = name };
+            s.Phases.AddRange(phases);
+            return s;
+        }
+
+        // the scans of the checked versions (ExtraLib 1.4.11, Achievement Fixer 1.3.1, Cim Census 1.8, Cim Route
+        // Highlighter 1.26) as their code and the host's analysis log show them
+        private static ModFacts ExtraLib()
+        {
+            ModFacts f = Scan("ExtraLib", Sys("ExtraLib.Systems.MainSystem", "LateUpdate"), Sys("ExtraLib.Systems.UI.AssetMultiCategory", "UIUpdate"),
+                Sys("ExtraLib.Systems.UI.ExtraPanels.ExtraPanelsUISystem", "UIUpdate"));
+            f.ReferencesHarmony = true;
+            f.PatchedMethods.Add("Game.UI.InGame.ToolbarUISystem.SelectAssetMenu");
+            f.PatchedMethods.Add("Game.UI.InGame.ToolbarUISystem.SelectAssetCategory");
+            f.PrefabTypes.Add("ExtraLib.Prefabs.UIAssetParentCategoryPrefab");
+            f.PrefabTypes.Add("ExtraLib.Prefabs.UIAssetChildCategoryPrefab");
+            f.RuntimePrefabCreators.Add("ExtraLib.Systems.MainSystem.CreateDummyPrefab");
+            f.RuntimePrefabCreators.Add("ExtraLib.Helpers.PrefabsHelper.GetOrCreateUIAssetChildCategoryPrefab");
+            f.RuntimePrefabCreators.Add("ExtraLib.Helpers.PrefabsHelper.LoadPrefabInDirectory");
+            f.Components.Add(new ComponentFact { Name = "ExtraLib.Prefabs.UIAssetChildCategoryData" });
+            return f;
+        }
+
+        private static ModFacts EmploymentTracker()
+        {
+            ModFacts f = Scan("EmploymentTracker", Sys("EmploymentTracker.HighlightEmployeesSystem", "MainLoop"), Sys("EmploymentTracker.HighlightRoutesSystem", "Rendering"),
+                Sys("EmploymentTracker.SimpleOverlayRendererSystem", "Rendering"));
+            f.Systems[0].WritesEntities = true;
+            f.Components.Add(new ComponentFact { Name = "EmploymentTracker.DeleteTimer", Serializable = true });
+            return f;
+        }
+
+        [Test]
+        public void TheCheckedVersionsOfClientLocalModsMatchTheirChecks()
+        {
+            foreach (ModFacts f in new[]
+            {
+                ExtraLib(), EmploymentTracker(),
+                Scan("AchievementFixer", Sys("AchievementFixer.AchievementFixerSystem", "MainLoop")),
+                Scan("CimCensus", Sys("CimCensus.StatisticsCalculationSystem", "GameSimulation")),
+            })
+            {
+                Assert.True(ModClassifier.Classify(f).WorldAffecting, f.AssemblyName + ": the analysis alone would block a difference");
+                List<string> beyond = ModCompatibility.BeyondVerifiedLocal(f);
+                Assert.NotNull(beyond, f.AssemblyName);
+                Assert.Equal(0, beyond.Count, f.AssemblyName + ": " + string.Join(", ", beyond));
+                Assert.True(ModCompatibility.HasVerifiedProfile(f.AssemblyName, null), f.AssemblyName);
+            }
+            // a runtime-prefab entry covers the methods of its type and of the types nested in it, nothing else
+            ModFacts nested = ExtraLib();
+            nested.RuntimePrefabCreators.Add("ExtraLib.Helpers.PrefabsHelper+<>c.<Load>b__0");
+            nested.RuntimePrefabCreators.Add("ExtraLib.Systems.MainSystem..ctor");
+            Assert.Equal(0, ModCompatibility.BeyondVerifiedLocal(nested).Count);
+            nested.RuntimePrefabCreators.Add("ExtraLib.Helpers.PrefabsHelperExtra.Create");
+            Assert.SequenceEqual(new[] { "runtime prefabs in ExtraLib.Helpers.PrefabsHelperExtra.Create" }, ModCompatibility.BeyondVerifiedLocal(nested));
+            // mods that were not checked against one version have no profile
+            Assert.Null(ModCompatibility.BeyondVerifiedLocal(Scan("ToggleableOverlays", Sys("ToggleableOverlays.OverlaySystem", "MainLoop"))));
+            Assert.Null(ModCompatibility.BeyondVerifiedLocal(null));
+            Assert.True(ModCompatibility.HasVerifiedProfile("renamed", "85825"));
+            Assert.False(ModCompatibility.HasVerifiedProfile("I18NEverywhere", "75426"));
+        }
+
+        [Test]
+        public void ANewerCopyThatDoesMoreIsNotTheCheckedVersion()
+        {
+            ModFacts saved = Scan("CimCensus", Sys("CimCensus.StatisticsCalculationSystem", "GameSimulation"));
+            saved.Components.Add(new ComponentFact { Name = "CimCensus.History", Serializable = true });
+            Assert.SequenceEqual(new[] { "saved component CimCensus.History" }, ModCompatibility.BeyondVerifiedLocal(saved));
+
+            ModFacts phase = Scan("AchievementFixer", Sys("AchievementFixer.AchievementFixerSystem", "MainLoop", "ModificationEnd"));
+            Assert.SequenceEqual(new[] { "system AchievementFixer.AchievementFixerSystem in ModificationEnd" }, ModCompatibility.BeyondVerifiedLocal(phase));
+
+            ModFacts tool = EmploymentTracker();
+            tool.Systems.Add(new SystemFact { Name = "EmploymentTracker.RouteTool", IsTool = true });
+            tool.Systems.Add(new SystemFact { Name = "EmploymentTracker.SavedSystem", SavesState = true });
+            Assert.SequenceEqual(new[] { "tool EmploymentTracker.RouteTool", "saved system EmploymentTracker.SavedSystem" }, ModCompatibility.BeyondVerifiedLocal(tool));
+
+            ModFacts patch = ExtraLib();
+            patch.PatchedMethods.Add("Game.Simulation.SimulationSystem.OnUpdate");
+            patch.PrefabTypes.Add("ExtraLib.Prefabs.NewPlaceablePrefab");
+            Assert.SequenceEqual(new[] { "prefab type ExtraLib.Prefabs.NewPlaceablePrefab", "patch Game.Simulation.SimulationSystem.OnUpdate" }, ModCompatibility.BeyondVerifiedLocal(patch));
+
+            ModFacts writingUi = ExtraLib();
+            writingUi.Systems[1].WritesEntities = true;
+            Assert.SequenceEqual(new[] { "system ExtraLib.Systems.UI.AssetMultiCategory in UIUpdate" }, ModCompatibility.BeyondVerifiedLocal(writingUi));
+
+            // what cannot be checked is not the checked version (fail closed)
+            ModFacts unknownPhases = Scan("CimCensus", Sys("CimCensus.StatisticsCalculationSystem", "GameSimulation"));
+            unknownPhases.PhasesKnown = false;
+            Assert.SequenceEqual(new[] { "system CimCensus.StatisticsCalculationSystem in an unknown phase" }, ModCompatibility.BeyondVerifiedLocal(unknownPhases));
+            ModFacts unreadable = ExtraLib();
+            unreadable.PatchedMethods = null;
+            Assert.SequenceEqual(new[] { "unreadable Harmony patches" }, ModCompatibility.BeyondVerifiedLocal(unreadable));
+            Assert.SequenceEqual(new[] { "a failed scan" }, ModCompatibility.BeyondVerifiedLocal(new ModFacts { AssemblyName = "ExtraLib", ScanFailed = true }));
+        }
+
+        [Test]
+        public void ACheckedModIsLocalOnlyWhileEveryCopyIsTheCheckedVersion()
+        {
+            // the peers' copies match the checked version: local, whichever side has it and in whatever version
+            Assert.Equal(ModClass.LocalOnly, ModCompatibility.Classify(M("CimCensus", "1.0", localHint: true)));
+            var host = new List<ModEntry> { M("ExtraLib", "1.0", localHint: true), M("AchievementFixer", "1.3.1", localHint: true), M("CimCensus", "1.0", localHint: true), M("EmploymentTracker", "1.0", localHint: true) };
+            Assert.False(ModCompatibility.Compare(host, new List<ModEntry>()).Blocks, "only the host has them");
+            Assert.False(ModCompatibility.Compare(new List<ModEntry>(), host).Blocks, "only the joiner has them");
+            Assert.Equal(4, ModCompatibility.Compare(host, new List<ModEntry>()).IgnoredLocal.Count);
+            // a copy with more than the checked version: its analysis decides, on either side
+            Assert.Equal(ModClass.WorldAffecting, ModCompatibility.Classify(M("CimCensus", "2.0", registers: true)));
+            Assert.Equal(ModClass.WorldAffecting, ModCompatibility.Classify(M("renamed", "2.0", id: "121256", registers: true)));
+            ModComparison c = ModCompatibility.Compare(new List<ModEntry> { M("ExtraLib", "1.0", localHint: true) }, new List<ModEntry> { M("ExtraLib", "2.0", registers: true) });
+            Assert.True(c.Blocks);
+            Assert.Equal(1, c.Version.Count);
+            Assert.True(ModCompatibility.Compare(new List<ModEntry> { M("EmploymentTracker", "2.0", registers: true) }, new List<ModEntry>()).Blocks);
+            Assert.False(ModCompatibility.IsLocalPair(M("ExtraLib", registers: true), M("ExtraLib", localHint: true)));
+        }
+
+        [Test]
+        public void WorldItemsFollowTheScopeDecision()
+        {
+            ModFacts ui = Scan("Panel", Sys("Panel.PanelSystem", "UIUpdate"), Sys("Panel.Overlay", "Rendering"));
+            ui.PatchedMethods.Add("Game.UI.InGame.InfoPanelUISystem.OnUpdate");
+            ui.Components.Add(new ComponentFact { Name = "Panel.Hover" });
+            ui.Components.Add(new ComponentFact { Name = "Panel.Cache", Storage = ComponentStorage.Shared, Serializable = true });
+            Assert.Equal(0, ModClassifier.WorldItems(ui).Count);
+            Assert.False(ModClassifier.Classify(ui).WorldAffecting);
+            ModFacts edited = Scan("Panel", Sys("Panel.PanelSystem", "UIUpdate"));
+            edited.Systems[0].WritesEntities = true;
+            Assert.SequenceEqual(new[] { "system Panel.PanelSystem in UIUpdate" }, ModClassifier.WorldItems(edited));
+            Assert.True(ModClassifier.Classify(edited).WorldAffecting);
+            ModFacts tag = Scan("Tags");
+            tag.Components.Add(new ComponentFact { Name = "Tags.Marked", Storage = ComponentStorage.Tag, EmptySerializable = true });
+            Assert.SequenceEqual(new[] { "saved component Tags.Marked" }, ModClassifier.WorldItems(tag));
+            Assert.True(ModClassifier.Classify(tag).WorldAffecting);
+            Assert.Equal(0, ModClassifier.WorldItems(Scan("Editor", Sys("Editor.Brush", "EditorSimulation"))).Count);
+            Assert.SequenceEqual(new[] { "a failed scan" }, ModClassifier.WorldItems(null));
         }
 
         [Test]

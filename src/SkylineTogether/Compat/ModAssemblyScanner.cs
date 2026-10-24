@@ -153,7 +153,7 @@ namespace SkylineTogether.Compat
 
         /// <summary>
         /// The IL view of one assembly: which methods create prefabs at runtime (calls of <c>PrefabSystem.AddPrefab</c> or
-        /// <c>AddOrUpdatePrefab</c>) and which types mention <c>CreationDefinition</c> (tools that feed the Temp pipeline).
+        /// <c>AddOrUpdatePrefab</c>, or of ExtraLib's prefab helpers) and which types mention <c>CreationDefinition</c> (tools that feed the Temp pipeline).
         /// Tokens are resolved in the declaring method's generic context; unresolvable ones are skipped. Outside tools only
         /// member references to other assemblies are resolved (the prefab system is one), which keeps the scan cheap.
         /// </summary>
@@ -335,7 +335,11 @@ namespace SkylineTogether.Compat
 
             private static bool IsPrefabCreation(MethodBase m)
             {
-                return m.DeclaringType == typeof(Game.Prefabs.PrefabSystem) && (m.Name == "AddPrefab" || m.Name == "AddOrUpdatePrefab");
+                if (m.DeclaringType == typeof(Game.Prefabs.PrefabSystem)) return m.Name == "AddPrefab" || m.Name == "AddOrUpdatePrefab";
+                // mod compatibility: ExtraLib's prefab helpers (loading prefab files, creating menus and categories) add prefabs
+                // for the mod that calls them; ExtraLib itself is client-local (MOD-COMPATIBILITY.md §2)
+                return m.DeclaringType?.FullName == "ExtraLib.Helpers.PrefabsHelper"
+                       && (m.Name.StartsWith("LoadPrefab", StringComparison.Ordinal) || m.Name.StartsWith("GetOrCreate", StringComparison.Ordinal) || m.Name.StartsWith("Create", StringComparison.Ordinal));
             }
 
             private static bool MentionsMember(MemberInfo member)
@@ -429,7 +433,11 @@ namespace SkylineTogether.Compat
         {
             if (assembly == null) return true;
             ModReport report = ModCompat.ReportFor(assembly, null);
-            return report == null || report.WorldAffecting;
+            if (report == null) return true;
+            // a client-local mod checked by hand against one version: a copy like that version touches nothing shared; one
+            // with more is classified like any other mod (the built-in list then no longer decides, Core ModCompatibility)
+            if (report.BeyondVerifiedLocal != null && report.BeyondVerifiedLocal.Count == 0) return false;
+            return report.WorldAffecting;
         }
     }
 }

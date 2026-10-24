@@ -18,6 +18,12 @@ namespace SkylineTogether.Core.Modding
         public readonly List<string> Components = new List<string>();
         /// <summary>Systems that save their own state (full names).</summary>
         public readonly List<string> Systems = new List<string>();
+        /// <summary>
+        /// Saved component types the mod is known never to put on an entity (Session.CityDataRule.DormantSavedTypes; not in
+        /// <see cref="Components"/>): city data only where a city has entities with them, which the host counts in its
+        /// loaded city (Compat.CityDataProbe).
+        /// </summary>
+        public readonly List<string> Dormant = new List<string>();
         /// <summary>The scan failed or nothing is known: the mod may store data (fail closed).</summary>
         public bool Unknown;
 
@@ -33,9 +39,12 @@ namespace SkylineTogether.Core.Modding
                 e.Unknown = true;
                 return e;
             }
+            IReadOnlyList<string> dormant = Session.CityDataRule.DormantSavedTypes(facts.AssemblyName);
             foreach (ComponentFact c in facts.Components)
             {
-                if (c?.Name != null && (c.Serializable || c.EmptySerializable)) e.Components.Add(c.Name);
+                if (c?.Name == null || (!c.Serializable && !c.EmptySerializable)) continue;
+                if (Contains(dormant, c.Name)) e.Dormant.Add(c.Name);
+                else e.Components.Add(c.Name);
             }
             foreach (SystemFact s in facts.Systems)
             {
@@ -43,18 +52,29 @@ namespace SkylineTogether.Core.Modding
             }
             e.Components.Sort(System.StringComparer.Ordinal);
             e.Systems.Sort(System.StringComparer.Ordinal);
+            e.Dormant.Sort(System.StringComparer.Ordinal);
             return e;
+        }
+
+        private static bool Contains(IReadOnlyList<string> list, string name)
+        {
+            foreach (string s in list)
+            {
+                if (string.Equals(s, name, System.StringComparison.Ordinal)) return true;
+            }
+            return false;
         }
 
         /// <summary>One line for the log and the diagnostics: "saves 2 component types (A, B) and 1 system state (S)".</summary>
         public string Describe()
         {
             if (Unknown) return "may store data in the city (the scan failed)";
-            if (!StoresData) return "stores no data in the city";
+            string dormant = Dormant.Count > 0 ? Count(Dormant.Count, "saved component type") + " it never writes (" + Sample(Dormant) + "; city data only where entities have it)" : null;
+            if (!StoresData) return "stores no data in the city" + (dormant != null ? " but declares " + dormant : "");
             var parts = new List<string>();
             if (Components.Count > 0) parts.Add(Count(Components.Count, "component type") + " (" + Sample(Components) + ")");
             if (Systems.Count > 0) parts.Add(Count(Systems.Count, "system state") + " (" + Sample(Systems) + ")");
-            return "saves " + string.Join(" and ", parts) + " with the city";
+            return "saves " + string.Join(" and ", parts) + " with the city" + (dormant != null ? "; declares " + dormant : "");
         }
 
         private static string Count(int n, string what) => n.ToString(CultureInfo.InvariantCulture) + " " + what + (n == 1 ? "" : "s");

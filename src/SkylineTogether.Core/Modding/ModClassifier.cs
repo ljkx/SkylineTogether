@@ -106,6 +106,12 @@ namespace SkylineTogether.Core.Modding
         /// evidence <see cref="CityDataEvidence.StoresData"/> is always refused (Core <c>Session.CityDataRule</c>).
         /// </summary>
         public CityDataEvidence CityData = new CityDataEvidence { Unknown = true };
+        /// <summary>
+        /// For a mod the built-in list knows as client-local from a hand check of one version
+        /// (<c>Session.ModCompatibility.BeyondVerifiedLocal</c>): what this copy has that the checked version did not (empty:
+        /// the built-in classification holds). Null for every other mod.
+        /// </summary>
+        public List<string> BeyondVerifiedLocal;
 
         public IEnumerable<string> ComponentsWith(ComponentTreatment t)
         {
@@ -595,6 +601,64 @@ namespace SkylineTogether.Core.Modding
             }
             if (report.HostSettings.Count > 0) evidence.Add("declares settings that must match the host");
             return evidence;
+        }
+
+        /// <summary>
+        /// Each part of a scan that makes a mod world-affecting by the rules of the scope decision, one line per part:
+        /// <c>saved component T</c>, <c>saved system S</c>, <c>tool T</c>, <c>system S in Phase</c> (each world phase it is
+        /// registered in; <c>in an unknown phase</c> when the phases are unknown), <c>prefab type P</c>,
+        /// <c>runtime prefabs in Type.Method</c>, <c>patch Type.Method</c>, <c>unreadable Harmony patches</c> or
+        /// <c>a failed scan</c>. The built-in client-local classifications are checked against it, so a newer version of
+        /// such a mod that does more than the version checked by hand is classified by its scan again
+        /// (<c>Session.ModCompatibility.BeyondVerifiedLocal</c>).
+        /// </summary>
+        public static List<string> WorldItems(ModFacts facts)
+        {
+            var items = new List<string>();
+            if (facts == null || facts.ScanFailed)
+            {
+                items.Add("a failed scan");
+                return items;
+            }
+            foreach (ComponentFact c in facts.Components)
+            {
+                if (c?.Name != null && (c.Serializable || c.EmptySerializable) && c.Storage != ComponentStorage.Shared && c.Storage != ComponentStorage.Managed) items.Add("saved component " + c.Name);
+            }
+            foreach (SystemFact s in facts.Systems)
+            {
+                if (s?.Name == null) continue;
+                if (s.IsTool)
+                {
+                    items.Add("tool " + s.Name);
+                    continue;
+                }
+                if (s.SavesState) items.Add("saved system " + s.Name);
+                if (!facts.PhasesKnown)
+                {
+                    items.Add("system " + s.Name + " in an unknown phase");
+                    continue;
+                }
+                foreach (string p in s.Phases)
+                {
+                    PhaseKind kind = ModPhases.KindOf(p);
+                    bool writingUi = kind == PhaseKind.Presentation && s.WritesEntities && ModPhases.IsUiPhase(p);
+                    if (ModPhases.MayChangeWorld(kind) || writingUi) items.Add("system " + s.Name + " in " + p);
+                }
+            }
+            foreach (string p in facts.PrefabTypes) items.Add("prefab type " + p);
+            foreach (string m in facts.RuntimePrefabCreators) items.Add("runtime prefabs in " + m);
+            if (facts.PatchedMethods != null)
+            {
+                foreach (string m in facts.PatchedMethods)
+                {
+                    if (!ModPhases.IsPresentationTarget(m)) items.Add("patch " + m);
+                }
+            }
+            else if (facts.ReferencesHarmony)
+            {
+                items.Add("unreadable Harmony patches");
+            }
+            return items;
         }
 
         private static SettingFact FindSetting(List<SettingFact> settings, string target, out string why)

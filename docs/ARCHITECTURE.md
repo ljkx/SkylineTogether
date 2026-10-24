@@ -447,8 +447,8 @@ A joiner receives the host's city as a save game and loads it through the game's
    loading a city the game cannot read. A notice of an older host without `city-data-checked` counts every mod the
    host has and the joiner lacks (fail closed). The same check already runs when the notice arrives, so normally
    nothing is downloaded. [`SnapshotLoader`](../src/SkylineTogether/Session/SnapshotLoader.cs) imports the join assets, then loads
-   the save from a transient asset database with the host's game mode and city options, achievements off and the
-   simulation paused. `ModCompat.OnClientStarted` switches off mod systems that must not run during a joiner's load.
+   the save from a transient asset database with the host's game mode and city options, achievements off (kept off for
+   the session, also when a mod such as Achievement Fixer switches them back on) and the simulation paused. `ModCompat.OnClientStarted` switches off mod systems that must not run during a joiner's load.
 5. **Live.** The client reports `LoadDone`; the host marks it live and sends the current speed and `Live`.
    `SessionClient.GoLive` raises `BecameLive` (the client gate closes, mod client gates, the mod state watcher and the
    integrity check start), then delivers the buffered messages in order.

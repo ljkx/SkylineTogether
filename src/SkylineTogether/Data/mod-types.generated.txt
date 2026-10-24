@@ -6,10 +6,13 @@
 <PrivateImplementationDetails>+__StaticArrayInitTypeSize=32
 <PrivateImplementationDetails>+__StaticArrayInitTypeSize=5
 Microsoft.CodeAnalysis.EmbeddedAttribute
+SkylineTogether.Compat.AchievementFixerAdapter
 SkylineTogether.Compat.AnarchyAdapter
 SkylineTogether.Compat.AssetSources
 SkylineTogether.Compat.BetterBulldozerAdapter
+SkylineTogether.Compat.CimCensusAdapter
 SkylineTogether.Compat.CityDataProbe
+SkylineTogether.Compat.EmploymentTrackerAdapter
 SkylineTogether.Compat.FindItAdapter
 SkylineTogether.Compat.FiveTwentyNineTilesAdapter
 SkylineTogether.Compat.GenericModAdapter

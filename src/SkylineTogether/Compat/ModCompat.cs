@@ -28,6 +28,7 @@ namespace SkylineTogether.Compat
             new TrafficAdapter(), new MoveItAdapter(), new AnarchyAdapter(), new BetterBulldozerAdapter(), new TreeControllerAdapter(),
             new WaterFeaturesAdapter(), new PlopTheGrowablesAdapter(), new FiveTwentyNineTilesAdapter(), new HistoricalStartAdapter(),
             new ZoningToolkitAdapter(), new LineToolAdapter(), new FindItAdapter(),
+            new AchievementFixerAdapter(), new CimCensusAdapter(), new EmploymentTrackerAdapter(),
         };
 
         private static readonly List<ModAdapter> ActiveList = new List<ModAdapter>();
@@ -223,20 +224,29 @@ namespace SkylineTogether.Compat
             if (Reports.TryGetValue(assembly, out ModReport cached)) return cached;
             log = log ?? Mod.Log;
             ModReport report;
+            ModFacts facts;
             try
             {
                 ReadContext(log);
-                ModFacts facts = ModAssemblyScanner.Scan(assembly, _phases, _patches);
+                facts = ModAssemblyScanner.Scan(assembly, _phases, _patches);
                 report = ModClassifier.Classify(facts, ModIntegration.DeclarationsFor(assembly));
             }
             catch (Exception ex)
             {
-                report = ModClassifier.Classify(new ModFacts { AssemblyName = SafeName(assembly), ScanFailed = true, ScanError = ex.Message });
+                facts = new ModFacts { AssemblyName = SafeName(assembly), ScanFailed = true, ScanError = ex.Message };
+                report = ModClassifier.Classify(facts);
+            }
+            // a client-local classification checked by hand holds only for a copy like the checked version
+            report.BeyondVerifiedLocal = Core.Session.ModCompatibility.BeyondVerifiedLocal(facts);
+            if (report.BeyondVerifiedLocal != null && report.BeyondVerifiedLocal.Count > 0)
+            {
+                report.Hints.Add("the built-in list knows this mod as client-local for the version checked by hand, but this copy also has: " + string.Join(", ", report.BeyondVerifiedLocal) + "; the analysis decides the join check");
+                log?.Warn(LogCategory.Compat, "mod analysis: " + report.AssemblyName + " " + VersionOf(assembly) + " differs from the version its built-in classification was checked against (" + string.Join(", ", report.BeyondVerifiedLocal) + "); classified by its analysis");
             }
             // the join check consults the built-in list first (verified by hand); say so where the scan disagrees
-            if (report.WorldAffecting && Core.Session.ModCompatibility.IsKnownClientLocal(report.AssemblyName, null))
+            else if (report.WorldAffecting && Core.Session.ModCompatibility.IsKnownClientLocal(report.AssemblyName, null))
             {
-                report.Hints.Add("the built-in list knows this mod as client-local; that decides the join check");
+                report.Hints.Add("the built-in list knows this mod as client-local" + (report.BeyondVerifiedLocal != null ? " (checked against this version)" : "") + "; that decides the join check");
             }
             else if (!report.WorldAffecting && Core.Session.ModCompatibility.IsKnownWorldAffecting(report.AssemblyName, null))
             {
