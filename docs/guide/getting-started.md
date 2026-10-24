@@ -245,8 +245,9 @@ The Options page also works as a fallback when the Skyline Together panel does n
 ### Mods
 
 Skyline Together works with mods. Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller, Water Features, Plop
-the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It have dedicated support: their saved
-data, their tools and the settings that affect the simulation are shared by all players. Every other code mod is
+the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool, Find It, Placemaker, Cim Census and Achievement
+Fixer have dedicated support: their saved data, their tools and the settings that affect the simulation are shared by
+all players. ExtraLib, Cim Route Highlighter, I18n Everywhere, Extended Tooltip, Asset Icon Library and Unified Icon Library are checked to affect only their own player. Every other code mod is
 analysed when a session starts: its saved data replicates, its simulation runs on the host and its tools are captured
 like player edits. For the mods above (and mods that declare it), settings that change the simulation use the host's
 values while you play together; your own values come back when you leave.

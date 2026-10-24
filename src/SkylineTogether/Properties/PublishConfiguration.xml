@@ -32,9 +32,9 @@ Co-op multiplayer for Cities: Skylines II. One player hosts their city, friends 
 
 ## Works with your mods
 
-- **Dedicated support for 12 mods:** Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It. Their saved data, their tools and the settings that affect the simulation are shared by all players.
+- **Dedicated support for 15 mods:** Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller, Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool, Find It, Placemaker, Cim Census and Achievement Fixer. ExtraLib, Cim Route Highlighter, I18n Everywhere, Extended Tooltip, Asset Icon Library and Unified Icon Library are checked to affect only their own player. Their saved data, their tools and the settings that affect the simulation are shared by all players.
 - **Any other code mod** is analysed automatically when a session starts and handled by conservative rules: its saved data replicates, its simulation runs on the host and its tools are captured like player edits. Most mods work this way; the diagnostics file explains the decision for every mod.
-- **Mod settings from the host:** for these 12 mods (and mods that declare it), settings that change the simulation use the host's values for everyone; your own values come back when you leave.
+- **Mod settings from the host:** for these 15 mods (and mods that declare it), settings that change the simulation use the host's values for everyone; your own values come back when you leave.
 - **A clear join screen:** when mods differ, it lists exactly what to enable, disable or update. Mods that only change your own screen (translations, tooltips, icon libraries, overlays) may differ.
 - **Join anyway:** the host can let players join with harmless differences. Mods that store data in the city are always required, because the game cannot load the city without them.
 - **For mod authors:** an integration API to declare what your mod does and to send data to your mod on other PCs (see MOD-INTEGRATION.md on GitHub).

@@ -35,7 +35,7 @@ which checks and applies them for everyone. Differences are detected and repaire
 
 Skyline Together is built to be played with mods, not only with the base game.
 
-- **Dedicated support for 12 mods.** Their saved data, their tools and the settings that affect the simulation are
+- **Dedicated support for 15 mods.** Their saved data, their tools and the settings that affect the simulation are
   synced between all players:
 
   | Mod | What is shared |
@@ -52,12 +52,17 @@ Skyline Together is built to be played with mods, not only with the base game.
   | Zoning Toolkit | Zoning settings on roads |
   | Line Tool | Objects placed along lines and curves |
   | Find It | Objects placed from it, including its generated variants |
+  | Placemaker | Its builds and parks (the host's generated park buildings are created on every player's game), and the host's Placemaker settings |
+  | Cim Census | Its statistics, counted on every player's game |
+  | Achievement Fixer | Works for the host; joined players keep achievements off during the session, as without it |
+
+  ExtraLib, Cim Route Highlighter, I18n Everywhere, Extended Tooltip, Asset Icon Library and Unified Icon Library are checked to affect only their own player: they never block a join.
 
 - **Any other code mod** is analysed automatically when a session starts and handled by conservative rules: its saved
   data replicates with the objects it belongs to, its simulation runs on the host, and its tools are captured like
   player edits. Most mods work this way; the diagnostics file explains the decision for every mod, and mod authors can
   declare what their mod does.
-- **Mod settings from the host.** For the 12 supported mods (and mods that declare it through the integration API),
+- **Mod settings from the host.** For the 15 supported mods (and mods that declare it through the integration API),
   settings that change the simulation use the host's values for everyone during the session; each player's own values
   come back afterwards.
 - **A clear join screen.** When mods differ, the joining player sees exactly what to enable, disable or update.

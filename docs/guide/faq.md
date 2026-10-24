@@ -66,8 +66,9 @@ co-host cannot remove the host or another co-host, cannot ban and cannot change 
 ### Can I use my mods?
 
 Yes. Skyline Together is built to be played with mods. Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller,
-Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool and Find It have dedicated
-support: their data, tools and simulation settings are shared by all players. Every other code mod is analysed
+Water Features, Plop the Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool, Find It, Placemaker, Cim
+Census and Achievement Fixer have dedicated support: their data, tools and simulation settings are shared by all
+players. ExtraLib, Cim Route Highlighter, I18n Everywhere, Extended Tooltip, Asset Icon Library and Unified Icon Library are checked to affect only their own player. Every other code mod is analysed
 automatically when a session starts and handled by conservative rules, so its saved data replicates and its simulation
 runs on the host. For those mods (and mods that declare it), settings that change the simulation use the host's values
 during the session. All players should enable the same gameplay mods;
