@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace SkylineTogether.Core.Sync
 {
     /// <summary>
-    /// The four net-side links where one direction travels on the wire and the other is derived on every peer
+    /// The net-side links where one direction travels on the wire and the other is derived on every peer
     /// (ARCHITECTURE.md#derived-net-links). The game keeps both directions in step itself and follows them in Burst jobs
     /// without a check; the applier writes only the replicated direction.
     /// </summary>
@@ -18,6 +18,12 @@ namespace SkylineTogether.Core.Sync
         RoadEdge,
         /// <summary><c>Game.Buildings.ConnectedBuilding.m_Building</c>, the buildings an edge lists (presence only on the wire).</summary>
         ConnectedBuilding,
+        /// <summary><c>Game.Net.ConnectedEdge.m_Edge</c>, the edges a node lists (presence only on the wire; derived from the edges' nodes).</summary>
+        ConnectedEdge,
+        /// <summary><c>Game.Net.ConnectedNode.m_Node</c>, the middle connections of an edge (replicated).</summary>
+        MiddleNode,
+        /// <summary><c>Game.Net.Edge.m_Start/m_End</c> of an edge (replicated); an edge whose node is gone is deleted.</summary>
+        EdgeNode,
     }
 
     /// <summary>
@@ -30,13 +36,17 @@ namespace SkylineTogether.Core.Sync
     /// listed edge of an updated aggregate.</item>
     /// <item><c>RoadConnectionSystem</c> (Modification4B) indexes the building of every entry of a modified edge's list and
     /// the geometry and list of every building's <c>m_RoadEdge</c> near a modified edge.</item>
+    /// <item><c>Net.ReferencesSystem</c> (Modification2B) indexes the edge list of every modified node and of every node a
+    /// modified edge names (<c>m_Edges[edge.m_Start]</c>, <c>m_Nodes[edge]</c> for every entry of a deleted node); the
+    /// geometry, lane, composition and search systems, <c>AggregateMeshSystem</c> and many simulation systems iterate a
+    /// node's edge list and index each entry's components.</item>
     /// </list>
     /// A reference to a destroyed entity there is a native crash (no managed stack). Pure.
     /// </summary>
     public static class DerivedNetLinkRules
     {
         /// <summary>Number of <see cref="DerivedNetLink"/> values.</summary>
-        public const int Count = 4;
+        public const int Count = 7;
 
         /// <summary>The field's name as the log writes it.</summary>
         public static string Name(DerivedNetLink link)
@@ -47,6 +57,9 @@ namespace SkylineTogether.Core.Sync
                 case DerivedNetLink.AggregateElement: return "Net.AggregateElement.m_Edge";
                 case DerivedNetLink.RoadEdge: return "Buildings.Building.m_RoadEdge";
                 case DerivedNetLink.ConnectedBuilding: return "Buildings.ConnectedBuilding.m_Building";
+                case DerivedNetLink.ConnectedEdge: return "Net.ConnectedEdge.m_Edge";
+                case DerivedNetLink.MiddleNode: return "Net.ConnectedNode.m_Node";
+                case DerivedNetLink.EdgeNode: return "Net.Edge.m_Start/m_End";
                 default: return "?";
             }
         }
@@ -143,19 +156,20 @@ namespace SkylineTogether.Core.Sync
     /// <summary>
     /// The deletions of one frame that the derived links must not outlive (<see cref="DerivedNetLink"/>): at the end of the
     /// frame's Modification phases, after the game cleaned the lists and pointers it knows of, whatever still names one of
-    /// these entities is cleared, since they are destroyed when the frame ends. Edges, aggregates and buildings are noted
-    /// separately; tool previews (<c>Temp</c>) are never noted (the tool regenerates them). Main thread only.
+    /// these entities is cleared, since they are destroyed when the frame ends. Edges, nodes, aggregates and buildings are
+    /// noted separately; tool previews (<c>Temp</c>) are never noted (the tool regenerates them). Main thread only.
     /// </summary>
     public sealed class DerivedLinkDeletions<TEntity> where TEntity : IEquatable<TEntity>
     {
         public readonly HashSet<TEntity> Edges = new HashSet<TEntity>();
         public readonly HashSet<TEntity> Aggregates = new HashSet<TEntity>();
         public readonly HashSet<TEntity> Buildings = new HashSet<TEntity>();
+        public readonly HashSet<TEntity> Nodes = new HashSet<TEntity>();
 
         /// <summary>Aggregates whose lists became empty while pruning (a pointer to one is cleared like one to a deleted aggregate).</summary>
         public readonly HashSet<TEntity> Emptied = new HashSet<TEntity>();
 
-        public bool HasWork => Edges.Count + Aggregates.Count + Buildings.Count > 0;
+        public bool HasWork => Edges.Count + Aggregates.Count + Buildings.Count + Nodes.Count > 0;
 
         /// <summary>A building's road edge or an aggregate's element names a deleted edge.</summary>
         public bool IsDeletedEdge(TEntity edge) => Edges.Contains(edge);
@@ -166,12 +180,87 @@ namespace SkylineTogether.Core.Sync
         /// <summary>An edge's list names a deleted building.</summary>
         public bool IsDeletedBuilding(TEntity building) => Buildings.Contains(building);
 
+        /// <summary>An edge's start, end or middle connection names a deleted node.</summary>
+        public bool IsDeletedNode(TEntity node) => Nodes.Contains(node);
+
         public void Clear()
         {
             Edges.Clear();
             Aggregates.Clear();
             Buildings.Clear();
+            Nodes.Clear();
             Emptied.Clear();
+        }
+    }
+
+    /// <summary>
+    /// The nodes an edge stops naming when a record rewrites its <c>Edge</c> (start, end) or its middle connections
+    /// (<c>ConnectedNode</c>). A node's edge list (<c>ConnectedEdge</c>) is derived by <c>Net.ReferencesSystem</c>, which
+    /// takes an updated edge out of a node's list only when that node is updated in the same frame, and adds it to the nodes
+    /// it names now; a deleted edge leaves the lists of the nodes it names at that moment. A node the edge left without being
+    /// updated keeps it in its list, and once the edge is deleted that entry names a destroyed entity: the native crash of
+    /// a joined player building next to such a node. The game updates the nodes an edge leaves itself
+    /// (<c>Game.Tools.ApplyNetSystem</c>); the applier does the same with the nodes this reports. Pure.
+    /// </summary>
+    public static class EdgeNodeChange
+    {
+        /// <summary>
+        /// Adds to <paramref name="into"/> every node of the old ends and middle connections that the new ones no longer
+        /// name, once each; <paramref name="none"/> (the null entity) is never added. Returns the number added.
+        /// </summary>
+        public static int NodesLeft<TEntity>(TEntity oldStart, TEntity oldEnd, IReadOnlyList<TEntity> oldMiddles, TEntity newStart, TEntity newEnd,
+                                             IReadOnlyList<TEntity> newMiddles, TEntity none, List<TEntity> into)
+            where TEntity : IEquatable<TEntity>
+        {
+            if (into == null) throw new ArgumentNullException(nameof(into));
+            int added = 0;
+            if (Left(oldStart, newStart, newEnd, newMiddles, none, into)) added++;
+            if (Left(oldEnd, newStart, newEnd, newMiddles, none, into)) added++;
+            if (oldMiddles == null) return added;
+            for (int i = 0; i < oldMiddles.Count; i++)
+            {
+                if (Left(oldMiddles[i], newStart, newEnd, newMiddles, none, into)) added++;
+            }
+            return added;
+        }
+
+        /// <summary>
+        /// Whether the edge names the same nodes before and after (ends in place, middle connections as a set): when it
+        /// does, the node lists stay right without any update.
+        /// </summary>
+        public static bool SameNodes<TEntity>(TEntity oldStart, TEntity oldEnd, IReadOnlyList<TEntity> oldMiddles, TEntity newStart, TEntity newEnd, IReadOnlyList<TEntity> newMiddles)
+            where TEntity : IEquatable<TEntity>
+        {
+            if (!oldStart.Equals(newStart) || !oldEnd.Equals(newEnd)) return false;
+            int oldCount = oldMiddles?.Count ?? 0, newCount = newMiddles?.Count ?? 0;
+            if (oldCount != newCount) return false;
+            for (int i = 0; i < oldCount; i++)
+            {
+                if (!Contains(newMiddles, oldMiddles[i]) || !Contains(oldMiddles, newMiddles[i])) return false;
+            }
+            return true;
+        }
+
+        private static bool Left<TEntity>(TEntity node, TEntity newStart, TEntity newEnd, IReadOnlyList<TEntity> newMiddles, TEntity none, List<TEntity> into)
+            where TEntity : IEquatable<TEntity>
+        {
+            if (node.Equals(none) || node.Equals(newStart) || node.Equals(newEnd) || Contains(newMiddles, node)) return false;
+            for (int i = 0; i < into.Count; i++)
+            {
+                if (into[i].Equals(node)) return false;
+            }
+            into.Add(node);
+            return true;
+        }
+
+        private static bool Contains<TEntity>(IReadOnlyList<TEntity> list, TEntity e) where TEntity : IEquatable<TEntity>
+        {
+            if (list == null) return false;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Equals(e)) return true;
+            }
+            return false;
         }
     }
 }

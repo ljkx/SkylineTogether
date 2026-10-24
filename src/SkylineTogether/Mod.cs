@@ -145,8 +145,9 @@ namespace SkylineTogether
                 updateSystem.UpdateAt<RemovalCascadeSystem>(SystemUpdatePhase.ModificationEnd);
                 // no created entity reaches the game's update-group system without its marker
                 updateSystem.UpdateBefore<UpdateFrameGuardSystem, Game.Simulation.UpdateGroupSystem>(SystemUpdatePhase.Modification5);
-                // host and clients: street lists and road connections never name a destroyed entity when the game indexes
+                // host and clients: street lists, road connections and node and edge lists never name a destroyed entity when the game indexes
                 // them (checked right before, cleared at the end of the Modification phases; ARCHITECTURE.md#derived-net-links)
+                updateSystem.UpdateBefore<NetReferenceGuardSystem, Game.Net.ReferencesSystem>(SystemUpdatePhase.Modification2B);
                 updateSystem.UpdateBefore<AggregateLinkGuardSystem, Game.Net.AggregateSystem>(SystemUpdatePhase.Modification2B);
                 updateSystem.UpdateBefore<RoadConnectionGuardSystem, Game.Buildings.RoadConnectionSystem>(SystemUpdatePhase.Modification4B);
                 updateSystem.UpdateBefore<AggregateMeshGuardSystem, Game.Rendering.AggregateMeshSystem>(SystemUpdatePhase.PreCulling);

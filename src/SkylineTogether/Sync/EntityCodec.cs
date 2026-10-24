@@ -1415,6 +1415,9 @@ namespace SkylineTogether.Sync
             for (int t = 0; t < _targets.Count; t++)
             {
                 (SyncRecord r, Entity e) = _targets[t];
+                // an existing edge's nodes before the record: a node it leaves must be updated with it (EdgeNodeChange)
+                bool edge = !_spawned.Contains(e) && em.HasComponent<Game.Net.Edge>(e);
+                if (edge) ReadEdgeNodes(em, e, out _startBefore, out _endBefore, _middlesBefore);
                 try
                 {
                     WriteValues(r, e, proposal, offset, data, result);
@@ -1425,6 +1428,7 @@ namespace SkylineTogether.Sync
                     result.Problems.Add("#" + r.NetId + " values: " + ex.Message);
                     if (_spawned.Contains(e)) _spawnState.Fail(e); // half-written values: never kept on a new entity
                 }
+                if (edge) TouchNodesLeft(em, r, e);
             }
             // what referred to a dropped entity is cleaned up below (dangling owners and nodes) or by the reference audit
             if (_spawnState.FailedCount > 0) DropFailedSpawns(result, "its values could not be written");
@@ -2663,6 +2667,55 @@ namespace SkylineTogether.Sync
                 default:
                     return default;
             }
+        }
+
+        private Entity _startBefore, _endBefore;
+        private readonly List<Entity> _middlesBefore = new List<Entity>();
+        private readonly List<Entity> _middlesAfter = new List<Entity>();
+        private readonly List<Entity> _nodesLeft = new List<Entity>();
+        private long _nodesLeftTotal;
+
+        /// <summary>Nodes tagged because a record moved an edge away from them (session total, diagnostics).</summary>
+        public long NodesLeftTotal => _nodesLeftTotal;
+
+        private static void ReadEdgeNodes(EntityManager em, Entity e, out Entity start, out Entity end, List<Entity> middles)
+        {
+            Game.Net.Edge edge = em.GetComponentData<Game.Net.Edge>(e);
+            start = edge.m_Start;
+            end = edge.m_End;
+            middles.Clear();
+            if (!em.HasBuffer<Game.Net.ConnectedNode>(e)) return;
+            DynamicBuffer<Game.Net.ConnectedNode> nodes = em.GetBuffer<Game.Net.ConnectedNode>(e, true);
+            for (int i = 0; i < nodes.Length; i++) middles.Add(nodes[i].m_Node);
+        }
+
+        /// <summary>
+        /// Step 3, after a record wrote an existing edge: the nodes it no longer names (its <c>Edge</c> or middle connections
+        /// changed) are tagged with their closure, so <c>Net.ReferencesSystem</c> takes the edge out of their lists (it does
+        /// so only for a node updated in the same frame as the edge). The closure of step 4 follows the new values only: a
+        /// node the edge left kept it in its list, and once the edge was deleted that entry named a destroyed entity, which
+        /// the game's jobs index unchecked (<see cref="EdgeNodeChange"/>). A values record changes the edge's topology like
+        /// any other record, so its edge is tagged too (values records are otherwise not re-derived).
+        /// </summary>
+        private void TouchNodesLeft(EntityManager em, SyncRecord r, Entity e)
+        {
+            if (!em.Exists(e) || !em.HasComponent<Game.Net.Edge>(e) || em.HasComponent<Game.Tools.Temp>(e)) return;
+            ReadEdgeNodes(em, e, out Entity start, out Entity end, _middlesAfter);
+            if (EdgeNodeChange.SameNodes(_startBefore, _endBefore, _middlesBefore, start, end, _middlesAfter)) return;
+            _nodesLeft.Clear();
+            EdgeNodeChange.NodesLeft(_startBefore, _endBefore, _middlesBefore, start, end, _middlesAfter, Entity.Null, _nodesLeft);
+            foreach (Entity node in _nodesLeft)
+            {
+                if (!em.Exists(node) || em.HasComponent<Game.Tools.Temp>(node)) continue;
+                NodeClosure(node, _touch);
+                _nodesLeftTotal++;
+            }
+            if (r.Kind == SyncRecordKind.Values)
+            {
+                _touch.Add(e);
+                Closure(e, _touch);
+            }
+            _nodesLeft.Clear();
         }
 
         /// <summary>Tags the net closure (MoveIt's rule): an edge's nodes and their edges, a node's edges and their nodes.</summary>

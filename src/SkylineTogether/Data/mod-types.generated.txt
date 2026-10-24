@@ -143,6 +143,7 @@ SkylineTogether.Sync.MoverWriteSystem
 SkylineTogether.Sync.NetIdSystem
 SkylineTogether.Sync.NetReader
 SkylineTogether.Sync.NetReaderState
+SkylineTogether.Sync.NetReferenceGuardSystem
 SkylineTogether.Sync.NetWriter
 SkylineTogether.Sync.NetWriterState
 SkylineTogether.Sync.NetWriterState+KeyBuilder

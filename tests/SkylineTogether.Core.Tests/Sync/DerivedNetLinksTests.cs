@@ -29,6 +29,10 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.Equal(DerivedNetLinkRules.Count, Enum.GetValues(typeof(DerivedNetLink)).Length);
             Assert.Equal("Net.Aggregated.m_Aggregate", DerivedNetLinkRules.Name(DerivedNetLink.AggregatePointer));
             Assert.Equal("Buildings.ConnectedBuilding.m_Building", DerivedNetLinkRules.Name(DerivedNetLink.ConnectedBuilding));
+            // the reference audit's check names: its repairs and the guard's count under the same field
+            Assert.Equal("Net.ConnectedEdge.m_Edge", DerivedNetLinkRules.Name(DerivedNetLink.ConnectedEdge));
+            Assert.Equal("Net.ConnectedNode.m_Node", DerivedNetLinkRules.Name(DerivedNetLink.MiddleNode));
+            Assert.Equal("Net.Edge.m_Start/m_End", DerivedNetLinkRules.Name(DerivedNetLink.EdgeNode));
         }
 
         [Test]
@@ -111,6 +115,54 @@ namespace SkylineTogether.Core.Tests.Sync
             Assert.False(d.IsGoneAggregate(101));
             d.Emptied.Add(5);
             Assert.False(d.HasWork, "emptied streets alone are found by the edge pass, not a reason for one");
+            d.Nodes.Add(7);
+            Assert.True(d.HasWork, "a deleted node is a reason: edges may still end at it");
+            Assert.True(d.IsDeletedNode(7));
+            Assert.False(d.IsDeletedEdge(7));
+            d.Clear();
+            Assert.False(d.IsDeletedNode(7));
+        }
+
+        // ------------------------------------------------------------------ the nodes an edge leaves
+
+        [Test]
+        public void AnEdgeMovedToOtherNodesLeavesItsOldOnes()
+        {
+            var left = new List<int>();
+            // edge 1-2 rewritten to 3-2: node 1 is left, node 2 kept
+            Assert.Equal(1, EdgeNodeChange.NodesLeft(1, 2, null, 3, 2, null, 0, left));
+            Assert.SequenceEqual(new[] { 1 }, left);
+            // both ends replaced (a record written across entities): both old nodes are left
+            left.Clear();
+            Assert.Equal(2, EdgeNodeChange.NodesLeft(1, 2, null, 5, 6, null, 0, left));
+            Assert.SequenceEqual(new[] { 1, 2 }, left);
+            // reversed ends leave nothing
+            left.Clear();
+            Assert.Equal(0, EdgeNodeChange.NodesLeft(1, 2, null, 2, 1, null, 0, left));
+            Assert.False(EdgeNodeChange.SameNodes(1, 2, null, 2, 1, null), "reversed is a change (the lists stay right, the edge is still re-derived)");
+        }
+
+        [Test]
+        public void MiddleConnectionsCountAsNodesOfTheEdge()
+        {
+            var left = new List<int>();
+            // middle 7 dropped, middle 8 kept, 9 added; the old start becomes a middle connection
+            int n = EdgeNodeChange.NodesLeft(1, 2, new[] { 7, 8 }, 3, 2, new[] { 8, 9, 1 }, 0, left);
+            Assert.Equal(1, n);
+            Assert.SequenceEqual(new[] { 7 }, left, "node 1 still lists the edge as a middle connection");
+            Assert.True(EdgeNodeChange.SameNodes(1, 2, new[] { 7, 8 }, 1, 2, new[] { 8, 7 }), "middle connections compare as a set");
+            Assert.False(EdgeNodeChange.SameNodes(1, 2, new[] { 7 }, 1, 2, new[] { 7, 8 }));
+            Assert.True(EdgeNodeChange.SameNodes(1, 2, null, 1, 2, new int[0]));
+        }
+
+        [Test]
+        public void NodesLeftNeverAddsTheNullNodeOrAnyNodeTwice()
+        {
+            var left = new List<int> { 4 };
+            // an edge whose start was null and a middle node named twice
+            Assert.Equal(1, EdgeNodeChange.NodesLeft(0, 4, new[] { 6, 6 }, 1, 2, null, 0, left));
+            Assert.SequenceEqual(new[] { 4, 6 }, left, "4 was already there; 6 once; 0 never");
+            Assert.Throws<ArgumentNullException>(() => EdgeNodeChange.NodesLeft(1, 2, null, 3, 4, null, 0, null));
         }
 
         // ------------------------------------------------------------------ the crash, modelled
@@ -296,6 +348,150 @@ namespace SkylineTogether.Core.Tests.Sync
             w.Cleanup(frame);
             Assert.Equal(0, w.Buildings[1].Count);
             Assert.Equal(0, w.Dangling().Count);
+        }
+
+        // ------------------------------------------------------------------ node lists, modelled
+
+        /// <summary>
+        /// Node edge lists as <c>Net.ReferencesSystem</c> keeps them: an updated node drops every updated edge, an updated
+        /// edge is added to the nodes it names now, a deleted edge leaves the lists of the nodes it names at that moment.
+        /// </summary>
+        private sealed class Topology
+        {
+            public readonly HashSet<int> Alive = new HashSet<int>();
+            public readonly Dictionary<int, (int Start, int End)> Edges = new Dictionary<int, (int, int)>();
+            public readonly Dictionary<int, List<int>> Lists = new Dictionary<int, List<int>>(); // ConnectedEdge
+            public readonly HashSet<int> Updated = new HashSet<int>();
+            public readonly HashSet<int> Deleted = new HashSet<int>();
+
+            public void Node(int n)
+            {
+                Alive.Add(n);
+                Lists[n] = new List<int>();
+            }
+
+            public void Edge(int e, int start, int end)
+            {
+                Alive.Add(e);
+                Edges[e] = (start, end);
+                Lists[start].Add(e);
+                Lists[end].Add(e);
+            }
+
+            /// <summary>The applier writes an edge's ends from a record and tags the closure of the new values (and, fixed, the nodes it left).</summary>
+            public void RecordMovesEdge(int e, int start, int end, bool tagLeft)
+            {
+                (int oldStart, int oldEnd) = Edges[e];
+                Edges[e] = (start, end);
+                Updated.Add(e);
+                Updated.Add(start);
+                Updated.Add(end);
+                if (!tagLeft) return;
+                var left = new List<int>();
+                EdgeNodeChange.NodesLeft(oldStart, oldEnd, null, start, end, null, 0, left);
+                foreach (int n in left) Updated.Add(n);
+            }
+
+            public void Delete(int e) => Deleted.Add(e);
+
+            /// <summary>Net.ReferencesSystem, the guard's end-of-Modification pass (when given), then the end of the frame.</summary>
+            public void Frame(DerivedLinkDeletions<int> guard)
+            {
+                foreach (KeyValuePair<int, List<int>> n in Lists)
+                {
+                    if (Updated.Contains(n.Key)) n.Value.RemoveAll(e => Updated.Contains(e));
+                }
+                foreach (int e in Edges.Keys.ToList())
+                {
+                    (int start, int end) = Edges[e];
+                    if (Deleted.Contains(e))
+                    {
+                        Lists[start].Remove(e);
+                        Lists[end].Remove(e);
+                    }
+                    else if (Updated.Contains(e))
+                    {
+                        if (!Lists[start].Contains(e)) Lists[start].Add(e);
+                        if (!Lists[end].Contains(e)) Lists[end].Add(e);
+                    }
+                }
+                if (guard != null)
+                {
+                    // DerivedLinkCleanupSystem: no node list keeps an edge deleted this frame
+                    foreach (int e in Deleted) guard.Edges.Add(e);
+                    foreach (List<int> list in Lists.Values) DerivedNetLinkRules.Prune(list, e => !guard.IsDeletedEdge(e));
+                    guard.Clear();
+                }
+                foreach (int e in Deleted)
+                {
+                    Alive.Remove(e);
+                    Edges.Remove(e);
+                }
+                Deleted.Clear();
+                Updated.Clear();
+            }
+
+            public List<string> Dangling()
+            {
+                var found = new List<string>();
+                foreach (KeyValuePair<int, List<int>> n in Lists)
+                {
+                    foreach (int e in n.Value)
+                    {
+                        if (!Alive.Contains(e)) found.Add("node " + n.Key + " lists destroyed edge " + e);
+                    }
+                }
+                return found;
+            }
+        }
+
+        private static Topology OneEdge()
+        {
+            // nodes 1, 2, 3 and edge 10 from 1 to 2; a record (an integrity repair, a stale binding) then moves it to 3-2
+            var t = new Topology();
+            t.Node(1);
+            t.Node(2);
+            t.Node(3);
+            t.Edge(10, 1, 2);
+            return t;
+        }
+
+        [Test]
+        public void WithoutTaggingTheNodeItLeftADeletedEdgeStaysInThatNodesList()
+        {
+            Topology t = OneEdge();
+            t.RecordMovesEdge(10, 3, 2, tagLeft: false);
+            t.Frame(null);
+            Assert.SequenceEqual(new[] { 10 }, t.Lists[1], "node 1 was not updated: it keeps the edge");
+            t.Delete(10);
+            t.Frame(null);
+            Assert.SequenceEqual(new[] { "node 1 lists destroyed edge 10" }, t.Dangling(),
+                "the next road built at node 1 makes the game index the destroyed edge: the native crash");
+        }
+
+        [Test]
+        public void TaggingTheNodesAnEdgeLeftKeepsTheListsRight()
+        {
+            Topology t = OneEdge();
+            t.RecordMovesEdge(10, 3, 2, tagLeft: true);
+            t.Frame(null);
+            Assert.Equal(0, t.Lists[1].Count);
+            Assert.SequenceEqual(new[] { 10 }, t.Lists[3]);
+            t.Delete(10);
+            t.Frame(null);
+            Assert.Equal(0, t.Dangling().Count);
+        }
+
+        [Test]
+        public void TheEndOfFramePassDropsAStaleEntryInTheFrameItsEdgeIsDeleted()
+        {
+            Topology t = OneEdge();
+            t.RecordMovesEdge(10, 3, 2, tagLeft: false); // the stale entry exists (a path the fix does not know)
+            t.Frame(null);
+            t.Delete(10);
+            t.Frame(new DerivedLinkDeletions<int>());
+            Assert.Equal(0, t.Dangling().Count);
+            Assert.Equal(0, t.Lists[1].Count);
         }
     }
 }

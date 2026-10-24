@@ -159,6 +159,7 @@ namespace SkylineTogether.Core.Diagnostics
             (Sync + "NetIdSystem", F(Replication)),
             (Sync + "NetReader", F(Replication)),
             (Sync + "NetReaderState", F(Replication)),
+            (Sync + "NetReferenceGuardSystem", F(Replication)),
             (Sync + "NetWriter", F(Replication)),
             (Sync + "NetWriterState", F(Replication)),
             (Sync + "OrphanSweep", F(Replication)),

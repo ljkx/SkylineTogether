@@ -82,7 +82,8 @@ namespace SkylineTogether.Sync
         private Action _orphanCall;
 
         /// <summary>
-        /// Client: an entity the deletion cascade deleted on its own (a citizen or pet with its household, ARCHITECTURE.md#reference-safety):
+        /// Client: an entity the deletion cascade deleted on its own (a citizen or pet with its household, ARCHITECTURE.md#reference-safety)
+        /// or the derived link guard deleted (an edge whose node is gone, ARCHITECTURE.md#derived-net-links):
         /// its id is released, and the host is asked for it unless the batch being applied despawns it anyway (the host
         /// answers with the entity, or with its despawn when it deleted it too). Movers are the mover channel's (its roster
         /// asks for a mover the host still has).
@@ -309,6 +310,8 @@ namespace SkylineTogether.Sync
             // agent values get the same targeted repair as structure batches
             _audit.RequestRepair = Integrity.RequestRepair;
             DeletionCascade.CascadeDeleted = OnCascadeDeleted;
+            Links.EdgeDeleted = OnCascadeDeleted; // an edge whose node is gone: the same release and request
+            _audit.NetLinks = Links;
             Orphans.Request = id => _audit.RequestLater(id, Perf.Now);
             _orphanCall = () =>
             {
@@ -464,7 +467,7 @@ namespace SkylineTogether.Sync
             {
                 // reference safety of the applier and the client's deletion bookkeeping
                 lines.Add("reference safety: " + _codec.UnresolvedSpawnsTotal + " new objects not created (owner/node/parent missing), " + _codec.DanglingTotal
-                          + " deleted instead of left dangling, " + _codec.UnsafeTotal + " references made safe, " + _codec.DeadReferencesTotal + " references to destroyed/deleted entities dropped; "
+                          + " deleted instead of left dangling, " + _codec.UnsafeTotal + " references made safe, " + _codec.NodesLeftTotal + " nodes an edge left updated with it, " + _codec.DeadReferencesTotal + " references to destroyed/deleted entities dropped; "
                           + _localDeletes.Count + " local deletions awaiting the host, " + _localDeleteSkips + " stale host records skipped, " + _cascadeUnbinds + " cascade unbinds");
                 // decode-boundary validation and the client's removal clean-up
                 lines.Add("input validation: " + _codec.MalformedTotal + " malformed values refused (NaN/out-of-range geometry, overruns), " + _codec.OverrunsTotal

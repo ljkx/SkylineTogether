@@ -89,6 +89,9 @@ namespace SkylineTogether.Sync
             }
             long start = Perf.Start();
             double now = Perf.Now;
+            // node and edge lists repaired after the last frame's Modification phases are re-derived, edges whose node is
+            // gone deleted, before any game system of this frame (ARCHITECTURE.md#derived-net-links)
+            SafeCall("derived net links (frame start)", _linksFrameCall ?? (_linksFrameCall = () => Links.BeforeFrame(_codec.EntityManager)), Features.Replication);
             // everything the previous frame sent is out: close its release frame
             if (IsHost) _ids.Ids.Seal(_acks.SealFrame(_epochSent), now);
             if (IsHost) KickQueued();
@@ -278,6 +281,8 @@ namespace SkylineTogether.Sync
                 if (_reassertLogged.Add(name)) _log.Warn(LogCategory.Gate, name + " was switched on again while gated on this client (a mod's own setting?); held off for the session");
             });
         }
+
+        private Action _linksFrameCall;
 
         /// <summary>Runs a step in its own guard; a failure counts against <paramref name="feature"/> (player actions by default).</summary>
         private void SafeCall(string what, Action action, FeatureHealth feature = null)

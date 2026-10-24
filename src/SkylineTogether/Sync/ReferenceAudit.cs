@@ -15,8 +15,9 @@ namespace SkylineTogether.Sync
     /// pupils, patients, occupants, household members both ways, property, workplace, school, hotel, current building) is
     /// repaired the way the game's removal systems would have done it: a list element naming nobody, a destroyed or a
     /// deleted entity is dropped, a component link to one is cleared or the component removed. The repaired holder is asked
-    /// from the host again, so the host's own state replaces the clean-up. Other references the game's jobs index unchecked
-    /// (net topology, owners, sub-objects, routes, passengers) are only reported.
+    /// from the host again, so the host's own state replaces the clean-up. The node and edge lists (<c>ConnectedEdge</c>,
+    /// <c>ConnectedNode</c>, <c>Edge</c>) are repaired by the derived link guard (<see cref="NetLinks"/>). Other references
+    /// the game's jobs index unchecked (owners, sub-objects, routes, passengers) are only reported.
     /// <para>
     /// Two passes: right after every applied batch, the entities it wrote or tagged (<see cref="AfterApply"/>: cheap and
     /// targeted, so a batch never leaves a dangling link behind for the game's systems of the same frame), and a background
@@ -42,8 +43,15 @@ namespace SkylineTogether.Sync
         {
             public string Name;
             public EntityQuery Query;
-            /// <summary>The agent link this check repairs; null: report only.</summary>
+            /// <summary>The agent link this check repairs; null: report only (or <see cref="Fix"/>).</summary>
             public AgentLink? Link;
+            /// <summary>Repairs one holder (what was done, or null when nothing was to do); null: report only.</summary>
+            public Func<EntityManager, Entity, string> Fix;
+            /// <summary>
+            /// Whether a target being deleted counts as dangling. Not for the node and edge lists: the game itself takes a
+            /// deleted edge out of them in this frame's Modification phases (the sweep runs after the apply, before them).
+            /// </summary>
+            public bool DeletedIsDangling = true;
             public long Dangling;
             public int LoggedThisMinute;
             public double MinuteStart = double.NegativeInfinity;
@@ -76,7 +84,7 @@ namespace SkylineTogether.Sync
                     foreach (Func<T, Entity> get in _refs)
                     {
                         Entity target = get(values[i]);
-                        if (target == Entity.Null ? _nullIsDangling : !IsLive(em, target)) found.Add((holders[i], target));
+                        if (target == Entity.Null ? _nullIsDangling : !IsLive(em, target, DeletedIsDangling)) found.Add((holders[i], target));
                     }
                 }
             }
@@ -117,7 +125,7 @@ namespace SkylineTogether.Sync
                     for (int k = 0; k < b.Length; k++)
                     {
                         Entity target = _ref(b[k]);
-                        if (target == Entity.Null || !IsLive(em, target)) found.Add((holders[i], target));
+                        if (target == Entity.Null || !IsLive(em, target, DeletedIsDangling)) found.Add((holders[i], target));
                     }
                 }
             }
@@ -141,6 +149,11 @@ namespace SkylineTogether.Sync
 
         /// <summary>Exists and is not being deleted (a deleted target is gone at the end of this frame).</summary>
         private static bool IsLive(EntityManager em, Entity e) => em.Exists(e) && !em.HasComponent<Game.Common.Deleted>(e);
+
+        private static bool IsLive(EntityManager em, Entity e, bool deletedIsDangling) => deletedIsDangling ? IsLive(em, e) : em.Exists(e);
+
+        /// <summary>How a log line names a target that is not live (a deleted one still exists until the frame ends).</summary>
+        private static string Gone(EntityManager em, Entity target) => target == Entity.Null ? "null" : target + (em.Exists(target) ? " (deleted)" : " (destroyed)");
 
         private readonly ILog _log;
         private readonly List<Check> _checks = new List<Check>();
@@ -178,6 +191,9 @@ namespace SkylineTogether.Sync
 
         /// <summary>Asks the host for an entity again (the integrity check's repair request); set by the controller.</summary>
         public Action<uint> RequestRepair;
+
+        /// <summary>Repairs the node and edge lists the sweep finds naming a destroyed entity; set by the controller.</summary>
+        public DerivedLinkGuard NetLinks;
 
         /// <summary>
         /// Net ids the applier met in references but has no entity for (<see cref="NetReaderState.MissingIds"/>); the
@@ -251,11 +267,16 @@ namespace SkylineTogether.Sync
             Agent<Game.Citizens.CurrentBuilding>(AgentLink.CurrentBuilding, x => x.m_CurrentBuilding);
             Agent<Game.Citizens.HouseholdMember>(AgentLink.HouseholdMember, x => x.m_Household);
             Agent<Game.Citizens.HouseholdPet>(AgentLink.HouseholdPet, x => x.m_Household);
-            // the references Net.ReferencesSystem, SubObjectReferencesSystem, the movers and the route systems index
-            // unchecked: reported (their owners repair them: structure records, the mover channel, the line check)
+            // the node and edge lists Net.ReferencesSystem and the geometry, lane and simulation systems index unchecked:
+            // repaired by the derived link guard (ARCHITECTURE.md#derived-net-links)
             Data<Game.Net.Edge>("Net.Edge.m_Start/m_End", true, null, x => x.m_Start, x => x.m_End);
+            NetCheck((em, h) => NetLinks?.RepairEdgeNodes(em, h));
             Buffer<Game.Net.ConnectedEdge>("Net.ConnectedEdge.m_Edge", null, x => x.m_Edge);
+            NetCheck((em, h) => NetLinks?.RepairNodeEdges(em, h));
             Buffer<Game.Net.ConnectedNode>("Net.ConnectedNode.m_Node", null, x => x.m_Node);
+            NetCheck((em, h) => NetLinks?.RepairMiddleNodes(em, h));
+            // the references SubObjectReferencesSystem, the movers and the route systems index unchecked: reported (their
+            // owners repair them: structure records, the mover channel, the line check)
             Data<Game.Common.Owner>("Common.Owner.m_Owner", false, null, x => x.m_Owner);
             Buffer<Game.Objects.SubObject>("Objects.SubObject.m_SubObject", null, x => x.m_SubObject);
             Data<Game.Objects.Attached>("Objects.Attached.m_Parent", false, null, x => x.m_Parent);
@@ -538,6 +559,10 @@ namespace SkylineTogether.Sync
                             // refetch before the next chunk (a removed component or a deleted holder moved entities between chunks)
                             if (_access.StructuralChanges != structural || DeletionCascade.HoldersDeleted + DeletionCascade.MoversDeleted != deletions) fetchedFor = -1;
                         }
+                        else if (c.Fix != null)
+                        {
+                            FixFound(em, c, now);
+                        }
                         else
                         {
                             Report(c, now);
@@ -631,6 +656,51 @@ namespace SkylineTogether.Sync
             }
         }
 
+        /// <summary>The check just added repairs through the derived link guard.</summary>
+        private void NetCheck(Func<EntityManager, Entity, string> fix)
+        {
+            Check c = _checks[_checks.Count - 1];
+            c.Fix = fix;
+            c.DeletedIsDangling = false;
+        }
+
+        /// <summary>
+        /// The holders of a check with a <see cref="Check.Fix"/>: each is repaired, one log line per holder (rate-limited like
+        /// the reports); one there was nothing to do for is reported.
+        /// </summary>
+        private void FixFound(EntityManager em, Check c, double now)
+        {
+            _holders.Clear();
+            if (now - c.MinuteStart >= 60)
+            {
+                c.MinuteStart = now;
+                c.LoggedThisMinute = 0;
+            }
+            foreach ((Entity holder, Entity target) in _found)
+            {
+                if (!_holders.Add(holder)) continue;
+                string done;
+                try
+                {
+                    done = c.Fix(em, holder);
+                }
+                catch (Exception ex)
+                {
+                    done = null; // reported like a check without a repair; the sweep goes on
+                    _log.Debug(LogCategory.Integrity, "repair of " + c.Name + " failed: " + ex.Message);
+                }
+                c.Dangling++;
+                Total++;
+                if (c.LoggedThisMinute >= LinesPerTypePerMinute) continue;
+                c.LoggedThisMinute++;
+                uint id = _ids != null ? _ids.GetNetId(holder) : 0;
+                string who = id != 0 ? "#" + id + " (" + _ids.GetFamily(id) + ")" : holder + " (unbound)";
+                _log.Warn(LogCategory.Integrity, (done != null ? "repaired dangling reference: " : "dangling reference: ") + c.Name + " of " + who + " -> " + Gone(em, target)
+                                                 + (done != null ? " (" + done + ")" : "") + "; session total for this reference " + c.Dangling);
+            }
+            _holders.Clear();
+        }
+
         private void Report(Check c, double now)
         {
             c.Dangling += _found.Count;
@@ -646,7 +716,7 @@ namespace SkylineTogether.Sync
                 c.LoggedThisMinute++;
                 uint id = _ids != null ? _ids.GetNetId(holder) : 0;
                 string who = id != 0 ? "#" + id + " (" + _ids.GetFamily(id) + ")" : holder + " (unbound)";
-                _log.Warn(LogCategory.Integrity, "dangling reference: " + c.Name + " of " + who + " -> " + (target == Entity.Null ? "null" : target + " (destroyed)")
+                _log.Warn(LogCategory.Integrity, "dangling reference: " + c.Name + " of " + who + " -> " + Gone(_world.EntityManager, target)
                                                  + "; session total for this reference " + c.Dangling);
             }
         }
