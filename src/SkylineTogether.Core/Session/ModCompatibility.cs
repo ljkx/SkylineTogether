@@ -67,11 +67,13 @@ namespace SkylineTogether.Core.Session
         {
             "Traffic", "MoveIt", "Anarchy", "BetterBulldozer", "FiveTwentyNineTiles", "HistoricalStart", "Water_Features",
             "ZoningToolkit", "LineTool", "PlopTheGrowables", "Tree_Controller",
+            "Placemaker",
         };
 
         private static readonly HashSet<string> WorldIds = new HashSet<string>(StringComparer.Ordinal)
         {
             "80095", "74324", "74604", "75250", "74328", "74535", "75613", "75750", "75816", "75826", "75993",
+            "163638",
         };
 
         /// <summary>True for a mod the built-in list knows as client-local.</summary>

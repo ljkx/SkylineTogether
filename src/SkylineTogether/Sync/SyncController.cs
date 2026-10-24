@@ -188,7 +188,7 @@ namespace SkylineTogether.Sync
         private readonly List<Entity> _clientChanged = new List<Entity>();
         private readonly HashSet<Entity> _authoredKeys = new HashSet<Entity>();
         private readonly Action _hostWatchCall, _clientActionCall, _lateIntentsCall, _actionDetectCall, _editHoldsCall, _milestonesCall;
-        private readonly Action _hostModStateCall, _hostModSettingsCall, _clientModStateCall;
+        private readonly Action _hostModStateCall, _hostModSettingsCall, _clientModStateCall, _modAdaptersCall, _announceCall;
         private double _callNow; // the capture time the cached mod-state and mod-settings calls use
         private Game.Tools.GenerateEdgesSystem _generateEdges;
         /// <summary>Client: the newest ledger epoch applied (the base of its proposals; not a release frame).</summary>
@@ -346,6 +346,9 @@ namespace SkylineTogether.Sync
             _hostModStateCall = () => CaptureModChanges(_callNow, _writtenThisFrame, true);
             _hostModSettingsCall = () => _modSettings.HostCapture(_batch, _callNow);
             _clientModStateCall = () => CaptureModChanges(_callNow, _clientWritten, false, _clientProposed);
+            _modAdaptersCall = () => Compat.ModCompat.Tick(IsHost, _callNow, _log);
+            _announceCall = AnnounceRuntimePrefabs;
+            Compat.ModCompat.IsPrefabBound = prefab => _ids != null && _ids.GetNetId(prefab) != 0;
             sessions.HostStarted += OnHostStarted;
             sessions.ClientStarted += OnClientStarted;
             sessions.SessionEnded += OnSessionEnded;

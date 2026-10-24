@@ -393,6 +393,26 @@ namespace SkylineTogether.Compat
         // ================================================================== the mod channel
 
         /// <summary>
+        /// A channel of Skyline Together's own, for a built-in adapter's messages (Placemaker's requests,
+        /// <see cref="Core.Modding.PlacemakerMessage.Channel"/>): the same message kind, routing, size limit, send budgets
+        /// and role permissions as a mod's channel (no wire change). Returns the sender (payload, target: -1 everyone,
+        /// 0 the host, n player n). Registering the same channel again replaces its receiver.
+        /// </summary>
+        public static Func<byte[], int, bool> RegisterInternal(string channel, string owner, Action<int, byte[]> onMessage)
+        {
+            if (string.IsNullOrEmpty(channel)) throw new ArgumentException("the channel name is empty", nameof(channel));
+            if (Channels.TryGetValue(channel, out Bound old) && old.TypeName != owner)
+            {
+                _log?.Warn(LogCategory.Compat, "mod integration: channel " + channel + " is already used by " + old.TypeName + "; " + owner + " does not get it");
+                return (payload, target) => false;
+            }
+            var b = new Bound { Channel = channel, TypeName = owner, Message = onMessage };
+            b.Callbacks.Add("OnMessage");
+            Channels[channel] = b;
+            return (payload, target) => Send(b, payload, target);
+        }
+
+        /// <summary>
         /// The mod's <c>Send(payload, target)</c>: target -1 = everyone, 0 = the host, n = player n. False when not in a
         /// session, over the size limit or over the send budget (nothing is queued then).
         /// </summary>

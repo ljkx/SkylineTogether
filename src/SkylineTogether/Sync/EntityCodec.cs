@@ -106,6 +106,13 @@ namespace SkylineTogether.Sync
         private readonly Dictionary<string, Core.Modding.AssetSource> _missingSources = new Dictionary<string, Core.Modding.AssetSource>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _missingTexts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<uint, int> _fallbackTried = new Dictionary<uint, int>();
+        // runtime prefabs a mod of this game creates on demand (Placemaker's parks and overlays, MOD-COMPATIBILITY.md §7):
+        // records that need one wait without a missing-asset report, and are asked for again once it exists
+        private readonly Core.Modding.RuntimePrefabBook _runtimePrefabs = new Core.Modding.RuntimePrefabBook();
+        private readonly List<uint> _runtimeRepairs = new List<uint>();
+        private double _runtimePolled;
+        /// <summary><see cref="MissingPrefab"/>: the record waits for a runtime prefab being created (not reported as missing).</summary>
+        private const string PendingRuntimePrefab = "\u0001runtime prefab being created";
         private readonly Dictionary<Entity, Core.Modding.AssetSource> _sourceOf = new Dictionary<Entity, Core.Modding.AssetSource>();
         private readonly List<SyncEnabledBit> _bits = new List<SyncEnabledBit>();
         private Context _writeContext;
@@ -211,6 +218,8 @@ namespace SkylineTogether.Sync
             _missingTexts.Clear();
             _fallbackTried.Clear();
             _sourceOf.Clear();
+            _runtimePrefabs.Clear();
+            _runtimeRepairs.Clear();
         }
 
         public void Dispose()
@@ -827,15 +836,82 @@ namespace SkylineTogether.Sync
             _unresolvedPrefabs[rec.NetId] = data;
             string key = string.IsNullOrEmpty(pid) ? (rec.PrefabName ?? "#" + rec.NetId) : pid;
             _unresolvedPrefabNames[rec.NetId] = key;
-            // the host's source record says where it comes from and what the player can do about it
-            _prefabSources.TryGetValue(rec.NetId, out Core.Modding.AssetSource source);
-            _missingSources[key] = source;
-            _missingTexts[key] = Core.Modding.MissingAssets.Describe(key, rec.PrefabName, source);
-            if (_missingPrefabs.Add(rec.PrefabName ?? pid))
+            // a runtime prefab a mod here creates on demand from its name (Placemaker's park companions): the mod is asked
+            // to, and the records that need it wait for it instead of being reported as missing
+            if (Core.Modding.MissingAssets.TryParsePrefabId(pid, rec.PrefabName, out string type, out bool hasHash) && !hasHash)
             {
-                result.Problems.Add("missing prefab " + pid);
+                Core.Modding.RuntimePrefabState state = Compat.ModCompat.RuntimePrefab(type, rec.PrefabName, _log);
+                if (state == Core.Modding.RuntimePrefabState.Pending || state == Core.Modding.RuntimePrefabState.Ready)
+                {
+                    _runtimePrefabs.Track(rec.NetId, type, rec.PrefabName, Diagnostics.Perf.Now);
+                    if (state == Core.Modding.RuntimePrefabState.Ready) ResolveRuntimePrefab(rec.NetId);
+                    return;
+                }
+            }
+            ReportMissingPrefab(rec.NetId, key, rec.PrefabName, pid, result);
+        }
+
+        /// <summary>The missing-asset report of a prefab the host named (logged once per asset, listed in the diagnostics).</summary>
+        private void ReportMissingPrefab(uint netId, string key, string prefabName, string pid, ApplyResult result)
+        {
+            // the host's source record says where it comes from and what the player can do about it
+            _prefabSources.TryGetValue(netId, out Core.Modding.AssetSource source);
+            _missingSources[key] = source;
+            _missingTexts[key] = Core.Modding.MissingAssets.Describe(key, prefabName, source);
+            if (_missingPrefabs.Add(prefabName ?? pid))
+            {
+                result?.Problems.Add("missing prefab " + pid);
                 _log.Warn(LogCategory.Replication, "the host uses a prefab this game does not have: " + _missingTexts[key]);
             }
+        }
+
+        /// <summary>
+        /// Mod compatibility: binds an awaited runtime prefab once its mod created it (true); the records that waited for it
+        /// are asked for again. A prefab the adapter can no longer provide becomes an ordinary missing asset.
+        /// </summary>
+        private bool ResolveRuntimePrefab(uint id)
+        {
+            if (!_runtimePrefabs.TryGet(id, out string type, out string name)) return false;
+            Core.Modding.RuntimePrefabState state = Compat.ModCompat.RuntimePrefab(type, name, _log);
+            if (state == Core.Modding.RuntimePrefabState.Ready && _unresolvedPrefabs.TryGetValue(id, out byte[] encoded) && TryBindPrefab(id, encoded, out _))
+            {
+                _log.Info(LogCategory.Replication, "runtime prefab '" + name + "' created here; the objects that use it are asked for again");
+                _unresolvedPrefabs.Remove(id);
+                _unresolvedPrefabNames.Remove(id);
+                _runtimePrefabs.Resolve(id, _runtimeRepairs);
+                return true;
+            }
+            if (state != Core.Modding.RuntimePrefabState.Pending && state != Core.Modding.RuntimePrefabState.Ready)
+            {
+                _runtimePrefabs.Drop(id);
+                string key = _unresolvedPrefabNames.TryGetValue(id, out string k) ? k : name;
+                ReportMissingPrefab(id, key, name, key, null);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Client, each host batch (at most 4 times a second): the awaited runtime prefabs that exist now are bound, and the
+        /// ids of the records that waited go into <paramref name="result"/>'s re-requests; prefabs awaited too long are
+        /// reported as missing.
+        /// </summary>
+        private void PollRuntimePrefabs(ApplyResult result)
+        {
+            double now = Diagnostics.Perf.Now;
+            if (_runtimePrefabs.Tracked > 0 && now - _runtimePolled >= 0.25)
+            {
+                _runtimePolled = now;
+                foreach (uint id in _runtimePrefabs.TrackedIds()) ResolveRuntimePrefab(id);
+                foreach (uint id in _runtimePrefabs.Expire(now))
+                {
+                    string key = _unresolvedPrefabNames.TryGetValue(id, out string k) ? k : "#" + id;
+                    _log.Warn(LogCategory.Replication, "runtime prefab " + key + " was not created here within " + Core.Modding.RuntimePrefabBook.GiveUpSeconds + " s");
+                    ReportMissingPrefab(id, key, null, key, result);
+                }
+            }
+            if (_runtimeRepairs.Count == 0) return;
+            result.DanglingIds.AddRange(_runtimeRepairs); // asked for again (integrity repair)
+            _runtimeRepairs.Clear();
         }
 
         /// <summary>Resolves an encoded <c>PrefabID</c> in this game's prefab system and binds it to <paramref name="netId"/>.</summary>
@@ -921,6 +997,17 @@ namespace SkylineTogether.Sync
                     uint id = (uint)index;
                     Entity prefab = _ids.GetEntity(id);
                     if (prefab != Entity.Null && EntityManager.Exists(prefab)) return null;
+                    // mod compatibility: a runtime prefab being created here; the record is asked for again once it exists
+                    if (_runtimePrefabs.IsTracked(id))
+                    {
+                        if (ResolveRuntimePrefab(id)) return null;
+                        if (_runtimePrefabs.IsTracked(id))
+                        {
+                            _runtimePrefabs.Wait(id, r.NetId);
+                            return PendingRuntimePrefab;
+                        }
+                        return _unresolvedPrefabNames.TryGetValue(id, out string gone) ? gone : "asset #" + id;
+                    }
                     if (_unresolvedPrefabs.TryGetValue(id, out byte[] encoded) && TryBindPrefab(id, encoded, out _))
                     {
                         _log.Info(LogCategory.Replication, "prefab " + _unresolvedPrefabNames[id] + " is available now");
@@ -1017,6 +1104,9 @@ namespace SkylineTogether.Sync
             _spawned.Clear();
             _touch.Clear();
             _pathUpdated.Clear();
+
+            // mod compatibility: runtime prefabs created here meanwhile (the records that waited for them are asked for again)
+            if (!proposal) PollRuntimePrefabs(result);
 
             // 0: prefabs and channel records
             for (int i = 0; i < records.Count; i++)
@@ -1292,7 +1382,7 @@ namespace SkylineTogether.Sync
                 if (missing != null)
                 {
                     result.Skipped++;
-                    NoteMissingAsset(missing, r.NetId, result);
+                    if (!ReferenceEquals(missing, PendingRuntimePrefab)) NoteMissingAsset(missing, r.NetId, result);
                     continue;
                 }
                 Entity e = _ids.GetEntity(r.NetId);

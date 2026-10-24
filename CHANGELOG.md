@@ -19,6 +19,19 @@ All notable changes to this project are documented in this file. The format is b
   - Achievement Fixer: achievements stay off for joined players in the host's city, as they are without the mod; the
     mod no longer switches them back on there. The player's own setting returns when the session ends, and the host's
     achievements work as in single player.
+- **Dedicated support for Placemaker.**
+  - Parks built with Placemaker now appear for every player. Each park gets a hidden companion building made for its
+    statistics, which only the builder's game had; a joined player's Placemaker now makes the same one, before the city
+    loads or as soon as the park is built, and the same for Placemaker's overlay surfaces.
+  - Joined players can build, edit and remove Placemaker places: the place and its parts reach the host, its pieces may
+    overlap as Placemaker intends, and the park companion is created by the host.
+  - Placemaker's automatic dressing of zoned lots (Outgrow), group removal and companion buildings run on the host only,
+    so a joined player's game no longer adds its own copies; Placemaker's repair after loading a city no longer runs
+    again in a joined player's game.
+  - Parking fees, park statistics and companions, surface overlays, road charges and the owner lot follow the host's
+    Placemaker options for everyone during the session.
+  - Known limits: terrain shaping and ground paint of a place built by a joined player stay on that player's screen
+    (build lakes and hills as the host), and Outgrow's switches work on the host only.
 
 ### Fixed
 

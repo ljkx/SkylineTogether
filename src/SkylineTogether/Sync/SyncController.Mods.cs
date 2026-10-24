@@ -91,6 +91,7 @@ namespace SkylineTogether.Sync
             if (_watcher == null || !_watcher.Active || !Features.ModCompat.IsAvailable) return;
             EntityManager em = _codec.EntityManager;
             _modChanges.Clear();
+            _clientCreated.Clear();
             _watcher.Collect(now, _modChanges);
             foreach (Compat.ModStateWatcher.Change c in _modChanges)
             {
@@ -108,7 +109,13 @@ namespace SkylineTogether.Sync
                 Family family;
                 if (id == 0)
                 {
-                    if (!host) continue;
+                    if (!host)
+                    {
+                        // an entity a mod created on this client as the player's edit (Placemaker's group record and its
+                        // carrier): bound from the pool and proposed, all of the frame's first so they can name each other
+                        if (Compat.ModCompat.HasClientCreatedType(em, e)) _clientCreated.Add(e);
+                        continue;
+                    }
                     family = _codec.Families.Classify(em, e);
                     if (!FamilyClassifier.IsReplicated(family)) continue;
                     id = _ids.BindNew(e, family);
@@ -128,6 +135,78 @@ namespace SkylineTogether.Sync
                 written.Add(e);
                 proposed?.Add(id);
             }
+            if (!host && _clientCreated.Count > 0) ProposeClientCreated(em, written, proposed);
+        }
+
+        private readonly List<Entity> _clientCreated = new List<Entity>();
+        private readonly List<(Entity Entity, uint Id, Family Family)> _clientCreatedBound = new List<(Entity, uint, Family)>();
+
+        /// <summary>
+        /// Client: new entities of <see cref="Compat.ModAdapter.ClientCreatedTypes"/> become spawn proposals. Every one is
+        /// bound first, then written, so a record naming another new one (a group record and its carrier) sends a net id.
+        /// </summary>
+        private void ProposeClientCreated(EntityManager em, HashSet<Entity> written, List<uint> proposed)
+        {
+            _clientCreatedBound.Clear();
+            foreach (Entity e in _clientCreated)
+            {
+                if (_ids.GetNetId(e) != 0 || written.Contains(e)) continue;
+                Family family = _codec.Families.Classify(em, e);
+                if (!FamilyClassifier.IsReplicated(family) || FamilyClassifier.IsHostOnly(family)) continue;
+                if (!_pool.TryTake(out uint id)) break;
+                _ids.Bind(e, id, family);
+                if (_ids.GetEntity(id) != e) continue; // refused (beyond the announced range): not sent
+                _clientCreatedBound.Add((e, id, family));
+            }
+            foreach ((Entity e, uint id, Family family) in _clientCreatedBound)
+            {
+                SetShadow(id, _codec.WriteEntityHashed(_batch, SyncRecordKind.Spawn, id, family, e, Family.Generic));
+                written.Add(e);
+                proposed?.Add(id);
+                _watcher?.Refresh(e);
+            }
+            if (_clientCreatedBound.Count > 0 && _clientCreatedLogged++ == 0) _log.Info(LogCategory.Compat, "mod compatibility: proposing " + _clientCreatedBound.Count + " entities a mod created as this player's edit");
+            _clientCreatedBound.Clear();
+        }
+
+        private long _clientCreatedLogged;
+
+        /// <summary>
+        /// Host capture: binds the runtime prefabs adapters created for clients (<see cref="Compat.ModCompat.AnnouncePrefab"/>)
+        /// and writes their prefab records, so a client can name them in its proposals.
+        /// </summary>
+        private void AnnounceRuntimePrefabs()
+        {
+            _announced.Clear();
+            Compat.ModCompat.TakeAnnouncements(_announced);
+            EntityManager em = _codec.EntityManager;
+            foreach (Entity prefab in _announced)
+            {
+                if (!em.Exists(prefab) || _ids.GetNetId(prefab) != 0) continue;
+                uint id = _codec.EnsurePrefab(prefab, _batch);
+                if (id != 0) _log.Info(LogCategory.Compat, "mod compatibility: runtime prefab #" + id + " created for a client is named to everyone");
+            }
+            _announced.Clear();
+        }
+
+        private readonly List<Entity> _announced = new List<Entity>();
+
+        /// <summary>
+        /// Client, before the load: the runtime prefabs the host's prefab table names that a mod here creates on demand
+        /// (Placemaker's park companions) are requested now, so the game's loader finds them in the city
+        /// (docs/design/MOD-COMPATIBILITY.md §7). Only names are read; the codec binds the table when the client is live.
+        /// </summary>
+        private void RequestRuntimePrefabs(byte[] body)
+        {
+            if (body == null || SyncBatch.IsMoverBatch(body, 0, body.Length)) return;
+            int requested = 0;
+            foreach (SyncRecord r in SyncBatch.Read(body, 0, body.Length))
+            {
+                if (r.Kind != SyncRecordKind.Prefab || string.IsNullOrEmpty(r.PrefabName)) continue;
+                Core.Modding.RuntimePrefabState state = Compat.ModCompat.RuntimePrefab(null, r.PrefabName, _log);
+                if (state == Core.Modding.RuntimePrefabState.Pending || state == Core.Modding.RuntimePrefabState.Ready) requested++;
+            }
+            if (requested > 0) _log.Info(LogCategory.Compat, "mod compatibility: " + requested + " runtime prefab(s) of the host's city requested before the load");
         }
 
         /// <summary>Client: a tool applies this frame, so this frame's untagged mod state changes are the player's edits (<see cref="Core.Modding.ModStateProposalRule"/>).</summary>

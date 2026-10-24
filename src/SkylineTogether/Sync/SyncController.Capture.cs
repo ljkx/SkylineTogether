@@ -194,6 +194,12 @@ namespace SkylineTogether.Sync
                     _toolCost = 0;
                     _toolOriginals.Clear();
                 }
+                // mod compatibility: the built-in adapters' own work (Placemaker's requests to the host and their answers)
+                if (IsHost || IsLiveClient)
+                {
+                    _callNow = now;
+                    SafeCall("mod adapters", _modAdaptersCall, Features.ModCompat);
+                }
                 long global = Perf.Start();
                 if (Features.GlobalState.IsAvailable) CaptureGlobal(now);
                 Perf.Stop(Perf.Global, global);
@@ -288,6 +294,8 @@ namespace SkylineTogether.Sync
             SettleNetCharges(); // the nets of this frame's proposals, now that the game composed them
             // mod compatibility: mod data entities that replicated values reference are bound and sent with them
             _codec.DependencyBinder = HostBindDependency;
+            // mod compatibility: runtime prefabs an adapter created for a client are named to everyone
+            SafeCall("runtime prefab announcements", _announceCall, Features.ModCompat);
             // ids unbound without a despawn on the wire (their entity vanished without a Deleted tag): despawn them now,
             // then they may enter the quarantine
             _scratchIds.Clear();

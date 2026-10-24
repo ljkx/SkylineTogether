@@ -1549,7 +1549,15 @@ computed with the UI's own functions; clients compare their own rows and re-send
 - **Built-in adapters** ([`ModAdapter`](../src/SkylineTogether/Compat/ModAdapter.cs), names resolved by reflection and
   checked at startup, an adapter whose names no longer match turns itself off): Traffic, Move It, Anarchy, Better
   Bulldozer, Plop the Growables, Tree Controller, Water Features, 529 Tiles, Historical Start, Zoning Toolkit, Line
-  Tool, Find It ([`ModCompat`](../src/SkylineTogether/Compat/ModCompat.cs)).
+  Tool, Find It, Placemaker ([`ModCompat`](../src/SkylineTogether/Compat/ModCompat.cs)). Adapters can also name
+  entities a mod creates as the player's edit (proposed as spawns by a client), systems held off until a joiner is live,
+  members they use by reflection (checked like every name), and talk to the host on a channel of their own (the mod
+  channel's message kind).
+- **Runtime prefabs on demand.** Runtime prefabs a mod makes per player from data contained in their name (Placemaker's
+  park companions and surface overlays) are created by the mod on the peer that lacks them: a joiner requests them from
+  the prefab table buffered before its load (`SessionClient.MessageBuffered`), a live client for a `Prefab` record that
+  does not resolve (the records that need it wait and are asked for again), the host for a client that made a new one
+  (then names it to everyone).
 - **Gates.** Mod systems that must not run on a joining or live client are switched off and restored at session end;
   mod systems declared as simulation can stay on. A gated system its mod switches back on (for example when a city
   finished loading) is held off again every frame from the start of the join; it gets the state recorded before the

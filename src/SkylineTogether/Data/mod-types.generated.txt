@@ -29,6 +29,7 @@ SkylineTogether.Compat.ModSettingsSync
 SkylineTogether.Compat.ModStateWatcher
 SkylineTogether.Compat.ModStateWatcher+Change
 SkylineTogether.Compat.MoveItAdapter
+SkylineTogether.Compat.PlacemakerAdapter
 SkylineTogether.Compat.PlayerInputWatch
 SkylineTogether.Compat.PlopTheGrowablesAdapter
 SkylineTogether.Compat.TrafficAdapter

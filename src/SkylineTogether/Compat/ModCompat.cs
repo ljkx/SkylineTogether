@@ -29,6 +29,7 @@ namespace SkylineTogether.Compat
             new WaterFeaturesAdapter(), new PlopTheGrowablesAdapter(), new FiveTwentyNineTilesAdapter(), new HistoricalStartAdapter(),
             new ZoningToolkitAdapter(), new LineToolAdapter(), new FindItAdapter(),
             new AchievementFixerAdapter(), new CimCensusAdapter(), new EmploymentTrackerAdapter(),
+            new PlacemakerAdapter(),
         };
 
         private static readonly List<ModAdapter> ActiveList = new List<ModAdapter>();
@@ -41,6 +42,13 @@ namespace SkylineTogether.Compat
         private static readonly HashSet<string> Pipeline = new HashSet<string>(StringComparer.Ordinal);
         private static readonly List<(ComponentSystemBase System, bool Original)> JoinGated = new List<(ComponentSystemBase, bool)>();
         private static readonly List<(ComponentSystemBase System, bool Original)> LiveGated = new List<(ComponentSystemBase, bool)>();
+        // off from the start of a join until the client is live (ModAdapter.LoadOffSystems)
+        private static readonly List<(ComponentSystemBase System, bool Original)> LoadGated = new List<(ComponentSystemBase, bool)>();
+        private static readonly HashSet<int> ClientCreatedIndices = new HashSet<int>();
+        // runtime prefabs created on demand (MOD-COMPATIBILITY.md §7): the session's admissions, the prefabs the host names
+        private static readonly RuntimePrefabBook RuntimePrefabs = new RuntimePrefabBook();
+        private static readonly List<Entity> Announcements = new List<Entity>();
+        private static readonly HashSet<string> RuntimeLogged = new HashSet<string>(StringComparer.Ordinal);
         private static Dictionary<Type, List<Game.SystemUpdatePhase>> _phases;
         private static Dictionary<Assembly, List<string>> _patches;
         private static bool _contextRead;
@@ -109,6 +117,7 @@ namespace SkylineTogether.Compat
                 ExcludedTypes.Clear();
                 ClientSimulation.Clear();
                 Pipeline.Clear();
+                ClientCreatedIndices.Clear();
                 var loaded = new List<string>();
                 foreach (ModAdapter adapter in All)
                 {
@@ -146,6 +155,13 @@ namespace SkylineTogether.Compat
                     foreach (string name in adapter.NeverReplicatedTypes) ExcludedTypes.Add(name);
                     foreach (string name in adapter.ClientSimulationSystems) ClientSimulation.Add(name);
                     foreach (string name in adapter.PipelineTools) Pipeline.Add(name);
+                    foreach (string name in adapter.ClientCreatedTypes) AddTypeIndex(ClientCreatedIndices, adapter.FindType(name), adapter, name, log);
+                    if (adapter.InternalChannel != null && adapter.ChannelSender == null)
+                    {
+                        ModAdapter target = adapter;
+                        adapter.ChannelSender = ModIntegration.RegisterInternal(adapter.InternalChannel, "Skyline Together's " + adapter.ModName + " adapter",
+                            (from, payload) => target.OnChannelMessage(from, payload));
+                    }
                 }
                 if (!_detected || loaded.Count > 0) log?.Info(LogCategory.Compat, "mod compatibility: adapters active for " + (loaded.Count == 0 ? "no installed mod" : string.Join(", ", loaded)));
                 _detected = true;
@@ -169,6 +185,9 @@ namespace SkylineTogether.Compat
                 foreach (string name in adapter.JoinOffSystems) check.Expect("system", name, ResolveSystem(adapter, name) != null);
                 foreach (string name in adapter.ClientSimulationSystems) check.Expect("system", name, ResolveSystem(adapter, name) != null);
                 foreach (string name in adapter.PipelineTools) check.Expect("tool", name, adapter.FindType(name) != null);
+                foreach (string name in adapter.LoadOffSystems) check.Expect("system", name, ResolveSystem(adapter, name) != null);
+                foreach (string name in adapter.ClientCreatedTypes) check.Expect("type", name, adapter.FindType(name) != null);
+                foreach (string name in adapter.Members) check.Expect("member", name, adapter.FindMember(name) != null);
                 foreach (string key in adapter.SyncedSettings)
                 {
                     string typeName = adapter.SettingsTypeFor(key);
@@ -324,6 +343,92 @@ namespace SkylineTogether.Compat
         public static bool IsPipelineTool(Type tool) => tool != null && Pipeline.Contains(tool.FullName ?? "");
 
         /// <summary>
+        /// SyncController hook (client): an unbound entity with one of these types was created by a mod as the player's
+        /// edit (<see cref="ModAdapter.ClientCreatedTypes"/>), so it is proposed as a spawn.
+        /// </summary>
+        public static bool HasClientCreatedType(EntityManager em, Entity e)
+        {
+            if (ClientCreatedIndices.Count == 0) return false;
+            foreach (int index in ClientCreatedIndices)
+            {
+                if (em.HasComponent(e, ComponentType.ReadOnly(new TypeIndex { Value = index }))) return true;
+            }
+            return false;
+        }
+
+        // ---------------------------------------------------------------------------------------------- runtime prefabs
+
+        /// <summary>
+        /// SyncController hook: whether a prefab entity has a net id (set while a session runs). Adapters use it to find
+        /// their own on-demand prefabs the host has not named yet.
+        /// </summary>
+        public static Func<Entity, bool> IsPrefabBound;
+
+        /// <summary>
+        /// A runtime prefab another peer uses and this game lacks (docs/design/MOD-COMPATIBILITY.md §7): the active adapter
+        /// that creates it on demand asks its mod to (the first time) and says whether it is ready. At most
+        /// <see cref="RuntimePrefabBook.MaxPrefabs"/> distinct prefabs per session; <paramref name="type"/> may be null
+        /// (only the name is known). Main thread; never throws.
+        /// </summary>
+        public static RuntimePrefabState RuntimePrefab(string type, string name, ILog log)
+        {
+            if (string.IsNullOrEmpty(name)) return RuntimePrefabState.NotHandled;
+            foreach (ModAdapter a in ActiveList)
+            {
+                if (a is GenericModAdapter || !a.HandlesRuntimePrefab(type, name)) continue;
+                if (!RuntimePrefabs.Admit((type ?? "?") + ":" + name))
+                {
+                    if (RuntimeLogged.Add("limit")) log?.Warn(LogCategory.Compat, "mod compatibility: more than " + RuntimePrefabBook.MaxPrefabs + " runtime prefabs requested in this session; further ones count as missing");
+                    return RuntimePrefabState.Refused;
+                }
+                RuntimePrefabState state;
+                try
+                {
+                    state = a.ProvideRuntimePrefab(type, name);
+                }
+                catch (Exception ex)
+                {
+                    if (RuntimeLogged.Add("throw:" + a.ModName)) log?.Warn(LogCategory.Compat, "mod compatibility: " + a.ModName + " could not create the runtime prefab '" + name + "'", ex);
+                    state = RuntimePrefabState.Refused;
+                }
+                if (state == RuntimePrefabState.NotHandled) continue;
+                if (RuntimeLogged.Add(name)) log?.Info(LogCategory.Compat, "mod compatibility: " + a.ModName + " creates the runtime prefab '" + name + "' here (" + state + ")");
+                return state;
+            }
+            return RuntimePrefabState.NotHandled;
+        }
+
+        /// <summary>Host: a runtime prefab an adapter created for a client; the next capture binds it and names it to everyone.</summary>
+        public static void AnnouncePrefab(Entity prefab)
+        {
+            if (prefab != Entity.Null && !Announcements.Contains(prefab)) Announcements.Add(prefab);
+        }
+
+        /// <summary>Host capture: takes the prefabs to name (<see cref="AnnouncePrefab"/>).</summary>
+        public static void TakeAnnouncements(List<Entity> into)
+        {
+            into.AddRange(Announcements);
+            Announcements.Clear();
+        }
+
+        /// <summary>Every frame of a session (host, or a live client): the active built-in adapters' own work.</summary>
+        public static void Tick(bool host, double now, ILog log)
+        {
+            foreach (ModAdapter a in ActiveList)
+            {
+                if (a is GenericModAdapter) continue;
+                try
+                {
+                    a.Tick(host, now);
+                }
+                catch (Exception ex)
+                {
+                    if (RuntimeLogged.Add("tick:" + a.ModName)) log?.Warn(LogCategory.Compat, "mod compatibility: " + a.ModName + " adapter work failed", ex);
+                }
+            }
+        }
+
+        /// <summary>
         /// The host placement checks the active adapters relax (ARCHITECTURE.md#host-validation-and-commit,
         /// <see cref="ModAdapter.RelaxedPlacementChecks"/>); <paramref name="by"/> (optional) receives "mod (checks)" lines.
         /// </summary>
@@ -376,6 +481,12 @@ namespace SkylineTogether.Compat
                 n++;
                 flipped?.Invoke(system);
             }
+            foreach ((ComponentSystemBase system, bool _) in LoadGated)
+            {
+                if (!SkylineTogether.Sync.SystemSwitch.Reassert(system)) continue;
+                n++;
+                flipped?.Invoke(system);
+            }
             return n;
         }
 
@@ -386,6 +497,7 @@ namespace SkylineTogether.Compat
             foreach (ModAdapter a in ActiveList)
             {
                 foreach (string name in a.JoinOffSystems) TurnOff(a, name, JoinGated, log);
+                foreach (string name in a.LoadOffSystems) TurnOff(a, name, LoadGated, log);
             }
         }
 
@@ -396,6 +508,21 @@ namespace SkylineTogether.Compat
             {
                 foreach (string name in a.ClientOffSystems) TurnOff(a, name, LiveGated, log);
             }
+            // the systems held off during the load come back once their adapter undid what the load queued for them
+            foreach (ModAdapter a in ActiveList)
+            {
+                if (a is GenericModAdapter) continue;
+                try
+                {
+                    a.OnClientLive();
+                }
+                catch (Exception ex)
+                {
+                    log?.Warn(LogCategory.Gate, "mod compatibility: " + a.ModName + " live step failed", ex);
+                }
+            }
+            if (LoadGated.Count > 0) log?.Info(LogCategory.Gate, "mod compatibility: " + LoadGated.Count + " mod systems held off during the load are on again");
+            Restore(LoadGated);
             if (JoinGated.Count + LiveGated.Count > 0) log?.Info(LogCategory.Gate, "mod compatibility: " + (JoinGated.Count + LiveGated.Count) + " mod systems off on this client");
         }
 
@@ -403,7 +530,22 @@ namespace SkylineTogether.Compat
         public static void OnSessionEnded(ILog log)
         {
             Restore(LiveGated);
+            Restore(LoadGated);
             Restore(JoinGated);
+            RuntimePrefabs.Clear();
+            RuntimeLogged.Clear();
+            Announcements.Clear();
+            foreach (ModAdapter a in All)
+            {
+                try
+                {
+                    if (a.Active) a.OnSessionEnded();
+                }
+                catch (Exception ex)
+                {
+                    log?.Warn(LogCategory.Compat, "mod compatibility: " + a.ModName + " session end failed", ex);
+                }
+            }
         }
 
         private static void TurnOff(ModAdapter adapter, string name, List<(ComponentSystemBase, bool)> into, ILog log)
@@ -465,7 +607,8 @@ namespace SkylineTogether.Compat
             {
                 sb.Append("  ").Append(a.ModName).Append(a.Active ? ": " + a.Summary : a.Loaded ? ": " + a.DisabledReason : ": not installed").Append('\n');
             }
-            sb.Append("  gated systems: ").Append(JoinGated.Count).Append(" join, ").Append(LiveGated.Count).Append(" live\n");
+            sb.Append("  gated systems: ").Append(JoinGated.Count).Append(" join, ").Append(LiveGated.Count).Append(" live, ").Append(LoadGated.Count).Append(" until live\n");
+            sb.Append("  runtime prefabs requested in this session: ").Append(RuntimePrefabs.Admitted).Append('\n');
             var lines = new List<string>();
             ModIntegration.Describe(lines);
             foreach (string l in lines) sb.Append(l).Append('\n');

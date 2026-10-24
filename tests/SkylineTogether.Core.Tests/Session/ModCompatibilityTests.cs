@@ -184,11 +184,12 @@ namespace SkylineTogether.Core.Tests.Session
         [Test]
         public void TheUsersWorldModsAreNeverRelaxed()
         {
-            foreach (string name in new[] { "Traffic", "MoveIt", "Anarchy", "BetterBulldozer", "FiveTwentyNineTiles", "HistoricalStart", "Water_Features", "ZoningToolkit", "LineTool", "PlopTheGrowables", "Tree_Controller" })
+            foreach (string name in new[] { "Traffic", "MoveIt", "Anarchy", "BetterBulldozer", "FiveTwentyNineTiles", "HistoricalStart", "Water_Features", "ZoningToolkit", "LineTool", "PlopTheGrowables", "Tree_Controller", "Placemaker" })
             {
                 Assert.Equal(ModClass.WorldAffecting, ModCompatibility.Classify(M(name, localHint: true)), name);
             }
             Assert.Equal(ModClass.WorldAffecting, ModCompatibility.Classify(M("x", id: "80095", localHint: true)));
+            Assert.Equal(ModClass.WorldAffecting, ModCompatibility.Classify(M("x", id: "163638", localHint: true)), "Placemaker by id");
         }
 
         [Test]

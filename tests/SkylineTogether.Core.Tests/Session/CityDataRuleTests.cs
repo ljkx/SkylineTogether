@@ -136,6 +136,8 @@ namespace SkylineTogether.Core.Tests.Session
         {
             Assert.True(CityDataRule.StoresCityData(new ModEntry { Name = "ZoningToolkit" }));
             Assert.True(CityDataRule.StoresCityData(new ModEntry { Name = "x", PlatformId = "80095" }), "Traffic by id");
+            Assert.True(CityDataRule.StoresCityData(new ModEntry { Name = "Placemaker" }), "Placemaker saves groups and lot dressing");
+            Assert.True(CityDataRule.StoresCityData(new ModEntry { Name = "x", PlatformId = "163638" }), "Placemaker by id");
             Assert.False(CityDataRule.StoresCityData(new ModEntry { Name = "MoveIt", PlatformId = "74324" }), "Move It saves nothing");
             Assert.False(CityDataRule.StoresCityData(new ModEntry { Name = "SomeUiMod" }));
             Assert.True(CityDataRule.StoresCityData(new ModEntry { Name = "SomeUiMod", StoresCityData = true }));

@@ -171,6 +171,8 @@ namespace SkylineTogether.Compat
             try
             {
                 Type wanted = typeName != null ? a.FindType(typeName) : null;
+                object own = a.SettingsInstance();
+                if (own != null && Matches(own.GetType(), wanted)) return own;
                 foreach (object mod in ModInstances(a))
                 {
                     const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;

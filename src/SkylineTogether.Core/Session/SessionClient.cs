@@ -327,6 +327,13 @@ namespace SkylineTogether.Core.Session
         public event Action BecameLive;
 
         /// <summary>
+        /// A replication-layer message was buffered because the client is not live yet (the first one of a join carries the
+        /// host's prefab table). Mod compatibility: lets the game layer have runtime prefabs of mods created before the city
+        /// is loaded (docs/design/MOD-COMPATIBILITY.md §7). The body is the buffered copy: read it, never modify or keep it.
+        /// </summary>
+        public event Action<MessageKind, byte[]> MessageBuffered;
+
+        /// <summary>
         /// Another player's presence (relayed by the host, which set <see cref="PresenceMessage.From"/>), only while
         /// live; never the local player's own. The instance is new for every call.
         /// </summary>
@@ -798,6 +805,7 @@ namespace SkylineTogether.Core.Session
                         var copy = new byte[e.BodyCount];
                         Buffer.BlockCopy(e.Body, e.BodyOffset, copy, 0, e.BodyCount);
                         _buffered.Enqueue(new Buffered { Kind = e.Kind, Body = copy });
+                        MessageBuffered?.Invoke(e.Kind, copy);
                     }
                     return;
             }

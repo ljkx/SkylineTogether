@@ -239,6 +239,17 @@ namespace SkylineTogether.Compat
             return chosen >= 0 ? list[chosen] : null;
         }
 
+        /// <summary>The only local prefab of this type and name (a mod adapter's lookup), or null: none, or several.</summary>
+        public static PrefabBase FindUnique(PrefabSystem prefabs, string type, string name)
+        {
+            if (string.IsNullOrEmpty(type) || name == null) return null;
+            Reindex(prefabs);
+            return ByName.TryGetValue(type + ":" + name, out List<PrefabBase> list) && list.Count == 1 ? list[0] : null;
+        }
+
+        /// <summary>Every prefab of the prefab system (a new list; empty when it cannot be read).</summary>
+        public static List<PrefabBase> All(PrefabSystem prefabs) => AllPrefabs(prefabs);
+
         private static void Reindex(PrefabSystem prefabs)
         {
             int count = PrefabCount(prefabs);

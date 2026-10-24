@@ -141,6 +141,13 @@ namespace SkylineTogether.Sync
                 _inbox.Enqueue(new Inbound { Peer = PeerId.Host, Data = copy, Seq = seq });
                 Perf.Counters.AddBytes(Perf.ReceivedBytes, e.BodyCount, Perf.Now);
             };
+            // mod compatibility: runtime prefabs of the host's mods that this game creates on demand are requested as soon
+            // as the prefab table arrives, so they exist before the city is loaded (MOD-COMPATIBILITY.md §7)
+            client.MessageBuffered += (kind, body) =>
+            {
+                if (kind != MessageKind.Epoch || client.State >= ClientState.Loading) return;
+                SafeCall("runtime prefabs before the load", () => RequestRuntimePrefabs(body), Features.ModCompat);
+            };
             client.BecameLive += () =>
             {
                 _clientLive = true;
