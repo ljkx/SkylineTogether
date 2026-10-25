@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+
+- **Support for nine more mods.**
+  - **Advanced Simulation Speed** (the maintained fork): game speeds other than 1x, 2x and 4x now reach every player.
+    A joined player runs at the host's exact speed (0.25x, 3x, 8x ...) and sees it in the mod's own display. The speed a
+    joined player picks with the mod's buttons is run exactly when the host has the mod too, and otherwise rounded to
+    1x, 2x or 4x. Older versions of Skyline Together ignore the exact speed and run at the rounded one. The mod itself
+    is never required from other players.
+  - **Prefab Asset Fixes**: its fixes change building data that is not shared between players, so the host's settings
+    now apply to everyone while you are in a session (your own come back afterwards), and the fix it applies to a loaded
+    city no longer runs a second time on a joined player. Everyone needs the same version.
+  - **Transport Policy Adjuster**: everyone needs the same version. A joined player can set the route policy values
+    beyond the usual slider range, such as more buses than normal, as long as the host has the mod too.
+  - **Road Speed Adjuster**: speed limits you set are saved in the city and reach every player; a joined player needs the
+    mod to join. A joined player no longer reads or writes the mod's local file for the host's city. "Reset to original"
+    only works on the computer that set the limit; "clear all" works everywhere.
+  - **Magic Hearse v Funeral Director**: it works on the host only, so joined players do not need it. Its changes to
+    workplaces are no longer redone on a joined player's computer.
+  - **Simple Mod Checker Plus**: joining is never refused because of it. Its autosave reminder chirp is not posted by
+    joined players.
+  - **Show Text Trends, Skyve and Zone Organizer**: they only change what their own player sees, so joining never
+    fails because one player has them and another does not, or has another version.
+  - Skyline Together knows the versions it was checked against; a later version that does more is compared like any
+    other mod until it is checked again, and the log says why.
+- The speed shown in the Skyline Together panel can now be a fraction such as 0.5x.
+
 ## [0.3.0] - 2026-10-24
 
 ### Added

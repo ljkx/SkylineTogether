@@ -128,6 +128,12 @@ namespace SkylineTogether.Core.Diagnostics
             ("SkylineTogether.Compat.WaterFeaturesAdapter", F(ModCompat)),
             ("SkylineTogether.Compat.ZoningToolkitAdapter", F(ModCompat)),
             ("SkylineTogether.Compat.PlacemakerAdapter", F(ModCompat)),
+            ("SkylineTogether.Compat.PrefabAssetFixesAdapter", F(ModCompat)),
+            ("SkylineTogether.Compat.TransportPolicyAdjusterAdapter", F(ModCompat)),
+            ("SkylineTogether.Compat.MagicHearseAdapter", F(ModCompat)),
+            ("SkylineTogether.Compat.RoadSpeedAdjusterAdapter", F(ModCompat)),
+            ("SkylineTogether.Compat.AdvancedSimulationSpeedAdapter", F(ModCompat)),
+            ("SkylineTogether.Compat.SimpleModCheckerPlusAdapter", F(ModCompat)),
 
             // the codec's partial for simulation values: its own methods belong to the value paths that call them
             // (attention values and agents); the lenient write it shares with structure records stays replication

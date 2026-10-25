@@ -601,7 +601,9 @@ namespace SkylineTogether.Sync
             if (em.HasComponent<Locked>(policy) && em.IsComponentEnabled<Locked>(policy)) return true;
             bool hasRange = em.HasComponent<PolicySliderData>(policy);
             Colossal.Mathematics.Bounds1 range = hasRange ? em.GetComponentData<PolicySliderData>(policy).m_Range : default;
-            if (!GlobalProposalRules.TryPolicyAdjustment(c.Adjustment, hasRange, range.min, range.max, out float adjustment)) return true;
+            // mod compatibility: a mod that computes route modifiers beyond the slider (Transport Policy Adjuster) widens route policies' range
+            float slack = hasRange && em.HasBuffer<RouteModifierData>(policy) ? Compat.ModCompat.RoutePolicyRangeSlack : 0f;
+            if (!GlobalProposalRules.TryPolicyAdjustment(c.Adjustment, hasRange, range.min, range.max, out float adjustment, slack)) return true;
             Entity ev = em.CreateEntity(_modifyArchetype);
             em.SetComponentData(ev, new Modify(target, policy, (c.Flags & (byte)PolicyFlags.Active) != 0, adjustment));
             return true;

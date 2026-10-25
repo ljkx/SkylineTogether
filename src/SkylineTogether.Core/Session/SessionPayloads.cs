@@ -33,16 +33,49 @@ namespace SkylineTogether.Core.Session
     /// <summary>The game speed the host dictates (<see cref="ControlKind.SpeedChanged"/>).</summary>
     public struct SpeedState : IEquatable<SpeedState>
     {
-        /// <summary>Selected speed index (the game's 1, 2 or 3).</summary>
+        /// <summary>The slowest and the fastest exact speed a peer accepts (a speed mod's range; the game's own speeds are 1, 2 and 4).</summary>
+        public const float MinExact = 0.01f;
+        public const float MaxExact = 8f;
+
+        /// <summary>
+        /// The speed rounded to the game's 1, 2 or 4: what a peer that does not read <see cref="Exact"/> runs at
+        /// (<see cref="Bucket"/>).
+        /// </summary>
         public int Speed;
         public bool Paused;
         /// <summary>The session holds the simulation (a player is joining or resyncing).</summary>
         public bool Held;
+        /// <summary>
+        /// The exact speed multiplier when it is none of the game's 1, 2 or 4 (a speed mod such as Advanced Simulation Speed
+        /// selects 0.25, 3 or 8), else 0. Travels as an optional field after the two bytes older peers read.
+        /// </summary>
+        public float Exact;
 
-        public bool Equals(SpeedState o) => Speed == o.Speed && Paused == o.Paused && Held == o.Held;
+        /// <summary>The multiplier the simulation runs at (when not paused): <see cref="Exact"/>, else <see cref="Speed"/>.</summary>
+        public float Multiplier => Exact > 0f ? Exact : Speed;
+
+        /// <summary>The game speed a multiplier is rounded to for peers that only know the game's own: 1, 2 or 4.</summary>
+        public static int Bucket(float multiplier) => multiplier >= 3.5f ? 4 : multiplier >= 1.5f ? 2 : 1;
+
+        /// <summary>The state for a speed multiplier (clamped to the accepted range; exact only when it is not 1, 2 or 4).</summary>
+        public static SpeedState Of(float multiplier, bool paused, bool held)
+        {
+            float m = Sanitize(multiplier);
+            int bucket = Bucket(m);
+            return new SpeedState { Speed = bucket, Paused = paused, Held = held, Exact = m == bucket ? 0f : m };
+        }
+
+        /// <summary>A multiplier within <see cref="MinExact"/>..<see cref="MaxExact"/> (NaN and infinity count as 1).</summary>
+        public static float Sanitize(float multiplier)
+        {
+            if (float.IsNaN(multiplier) || float.IsInfinity(multiplier)) return 1f;
+            return Math.Max(MinExact, Math.Min(MaxExact, multiplier));
+        }
+
+        public bool Equals(SpeedState o) => Speed == o.Speed && Paused == o.Paused && Held == o.Held && Exact.Equals(o.Exact);
         public override bool Equals(object obj) => obj is SpeedState o && Equals(o);
-        public override int GetHashCode() => Speed ^ (Paused ? 64 : 0) ^ (Held ? 128 : 0);
-        public override string ToString() => (Held ? "held " : "") + (Paused ? "paused" : "speed " + Speed);
+        public override int GetHashCode() => Speed ^ (Paused ? 64 : 0) ^ (Held ? 128 : 0) ^ Exact.GetHashCode();
+        public override string ToString() => (Held ? "held " : "") + (Paused ? "paused" : "speed " + (Exact > 0f ? Exact.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) : Speed.ToString(System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     /// <summary>The session settings sent in <see cref="WelcomeMessage.SessionSettings"/>.</summary>
@@ -102,17 +135,30 @@ namespace SkylineTogether.Core.Session
             return list;
         }
 
+        // flag bits of the speed payload's second byte; the exact multiplier follows as a float when ExactFlag is set. Older
+        // peers read the two bytes only (the rounded 1, 2 or 4) and ignore the rest.
+        private const int PausedFlag = 1, HeldFlag = 2, ExactFlag = 4;
+
         public static void WriteSpeed(ByteWriter w, SpeedState s)
         {
+            bool exact = s.Exact >= SpeedState.MinExact && s.Exact <= SpeedState.MaxExact;
             w.WriteByte((byte)Math.Max(0, Math.Min(255, s.Speed)));
-            w.WriteByte((byte)((s.Paused ? 1 : 0) | (s.Held ? 2 : 0)));
+            w.WriteByte((byte)((s.Paused ? PausedFlag : 0) | (s.Held ? HeldFlag : 0) | (exact ? ExactFlag : 0)));
+            if (exact) w.WriteSingle(s.Exact);
         }
 
         public static SpeedState ReadSpeed(ByteReader r)
         {
             int speed = r.ReadByte();
             int flags = r.ReadByte();
-            return new SpeedState { Speed = speed, Paused = (flags & 1) != 0, Held = (flags & 2) != 0 };
+            float exact = 0f;
+            if ((flags & ExactFlag) != 0 && r.Remaining >= 4)
+            {
+                float value = r.ReadSingle();
+                // a value outside the accepted range (or not a number) is ignored: the rounded speed applies
+                if (value >= SpeedState.MinExact && value <= SpeedState.MaxExact) exact = value;
+            }
+            return new SpeedState { Speed = speed, Paused = (flags & PausedFlag) != 0, Held = (flags & HeldFlag) != 0, Exact = exact };
         }
 
         public static void WriteSessionInfo(ByteWriter w, SessionInfo s)

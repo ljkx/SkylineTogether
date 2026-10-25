@@ -29,6 +29,12 @@ namespace SkylineTogether.Core.Sync
         /// <summary>A policy slider value when the policy has no slider range (finite, but bounded).</summary>
         public const float MaxUnrangedAdjustment = 1e6f;
 
+        /// <summary>
+        /// How many slider spans beyond its range a route policy's value may go while a mod that computes route modifiers
+        /// without the slider range is on the host (Transport Policy Adjuster: its vehicle counts exceed the vanilla slider).
+        /// </summary>
+        public const float RoutePolicyRangeSlack = 100f;
+
         public static bool WithinEntryLimit(int count) => count >= 0 && count <= MaxEntries;
 
         public static int ClampTax(int value) => Math.Max(-TaxBound, Math.Min(TaxBound, value));
@@ -57,17 +63,21 @@ namespace SkylineTogether.Core.Sync
         public static int ClampLoan(int value) => Math.Max(0, value);
 
         /// <summary>
-        /// A policy adjustment clamped to the policy's slider range (<paramref name="hasRange"/>), else to ±
+        /// A policy adjustment clamped to the policy's slider range (<paramref name="hasRange"/>; widened by
+        /// <paramref name="rangeSlack"/> spans on each side, 0 for the exact range), else to ±
         /// <see cref="MaxUnrangedAdjustment"/>; false for a non-finite value or an inverted range.
         /// </summary>
-        public static bool TryPolicyAdjustment(float value, bool hasRange, float min, float max, out float clamped)
+        public static bool TryPolicyAdjustment(float value, bool hasRange, float min, float max, out float clamped, float rangeSlack = 0f)
         {
             clamped = 0f;
             if (float.IsNaN(value) || float.IsInfinity(value)) return false;
             if (hasRange)
             {
                 if (float.IsNaN(min) || float.IsNaN(max) || min > max) return false;
-                clamped = Math.Max(min, Math.Min(max, value));
+                float slack = float.IsNaN(rangeSlack) || rangeSlack < 0f ? 0f : Math.Min(rangeSlack, RoutePolicyRangeSlack);
+                float span = max - min;
+                clamped = Math.Max(min - slack * span, Math.Min(max + slack * span, value));
+                if (slack > 0f) clamped = Math.Max(-MaxUnrangedAdjustment, Math.Min(MaxUnrangedAdjustment, clamped));
                 return true;
             }
             clamped = Math.Max(-MaxUnrangedAdjustment, Math.Min(MaxUnrangedAdjustment, value));

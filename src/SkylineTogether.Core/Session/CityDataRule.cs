@@ -40,12 +40,14 @@ namespace SkylineTogether.Core.Session
         {
             "Traffic", "Anarchy", "BetterBulldozer", "Water_Features", "ZoningToolkit", "PlopTheGrowables", "Tree_Controller",
             "Placemaker",
+            "RoadSpeedAdjuster",
         };
 
         private static readonly HashSet<string> KnownIds = new HashSet<string>(StringComparer.Ordinal)
         {
             "80095", "74604", "75250", "75613", "75750", "75826", "75993",
             "163638",
+            "125866",
         };
 
         // saved component types a mod declares but never puts on an entity (checked by hand in the installed version,

@@ -54,12 +54,14 @@ namespace SkylineTogether.Core.Session
             "I18NEverywhere", "ExtendedTooltip", "AssetIconLibrary", "UnifiedIconLibrary", "ToggleableOverlays",
             "EmploymentTracker", "CimCensus", "Skyve Mod", "Skyve.Mod.CS2", "Skyve", "FindIt",
             "ExtraLib", "AchievementFixer",
+            "Show Text Trends", "ZoneOrganizer", "AdvancedSimulationSpeed", "MagicHearse", "SimpleModCheckerPlus",
         };
 
         private static readonly HashSet<string> LocalIds = new HashSet<string>(StringComparer.Ordinal)
         {
             "75426", "78188", "79634", "74417", "80931", "76662", "85825", "75804", "77240",
             "75724", "121256",
+            "83733", "95965", "124304", "79794", "123497", "79186",
         };
 
         // known world-affecting mods: never relaxed, whatever a peer's own scan says
@@ -68,12 +70,14 @@ namespace SkylineTogether.Core.Session
             "Traffic", "MoveIt", "Anarchy", "BetterBulldozer", "FiveTwentyNineTiles", "HistoricalStart", "Water_Features",
             "ZoningToolkit", "LineTool", "PlopTheGrowables", "Tree_Controller",
             "Placemaker",
+            "PrefabAssetFixes", "TransportPolicyAdjuster", "RoadSpeedAdjuster",
         };
 
         private static readonly HashSet<string> WorldIds = new HashSet<string>(StringComparer.Ordinal)
         {
             "80095", "74324", "74604", "75250", "74328", "74535", "75613", "75750", "75816", "75826", "75993",
             "163638",
+            "113708", "78622", "125866",
         };
 
         /// <summary>True for a mod the built-in list knows as client-local.</summary>
@@ -110,11 +114,34 @@ namespace SkylineTogether.Core.Session
             // Cim Route Highlighter 1.26: highlights the selected building's employees (Highlighted, BatchesUpdated);
             // DeleteTimer is declared but never put on an entity
             ["EmploymentTracker"] = new[] { "saved component EmploymentTracker.DeleteTimer", "system EmploymentTracker.HighlightEmployeesSystem in MainLoop" },
+            // Show Text Trends 1.0: one UI system (UIUpdate) that shows the money trend per hour or month; writes nothing
+            ["Show Text Trends"] = new string[0],
+            // Skyve 1.3.1: a UI system (UIUpdate) for the installer button; the mod starts the external Skyve setup only when
+            // clicked and writes its own settings files; AchievementsSystem is declared but registered nowhere
+            ["Skyve Mod"] = new string[0],
+            // Advanced Simulation Speed 1.2.4 (fork, assembly version 1.0.0.0): one UI system (UIUpdate) that sets the
+            // player's selected simulation speed; the speed travels with the speed sync (docs/design/MOD-COMPATIBILITY.md §2)
+            ["AdvancedSimulationSpeed"] = new string[0],
+            // Zone Organizer 1.1.2: when a game loaded it moves the zone prefabs into UI category prefabs it creates (names
+            // fixed, no asset, referenced by no object); prefab data of the toolbar only, no system in any phase
+            ["ZoneOrganizer"] = new[] { "runtime prefabs in ZoneOrganizer.ZoneOrganizerSystem" },
+            // Magic Hearse 1.9.2: three GameSimulation systems (host only) and the PrefabUpdate system that rescales deathcare
+            // prefab data and workplaces (off on joined players); no saved component, no patch
+            ["MagicHearse"] = new[]
+            {
+                "system MagicHearse.MagicHearseSystem in GameSimulation", "system MagicHearse.CemeteryResetSystem in GameSimulation",
+                "system MagicHearse.HearseWarningDelaySystem in GameSimulation", "system MagicHearse.FuneralDirectorSystem in PrefabUpdate",
+            },
+            // Simple Mod Checker Plus 4.1.8: its one registered system posts a chirp when autosave is off (MainLoop, off on
+            // joined players); the file cleanups and quits run at start, at shutdown or on the player's click
+            ["SimpleModCheckerPlus"] = new[] { "system SimpleModCheckerPlus.Systems.AutosaveOffCheck in MainLoop" },
         };
 
         private static readonly Dictionary<string, string> VerifiedIds = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["75724"] = "ExtraLib", ["121256"] = "AchievementFixer", ["85825"] = "CimCensus", ["76662"] = "EmploymentTracker",
+            ["83733"] = "Show Text Trends", ["75804"] = "Skyve Mod", ["124304"] = "AdvancedSimulationSpeed", ["95965"] = "ZoneOrganizer",
+            ["123497"] = "MagicHearse", ["79186"] = "SimpleModCheckerPlus",
         };
 
         /// <summary>

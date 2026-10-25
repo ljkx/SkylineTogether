@@ -137,12 +137,12 @@ namespace SkylineTogether.Sync
                 if (++_frames % ReassertFrames == 0) Reassert(Now - _lastScan >= RescanSeconds);
                 SpeedState host = client.Speed;
                 bool paused = host.Paused || host.Held;
-                float hostSpeed = paused ? 0f : MultiplierToSpeed(host.Speed);
+                float hostSpeed = paused ? 0f : HostSpeed(host);
                 ForwardPlayerChoice(simulation, client, host);
                 simulation.selectedSpeed = hostSpeed;
                 _lastWritten = simulation.selectedSpeed;
                 _hasWritten = true;
-                Correct(simulation, hostSpeed, paused, host.Speed);
+                Correct(simulation, hostSpeed, paused, (int)Math.Ceiling(hostSpeed));
             }
             catch (Exception ex)
             {
@@ -161,12 +161,13 @@ namespace SkylineTogether.Sync
             if (!_hasWritten || current == _lastWritten || !UnityEngine.Application.isFocused || BarrierActive()) return;
             if (current > 0f)
             {
-                int wanted = SpeedToMultiplier(current);
-                if (host.Paused || wanted != host.Speed) client.RequestSpeed(new SpeedState { Speed = wanted, Paused = false });
+                // an exact speed (a speed mod's 0.5 or 3) travels as it is; the host rounds it unless its own mod allows it
+                SpeedState wanted = SpeedState.Of(current, false, false);
+                if (host.Paused || Math.Abs(wanted.Multiplier - HostSpeed(host)) > 0.001f) client.RequestSpeed(wanted);
             }
             else if (!host.Paused && _barrierObservers != null)
             {
-                client.RequestSpeed(new SpeedState { Speed = host.Speed, Paused = true });
+                client.RequestSpeed(new SpeedState { Speed = host.Speed, Exact = host.Exact, Paused = true });
             }
         }
 
@@ -345,7 +346,8 @@ namespace SkylineTogether.Sync
             }
         }
 
-        private static int SpeedToMultiplier(float speed) => speed >= 3.5f ? 4 : speed >= 1.5f ? 2 : 1;
+        /// <summary>The speed the host runs at: its exact multiplier when it sent one (0.25, 3, 8), else the game's 1, 2 or 4.</summary>
+        private static float HostSpeed(SpeedState host) => host.Exact > 0f ? host.Exact : MultiplierToSpeed(host.Speed);
 
         private static float MultiplierToSpeed(int multiplier) => multiplier >= 4 ? 4f : multiplier >= 2 ? 2f : 1f;
     }

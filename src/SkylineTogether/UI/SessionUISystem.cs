@@ -631,7 +631,7 @@ namespace SkylineTogether.UI
             Prop(sb, "stage", s.Client != null ? StageOf(s.Client.State) : "").Append(',');
             Prop(sb, "sync", sync ?? "").Append(',');
             SpeedState speed = s.Host != null ? s.Host.Speed : s.Client != null ? s.Client.Speed : default(SpeedState);
-            Prop(sb, "speed", speed.Held ? "paused while a player joins" : speed.Paused ? "paused" : speed.Speed + "×").Append(',');
+            Prop(sb, "speed", speed.Held ? "paused while a player joins" : speed.Paused ? "paused" : speed.Multiplier.ToString("0.###", CultureInfo.InvariantCulture) + "×").Append(',');
             Prop(sb, "speedValue", speed.Speed).Append(',');
             Prop(sb, "speedPaused", speed.Paused).Append(',');
             Prop(sb, "speedHeld", speed.Held).Append(',');

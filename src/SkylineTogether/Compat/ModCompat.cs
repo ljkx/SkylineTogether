@@ -30,6 +30,8 @@ namespace SkylineTogether.Compat
             new ZoningToolkitAdapter(), new LineToolAdapter(), new FindItAdapter(),
             new AchievementFixerAdapter(), new CimCensusAdapter(), new EmploymentTrackerAdapter(),
             new PlacemakerAdapter(),
+            new PrefabAssetFixesAdapter(), new TransportPolicyAdjusterAdapter(), new MagicHearseAdapter(), new RoadSpeedAdjusterAdapter(),
+            new AdvancedSimulationSpeedAdapter(), new SimpleModCheckerPlusAdapter(),
         };
 
         private static readonly List<ModAdapter> ActiveList = new List<ModAdapter>();
@@ -443,6 +445,36 @@ namespace SkylineTogether.Compat
                 by?.Add(adapter.ModName + " (" + r + ")");
             }
             return relaxed;
+        }
+
+        /// <summary>
+        /// GlobalStateSync hook (host): how many slider spans beyond their range the values of route policies may be while
+        /// an active adapter's mod computes route modifiers beyond the slider (<see cref="ModAdapter.RoutePolicyRangeSlack"/>).
+        /// </summary>
+        public static float RoutePolicyRangeSlack
+        {
+            get
+            {
+                float slack = 0f;
+                foreach (ModAdapter a in ActiveList) slack = Math.Max(slack, a.RoutePolicyRangeSlack);
+                return slack;
+            }
+        }
+
+        /// <summary>
+        /// SpeedAuthoritySystem hook (host): an active adapter's mod lets its player select exact game speeds
+        /// (<see cref="ModAdapter.AllowsFineGameSpeed"/>), so a joined player's exact speed request is honoured.
+        /// </summary>
+        public static bool FineGameSpeedAllowed
+        {
+            get
+            {
+                foreach (ModAdapter a in ActiveList)
+                {
+                    if (a.AllowsFineGameSpeed) return true;
+                }
+                return false;
+            }
         }
 
         /// <summary>The active adapter of a loaded mod that synchronises <paramref name="key"/>, or null.</summary>

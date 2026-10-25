@@ -82,7 +82,7 @@ namespace SkylineTogether.Systems
         {
             if (sessions.TakeSpeedRequest(out SpeedState request))
             {
-                float speed = request.Paused ? 0f : MultiplierToSpeed(request.Speed);
+                float speed = request.Paused ? 0f : RequestedSpeed(request);
                 _pauseRequested = request.Paused; // a player's pause is never undone below
                 if (_holding) _speedBeforeHold = speed;
                 else _simulation.selectedSpeed = speed;
@@ -108,7 +108,8 @@ namespace SkylineTogether.Systems
             }
             float intended = _holding ? _speedBeforeHold : _simulation.selectedSpeed;
             if (intended > 0f) _lastNonZero = intended;
-            sessions.Host.Speed = new SpeedState { Speed = SpeedToMultiplier(_lastNonZero), Paused = intended <= 0f, Held = _holding };
+            // the exact multiplier travels when it is none of the game's 1, 2 and 4 (a speed mod such as Advanced Simulation Speed)
+            sessions.Host.Speed = SpeedState.Of(_lastNonZero, intended <= 0f, _holding);
         }
 
         /// <summary>
@@ -151,12 +152,19 @@ namespace SkylineTogether.Systems
             float current = _simulation.selectedSpeed;
             if (current > 0f)
             {
-                if (UnityEngine.Application.isFocused) client.RequestSpeed(new SpeedState { Speed = SpeedToMultiplier(current), Paused = false });
+                if (UnityEngine.Application.isFocused) client.RequestSpeed(SpeedState.Of(current, false, false));
                 _simulation.selectedSpeed = 0f;
             }
         }
 
-        private static int SpeedToMultiplier(float speed) => speed >= 3.5f ? 4 : speed >= 1.5f ? 2 : 1;
+        /// <summary>
+        /// The speed a player asked for: the exact one when the host's own mod lets its player select such speeds
+        /// (<see cref="Compat.ModCompat.FineGameSpeedAllowed"/>), else the game's 1, 2 or 4 it is rounded to.
+        /// </summary>
+        private static float RequestedSpeed(SpeedState request)
+        {
+            return request.Exact > 0f && Compat.ModCompat.FineGameSpeedAllowed ? SpeedState.Sanitize(request.Exact) : MultiplierToSpeed(request.Speed);
+        }
 
         private static float MultiplierToSpeed(int multiplier) => multiplier >= 4 ? 4f : multiplier >= 2 ? 2f : 1f;
     }

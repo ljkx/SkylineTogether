@@ -1237,6 +1237,9 @@ any order. Everything is restored when the session ends.
 sent as `Control SpeedChanged`; a client player's speed change becomes a `SpeedRequest` (needs `Permission.Speed`;
 a token bucket per player, bursts of 4, then 2 per second, because each accepted request is broadcast).
 While a player joins, the host's simulation is held and resumes afterwards; the pause menu's forced pause is respected.
+A speed other than the game's 1, 2 and 4 (a speed mod such as Advanced Simulation Speed) travels as an exact multiplier
+after the two payload bytes older peers read (`SpeedState.Exact`, 0.01 to 8; docs/design/MOD-COMPATIBILITY.md §1); the
+follower clock mirrors it, and the host runs a player's exact request only while its own speed mod is loaded.
 
 ## Data channels
 

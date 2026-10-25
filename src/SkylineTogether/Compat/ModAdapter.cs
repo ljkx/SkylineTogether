@@ -166,6 +166,19 @@ namespace SkylineTogether.Compat
         {
         }
 
+        /// <summary>
+        /// The mod's simulation accepts policy slider values of route policies beyond the policy's slider range (Transport
+        /// Policy Adjuster's vehicle counts): the host then accepts a joined player's such values up to this many slider
+        /// spans on each side (<see cref="Core.Sync.GlobalProposalRules.RoutePolicyRangeSlack"/> at most), 0 for the exact range.
+        /// </summary>
+        public virtual float RoutePolicyRangeSlack => 0f;
+
+        /// <summary>
+        /// The mod lets its player select game speeds beyond the game's 1, 2 and 4 (Advanced Simulation Speed): the host
+        /// then runs a joined player's exact speed request, which a host without such a mod rounds to 1, 2 or 4.
+        /// </summary>
+        public virtual bool AllowsFineGameSpeed => false;
+
         /// <summary>One line for the diagnostics dump and the compatibility table.</summary>
         public abstract string Summary { get; }
 

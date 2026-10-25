@@ -7,6 +7,7 @@
 <PrivateImplementationDetails>+__StaticArrayInitTypeSize=5
 Microsoft.CodeAnalysis.EmbeddedAttribute
 SkylineTogether.Compat.AchievementFixerAdapter
+SkylineTogether.Compat.AdvancedSimulationSpeedAdapter
 SkylineTogether.Compat.AnarchyAdapter
 SkylineTogether.Compat.AssetSources
 SkylineTogether.Compat.BetterBulldozerAdapter
@@ -19,6 +20,7 @@ SkylineTogether.Compat.GenericModAdapter
 SkylineTogether.Compat.HarmonyPatches
 SkylineTogether.Compat.HistoricalStartAdapter
 SkylineTogether.Compat.LineToolAdapter
+SkylineTogether.Compat.MagicHearseAdapter
 SkylineTogether.Compat.ModAdapter
 SkylineTogether.Compat.ModAssemblyScanner
 SkylineTogether.Compat.ModAssemblyScanner+CallIndex
@@ -32,7 +34,11 @@ SkylineTogether.Compat.MoveItAdapter
 SkylineTogether.Compat.PlacemakerAdapter
 SkylineTogether.Compat.PlayerInputWatch
 SkylineTogether.Compat.PlopTheGrowablesAdapter
+SkylineTogether.Compat.PrefabAssetFixesAdapter
+SkylineTogether.Compat.RoadSpeedAdjusterAdapter
+SkylineTogether.Compat.SimpleModCheckerPlusAdapter
 SkylineTogether.Compat.TrafficAdapter
+SkylineTogether.Compat.TransportPolicyAdjusterAdapter
 SkylineTogether.Compat.TreeControllerAdapter
 SkylineTogether.Compat.WaterFeaturesAdapter
 SkylineTogether.Compat.ZoningToolkitAdapter
