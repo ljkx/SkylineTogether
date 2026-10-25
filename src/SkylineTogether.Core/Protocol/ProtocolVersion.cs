@@ -31,8 +31,9 @@ namespace SkylineTogether.Core.Protocol
         /// at the end of <see cref="ControlKind.LoadProgress"/> (<see cref="Session.SessionPayloads.WriteLoadProgress"/>) and
         /// the id generation byte in mover records (<see cref="Sync.SyncRecordKind.MoverSpawn"/>, <see cref="Sync.SyncRecordKind.MoverState"/>),
         /// and statistics appends that carry the newest sample sent again (the receiver overwrites the samples it holds,
-        /// <see cref="Sync.StatisticsDelta"/>).
+        /// <see cref="Sync.StatisticsDelta"/>); 9: the optional exact speed multiplier at the end of the speed payload
+        /// (<see cref="Session.SessionPayloads.WriteSpeed"/>, for speed mods such as Advanced Simulation Speed).
         /// </summary>
-        public const int Current = 8;
+        public const int Current = 9;
     }
 }

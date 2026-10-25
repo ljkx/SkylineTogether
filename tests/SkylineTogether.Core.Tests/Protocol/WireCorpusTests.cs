@@ -32,7 +32,7 @@ namespace SkylineTogether.Core.Tests.Protocol
     public sealed class WireCorpusTests
     {
         /// <summary>The protocol version the tables below describe.</summary>
-        private const int PinnedProtocolVersion = 8;
+        private const int PinnedProtocolVersion = 9;
 
         private const string Reserved = "reserved";
         private const string Corpus = "corpus:";
@@ -152,6 +152,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             { "session: players", 0xE54859814E720CF6UL },
             { "session: info", 0x56C746BD7436676DUL },
             { "session: speed", 0x483B889B4D44261AUL },
+            { "session: speed exact", 0xD762AB01FA4B1512UL },
             { "session: load progress", 0x04A111D47CCF5A1BUL },
             { "session: load done", 0xDE20B55C67B51612UL },
             { "session: player action", 0x743E13EE0C4EE5A5UL },
@@ -432,6 +433,7 @@ namespace SkylineTogether.Core.Tests.Protocol
             }));
             c["session: info"] = () => Bytes(w => SessionPayloads.WriteSessionInfo(w, new SessionInfo { SessionName = "City", HostName = "Host" }));
             c["session: speed"] = () => Bytes(w => SessionPayloads.WriteSpeed(w, new SpeedState { Speed = 3, Paused = false, Held = true }));
+            c["session: speed exact"] = () => Bytes(w => SessionPayloads.WriteSpeed(w, new SpeedState { Speed = 1, Exact = 0.25f }));
             c["session: load progress"] = () => Bytes(w => SessionPayloads.WriteLoadProgress(w, JoinPhase.Loading, 0.25f));
             c["session: load done"] = () => Bytes(w =>
             {
