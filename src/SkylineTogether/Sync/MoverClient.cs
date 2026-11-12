@@ -1303,12 +1303,30 @@ namespace SkylineTogether.Sync
             if (add) passengers.Add(new Passenger(creature));
         }
 
+        /// <summary>
+        /// True when <paramref name="member"/> may be named by a layout or as a controller: a live vehicle of the mover
+        /// channel. The game's interpolation and animation jobs read the prefab, the transform and the trailer data of
+        /// every layout member without a check, so an id that is bound to something else here (ids out of step) must
+        /// never get into the list.
+        /// </summary>
+        private bool IsLayoutVehicle(EntityManager em, uint id, Entity member)
+        {
+            if (member == Entity.Null || !em.Exists(member) || em.HasComponent<Deleted>(member)) return false;
+            if (_ids.GetFamily(id) == Family.Mover && em.HasComponent<Vehicle>(member) && em.HasComponent<PrefabRef>(member)) return true;
+            _layoutMembersRefused++;
+            if (_layoutMembersRefused == 1) _log.Warn(LogCategory.Replication, "mover layout names #" + id + ", which is no vehicle here; left out (further ones are only counted)");
+            return false;
+        }
+
+        // layout members or controllers that were no vehicle here (diagnostics)
+        private long _layoutMembersRefused;
+
         private void ApplyLayout(EntityManager em, Entity e, MoverRecord rec)
         {
             if (rec.Controller != 0)
             {
                 Entity controller = _ids.GetEntity(rec.Controller);
-                if (controller != Entity.Null && em.Exists(controller) && !em.HasComponent<Deleted>(controller))
+                if (IsLayoutVehicle(em, rec.Controller, controller))
                 {
                     if (!em.HasComponent<Controller>(e)) em.AddComponent<Controller>(e);
                     em.SetComponentData(e, new Controller(controller));
@@ -1321,7 +1339,7 @@ namespace SkylineTogether.Sync
                 foreach (uint id in rec.Layout)
                 {
                     Entity member = id != 0 ? _ids.GetEntity(id) : Entity.Null;
-                    if (member != Entity.Null && em.Exists(member) && !em.HasComponent<Deleted>(member)) layout.Add(new LayoutElement(member));
+                    if (IsLayoutVehicle(em, id, member)) layout.Add(new LayoutElement(member));
                 }
                 // members carry Controller (vanilla ControllerSystem derives it from the layout on load)
                 for (int i = 0; i < layout.Length; i++)
