@@ -142,6 +142,7 @@ namespace SkylineTogether.Sync
             _log = log;
             // the deletion cascade removes a mover whose owner, citizen or pet it deletes the way this channel does
             DeletionCascade.DeleteMover = DeleteLocally;
+            DeletionCascade.ReleaseStrandedRider = ReleaseStranded;
         }
 
         public int InInterest => _stager.AssignedCount;
@@ -1005,6 +1006,16 @@ namespace SkylineTogether.Sync
             for (int i = 0; i < list.Length; i++) riders[i] = list[i].m_Passenger;
             _releasedVehicles.Add(vehicle);
             foreach (Entity rider in riders) ReleaseRider(em, rider, vehicle);
+        }
+
+        /// <summary>The reference sweep found a rider whose vehicle no longer exists (<see cref="DeletionCascade.ReleaseStrandedRider"/>).</summary>
+        private bool ReleaseStranded(EntityManager em, Entity rider)
+        {
+            if (rider == Entity.Null || !em.Exists(rider) || em.HasComponent<Deleted>(rider) || !em.HasComponent<CurrentVehicle>(rider)) return false;
+            Entity vehicle = em.GetComponentData<CurrentVehicle>(rider).m_Vehicle;
+            if (vehicle != Entity.Null && em.Exists(vehicle)) return false;
+            ReleaseRider(em, rider, vehicle);
+            return !em.HasComponent<CurrentVehicle>(rider);
         }
 
         private void ReleaseRider(EntityManager em, Entity rider, Entity vehicle)

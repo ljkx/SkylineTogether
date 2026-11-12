@@ -47,6 +47,8 @@ namespace SkylineTogether.Sync
             public AgentLink? Link;
             /// <summary>Repairs one holder (what was done, or null when nothing was to do); null: report only.</summary>
             public Func<EntityManager, Entity, string> Fix;
+            /// <summary>True when <see cref="Fix"/> may add or remove components: the sweep fetches its chunks again after it.</summary>
+            public bool FixIsStructural;
             /// <summary>
             /// Whether a target being deleted counts as dangling. Not for the node and edge lists: the game itself takes a
             /// deleted edge out of them in this frame's Modification phases (the sweep runs after the apply, before them).
@@ -195,6 +197,9 @@ namespace SkylineTogether.Sync
         /// <summary>Repairs the node and edge lists the sweep finds naming a destroyed entity; set by the controller.</summary>
         public DerivedLinkGuard NetLinks;
 
+        /// <summary>Deletes or detaches the owned and attached objects the sweep finds without their owner or parent; set by the controller.</summary>
+        public OrphanSweep Orphans;
+
         /// <summary>
         /// Net ids the applier met in references but has no entity for (<see cref="NetReaderState.MissingIds"/>); the
         /// controller hands this list to the codec while it applies host data and calls <see cref="NoteMissing"/> after.
@@ -275,13 +280,22 @@ namespace SkylineTogether.Sync
             NetCheck((em, h) => NetLinks?.RepairNodeEdges(em, h));
             Buffer<Game.Net.ConnectedNode>("Net.ConnectedNode.m_Node", null, x => x.m_Node);
             NetCheck((em, h) => NetLinks?.RepairMiddleNodes(em, h));
-            // the references SubObjectReferencesSystem, the movers and the route systems index unchecked: reported (their
-            // owners repair them: structure records, the mover channel, the line check)
+            // the references SubObjectReferencesSystem and the movers index unchecked. Nothing else repairs them once
+            // their target is destroyed (sub-object lists are derived and never travel; the orphan sweep only knows
+            // what was deleted here within the last second), so the sweep does, with the clean-ups those paths use:
+            // a child without its owner goes with it, a list drops what no longer exists, a rider leaves a vehicle
+            // that is gone. A target that is only tagged deleted is this frame's business of the game.
             Data<Game.Common.Owner>("Common.Owner.m_Owner", false, null, x => x.m_Owner);
+            FixCheck((em, h) => RepairChild(em, h), true);
             Buffer<Game.Objects.SubObject>("Objects.SubObject.m_SubObject", null, x => x.m_SubObject);
+            FixCheck((em, h) => DropGone<Game.Objects.SubObject>(em, h, x => x.m_SubObject), false);
             Data<Game.Objects.Attached>("Objects.Attached.m_Parent", false, null, x => x.m_Parent);
+            FixCheck((em, h) => RepairChild(em, h), true);
             Data<Game.Creatures.CurrentVehicle>("Creatures.CurrentVehicle.m_Vehicle", false, null, x => x.m_Vehicle);
+            FixCheck((em, h) => DeletionCascade.ReleaseStrandedRider != null && DeletionCascade.ReleaseStrandedRider(em, h) ? "the rider left the vehicle" : null, true);
             Buffer<Game.Vehicles.Passenger>("Vehicles.Passenger.m_Passenger", null, x => x.m_Passenger);
+            FixCheck((em, h) => DropGone<Game.Vehicles.Passenger>(em, h, x => x.m_Passenger), false);
+            // routes: reported (the line check repairs them; a waypoint list and its segment list must stay in step)
             Buffer<Game.Routes.RouteWaypoint>("Routes.RouteWaypoint.m_Waypoint", null, x => x.m_Waypoint);
             Buffer<Game.Routes.RouteSegment>("Routes.RouteSegment.m_Segment", null, x => x.m_Segment);
         }
@@ -583,6 +597,8 @@ namespace SkylineTogether.Sync
                         else if (c.Fix != null)
                         {
                             FixFound(em, c, now);
+                            // a deleted child or a released rider moved entities between chunks: never read a stale chunk
+                            if (c.FixIsStructural) fetchedFor = -1;
                         }
                         else
                         {
@@ -683,6 +699,39 @@ namespace SkylineTogether.Sync
             Check c = _checks[_checks.Count - 1];
             c.Fix = fix;
             c.DeletedIsDangling = false;
+        }
+
+        /// <summary>The check just added repairs with <paramref name="fix"/>; a target that is only tagged deleted is left to the game.</summary>
+        private void FixCheck(Func<EntityManager, Entity, string> fix, bool structural)
+        {
+            Check c = _checks[_checks.Count - 1];
+            c.Fix = fix;
+            c.FixIsStructural = structural;
+            c.DeletedIsDangling = false;
+        }
+
+        private string RepairChild(EntityManager em, Entity child)
+        {
+            OrphanSweep orphans = Orphans;
+            if (orphans == null) return null;
+            if (orphans.Ids == null) orphans.Ids = _ids;
+            return orphans.RepairChild(em, child);
+        }
+
+        /// <summary>Drops the elements of a derived list that name nobody or an entity that no longer exists.</summary>
+        private static string DropGone<T>(EntityManager em, Entity holder, Func<T, Entity> get) where T : unmanaged, IBufferElementData
+        {
+            if (!em.Exists(holder) || !em.HasBuffer<T>(holder)) return null;
+            DynamicBuffer<T> list = em.GetBuffer<T>(holder);
+            int dropped = 0;
+            for (int i = list.Length - 1; i >= 0; i--)
+            {
+                Entity target = get(list[i]);
+                if (target != Entity.Null && em.Exists(target)) continue;
+                list.RemoveAt(i);
+                dropped++;
+            }
+            return dropped > 0 ? dropped + " element(s) dropped" : null;
         }
 
         /// <summary>
