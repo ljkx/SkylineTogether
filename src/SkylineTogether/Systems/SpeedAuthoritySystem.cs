@@ -53,7 +53,13 @@ namespace SkylineTogether.Systems
             SessionManager sessions = Mod.Sessions;
             if (sessions == null) return;
             if (sessions.Host == null && sessions.Client == null && !_holding && !sessions.HoldCity) return; // single player
-            if (!Diagnostics.Features.Speed.IsAvailable) return;
+            if (!Diagnostics.Features.Speed.IsAvailable)
+            {
+                // whatever switched the speed handling off: a joined player's game never simulates on its own
+                Sync.FollowerClock clock = Sync.FollowerClock.Instance;
+                if (sessions.Host == null && sessions.Client != null && (clock == null || !clock.Active) && _simulation.selectedSpeed != 0f) _simulation.selectedSpeed = 0f;
+                return;
+            }
             try
             {
                 if (sessions.Host != null)

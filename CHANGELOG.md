@@ -57,6 +57,14 @@ All notable changes to this project are documented in this file. The format is b
     pointed at the removed object. It is now built first.
   - **Tornadoes and storms** the host started could reach a joined player without the data the game needs to draw them
     moving; that data is now always complete.
+  - **A new object is never kept half-made.** When one part of a new object could not be read, or the object it
+    belongs to was left out in the same update, the object was created anyway with empty values in that part. It is
+    now left out and asked from the host again, as every other incomplete new object already was.
+  - **Trains and trailers.** A train or a vehicle with trailers only takes vehicles into its list of cars.
+  - **If following the host's clock fails,** the joined player's game stays paused with its own simulation off until
+    the session ends; the simulation used to be switched back on.
+- Water: after the host's sea level changed, a joined player's game kept a water optimisation switched off for the
+  rest of the session (performance only).
 
 ## [0.3.0] - 2026-10-24
 

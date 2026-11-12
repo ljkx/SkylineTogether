@@ -500,7 +500,9 @@ does not autosave. Retryable ends (connection lost, unreachable host, timeout, f
 rejoin automatically through the normal join path (fresh snapshot) with backoff 2, 5, 10, 20, 30, 30 s, at most six
 attempts; a refusal with a "retry-after" record waits that long instead and spends no attempt (a wait of more than
 30 minutes asks the player); everything else, and the end of the attempts, asks the player: reconnect, main menu, or keep the city as an
-offline copy. A local fault that may have damaged the replica (a critical feature tripped) is offered, never
+offline copy. A rejoin that goes live starts the attempts again, so sessions an automatic rejoin resumed are counted
+too: after two in a row that ended within five minutes the player is asked (`RejoinOptions.MaxShortSessions`), since
+a cause that returns after every rejoin would otherwise reload the city without end. A local fault that may have damaged the replica (a critical feature tripped) is offered, never
 automatic, because a deterministic fault would loop.
 
 ### Roles and moderation
@@ -1738,8 +1740,14 @@ the holder is asked from the host again; the node and edge lists (`ConnectedEdge
 repaired by the [derived net links](#derived-net-links) guard (an entry naming a destroyed entity or the wrong kind
 dropped, the node or edge re-derived the next frame, an edge whose node is gone deleted the next frame); for them a
 target that is only being deleted is not dangling (the game itself drops it in this frame's Modification phases, and
-the sweep runs after the apply, before them), and a log line says `(deleted)` or `(destroyed)` for what it found. The
-other references (owners, sub-objects, routes, passengers) are reported only, since their own channels repair them. A lap over every type must finish within 20 s (8 s for the
+the sweep runs after the apply, before them), and a log line says `(deleted)` or `(destroyed)` for what it found.
+Owners, parents, sub-object and passenger lists and riders are repaired the same way once their target is destroyed
+(nothing else does: sub-object lists are derived and never travel, and the orphan sweep only knows what was deleted
+here within the last second): an owned object goes with its owner and an attached one is detached or deleted
+(`OrphanSweep.RepairChild`), a list drops the entries that name nobody or nothing that exists, and a rider leaves a
+vehicle that is gone (`MoverClient.ReleaseStranded`). A repair that changes the structure makes the sweep fetch its
+chunks again. Route waypoint and segment lists are reported only (the line check repairs them, and the two lists must
+stay in step). A lap over every type must finish within 20 s (8 s for the
 first lap after going live): each frame gets 0.3 ms, more (up to 2 ms) while the lap is behind its schedule
 ([`SweepPacer`](../src/SkylineTogether.Core/Sync/LinkRepairPacing.cs)). The same repair runs right after every applied
 batch for the entities it touched. Each repair is counted per link; the log gets at most three lines per link and

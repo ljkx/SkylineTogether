@@ -81,7 +81,12 @@ namespace SkylineTogether.Sync
             // mod that re-enables them when the joined city finished loading ran them through the snapshot apply and the
             // catch-up before)
             if (!IsHost && _sessions.Client != null) SafeCall("mod gates", _reassertCall ?? (_reassertCall = ReassertGates), Features.ModCompat);
-            if (_codec == null || !Features.Replication.IsAvailable) return;
+            if (_codec == null || !Features.Replication.IsAvailable)
+            {
+                // the session is ending, but the game still draws what the last batches spawned
+                if (!IsHost && _sessions.Client != null) _events?.ClientKeepHotspotFrames();
+                return;
+            }
             if (!IsHost && !IsLiveClient)
             {
                 if (_sessions.Client == null && _inbox.Count > 0) _inbox.Clear();
@@ -165,7 +170,13 @@ namespace SkylineTogether.Sync
                     // client: a failed batch is acknowledged only once its despawns are applied (ARCHITECTURE.md#client-apply)
                     if (!IsHost) acknowledge = RecoverFailedBatch(ex);
                     ApplyFailed(item.Peer, ex);
-                    if (!Features.Replication.IsAvailable) return; // the session is ending (client: a rejoin repairs it)
+                    if (!Features.Replication.IsAvailable)
+                    {
+                        // the session is ending (client: a rejoin repairs it); a phenomenon an earlier batch of this
+                        // frame spawned still needs its frames
+                        if (!IsHost) _events?.ClientKeepHotspotFrames();
+                        return;
+                    }
                 }
                 finally
                 {
