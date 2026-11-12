@@ -130,6 +130,8 @@ namespace SkylineTogether.Sync
                     }
                 }
             }
+            // client: the deletion cascade of this frame's despawns needs the referrer index (built once per city)
+            if (!IsHost) _audit.BeforeApply();
             // a client that just went live catches up with bigger slices
             SessionClient joining = IsHost ? null : _sessions.Client;
             bool catchingUp = joining != null && joining.Timeline.Has(JoinStage.Live) && !joining.Timeline.Has(JoinStage.CaughtUp);
@@ -204,6 +206,10 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Events, "events (after apply)", ex);
                 }
+            }
+            else if (!IsHost)
+            {
+                _events.ClientKeepHotspotFrames();
             }
             // client: lane signals and signal heads from the host's junction phases
             if (!IsHost && Features.SimValues.IsAvailable)

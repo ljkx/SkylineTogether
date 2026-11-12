@@ -32,6 +32,16 @@ namespace SkylineTogether.Core.Session
 
         /// <summary>A host's wait longer than this is not waited out automatically: the player is asked.</summary>
         public double MaxAutomaticWaitSeconds = 1800;
+
+        /// <summary>A session an automatic rejoin resumed that ends again within this many seconds counts as short.</summary>
+        public double ShortSessionSeconds = 300;
+
+        /// <summary>
+        /// Short resumed sessions in a row before the player is asked instead of rejoining once more. A cause that
+        /// returns right after every rejoin (the host drops this player again and again) otherwise reloaded the whole
+        /// city without end: every rejoin that went live started the attempt count again.
+        /// </summary>
+        public int MaxShortSessions = 2;
     }
 
     /// <summary>
@@ -107,7 +117,14 @@ namespace SkylineTogether.Core.Session
                 StartKind = kind;
                 Reason = reason;
                 Attempt = 0;
-                if (kind == ClientEndKind.Resync)
+                bool repeating = Phase == RejoinPhase.Idle && kind != ClientEndKind.Resync && NoteSessionEnd(now);
+                if (repeating)
+                {
+                    // the rejoins work and the session ends again right away: another one would do the same
+                    CanReconnect = true;
+                    Phase = RejoinPhase.NeedsChoice;
+                }
+                else if (kind == ClientEndKind.Resync)
                 {
                     // the player asked for a fresh copy of the city: reconnect at once
                     CanReconnect = true;
@@ -177,11 +194,43 @@ namespace SkylineTogether.Core.Session
         }
 
         /// <summary>The attempt's client went live: recovery is over.</summary>
-        public void OnLive()
+        public void OnLive() => OnLive(double.NaN);
+
+        /// <summary>
+        /// The attempt's client went live at <paramref name="now"/>: recovery is over. The time lets the next end tell
+        /// a session that held from one that ended again at once (<see cref="RejoinOptions.MaxShortSessions"/>).
+        /// </summary>
+        public void OnLive(double now)
         {
-            if (Phase == RejoinPhase.Attempting) Rejoins++;
+            bool resumed = Phase == RejoinPhase.Attempting;
+            if (resumed) Rejoins++;
+            int shortSessions = _shortSessions;
             Reset();
+            _shortSessions = shortSessions;
+            _resumedAt = resumed ? now : double.NaN;
         }
+
+        /// <summary>
+        /// Counts a session that an automatic rejoin resumed and that ended within
+        /// <see cref="RejoinOptions.ShortSessionSeconds"/>; true when that happened
+        /// <see cref="RejoinOptions.MaxShortSessions"/> times in a row.
+        /// </summary>
+        private bool NoteSessionEnd(double now)
+        {
+            bool wasShort = !double.IsNaN(_resumedAt) && now - _resumedAt < _options.ShortSessionSeconds;
+            _resumedAt = double.NaN;
+            if (!wasShort)
+            {
+                _shortSessions = 0;
+                return false;
+            }
+            if (++_shortSessions < _options.MaxShortSessions) return false;
+            _shortSessions = 0; // the player's own reconnect starts the count again
+            return true;
+        }
+
+        private double _resumedAt = double.NaN;
+        private int _shortSessions;
 
         /// <summary>The player asked to reconnect now (from the waiting or the choice state).</summary>
         public void ReconnectNow(double now)
@@ -214,6 +263,8 @@ namespace SkylineTogether.Core.Session
             NextAttemptAt = 0;
             CanReconnect = false;
             StartKind = ClientEndKind.None;
+            _resumedAt = double.NaN;
+            _shortSessions = 0;
         }
 
         /// <summary>Seconds until the next attempt (0 when due or not waiting).</summary>

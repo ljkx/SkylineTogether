@@ -302,6 +302,27 @@ namespace SkylineTogether.Sync
             return _checks.Count > 0;
         }
 
+        /// <summary>
+        /// Client, at frame start before the first batch is applied: builds the referrer index if this world has none.
+        /// It used to be built by <see cref="Update"/>, after the batches of the first live frame (the catch-up: up to
+        /// several hundred), so their despawns ran the deletion cascade without it: the movers of a despawned owner and
+        /// the citizens inside a despawned building kept naming it until the sweep came by.
+        /// </summary>
+        public void BeforeApply()
+        {
+            if (!EnsureWorld() || _indexBuilt) return;
+            try
+            {
+                EntityManager em = _world.EntityManager;
+                _access.EntityManager = em;
+                BuildIndex(em);
+            }
+            catch (Exception ex)
+            {
+                ReportRepairFailure(ex);
+            }
+        }
+
         // ================================================================== targeted pass
 
         /// <summary>

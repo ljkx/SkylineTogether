@@ -252,5 +252,63 @@ namespace SkylineTogether.Core.Tests.Session
             m.AddSample(1030, 5.5);
             Assert.InRange(m.Estimate(5.5), 1032, 1033);
         }
-    }
+
+        [Test]
+        public static void ResumedSessionsThatEndAtOnceAskThePlayerInsteadOfReloadingForever()
+        {
+            var r = new RejoinController();
+            double now = 100;
+            // the session ends, the rejoin works, and the host drops this player again a minute later: twice
+            Assert.True(r.OnClientEnded(ClientEndKind.Dropped, "dropped", enteredCity: true, now: now));
+            for (int i = 0; i < 2; i++)
+            {
+                Assert.Equal(RejoinPhase.Waiting, r.Phase);
+                now += 2;
+                Assert.True(r.Tick(now));
+                r.OnLive(now);
+                Assert.Equal(RejoinPhase.Idle, r.Phase);
+                now += 60;
+                Assert.True(r.OnClientEnded(ClientEndKind.Dropped, "dropped again", enteredCity: true, now: now));
+            }
+            Assert.Equal(RejoinPhase.NeedsChoice, r.Phase);
+            Assert.True(r.CanReconnect);
+            Assert.Equal("dropped again", r.Reason);
+            // the player's own reconnect is a fresh start
+            r.ReconnectNow(now);
+            Assert.True(r.Tick(now));
+            r.OnLive(now);
+            Assert.True(r.OnClientEnded(ClientEndKind.Dropped, "dropped", enteredCity: true, now: now + 60));
+            Assert.Equal(RejoinPhase.Waiting, r.Phase);
+        }
+
+        [Test]
+        public static void AResumedSessionThatHeldDoesNotCountAsShort()
+        {
+            var r = new RejoinController();
+            double now = 100;
+            Assert.True(r.OnClientEnded(ClientEndKind.ConnectionLost, "lost", enteredCity: true, now: now));
+            for (int i = 0; i < 5; i++)
+            {
+                now += 2;
+                Assert.True(r.Tick(now));
+                r.OnLive(now);
+                now += 301; // longer than a short session
+                Assert.True(r.OnClientEnded(ClientEndKind.ConnectionLost, "lost", enteredCity: true, now: now));
+                Assert.Equal(RejoinPhase.Waiting, r.Phase);
+            }
+        }
+
+        [Test]
+        public static void AFirstSessionThatEndsEarlyIsNotAShortResumedSession()
+        {
+            var r = new RejoinController();
+            r.OnLive(10); // the first join: no recovery was running
+            Assert.True(r.OnClientEnded(ClientEndKind.ConnectionLost, "lost", enteredCity: true, now: 20));
+            Assert.Equal(RejoinPhase.Waiting, r.Phase);
+            Assert.True(r.Tick(22));
+            r.OnLive(22);
+            Assert.True(r.OnClientEnded(ClientEndKind.ConnectionLost, "lost", enteredCity: true, now: 30));
+            Assert.Equal(RejoinPhase.Waiting, r.Phase); // one short resumed session so far
+        }
+}
 }

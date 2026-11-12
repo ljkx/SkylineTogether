@@ -66,9 +66,12 @@ namespace SkylineTogether.Systems
                 {
                     UpdateClient(sessions.Client);
                 }
-                else if (sessions.HoldCity)
+                else if (sessions.HoldCity || WaitingForLive(sessions.Client))
                 {
-                    // recovery: the host's city without a session stays paused until the player decides or it rejoins
+                    // recovery: the host's city without a session stays paused until the player decides or it rejoins.
+                    // A joiner whose city is loaded waits for the host's confirmation the same way: the client gate
+                    // and the follower clock only start when it is live, so pressing play here ran the whole
+                    // simulation on the copy, which the host's updates were then applied to.
                     if (_simulation.selectedSpeed != 0f) _simulation.selectedSpeed = 0f;
                 }
             }
@@ -76,6 +79,12 @@ namespace SkylineTogether.Systems
             {
                 Diagnostics.Guard.Report(Diagnostics.Features.Speed, "speed authority", ex);
             }
+        }
+
+        /// <summary>True from the start of a joiner's city load until the host made it live (or the join ended).</summary>
+        internal static bool WaitingForLive(SessionClient client)
+        {
+            return client != null && client.State == ClientState.Loading && client.EnteredCity;
         }
 
         private void UpdateHost(SessionManager sessions)
