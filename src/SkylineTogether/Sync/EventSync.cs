@@ -119,7 +119,7 @@ namespace SkylineTogether.Sync
             // the client's per-frame guarded calls use delegates made once
             _readLikesCall = ReadLikes;
             _touchedCall = FixTouched;
-            _hotspotsCall = () => UpdateHotspots(_world.EntityManager);
+            _hotspotsCall = () => UpdateHotspots(_world.EntityManager, true);
         }
 
         private readonly Action _readLikesCall, _touchedCall, _hotspotsCall;
@@ -368,6 +368,23 @@ namespace SkylineTogether.Sync
             Guard("hotspot frames", _hotspotsCall);
         }
 
+        /// <summary>
+        /// Client, after the apply while the events feature is off: weather phenomena still arrive as records, and the
+        /// game's interpolation still reads four hotspot frames of each.
+        /// </summary>
+        public void ClientKeepHotspotFrames()
+        {
+            if (!Attached || _world == null) return;
+            try
+            {
+                UpdateHotspots(_world.EntityManager, false);
+            }
+            catch (Exception ex)
+            {
+                if (_once.Add("hotspot frames (feature off)")) _log.Warn(LogCategory.Replication, "event sync: sizing hotspot frames failed", ex);
+            }
+        }
+
         private void FixTouched()
         {
             EntityManager em = _world.EntityManager;
@@ -442,7 +459,9 @@ namespace SkylineTogether.Sync
         /// Every weather phenomenon gets four hotspot frames (as <c>HotspotFrameSystem</c> builds them after a load) and
         /// the frame of the current 16-tick slot from the replicated hotspot (as <c>WeatherPhenomenonSystem</c> writes it).
         /// </summary>
-        private void UpdateHotspots(EntityManager em)
+        /// <param name="em">The world's entity manager.</param>
+        /// <param name="follow">False sizes the buffers only (the events feature is off; the records still arrive).</param>
+        private void UpdateHotspots(EntityManager em, bool follow)
         {
             if (_phenomena.IsEmptyIgnoreFilter) return;
             NativeArray<Entity> entities = _phenomena.ToEntityArray(Allocator.Temp);
@@ -454,14 +473,18 @@ namespace SkylineTogether.Sync
                 {
                     Game.Events.WeatherPhenomenon w = em.GetComponentData<Game.Events.WeatherPhenomenon>(e);
                     // a non-finite hotspot would feed the interpolation and rendering of the phenomenon
-                    if (!math.all(math.isfinite(w.m_HotspotPosition)) || !math.all(math.isfinite(w.m_HotspotVelocity))) continue;
+                    bool finite = math.all(math.isfinite(w.m_HotspotPosition)) && math.all(math.isfinite(w.m_HotspotVelocity));
                     DynamicBuffer<Game.Events.HotspotFrame> frames = em.GetBuffer<Game.Events.HotspotFrame>(e);
                     if (frames.Length != 4)
                     {
+                        // always four, whatever the hotspot is: EventInterpolateSystem indexes the buffer unchecked, and a
+                        // phenomenon the host just started arrives with an empty one (the buffer is not replicated)
+                        Game.Events.HotspotFrame first = finite ? new Game.Events.HotspotFrame(w) : default(Game.Events.HotspotFrame);
                         frames.ResizeUninitialized(4);
-                        for (int i = 0; i < 4; i++) frames[i] = new Game.Events.HotspotFrame(w);
-                        if (em.HasComponent<Game.Rendering.InterpolatedTransform>(e)) em.SetComponentData(e, new Game.Rendering.InterpolatedTransform(w));
+                        for (int i = 0; i < 4; i++) frames[i] = first;
+                        if (finite && em.HasComponent<Game.Rendering.InterpolatedTransform>(e)) em.SetComponentData(e, new Game.Rendering.InterpolatedTransform(w));
                     }
+                    if (!finite || !follow) continue;
                     frames[slot] = new Game.Events.HotspotFrame
                     {
                         m_Position = w.m_HotspotPosition - w.m_HotspotVelocity * step * 0.5f,

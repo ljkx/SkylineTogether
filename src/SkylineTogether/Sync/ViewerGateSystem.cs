@@ -42,10 +42,14 @@ namespace SkylineTogether.Sync
             if (_failed || _setApplyMode == null) return;
             try
             {
-                if (client.State != ClientState.Live || RolePermissions.Predicts(client.LocalRole)) return;
+                // a joiner whose city is loaded but who is not live yet: nothing built now is captured or sent, so
+                // it would stay in this player's copy only, under whatever the host sends next
+                bool waiting = Systems.SpeedAuthoritySystem.WaitingForLive(client);
+                if (!waiting && (client.State != ClientState.Live || RolePermissions.Predicts(client.LocalRole))) return;
                 ToolBaseSystem tool = _tools.activeTool;
                 if (tool == null || tool.applyMode != Game.Tools.ApplyMode.Apply) return;
                 _setApplyMode.Invoke(tool, new object[] { Game.Tools.ApplyMode.Clear });
+                if (waiting) return; // no viewer notice: the player is about to be let in
                 double now = UnityEngine.Time.realtimeSinceStartupAsDouble;
                 if (now - _lastToast > 5.0)
                 {

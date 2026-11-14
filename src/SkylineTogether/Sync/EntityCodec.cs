@@ -2008,6 +2008,17 @@ namespace SkylineTogether.Sync
                     Type fixup = FixupType(h);
                     Game.Routes.Color oldColor = fixup == typeof(Game.Routes.Color) ? em.GetComponentData<Game.Routes.Color>(e) : default;
                     ReadComponent(h, e, comp, offset, data, result, !spawned);
+                    if (spawned)
+                    {
+                        // a new entity is all or nothing (ARCHITECTURE.md#client-apply). A component that could not be
+                        // read kept its archetype default (null references, an empty buffer), and an owner or edge
+                        // node that no longer resolved was written as null: the spawn that would have provided it was
+                        // dropped after the check of step 1b (its component set or update group failed). The game
+                        // indexes both without a check on a created entity, so the spawn fails here: the entity is
+                        // destroyed before any game system sees it and asked from the host again.
+                        if (_readThrew) throw new DecodeException(h.Name + " could not be read for a new entity");
+                        if (_rs.Unresolved && UnresolvedValueRule.IsRequiredLink(h.Name)) throw new DecodeException(h.Name + " names nothing here for a new entity");
+                    }
                     if (fixup != null)
                     {
                         bool changed = fixup != typeof(Game.Routes.Color) || !SameColor(oldColor, em.GetComponentData<Game.Routes.Color>(e));
@@ -2037,6 +2048,8 @@ namespace SkylineTogether.Sync
         private double _lastUnsafeLog = double.NegativeInfinity;
 
         private string _probeFailure;
+        // the last ReadOrProbe threw (the component was not written, or only in part)
+        private bool _readThrew;
         private long _malformedTotal;
 
         /// <summary>Component values refused as malformed (overruns, NaN or out-of-range geometry), session total.</summary>
@@ -2588,6 +2601,7 @@ namespace SkylineTogether.Sync
             keys.Reset(data, c.Offset, c.Count);
             _rs.Keys.Clear();
             _rs.Unresolved = false;
+            _readThrew = false;
             // references to destroyed or deleted entities resolve to nothing; an existing entity keeps its value
             _rs.CheckLiveness = true;
             _rs.EntityManager = EntityManager;
@@ -2634,6 +2648,7 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 result.Problems.Add(h.Name + ": " + ex.Message);
+                _readThrew = true;
                 if (probe) _probeFailure = ex.Message;
                 // malformed or refused values (NaN geometry, overruns) are counted; the integrity check asks
                 // the host for the entity again, and the session-wide count shows in the diagnostics

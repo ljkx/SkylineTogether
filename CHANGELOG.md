@@ -31,6 +31,41 @@ All notable changes to this project are documented in this file. The format is b
     other mod until it is checked again, and the log says why.
 - The speed shown in the Skyline Together panel can now be a fraction such as 0.5x.
 
+### Fixed
+
+- **Joined players: fewer crashes and fewer needless reconnects.** A review of the joined player's side found these:
+  - **Kicks, session ends and "you were dropped" showed as "connection lost".** When the host's last message and the
+    closing of the connection arrived between two frames of the joined player's game (likely exactly when that game
+    ran slowly), the message was thrown away. The player then rejoined a session that had just ended or refused them.
+    The last messages are now read before the connection is closed.
+  - **A slow frame could make the connection lose data.** Steam keeps at most 1000 received messages waiting; with
+    more (one long frame is enough in a busy city) it dropped whatever came next, the host slowed its sending down
+    and resent, and the joined player fell further behind. The limit is now raised together with the buffer size.
+  - **Reconnecting without end.** When a rejoin worked and the session ended again shortly after, every rejoin started
+    the count of attempts again, so the city was downloaded and loaded over and over. After two rejoined sessions in
+    a row that each lasted less than five minutes, the player is now asked instead.
+  - **The city could run on its own right after loading.** Between the end of the loading screen and the host's
+    confirmation, pressing play or building was possible; the game then simulated and changed the copy of the city
+    that the host's updates were applied to afterwards. The game now stays paused and tools build nothing until the
+    player is in.
+  - **Leftover links to removed objects are repaired, not only reported.** The background check found objects whose
+    owner was gone, lists naming removed sub-objects or passengers, and riders of removed vehicles, and only wrote
+    them to the log. They are now cleaned up the way the game does (the object goes with its owner, the list entry
+    is dropped, the rider leaves the vehicle), each with a log line.
+  - **The first moments after joining.** The index that finds everything pointing at a removed object was built after
+    the first updates from the host had been applied, so removals among them missed vehicles and citizens that still
+    pointed at the removed object. It is now built first.
+  - **Tornadoes and storms** the host started could reach a joined player without the data the game needs to draw them
+    moving; that data is now always complete.
+  - **A new object is never kept half-made.** When one part of a new object could not be read, or the object it
+    belongs to was left out in the same update, the object was created anyway with empty values in that part. It is
+    now left out and asked from the host again, as every other incomplete new object already was.
+  - **Trains and trailers.** A train or a vehicle with trailers only takes vehicles into its list of cars.
+  - **If following the host's clock fails,** the joined player's game stays paused with its own simulation off until
+    the session ends; the simulation used to be switched back on.
+- Water: after the host's sea level changed, a joined player's game kept a water optimisation switched off for the
+  rest of the session (performance only).
+
 ## [0.3.0] - 2026-10-24
 
 ### Added

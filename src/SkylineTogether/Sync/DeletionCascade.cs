@@ -71,6 +71,12 @@ namespace SkylineTogether.Sync
         /// </summary>
         public static Func<EntityManager, Entity, bool> DeleteMover;
 
+        /// <summary>
+        /// Lets a creature out of a vehicle that no longer exists (its <c>CurrentVehicle</c> and <c>Relative</c> removed,
+        /// its moving state back); set by the mover client. True when it was released.
+        /// </summary>
+        public static Func<EntityManager, Entity, bool> ReleaseStrandedRider;
+
         private static readonly List<AgentLinkOp<Entity>> Ops = new List<AgentLinkOp<Entity>>();
         private static readonly List<Entity> Deletions = new List<Entity>();
         private static readonly List<Entity> Members = new List<Entity>();

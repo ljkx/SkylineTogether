@@ -119,26 +119,7 @@ namespace SkylineTogether.Sync
                     CollectCandidates(em);
                 }
                 foreach (Entity e in _orphans) Delete(em, e);
-                foreach (Entity e in _detach)
-                {
-                    if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) continue;
-                    uint id = Ids != null ? Ids.GetNetId(e) : 0;
-                    if (id != 0)
-                    {
-                        // a replicated object keeps living without its parent until the host's record arrives
-                        Game.Objects.Attached attached = em.GetComponentData<Game.Objects.Attached>(e);
-                        Forensics.Cleanup("orphan sweep", em, e, "its parent " + Forensics.Describe(em, attached.m_Parent) + " was deleted here -> detached, asked from the host");
-                        attached.m_Parent = Entity.Null;
-                        em.SetComponentData(e, attached);
-                        if (!em.HasComponent<Game.Common.Updated>(e)) em.AddComponent<Game.Common.Updated>(e);
-                        _detachedTotal++;
-                        Request?.Invoke(id);
-                    }
-                    else
-                    {
-                        Delete(em, e);
-                    }
-                }
+                foreach (Entity e in _detach) Detach(em, e);
                 if (_orphans.Count + _detach.Count > 0)
                 {
                     log?.Info(LogCategory.Integrity, "orphan sweep: " + _orphans.Count + " owned object(s) whose owner was deleted here deleted with it, " + _detach.Count
@@ -153,6 +134,59 @@ namespace SkylineTogether.Sync
                 _detach.Clear();
                 Perf.Stop(Perf.ReferenceRepair, start);
             }
+        }
+
+        /// <summary>An attached object whose parent is gone: detached when it is replicated (the host's record follows), else deleted.</summary>
+        private void Detach(EntityManager em, Entity e)
+        {
+            if (!em.Exists(e) || em.HasComponent<Game.Common.Deleted>(e)) return;
+            uint id = Ids != null ? Ids.GetNetId(e) : 0;
+            if (id != 0)
+            {
+                // a replicated object keeps living without its parent until the host's record arrives
+                Game.Objects.Attached attached = em.GetComponentData<Game.Objects.Attached>(e);
+                Forensics.Cleanup("orphan sweep", em, e, "its parent " + Forensics.Describe(em, attached.m_Parent) + " was deleted here -> detached, asked from the host");
+                attached.m_Parent = Entity.Null;
+                em.SetComponentData(e, attached);
+                if (!em.HasComponent<Game.Common.Updated>(e)) em.AddComponent<Game.Common.Updated>(e);
+                _detachedTotal++;
+                Request?.Invoke(id);
+            }
+            else
+            {
+                Delete(em, e);
+            }
+        }
+
+        /// <summary>
+        /// The reference sweep found <paramref name="child"/> naming an owner or parent that no longer exists, whatever
+        /// removed it (the sweep above only knows what was deleted here in the last second): handled like an orphan of
+        /// the sweep. Returns what was done, or null when there was nothing to do (a lane, which the game regenerates,
+        /// a preview, or an owner that is only tagged deleted this frame). Makes structural changes.
+        /// </summary>
+        public string RepairChild(EntityManager em, Entity child)
+        {
+            if (!em.Exists(child) || em.HasComponent<Game.Common.Deleted>(child) || em.HasComponent<Game.Tools.Temp>(child) || em.HasComponent<Game.Net.Lane>(child)) return null;
+            if (em.HasComponent<Game.Common.Owner>(child))
+            {
+                Entity owner = em.GetComponentData<Game.Common.Owner>(child).m_Owner;
+                if (owner != Entity.Null && !em.Exists(owner))
+                {
+                    Delete(em, child);
+                    return "deleted with its owner, as the game does";
+                }
+            }
+            if (em.HasComponent<Game.Objects.Attached>(child))
+            {
+                Entity parent = em.GetComponentData<Game.Objects.Attached>(child).m_Parent;
+                if (parent != Entity.Null && !em.Exists(parent))
+                {
+                    bool replicated = Ids != null && Ids.GetNetId(child) != 0;
+                    Detach(em, child);
+                    return replicated ? "detached, asked from the host" : "deleted with its parent";
+                }
+            }
+            return null;
         }
 
         /// <summary>The children the deleted entities' own lists named, checked like the full scan checks every child.</summary>
