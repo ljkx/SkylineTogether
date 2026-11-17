@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-17
+
 ### Added
 
 - **Support for nine more mods.**
@@ -30,9 +32,18 @@ All notable changes to this project are documented in this file. The format is b
   - Skyline Together knows the versions it was checked against; a later version that does more is compared like any
     other mod until it is checked again, and the log says why.
 - The speed shown in the Skyline Together panel can now be a fraction such as 0.5x.
+- **Freeze diagnostics.** When the game does not finish a frame for 5 seconds during a session, `SkylineTogether.log`
+  names the Skyline Together step that was running (for example `orphan sweep` or a single check of the reference
+  sweep), repeats the line every 10 seconds while the freeze lasts and notes when the game resumes.
 
 ### Fixed
 
+- **Joined players: the game froze for minutes after large removals.** The clean-up of objects whose owner was removed
+  checked every candidate against a list, so after bulldozing a large area it made up to billions of comparisons on
+  the game's main thread. It now uses sets; what is cleaned up, and in which order, is unchanged.
+- **A damaged referrer index can no longer freeze the game.** The index that finds everything pointing at a removed
+  object walks chains of entries; a chain that looped would have run forever. The walk now stops, the background
+  reference check ends with one log line (`reference audit stopped: ...`) and the game keeps running.
 - **Joined players: fewer crashes and fewer needless reconnects.** A review of the joined player's side found these:
   - **Kicks, session ends and "you were dropped" showed as "connection lost".** When the host's last message and the
     closing of the connection arrived between two frames of the joined player's game (likely exactly when that game
@@ -459,7 +470,8 @@ First public release (pre-release). Back up your saves before playing.
   request templates, GitHub Actions CI (Core build and tests without the game, UI smoke test, link and personal-data
   checks), `.editorconfig` and `.gitattributes`.
 
-[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.3.0...main
+[Unreleased]: https://github.com/ljkx/SkylineTogether/compare/v0.4.0...main
+[0.4.0]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.3.0
 [0.2.1]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ljkx/SkylineTogether/releases/tag/v0.2.0
