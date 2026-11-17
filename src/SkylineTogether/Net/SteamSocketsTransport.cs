@@ -53,8 +53,18 @@ namespace SkylineTogether.Net
         private const ESteamNetworkingConfigValue RecvBufferSizeKey = (ESteamNetworkingConfigValue)47;
         private const int RecvBufferBytes = 32 << 20;
 
+        /// <summary>
+        /// <c>k_ESteamNetworkingConfig_RecvBufferMessages</c> (48) and its value. Steam's default is 1000 messages: once
+        /// that many wait for the next poll (one long frame is enough at a few hundred messages a second), Steam drops
+        /// every further packet, whatever <see cref="RecvBufferBytes"/> allows. The sender then sees loss, lowers its
+        /// rate and resends, exactly while this side has a backlog to work off.
+        /// </summary>
+        private const ESteamNetworkingConfigValue RecvBufferMessagesKey = (ESteamNetworkingConfigValue)48;
+        private const int RecvBufferMessages = 1 << 16;
+
         private static readonly SendRateOptions RateOptions = new SendRateOptions();
         private static bool _recvBufferWarned;
+        private static bool _recvMessagesWarned;
         private static bool _lanesWarned;
 
         private static readonly List<(HSteamListenSocket Socket, double CloseAt)> DeferredSockets = new List<(HSteamListenSocket, double)>();
@@ -225,6 +235,27 @@ namespace SkylineTogether.Net
             }
         }
 
+        private readonly IntPtr[] _closingMessages = new IntPtr[64];
+
+        /// <summary>
+        /// Delivers the messages Steam still holds for a connection its peer closed, in order, before the handle is
+        /// closed. Bounded: a peer cannot keep this side reading (the receive buffer limits what can wait).
+        /// </summary>
+        private void DrainBeforeClose(HSteamNetConnection handle, ITransportEventSink sink)
+        {
+            for (int round = 0; round < 1024 && !_disposed; round++)
+            {
+                int n = SteamNetworkingSockets.ReceiveMessagesOnConnection(handle, _closingMessages, _closingMessages.Length);
+                if (n <= 0) return;
+                for (int i = 0; i < n; i++)
+                {
+                    IntPtr ptr = _closingMessages[i];
+                    _closingMessages[i] = IntPtr.Zero;
+                    Deliver(ptr, sink); // frees the message, also once a handler disposed the transport
+                }
+            }
+        }
+
         /// <summary>Frees the messages taken from Steam that were never delivered.</summary>
         private void ReleasePending()
         {
@@ -358,6 +389,12 @@ namespace SkylineTogether.Net
                 {
                     string text = e.m_info.m_szEndDebug;
                     int reason = e.m_info.m_eEndReason;
+                    // Closing the handle discards what Steam still holds for it. A peer that says why it closes
+                    // (kick, session end, "you were dropped") sends that notice right before the close, so both can
+                    // arrive between two polls: the notice was thrown away and the player only saw "connection lost"
+                    // (and rejoined a session that had just refused or ended).
+                    if (connection != null && !connection.Closed) DrainBeforeClose(e.m_hConn, sink);
+                    if (_disposed) return; // a handler ended the session: Dispose closed every connection
                     SteamNetworkingSockets.CloseConnection(e.m_hConn, 0, null, false);
                     if (connection == null) return;
                     _connections.Remove(key);
@@ -611,6 +648,16 @@ namespace SkylineTogether.Net
             {
                 _recvBufferWarned = true;
                 _log.Info(LogCategory.Net, "Steam does not offer the receive buffer setting; the default (1 MiB) applies");
+            }
+            // without it the byte limit above is never reached: the message limit (1000) drops packets first
+            if (SetInt32(connection, RecvBufferMessagesKey, RecvBufferMessages))
+            {
+                _log.Debug(LogCategory.Net, connection + ": receive buffer " + RecvBufferMessages + " messages");
+            }
+            else if (!_recvMessagesWarned)
+            {
+                _recvMessagesWarned = true;
+                _log.Info(LogCategory.Net, "Steam does not offer the receive message limit setting; the default (1000 messages) applies");
             }
         }
 

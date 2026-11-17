@@ -18,7 +18,7 @@ which checks and applies them for everyone. Differences are detected and repaire
   **Friends and invited only**, 2 to 16 players (default 8).
 - **Shared city**: roads, buildings, zoning, districts, transport lines, terrain, water, budget, taxes, policies,
   milestones, traffic, citizens and the numbers in the info panels.
-- **Works with your mods**: dedicated support for 12 popular mods, automatic analysis of every other code mod, and a
+- **Works with your mods**: dedicated support for 15 popular mods, automatic analysis of every other code mod, and a
   join screen that lists exactly what to change ([details below](#works-with-your-mods)).
 - **Every player builds** with the normal game tools; your own actions show instantly and the host confirms them.
 - **Roles**: builders can do everything; viewers can only watch and chat; co-hosts help manage players. New players can

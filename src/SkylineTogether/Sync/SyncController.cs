@@ -312,6 +312,7 @@ namespace SkylineTogether.Sync
             DeletionCascade.CascadeDeleted = OnCascadeDeleted;
             Links.EdgeDeleted = OnCascadeDeleted; // an edge whose node is gone: the same release and request
             _audit.NetLinks = Links;
+            _audit.Orphans = Orphans;
             Orphans.Request = id => _audit.RequestLater(id, Perf.Now);
             _orphanCall = () =>
             {

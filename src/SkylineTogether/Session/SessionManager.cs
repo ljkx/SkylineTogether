@@ -1042,7 +1042,7 @@ namespace SkylineTogether.Session
             _playersVersion++;
             if (client.State != ClientState.Live) return;
             bool rejoined = _rejoin.Recovering;
-            _rejoin.OnLive();
+            _rejoin.OnLive(_clock.Seconds);
             _recoveryVersion++;
             // the rejoined session's own gate and clock take over from the recovery hold (SystemSwitch counts holders)
             ReleaseCity();

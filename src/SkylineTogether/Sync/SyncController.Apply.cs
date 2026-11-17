@@ -81,7 +81,12 @@ namespace SkylineTogether.Sync
             // mod that re-enables them when the joined city finished loading ran them through the snapshot apply and the
             // catch-up before)
             if (!IsHost && _sessions.Client != null) SafeCall("mod gates", _reassertCall ?? (_reassertCall = ReassertGates), Features.ModCompat);
-            if (_codec == null || !Features.Replication.IsAvailable) return;
+            if (_codec == null || !Features.Replication.IsAvailable)
+            {
+                // the session is ending, but the game still draws what the last batches spawned
+                if (!IsHost && _sessions.Client != null) _events?.ClientKeepHotspotFrames();
+                return;
+            }
             if (!IsHost && !IsLiveClient)
             {
                 if (_sessions.Client == null && _inbox.Count > 0) _inbox.Clear();
@@ -130,6 +135,8 @@ namespace SkylineTogether.Sync
                     }
                 }
             }
+            // client: the deletion cascade of this frame's despawns needs the referrer index (built once per city)
+            if (!IsHost) _audit.BeforeApply();
             // a client that just went live catches up with bigger slices
             SessionClient joining = IsHost ? null : _sessions.Client;
             bool catchingUp = joining != null && joining.Timeline.Has(JoinStage.Live) && !joining.Timeline.Has(JoinStage.CaughtUp);
@@ -163,7 +170,13 @@ namespace SkylineTogether.Sync
                     // client: a failed batch is acknowledged only once its despawns are applied (ARCHITECTURE.md#client-apply)
                     if (!IsHost) acknowledge = RecoverFailedBatch(ex);
                     ApplyFailed(item.Peer, ex);
-                    if (!Features.Replication.IsAvailable) return; // the session is ending (client: a rejoin repairs it)
+                    if (!Features.Replication.IsAvailable)
+                    {
+                        // the session is ending (client: a rejoin repairs it); a phenomenon an earlier batch of this
+                        // frame spawned still needs its frames
+                        if (!IsHost) _events?.ClientKeepHotspotFrames();
+                        return;
+                    }
                 }
                 finally
                 {
@@ -204,6 +217,10 @@ namespace SkylineTogether.Sync
                 {
                     Guard.Report(Features.Events, "events (after apply)", ex);
                 }
+            }
+            else if (!IsHost)
+            {
+                _events.ClientKeepHotspotFrames();
             }
             // client: lane signals and signal heads from the host's junction phases
             if (!IsHost && Features.SimValues.IsAvailable)

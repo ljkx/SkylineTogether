@@ -148,7 +148,7 @@ namespace SkylineTogether.Sync
             {
                 // one failure is enough: a clock that misbehaves would fight the simulation every frame
                 Diagnostics.Guard.Report(Diagnostics.Features.Clock, "follower clock (falling back to the paused client)", ex);
-                Deactivate();
+                Suspend(simulation);
                 _probeFailed = true;
                 return false;
             }
@@ -240,7 +240,27 @@ namespace SkylineTogether.Sync
             }
         }
 
-        /// <summary>Restores every system and leaves the simulation paused (session ended or fallback).</summary>
+        /// <summary>
+        /// The clock failed while the client is live: it stops following, and the simulation is paused. The
+        /// GameSimulation systems stay off until the session ends (<see cref="Deactivate"/>): switched back on here,
+        /// they would simulate the host's city on this client the moment anything set a speed, under the host's updates.
+        /// </summary>
+        private void Suspend(SimulationSystem simulation)
+        {
+            _pendingActivate = false;
+            Active = false;
+            try
+            {
+                if (simulation != null) simulation.selectedSpeed = 0f;
+            }
+            catch (Exception)
+            {
+                // the world may be gone
+            }
+            _log.Info(LogCategory.Gate, "follower clock stopped; this game stays paused and GameSimulation systems stay off until the session ends");
+        }
+
+        /// <summary>Restores every system and leaves the simulation paused (session ended).</summary>
         public void Deactivate()
         {
             _pendingActivate = false;

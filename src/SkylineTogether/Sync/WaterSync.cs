@@ -430,6 +430,9 @@ namespace SkylineTogether.Sync
                 if (_warned.Add("grid")) _log.Warn(LogCategory.Fields, "the host's water grid " + info + " differs from ours " + GridInfo + "; water tiles ignored");
                 return;
             }
+            // read first: setting the sea level makes the game switch the culling off itself, and it was then never
+            // switched back on for the rest of the session (it only costs performance)
+            bool culling = _water.UseActiveCellsCulling;
             // only a sea level within the terrain's height range (the GPU simulation takes it as is)
             if (math.abs(_water.SeaLevel - seaLevel) > 0.01f && seaLevel >= -MaxSeaLevel && seaLevel <= MaxSeaLevel)
             {
@@ -446,7 +449,7 @@ namespace SkylineTogether.Sync
             TerrainMessage.EnsureEnd(r);
             if (applied == 0) return;
             _water.ForceUpdateFlow = true;
-            if (_water.UseActiveCellsCulling)
+            if (culling || _water.UseActiveCellsCulling)
             {
                 _water.UseActiveCellsCulling = false;
                 _restoreCullingAt = now + CullingOffSeconds;
