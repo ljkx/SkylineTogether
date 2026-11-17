@@ -11,6 +11,27 @@ namespace SkylineTogether.Diagnostics
     /// </summary>
     public static class Perf
     {
+        private static StallWatchdog _watchdog;
+
+        /// <summary>
+        /// The main-thread stall detector (<see cref="StallWatchdog"/>): created once the mod's log exists; null before.
+        /// Its background thread starts with the first frame of a session.
+        /// </summary>
+        public static StallWatchdog Watchdog
+        {
+            get
+            {
+                if (_watchdog == null && Mod.Log != null) _watchdog = new StallWatchdog(Mod.Log);
+                return _watchdog;
+            }
+        }
+
+        /// <summary>Main thread: marks a step for the stall watchdog; pass the result to <see cref="ExitStep"/>.</summary>
+        public static string EnterStep(string step) => Watchdog?.Enter(step);
+
+        /// <summary>Main thread: the step marked by <see cref="EnterStep"/> ended.</summary>
+        public static void ExitStep(string previous) => Watchdog?.Exit(previous);
+
         // component names (timings, ms per frame)
         public const string Apply = "apply";
         public const string Capture = "capture";

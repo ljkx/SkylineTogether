@@ -47,6 +47,11 @@ namespace SkylineTogether.Sync
         private readonly List<Entity> _orphans = new List<Entity>();
         private readonly List<Entity> _detach = new List<Entity>();
         private readonly List<Entity> _candidates = new List<Entity>();
+        // membership sets for the lists above: List.Contains made the candidate check O(n^2) (up to MaxCandidates^2
+        // comparisons on the main thread after a large deletion); the lists keep the order, the sets the membership
+        private readonly HashSet<Entity> _orphanSet = new HashSet<Entity>();
+        private readonly HashSet<Entity> _detachSet = new HashSet<Entity>();
+        private readonly HashSet<Entity> _candidateSet = new HashSet<Entity>();
         private EntityQuery _owned, _attached;
         private World _world;
         private long _deletedTotal, _detachedTotal, _sweeps, _fullScans;
@@ -89,7 +94,7 @@ namespace SkylineTogether.Sync
                 Entity c = child(buffer[i]);
                 if (c == Entity.Null) continue;
                 if (_candidates.Count >= MaxCandidates) return; // the full scan finds the rest
-                _candidates.Add(c);
+                if (_candidateSet.Add(c)) _candidates.Add(c); // a child several deleted owners name is checked once
             }
         }
 
@@ -105,8 +110,7 @@ namespace SkylineTogether.Sync
             {
                 Ensure(em);
                 _sweeps++;
-                _orphans.Clear();
-                _detach.Clear();
+                ClearResults();
                 if (full)
                 {
                     _lastFullScan = now;
@@ -130,10 +134,18 @@ namespace SkylineTogether.Sync
             {
                 if (full) _deleted.Clear(); // kept until a full scan looked for the children the lists missed
                 _candidates.Clear();
-                _orphans.Clear();
-                _detach.Clear();
+                _candidateSet.Clear();
+                ClearResults();
                 Perf.Stop(Perf.ReferenceRepair, start);
             }
+        }
+
+        private void ClearResults()
+        {
+            _orphans.Clear();
+            _orphanSet.Clear();
+            _detach.Clear();
+            _detachSet.Clear();
         }
 
         /// <summary>An attached object whose parent is gone: detached when it is replicated (the host's record follows), else deleted.</summary>
@@ -197,11 +209,11 @@ namespace SkylineTogether.Sync
                 if (!em.Exists(c) || em.HasComponent<Game.Common.Deleted>(c) || em.HasComponent<Game.Tools.Temp>(c) || em.HasComponent<Game.Net.Lane>(c)) continue;
                 if (em.HasComponent<Game.Common.Owner>(c) && IsGoneDeleted(em, em.GetComponentData<Game.Common.Owner>(c).m_Owner))
                 {
-                    if (!_orphans.Contains(c)) _orphans.Add(c);
+                    if (_orphanSet.Add(c)) _orphans.Add(c);
                 }
                 else if (em.HasComponent<Game.Objects.Attached>(c) && IsGoneDeleted(em, em.GetComponentData<Game.Objects.Attached>(c).m_Parent))
                 {
-                    if (!_detach.Contains(c)) _detach.Add(c);
+                    if (_detachSet.Add(c)) _detach.Add(c);
                 }
             }
         }
@@ -288,8 +300,8 @@ namespace SkylineTogether.Sync
         {
             _deleted.Clear();
             _candidates.Clear();
-            _orphans.Clear();
-            _detach.Clear();
+            _candidateSet.Clear();
+            ClearResults();
             _world = null;
             _deletedTotal = _detachedTotal = _sweeps = _fullScans = 0;
             _lastFullScan = double.NegativeInfinity;

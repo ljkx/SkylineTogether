@@ -56,6 +56,12 @@ namespace SkylineTogether.Sync
             public bool DeletedIsDangling = true;
             public long Dangling;
             public int LoggedThisMinute;
+            // stall watchdog step names (built once, no allocation per chunk)
+            private string _stepRun, _stepIndex, _stepRepair, _stepFetch;
+            public string StepRun => _stepRun ?? (_stepRun = "reference audit: check " + Name);
+            public string StepIndex => _stepIndex ?? (_stepIndex = "reference audit: index " + Name);
+            public string StepRepair => _stepRepair ?? (_stepRepair = "reference audit: repair " + Name);
+            public string StepFetch => _stepFetch ?? (_stepFetch = "reference audit: fetch chunks " + Name);
             public double MinuteStart = double.NegativeInfinity;
 
             /// <summary>Checks one chunk; adds (holder, target) of every dangling reference to <paramref name="found"/>.</summary>
@@ -545,9 +551,17 @@ namespace SkylineTogether.Sync
             long perf = Perf.Start();
             try
             {
-                if (!_indexBuilt) BuildIndex(em);
-                // the referrer index only grows otherwise (entries are added, never removed when a link changes)
-                else if (_index != null) _index.Sweep(_alive, IndexSweepTargetsPerFrame);
+                string outer = Perf.EnterStep(!_indexBuilt ? "reference audit: build index" : "reference audit: index pruning");
+                try
+                {
+                    if (!_indexBuilt) BuildIndex(em);
+                    // the referrer index only grows otherwise (entries are added, never removed when a link changes)
+                    else if (_index != null) _index.Sweep(_alive, IndexSweepTargetsPerFrame);
+                }
+                finally
+                {
+                    Perf.ExitStep(outer);
+                }
                 if (!_pacer.InLap) StartLap(now);
                 double progress = _lapChunks > 0 ? (double)_lapVisited / _lapChunks : 1.0;
                 long budget = (long)(_pacer.BudgetMs(now, progress) * Stopwatch.Frequency / 1000.0);
@@ -562,11 +576,19 @@ namespace SkylineTogether.Sync
                         // structural change in between may skip or repeat a chunk, which the sweep tolerates)
                         if (fetchedFor != _check)
                         {
-                            DisposeChunks();
-                            // the game's jobs may still write these components (buffers resize): finish them first
-                            c.Query.CompleteDependency();
-                            _chunks = c.Query.ToArchetypeChunkArray(Allocator.TempJob);
-                            fetchedFor = _check;
+                            string fetchStep = Perf.EnterStep(c.StepFetch);
+                            try
+                            {
+                                DisposeChunks();
+                                // the game's jobs may still write these components (buffers resize): finish them first
+                                c.Query.CompleteDependency();
+                                _chunks = c.Query.ToArchetypeChunkArray(Allocator.TempJob);
+                                fetchedFor = _check;
+                            }
+                            finally
+                            {
+                                Perf.ExitStep(fetchStep);
+                            }
                         }
                         if (_chunk < 0) _chunk = 0;
                         if (_chunk >= _chunks.Length)
@@ -584,25 +606,40 @@ namespace SkylineTogether.Sync
                         _lapVisited++;
                         _found.Clear();
                         EntityTypeHandle entityType = em.GetEntityTypeHandle();
-                        c.Run(em, chunk, entityType, _found);
-                        if (c.Link.HasValue && _index != null) c.Index(em, chunk, entityType, _index, _alive);
-                        if (_found.Count == 0) continue;
-                        if (c.Link.HasValue)
+                        string step = Perf.EnterStep(c.StepRun);
+                        try
                         {
-                            long structural = _access.StructuralChanges, deletions = DeletionCascade.HoldersDeleted + DeletionCascade.MoversDeleted;
-                            RepairFound(c, now);
-                            // refetch before the next chunk (a removed component or a deleted holder moved entities between chunks)
-                            if (_access.StructuralChanges != structural || DeletionCascade.HoldersDeleted + DeletionCascade.MoversDeleted != deletions) fetchedFor = -1;
+                            c.Run(em, chunk, entityType, _found);
+                            if (c.Link.HasValue && _index != null)
+                            {
+                                Perf.ExitStep(step);
+                                step = Perf.EnterStep(c.StepIndex);
+                                c.Index(em, chunk, entityType, _index, _alive);
+                            }
+                            if (_found.Count == 0) continue;
+                            Perf.ExitStep(step);
+                            step = Perf.EnterStep(c.StepRepair);
+                            if (c.Link.HasValue)
+                            {
+                                long structural = _access.StructuralChanges, deletions = DeletionCascade.HoldersDeleted + DeletionCascade.MoversDeleted;
+                                RepairFound(c, now);
+                                // refetch before the next chunk (a removed component or a deleted holder moved entities between chunks)
+                                if (_access.StructuralChanges != structural || DeletionCascade.HoldersDeleted + DeletionCascade.MoversDeleted != deletions) fetchedFor = -1;
+                            }
+                            else if (c.Fix != null)
+                            {
+                                FixFound(em, c, now);
+                                // a deleted child or a released rider moved entities between chunks: never read a stale chunk
+                                if (c.FixIsStructural) fetchedFor = -1;
+                            }
+                            else
+                            {
+                                Report(c, now);
+                            }
                         }
-                        else if (c.Fix != null)
+                        finally
                         {
-                            FixFound(em, c, now);
-                            // a deleted child or a released rider moved entities between chunks: never read a stale chunk
-                            if (c.FixIsStructural) fetchedFor = -1;
-                        }
-                        else
-                        {
-                            Report(c, now);
+                            Perf.ExitStep(step);
                         }
                     }
                 }

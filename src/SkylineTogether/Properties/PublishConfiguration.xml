@@ -78,20 +78,20 @@ Open source under the MIT licence. Not affiliated with or endorsed by Paradox In
 	<!--"Code Mod" is the tag every code mod on Paradox Mods carries; the platform has no multiplayer tag-->
 	<Tag Value="Code Mod" />
 	<!--The release version: <Version> of Directory.Build.props (tools/paradox/publish_paradox.py checks that they match)-->
-	<ModVersion Value="0.3.0" />
+	<ModVersion Value="0.4.0" />
 	<!--The game version the build was compiled and tested against (1.6.2f1); another game version may switch features off-->
 	<GameVersion Value="1.6.2*" />
-	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened (prepared for 0.3.0)-->
+	<!--Shown with the new version on Paradox Mods: the CHANGELOG.md section of this version, shortened (prepared for 0.4.0)-->
 	<ChangeLog>
-Dedicated support for more mods, and fixes for crashes of joined players when building roads.
+Support for nine more mods, and fixes for freezes and crashes of joined players.
 
-- Placemaker: parks and places built with it appear for every player, joined players can build, edit and remove them, and its automatic dressing runs on the host only
-- Cim Census: the statistics panel also fills for joined players
-- Achievement Fixer, ExtraLib and Cim Route Highlighter no longer block a join; achievements stay off for joined players during a session
-- Fixed: joined players crashed when they built or connected roads next to existing ones (crossings, street names and road connections could still point at a removed road)
-- Joined players' logs name every tool use and repair, so a crash report shows what happened last
+- Advanced Simulation Speed: exact game speeds (0.25x, 3x, 8x ...) reach every player
+- Prefab Asset Fixes, Transport Policy Adjuster, Road Speed Adjuster, Magic Hearse v Funeral Director, Simple Mod Checker Plus, Show Text Trends, Skyve and Zone Organizer are supported
+- Fixed: joined players' games froze for minutes after large areas were bulldozed
+- Fixed: fewer crashes and needless reconnects of joined players (lost close messages, dropped data after slow frames, endless rejoins, leftover links to removed objects)
+- The log names the step that was running when the game froze
 
-Full changelog: https://github.com/ljkx/SkylineTogether/blob/v0.3.0/CHANGELOG.md
+Full changelog: https://github.com/ljkx/SkylineTogether/blob/v0.4.0/CHANGELOG.md
 	</ChangeLog>
 	<ExternalLink Type="github" Url="https://github.com/ljkx/SkylineTogether" />
 	<!--Public, Unlisted (only people with the link find it) or Private-->

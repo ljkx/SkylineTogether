@@ -162,7 +162,15 @@ namespace SkylineTogether.Sync
                     }
                     else
                     {
-                        ApplyFromHost(item.Data);
+                        string step = Perf.EnterStep("apply host batch");
+                        try
+                        {
+                            ApplyFromHost(item.Data);
+                        }
+                        finally
+                        {
+                            Perf.ExitStep(step);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -254,7 +262,18 @@ namespace SkylineTogether.Sync
             }
             if (IsHost) UpdateQuarantine(now);
             // client: the reference sweep (repairs dangling agent links, reports the others) and its requests to the host
-            if (!IsHost) _audit.Update(now, _inbox.Count);
+            if (!IsHost)
+            {
+                string step = Perf.EnterStep("reference audit sweep");
+                try
+                {
+                    _audit.Update(now, _inbox.Count);
+                }
+                finally
+                {
+                    Perf.ExitStep(step);
+                }
+            }
             double applied = Perf.Stop(Perf.Apply, start);
             budget.EndFrame(applied);
             Perf.Budget.End(Perf.BudgetApply, applied);
@@ -304,6 +323,7 @@ namespace SkylineTogether.Sync
         /// <summary>Runs a step in its own guard; a failure counts against <paramref name="feature"/> (player actions by default).</summary>
         private void SafeCall(string what, Action action, FeatureHealth feature = null)
         {
+            string previous = Perf.EnterStep(what); // the stall watchdog names the step (orphan sweep, derived net links ...)
             try
             {
                 action();
@@ -311,6 +331,10 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 Guard.Report(feature ?? Features.Actions, what, ex);
+            }
+            finally
+            {
+                Perf.ExitStep(previous);
             }
         }
 

@@ -16,7 +16,10 @@ namespace SkylineTogether.Sync
         protected override void OnUpdate()
         {
             SyncController sync = Mod.Sync;
+            // the stall watchdog's heartbeat: once per frame, at the frame's first Skyline Together step
+            Perf.Watchdog?.Beat(sync != null && SyncController.SessionActive);
             if (sync == null || !SyncController.SessionActive) return;
+            string previous = Perf.EnterStep("frame-start apply");
             try
             {
                 sync.ApplyIncoming();
@@ -24,6 +27,10 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 Guard.Report(Features.Replication, "apply", ex);
+            }
+            finally
+            {
+                Perf.ExitStep(previous);
             }
         }
     }
@@ -38,6 +45,7 @@ namespace SkylineTogether.Sync
         {
             SyncController sync = Mod.Sync;
             if (sync == null || !SyncController.SessionActive) return;
+            string previous = Perf.EnterStep("frame-end capture");
             try
             {
                 sync.CaptureOutgoing(UnityEngine.Time.realtimeSinceStartupAsDouble);
@@ -45,6 +53,10 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 Guard.Report(Features.Replication, "capture", ex);
+            }
+            finally
+            {
+                Perf.ExitStep(previous);
             }
             // solo testing: the recorder's checkpoints (host) and the replay's icon comparison (client), after the capture
             Replay.ReplayController.Instance?.OnCaptureEnd();
@@ -101,6 +113,7 @@ namespace SkylineTogether.Sync
         {
             SyncController sync = Mod.Sync;
             if (sync == null || !SyncController.SessionActive) return;
+            string previous = Perf.EnterStep("tool apply hook");
             try
             {
                 sync.OnToolApply();
@@ -108,6 +121,10 @@ namespace SkylineTogether.Sync
             catch (Exception ex)
             {
                 Guard.Report(Features.Replication, "tool hook", ex);
+            }
+            finally
+            {
+                Perf.ExitStep(previous);
             }
         }
     }
@@ -165,6 +182,7 @@ namespace SkylineTogether.Sync
                 return;
             }
             long start = Perf.Start();
+            string step = Perf.EnterStep("removal cascade");
             NativeArray<Entity> entities = _deleted.ToEntityArray(Allocator.Temp);
             try
             {
@@ -213,6 +231,7 @@ namespace SkylineTogether.Sync
                 entities.Dispose();
                 DeletionCascade.DoneThisFrame.Clear();
                 Perf.Stop(Perf.ReferenceRepair, start);
+                Perf.ExitStep(step);
             }
         }
 
