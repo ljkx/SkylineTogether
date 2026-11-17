@@ -18,7 +18,7 @@ which checks and applies them for everyone. Differences are detected and repaire
   **Friends and invited only**, 2 to 16 players (default 8).
 - **Shared city**: roads, buildings, zoning, districts, transport lines, terrain, water, budget, taxes, policies,
   milestones, traffic, citizens and the numbers in the info panels.
-- **Works with your mods**: dedicated support for 15 popular mods, automatic analysis of every other code mod, and a
+- **Works with your mods**: dedicated support for 20 popular mods, automatic analysis of every other code mod, and a
   join screen that lists exactly what to change ([details below](#works-with-your-mods)).
 - **Every player builds** with the normal game tools; your own actions show instantly and the host confirms them.
 - **Roles**: builders can do everything; viewers can only watch and chat; co-hosts help manage players. New players can
@@ -35,7 +35,7 @@ which checks and applies them for everyone. Differences are detected and repaire
 
 Skyline Together is built to be played with mods, not only with the base game.
 
-- **Dedicated support for 15 mods.** Their saved data, their tools and the settings that affect the simulation are
+- **Dedicated support for 20 mods.** Their saved data, their tools and the settings that affect the simulation are
   synced between all players:
 
   | Mod | What is shared |
@@ -55,8 +55,13 @@ Skyline Together is built to be played with mods, not only with the base game.
   | Placemaker | Its builds and parks (the host's generated park buildings are created on every player's game), and the host's Placemaker settings |
   | Cim Census | Its statistics, counted on every player's game |
   | Achievement Fixer | Works for the host; joined players keep achievements off during the session, as without it |
+  | Advanced Simulation Speed | The host's exact game speed (0.25x, 3x, 8x ...) on every player's game |
+  | Prefab Asset Fixes | The host's fix settings, applied on every player's game during the session |
+  | Transport Policy Adjuster | Route policy values beyond the usual slider range, when the host has it too |
+  | Road Speed Adjuster | Speed limits set with it, saved in the city |
+  | Magic Hearse v Funeral Director | Works for the host; joined players do not need it |
 
-  ExtraLib, Cim Route Highlighter, I18n Everywhere, Extended Tooltip, Asset Icon Library and Unified Icon Library are checked to affect only their own player: they never block a join.
+  ExtraLib, Cim Route Highlighter, I18n Everywhere, Extended Tooltip, Asset Icon Library, Unified Icon Library, Show Text Trends, Skyve, Zone Organizer and Simple Mod Checker Plus are checked to affect only their own player: they never block a join.
 
 - **Any other code mod** is analysed automatically when a session starts and handled by conservative rules: its saved
   data replicates with the objects it belongs to, its simulation runs on the host, and its tools are captured like

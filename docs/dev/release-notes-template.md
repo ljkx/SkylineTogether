@@ -22,8 +22,9 @@ Fixed. Link the full section: https://github.com/ljkx/SkylineTogether/blob/v<ver
 ## Works with your mods
 
 Dedicated support for Traffic, Move It, Anarchy, Better Bulldozer, Tree Controller, Water Features, Plop the
-Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool, Find It, Placemaker, Cim Census and Achievement
-Fixer; every other code mod is analysed
+Growables, 529 Tiles, Historical Start, Zoning Toolkit, Line Tool, Find It, Placemaker, Cim Census, Achievement
+Fixer, Advanced Simulation Speed, Prefab Asset Fixes, Transport Policy Adjuster, Road Speed Adjuster and Magic
+Hearse v Funeral Director; every other code mod is analysed
 automatically. <Mention changes to mod support in this release, if any.> Details:
 [MOD-COMPATIBILITY.md](https://github.com/ljkx/SkylineTogether/blob/main/docs/design/MOD-COMPATIBILITY.md)
 
